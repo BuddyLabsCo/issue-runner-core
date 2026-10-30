@@ -1,0 +1,44 @@
+{
+  "node": "22.18.0",
+  "npm": "11.6.2",
+  "command": "npm pack --json --pack-destination artifacts",
+  "artifact": {
+    "id": "issue-runner-core@0.0.0-contract.1",
+    "name": "issue-runner-core",
+    "version": "0.0.0-contract.1",
+    "size": 3885,
+    "unpackedSize": 9511,
+    "shasum": "def6a086adb3f686f13172f213a2372c22250ee9",
+    "integrity": "sha512-3xnIkqnopI1YJWh9XGZLZsXRAyjgZHzRwbPFTKAuReec2LrHk3LaFiWYNY/7grVIiUaqq+4bPFl3L9K54Me2wQ==",
+    "filename": "issue-runner-core-0.0.0-contract.1.tgz",
+    "files": [
+      {
+        "path": "README.md",
+        "size": 1809,
+        "mode": 420
+      },
+      {
+        "path": "dist/terminal.d.ts",
+        "size": 579,
+        "mode": 420
+      },
+      {
+        "path": "dist/terminal.js",
+        "size": 42,
+        "mode": 420
+      },
+      {
+        "path": "docs/terminal-contract.md",
+        "size": 6371,
+        "mode": 420
+      },
+      {
+        "path": "package.json",
+        "size": 710,
+        "mode": 420
+      }
+    ],
+    "entryCount": 5,
+    "bundled": []
+  }
+}
