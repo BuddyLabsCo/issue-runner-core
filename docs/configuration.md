@@ -100,11 +100,20 @@ before task submission, without another startup delay. The built-in instructions
 and Project implementation prompt explicitly invoke the installed handoff skill.
 The temporary Git configuration is removed when the call finishes.
 
+Invalid Probe output uses `operationRetry` and `operationRetryDelay`, separately
+from execution-result corrections. Each Probe retry saves its consumed count and
+a fresh correlation/path before submission; missing output never spends this
+budget or causes reminders. After exhaustion, the active Probe path remains
+available for manual publication in the native conversation.
+
 Only the exact four-field execution schema is accepted, after independent
 Worktree, branch, base, clean-state and full commit/message checks. A `committed`
 result must also contain real changes relative to the base. Accepted facts and
 stage completion are saved before targeted tab closure. A local implementation
 is not delivered: the Run reports `incomplete` until later workflow steps exist.
+Tab close uses ordinary operation retries/delays and Operator Pause after
+exhaustion. A close retry targets the same owned handle without repeating the
+accepted implementation or discarding its persisted completion.
 Verified `no_change` also gets no delivery credit. Neither auto-merge flag
 changes this checkpoint's behavior.
 
@@ -116,7 +125,11 @@ invocation/path, correction count, result facts and stage completion. Handles
 are process-local and never persisted. A hash of Run arguments and raw
 `config.yaml` scopes matching progress. In-flight assigned implementation
 can resume its exact saved native conversation in the original Worktree; no
-replacement assignment is sent. An absent expected result receives only
+replacement assignment is sent. An existing expected result is verified before
+opening a terminal; valid retained output can complete without a native tab.
+Invalid retained output opens the original conversation only for an automatic
+correction that needs submission; exhausted output can be corrected manually at
+its current path. An absent expected result receives only
 `continue` after the resume wait. Completed stages are verified without
 redispatch. Earlier incomplete startup snapshots fail visibly and remain
 retained; broader recovery/restart policy belongs to downstream slices.

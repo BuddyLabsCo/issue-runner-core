@@ -55,7 +55,11 @@ export class NativeConversations {
       this.signal?.throwIfAborted();
       return action();
     });
-    this.queues.set(tab, next);
+    // Preserve ordering after a failure; the caller decides whether to retry.
+    this.queues.set(
+      tab,
+      next.catch(() => undefined),
+    );
     return next;
   }
 }

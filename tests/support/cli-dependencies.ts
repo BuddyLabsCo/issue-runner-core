@@ -1,7 +1,9 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external contracts retain asynchronous signatures. */
 import assert from "node:assert/strict";
+import { LocalGitWorkspace } from "../../src/adapters/git-workspace.ts";
 
 export function createCliDependencies(launchDirectory: string) {
+  const git = new LocalGitWorkspace("host-secret");
   const messages: string[] = [];
   const effects: string[] = [];
   const reads: string[] = [];
@@ -49,6 +51,7 @@ export function createCliDependencies(launchDirectory: string) {
       },
     },
     gitWorkspace: {
+      withAgentEnvironment: git.withAgentEnvironment.bind(git),
       async inspect() {
         return {
           worktree: "",

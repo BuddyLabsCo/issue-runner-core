@@ -83,6 +83,9 @@ export async function runStandalone(input: {
         path.join(loaded.directory, "handoffs") ||
       !Number.isSafeInteger(saved.corrections) ||
       (saved.corrections as number) < 0 ||
+      (saved.probeRetries !== undefined &&
+        (!Number.isSafeInteger(saved.probeRetries) ||
+          (saved.probeRetries as number) < 0)) ||
       !Array.isArray(saved.superseded)
     )
       throw new Error(
@@ -173,6 +176,10 @@ export async function runStandalone(input: {
         progress,
         persist: () => persist(progress),
         accept: (text) => accept(progress, text),
+        closeTab: (close) =>
+          read("close_implementation_tab", `ticket:${number}`, close),
+        withEnvironment: (action) =>
+          context.git.withAgentEnvironment(loaded.directory, action),
         terminal: context.terminal,
         clock: context.clock,
         operator: context.operator,
@@ -276,6 +283,10 @@ export async function runStandalone(input: {
     progress,
     persist: () => persist(progress),
     accept: (text) => accept(progress, text),
+    closeTab: (close) =>
+      read("close_implementation_tab", `ticket:${number}`, close),
+    withEnvironment: (action) =>
+      context.git.withAgentEnvironment(loaded.directory, action),
     terminal: context.terminal,
     clock: context.clock,
     operator: context.operator,

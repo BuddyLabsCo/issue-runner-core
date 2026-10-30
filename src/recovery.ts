@@ -1,6 +1,17 @@
 import { mkdir, rename, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import type { CommitEvidence } from "./run/contracts.ts";
+
+export function hashRunInput(
+  argv: readonly string[],
+  config: Uint8Array,
+): string {
+  return createHash("sha256")
+    .update(JSON.stringify(argv))
+    .update(config)
+    .digest("hex");
+}
 
 export interface ExecutionResult {
   outcome: "committed" | "no_change";
@@ -40,6 +51,7 @@ export interface ImplementationProgress {
   invocation?: Invocation;
   result?: ExecutionResult;
   corrections: number;
+  probeRetries?: number;
   superseded: string[];
 }
 

@@ -50,6 +50,7 @@ export async function implementationRun(t: TestContext, config = validConfig) {
     } as WorkspaceEvidence,
     expectedPath: "",
     gitConfigs: [] as string[],
+    closedTabs: [] as object[],
     sleeps: [] as number[],
     taskCount: 0,
     probeCount: 0,
@@ -108,8 +109,9 @@ export async function implementationRun(t: TestContext, config = validConfig) {
         await state.onCorrection(state.expectedPath);
       }
     },
-    async closeTab() {
+    async closeTab(tab) {
       assert.equal((await snapshot()).phase, "implementation_completed");
+      state.closedTabs.push(tab);
       state.events.push("close");
       await state.onClose();
     },
@@ -135,6 +137,7 @@ export async function implementationRun(t: TestContext, config = validConfig) {
       },
     },
     gitWorkspace: {
+      ...deps.gitWorkspace,
       async fetchTargetBranch() {
         state.events.push("fetch");
         return "a".repeat(40);

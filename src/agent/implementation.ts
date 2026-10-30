@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { LoadedProject } from "../config.ts";
 import type { ExecutionResult, ImplementationProgress } from "../recovery.ts";
 import type { Clock, OperatorIO, Ticket } from "../run/contracts.ts";
 import { OperatorCancelled } from "../run/operations.ts";
-import type { TerminalPlugin } from "../terminal.ts";
+import type { TabHandle, TerminalPlugin } from "../terminal.ts";
 import { NativeConversations } from "./conversation.ts";
 import { implementationInstructions } from "../prompts/implement.ts";
 import { nonempty, object, readHandoff } from "./handoff.ts";
@@ -16,6 +16,10 @@ export async function implementIssue(input: {
   progress: ImplementationProgress;
   persist: () => Promise<void>;
   accept: (text: string) => Promise<ExecutionResult>;
+  closeTab: (close: () => Promise<void>) => Promise<void>;
+  withEnvironment: <T>(
+    action: (env: Readonly<Record<string, string>>) => Promise<T>,
+  ) => Promise<T>;
   terminal: TerminalPlugin;
   clock: Clock;
   operator: OperatorIO;
@@ -41,31 +45,26 @@ export async function implementIssue(input: {
     signal?.throwIfAborted();
   };
   await mkdir(path.join(loaded.directory, "handoffs"), { recursive: true });
-  const gitConfig = path.join(loaded.directory, `git-config-${randomUUID()}`);
-  const authorization = Buffer.from(
-    `x-access-token:${loaded.codeHostToken}`,
-  ).toString("base64");
-  await writeFile(
-    gitConfig,
-    `[user]\n\tname = Issue Runner\n\temail = issue-runner@users.noreply.github.com\n[http "https://github.com/"]\n\textraHeader = Authorization: Basic ${authorization}\n`,
-    { mode: 0o600 },
-  );
-  try {
+  await input.withEnvironment(async (env) => {
     progress.probe ??= { probe_id: randomUUID(), path: assignment("probe") };
+    progress.probeRetries ??= 0;
     if (!progress.roles.implement) progress.phase = "probing";
     await persist();
     show(progress.invocation?.path ?? progress.probe.path);
-    const tab = await conversations.open(
-      {
-        cwd: progress.worktree,
-        env: { GIT_CONFIG_GLOBAL: gitConfig },
-        label: `Issue #${progress.ticket} implement`,
-      },
-      profile,
-      progress.roles.implement?.sessionid,
-    );
+    let tab: TabHandle | undefined;
+    const open = async () =>
+      (tab ??= await conversations.open(
+        {
+          cwd: progress.worktree,
+          env,
+          label: `Issue #${progress.ticket} implement`,
+        },
+        profile,
+        progress.roles.implement?.sessionid,
+      ));
     if (!progress.roles.implement) {
-      const probeAssignment = {
+      const tab = await open();
+      let probeAssignment = {
         ...progress.probe,
         run_id: progress.run_id,
         execution_id: progress.execution_id,
@@ -74,13 +73,14 @@ export async function implementIssue(input: {
         ticket: progress.ticket,
         role: "implement",
       };
-      const prompt =
+      const prompt = (error?: string) =>
         `Session Probe\n${JSON.stringify(probeAssignment)}\n\n` +
+        (error ? `Correct the previous Probe: ${error}\n` : "") +
         `Before implementation, determine the actual native conversation sessionid from your native CLI context. Never use a generated ID, tab ID, or latest-session alias. ` +
         `Inspect the repository's AGENTS.md, contribution instructions and PR conventions. Generate complete pr_title and pr_body for ${progress.repository}#${progress.ticket}.\n` +
         `Issue: ${input.ticket.title ?? ""}\n${input.ticket.body ?? ""}\n` +
-        `Write exactly the assignment fields above plus sessionid, pr_title, pr_body as JSON to ${progress.probe.path}.tmp, close it, and atomically rename it to ${progress.probe.path}. Do not implement yet.`;
-      await conversations.submit(tab, prompt, profile.submitKey);
+        `Write exactly the assignment fields above plus sessionid, pr_title, pr_body as JSON to ${probeAssignment.path}.tmp, close it, and atomically rename it to ${probeAssignment.path}. Do not implement yet.`;
+      await conversations.submit(tab, prompt(), profile.submitKey);
       let previous = "";
       for (;;) {
         signal?.throwIfAborted();
@@ -115,9 +115,39 @@ export async function implementIssue(input: {
             progress.pr_body = probe.pr_body;
             accepted = true;
           } catch (error) {
+            const reason =
+              error instanceof Error ? error.message : String(error);
             operator.write(
-              `Invalid Probe: ${error instanceof Error ? error.message : String(error)}. Correct the displayed Probe file in the native conversation.`,
+              `Invalid Probe: ${reason}. Correct the displayed Probe file in the native conversation.`,
             );
+            const retries: number = progress.probeRetries ?? 0;
+            if (retries < loaded.config.operationRetry) {
+              progress.superseded.push(progress.probe.path);
+              progress.probeRetries = retries + 1;
+              progress.probe = {
+                probe_id: randomUUID(),
+                path: assignment("probe"),
+              };
+              probeAssignment = { ...probeAssignment, ...progress.probe };
+              await persist();
+              show(progress.probe.path);
+              await sleep(
+                1000 *
+                  loaded.config.operationRetryDelay[
+                    Math.min(
+                      retries,
+                      loaded.config.operationRetryDelay.length - 1,
+                    )
+                  ]!,
+              );
+              await conversations.submit(
+                tab,
+                prompt(reason),
+                profile.submitKey,
+              );
+              previous = "";
+              continue;
+            }
           }
           if (accepted) {
             await persist();
@@ -137,14 +167,14 @@ export async function implementIssue(input: {
     show(progress.invocation.path);
     if (resuming) {
       if ((await readHandoff(progress.invocation.path)) === undefined)
-        await conversations.submit(tab, "continue", profile.submitKey);
+        await conversations.submit(await open(), "continue", profile.submitKey);
     } else {
       const projectPrompt = await readFile(
         path.join(loaded.directory, "prompts", "implement.md"),
         "utf8",
       );
       await conversations.submit(
-        tab,
+        await open(),
         `Implementation assignment\n${JSON.stringify({ execution_id: progress.execution_id, ...progress.invocation })}\n\n${implementationInstructions}\n\n${projectPrompt}\n\n` +
           `Repository: ${progress.repository}\nIssue #${progress.ticket}: ${input.ticket.title ?? ""}\n${input.ticket.body ?? ""}\n` +
           `Worktree: ${progress.worktree}\nDelivery branch: ${progress.branch}\nBase SHA: ${progress.base}\nTarget Branch: ${progress.target_branch}\n` +
@@ -188,7 +218,7 @@ export async function implementIssue(input: {
                 ]!,
             );
             await conversations.submit(
-              tab,
+              await open(),
               `Correct the implementation handoff: ${reason}\nExplicitly invoke issue-runner-handoff with the sole absolute output-path argument: ${JSON.stringify(progress.invocation.path)}`,
               profile.submitKey,
             );
@@ -203,12 +233,13 @@ export async function implementIssue(input: {
         progress.phase = "implementation_completed";
         await persist();
         signal?.throwIfAborted();
-        await conversations.close(tab);
+        if (tab) {
+          const owned = tab;
+          await input.closeTab(() => conversations.close(owned));
+        }
         return;
       }
       await sleep(250);
     }
-  } finally {
-    await rm(gitConfig, { force: true });
-  }
+  });
 }

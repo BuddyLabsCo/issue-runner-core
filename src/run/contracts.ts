@@ -42,6 +42,10 @@ export interface CodeHost {
 }
 
 export interface GitWorkspace {
+  withAgentEnvironment<T>(
+    directory: string,
+    action: (env: Readonly<Record<string, string>>) => Promise<T>,
+  ): Promise<T>;
   fetchTargetBranch(checkout: string, targetBranch: string): Promise<string>;
   createWorktree(input: {
     checkout: string;

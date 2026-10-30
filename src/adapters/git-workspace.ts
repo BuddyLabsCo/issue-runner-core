@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { mkdir } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { GitWorkspace, CommitEvidence } from "../run/contracts.ts";
 import { formatToolError } from "./process-errors.ts";
@@ -10,6 +11,26 @@ export class LocalGitWorkspace implements GitWorkspace {
 
   constructor(token: string) {
     this.token = token;
+  }
+
+  async withAgentEnvironment<T>(
+    directory: string,
+    action: (env: Readonly<Record<string, string>>) => Promise<T>,
+  ): Promise<T> {
+    const file = path.resolve(directory, `git-config-${randomUUID()}`);
+    const authorization = Buffer.from(`x-access-token:${this.token}`).toString(
+      "base64",
+    );
+    try {
+      await writeFile(
+        file,
+        `[user]\n\tname = Issue Runner\n\temail = issue-runner@users.noreply.github.com\n[http "https://github.com/"]\n\textraHeader = Authorization: Basic ${authorization}\n`,
+        { mode: 0o600 },
+      );
+      return await action({ GIT_CONFIG_GLOBAL: file });
+    } finally {
+      await rm(file, { force: true });
+    }
   }
 
   private command(

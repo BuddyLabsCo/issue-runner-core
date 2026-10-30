@@ -2,11 +2,12 @@
 import { readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { cac } from "cac";
 import { initializeProject, loadProject } from "./config.ts";
 import { AuditLog } from "./audit.ts";
+import { hashRunInput } from "./recovery.ts";
 import { GitHubTracker } from "./adapters/github-tracker.ts";
 import { GitHubCodeHost } from "./adapters/github-code-host.ts";
 import { LocalGitWorkspace } from "./adapters/git-workspace.ts";
@@ -291,10 +292,10 @@ export async function executeRun(
       {
         audit,
         runId,
-        inputHash: createHash("sha256")
-          .update(JSON.stringify(argv))
-          .update(readFileSync(path.join(loaded.directory, "config.yaml")))
-          .digest("hex"),
+        inputHash: hashRunInput(
+          argv,
+          readFileSync(path.join(loaded.directory, "config.yaml")),
+        ),
         clock,
         operator: dependencies.operator,
         git:
