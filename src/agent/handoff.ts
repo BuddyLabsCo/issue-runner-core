@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
 import type { ExecutionResult } from "../recovery.ts";
 
@@ -17,9 +18,11 @@ export async function readHandoff(
   try {
     const info = await lstat(file, { bigint: true });
     if (!info.isFile()) throw new Error("Handoff must be a regular file");
+    const text = await readFile(file, "utf8");
     return {
-      text: await readFile(file, "utf8"),
-      revision: `${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}:${info.ctimeNs}`,
+      text,
+      // Metadata can collide or describe the file before a concurrent replacement.
+      revision: `${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}:${info.ctimeNs}:${createHash("sha256").update(text).digest("hex")}`,
     };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;

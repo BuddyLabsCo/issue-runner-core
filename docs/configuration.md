@@ -128,6 +128,20 @@ using the configured Agent chord without another startup wait. Each correction's
 unique invocation/path, superseded path, and consumed count are saved before its
 delay and prompt. Superseded files cannot satisfy the active assignment.
 
+Core reads only the active assigned final path immediately and every 250 ms
+while the stage is incomplete. It does not depend on filesystem notifications.
+Temporary siblings and other invocation paths cannot satisfy the assignment.
+Unique suffixes keep assignment paths distinct even when timestamps coincide.
+An incomplete final file can be overwritten in place or replaced by atomic
+rename. Change detection includes the contents read, so matching file metadata
+cannot hide changed output; republishing identical output after correcting Git
+state also permits another verification.
+
+The exact read that passes schema and independent verification supplies the
+saved result, even if the file is replaced during verification. Once accepted,
+Core stops observing that path. Later overwrites cause no further stage
+transition or validation, and Core makes no immutable accepted-file copy.
+
 `agentRetry` counts additional automatic corrections after the initial result.
 For example, `agentRetry: 3` with `agentRetryDelay: [2, 5]` allows three
 corrections, after 2, 5, and 5 seconds. This budget is independent of

@@ -161,7 +161,7 @@ export async function implementIssue(input: {
         await sleep(250);
       }
     }
-    const resuming = progress.invocation !== undefined;
+    let resumeIfMissing = progress.invocation !== undefined;
     progress.invocation ??= {
       invocation_id: randomUUID(),
       path: assignment("implement"),
@@ -169,10 +169,7 @@ export async function implementIssue(input: {
     progress.phase = "implementing";
     await persist();
     show(progress.invocation.path);
-    if (resuming) {
-      if ((await readHandoff(progress.invocation.path)) === undefined)
-        await conversations.submit(await open(), "continue", profile.submitKey);
-    } else {
+    if (!resumeIfMissing) {
       const projectPrompt = await readFile(
         path.join(loaded.directory, "prompts", "implement.md"),
         "utf8",
@@ -191,6 +188,9 @@ export async function implementIssue(input: {
     for (;;) {
       signal?.throwIfAborted();
       const observed = await readHandoff(progress.invocation.path);
+      if (resumeIfMissing && observed === undefined)
+        await conversations.submit(await open(), "continue", profile.submitKey);
+      resumeIfMissing = false;
       if (observed !== undefined && observed.revision !== previous) {
         previous = observed.revision;
         let result;
