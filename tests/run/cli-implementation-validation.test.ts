@@ -73,6 +73,8 @@ await test("temporary output and missing final output keep the native conversati
   assert.equal(fixture.state.submissions.length, 3);
   assert.equal(fixture.state.events.includes("close"), false);
   assert.equal((await fixture.snapshot()).phase, "implementing");
+  assert.equal((await fixture.snapshot()).corrections, 0);
+  assert.deepEqual((await fixture.snapshot()).superseded, []);
   assert.ok(await readFile(`${fixture.state.expectedPath}.tmp`, "utf8"));
   await assert.rejects(access(fixture.state.gitConfigs[0]!));
 });

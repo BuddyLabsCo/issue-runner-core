@@ -229,6 +229,9 @@ export async function implementIssue(input: {
             previous = "";
             continue;
           }
+          operator.write(
+            "Automatic correction budget exhausted. Correct the work and manually invoke issue-runner-handoff at the current handoff path; Runner will keep watching it.",
+          );
           show(progress.invocation.path);
           await sleep(250);
           continue;

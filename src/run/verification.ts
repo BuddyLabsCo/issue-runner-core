@@ -9,14 +9,20 @@ export function verifyWorkspace(
 ): void {
   if (
     !path.isAbsolute(actual.worktree) ||
-    path.resolve(actual.worktree) !== path.resolve(expected.worktree) ||
-    actual.branch !== expected.branch ||
-    actual.base !== expected.base ||
-    !actual.clean
+    path.resolve(actual.worktree) !== path.resolve(expected.worktree)
   )
     throw new Error(
-      "Worktree, branch, base, or clean-state verification failed",
+      `Worktree path mismatch: expected ${expected.worktree}, observed ${actual.worktree}`,
     );
+  if (actual.branch !== expected.branch)
+    throw new Error(
+      `Delivery branch mismatch: expected ${expected.branch}, observed ${actual.branch}`,
+    );
+  if (actual.base !== expected.base)
+    throw new Error(
+      `Base SHA mismatch: expected ${expected.base}, observed ${actual.base}`,
+    );
+  if (!actual.clean) throw new Error("Worktree must be clean");
   if (
     actual.commits.length !== result.commits.length ||
     actual.commits.some(
