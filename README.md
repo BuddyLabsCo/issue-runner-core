@@ -12,12 +12,16 @@ results return through file handoffs.
 
 ## Status
 
-The minimal terminal-contract package is available for local development.
-It exports the runtime constant and TypeScript declarations at
+The development package includes the single `issue-runner` executable,
+help/version/init, strict Project and Run-scope validation, global terminal
+plugin loading, and an empty-parent Run that returns `no_work` without closing
+the parent. It exports the runtime constant and TypeScript declarations at
 `issue-runner-core/terminal`. The accepted
 [handoff skill](skills/issue-runner-handoff/SKILL.md) is available for manual
-installation. The workflow has not been migrated, no CLI
-implementation is included, and no npm package has been published.
+installation and is included in the tarball. Delivery, Agent dispatch, and
+durable recovery are downstream slices. Valid standalone scopes and nonempty
+parents currently return `incomplete` without delivery mutations. No npm
+package has been published.
 
 See [terminal contract development](docs/terminal-contract.md) for the public
 API, build/test commands, tarball identity, and independent plugin consumption.
@@ -25,13 +29,16 @@ The accepted [Core specification](https://github.com/BuddyLabsCo/issue-runner-co
 and its linked final decisions supersede the earlier
 [design document](docs/design.md), including its local/npx installation examples.
 
-## Intended usage
+## Development usage
 
-The following is a target experience, not an available installation:
+Install built Core and plugin tarballs globally in the same active npm
+environment. The package names below describe the eventual registry install:
 
 ```sh
 npm install -g issue-runner-core issue-runner-herdr
-issue-runner run --env herdr
+issue-runner init --project my-project
+# Edit my-project/config.yaml and the three prompts, then set its credentials.
+issue-runner run --project my-project --env herdr --parent 42
 ```
 
 Core supplies the executable and shared behavior. The separately installed
@@ -41,6 +48,10 @@ supported environment names or Agent brands. Install both in the same active
 npm global environment/prefix. The initial baseline is Node.js 22.18 or later
 within 22.x and npm 11.x. Project configuration stays in the selected
 Project's `config.yaml`.
+
+See [configuration and startup](docs/configuration.md) for supported options,
+validation, current scope, and test limits. `init` refuses existing destinations,
+requires no credentials, and does not install a plugin or an Agent skill.
 
 ## Install the handoff skill manually
 
