@@ -126,9 +126,9 @@ export async function parentRun(
     controller,
     writes,
     dispatched,
-    run: () =>
+    run: (scope = ["--parent", "48"]) =>
       executeCli(
-        ["run", "--project", "demo", "--env", "fake", "--parent", "48"],
+        ["run", "--project", "demo", "--env", "fake", ...scope],
         dependencies,
       ),
   };

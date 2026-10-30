@@ -27,8 +27,9 @@ The Run reports `incomplete` after that checkpoint, including `no_change`.
 Parent Runs select eligible direct children across all child/blocker pages,
 respect Issue List filtering and Reservation ownership, and execute one
 configured Batch through the same implementation checkpoint. Dispatch is
-currently sequential. Standalone Issue Lists and documentation remain
-unimplemented.
+currently sequential. A value-less `--issue` selects the configured Issue List
+independently of parent discovery, using the same eligibility checks and
+implementation checkpoint. Standalone documentation remains unimplemented.
 No npm package has been published.
 
 See [terminal contract development](docs/terminal-contract.md) for the public
@@ -49,6 +50,8 @@ issue-runner init --project my-project
 issue-runner run --project my-project --env herdr --parent 42
 # For one eligible standalone Issue, run its implementation checkpoint:
 issue-runner run --project my-project --env herdr --issue 123
+# For the standalone Issue List, set issueList in config.yaml, then run:
+issue-runner run --project my-project --env herdr --issue
 ```
 
 Core supplies the executable and shared behavior. The separately installed

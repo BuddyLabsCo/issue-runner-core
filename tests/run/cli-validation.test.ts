@@ -330,7 +330,7 @@ await test("option ordering and configured Target Branch do not change the empty
   assert.match(result.summary.reasons.join(" "), /2, 7/);
 });
 
-await test("accepted later scopes validate configuration and report incomplete without dispatch", async (t) => {
+await test("ineligible Issue scopes and pending documentation validate configuration and report incomplete without dispatch", async (t) => {
   const { root, directory } = await createProject(t, {
     ...validConfig,
     issueList: [9, 2],
