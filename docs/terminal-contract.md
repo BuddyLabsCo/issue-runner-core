@@ -121,6 +121,11 @@ on each handle and may use independent handles concurrently.
 
 Declarations do not replace the loader's runtime checks of the selected
 module, exact contract version, initialized factory result, and three methods.
+Core awaits the selected module's zero-argument factory before workflow startup;
+default-only exports, string versions such as `"1"`, missing/non-callable methods,
+and initialization rejection are startup errors. The error names the selected
+plugin and preserves its installation, import, compatibility, or host-context
+failure. Core neither initializes unrelated plugins nor installs a replacement.
 
 ## Verification limits and global installation
 
