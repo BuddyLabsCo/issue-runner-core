@@ -89,6 +89,61 @@ export class GitHubTracker implements Tracker {
     this.client = new GitHubClient(token, command);
   }
 
+  getTicket(repository: string, ticket: number): Promise<Ticket> {
+    return this.getParent(repository, ticket);
+  }
+
+  async listBlockersPage(repository: string, ticket: number, page: number) {
+    const value = JSON.parse(
+      await this.client.request([
+        "api",
+        "--method",
+        "GET",
+        `repos/${repository}/issues/${ticket}/dependencies/blocked_by`,
+        "-f",
+        "per_page=100",
+        "-f",
+        `page=${page}`,
+      ]),
+    ) as unknown;
+    if (!Array.isArray(value))
+      throw new Error("GitHub returned an invalid blocker page");
+    return {
+      blockers: value.map((blocker) => parseTicket(blocker, true)),
+      nextPage: value.length === 100 ? page + 1 : null,
+    };
+  }
+
+  async addLabel(
+    repository: string,
+    ticket: number,
+    label: string,
+  ): Promise<void> {
+    await this.client.request([
+      "api",
+      "--method",
+      "POST",
+      `repos/${repository}/issues/${ticket}/labels`,
+      "-f",
+      `labels[]=${label}`,
+    ]);
+  }
+
+  async addAssignee(
+    repository: string,
+    ticket: number,
+    account: string,
+  ): Promise<void> {
+    await this.client.request([
+      "api",
+      "--method",
+      "POST",
+      `repos/${repository}/issues/${ticket}/assignees`,
+      "-f",
+      `assignees[]=${account}`,
+    ]);
+  }
+
   async getParent(repository: string, parentTicket: number): Promise<Ticket> {
     return parseTicket(
       JSON.parse(

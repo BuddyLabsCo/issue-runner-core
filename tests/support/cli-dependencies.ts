@@ -14,6 +14,15 @@ export function createCliDependencies(launchDirectory: string) {
     reads,
     pauses,
     tracker: {
+      async getTicket(_repository: string, ticket: number) {
+        return { number: ticket, state: "open" as const, stateReason: null };
+      },
+      async listBlockersPage() {
+        return { blockers: [], nextPage: null };
+      },
+      async addAssignee() {
+        effects.push("assign");
+      },
       async getParent(repository: string, ticket: number) {
         reads.push(`${repository}#${ticket}`);
         return { number: ticket, state: "open" as const, stateReason: null };
@@ -40,6 +49,16 @@ export function createCliDependencies(launchDirectory: string) {
       },
     },
     gitWorkspace: {
+      async inspect() {
+        return {
+          worktree: "",
+          branch: "",
+          base: "",
+          clean: true,
+          changed: false,
+          commits: [],
+        };
+      },
       async fetchTargetBranch() {
         effects.push("fetch");
         return "a".repeat(40);
