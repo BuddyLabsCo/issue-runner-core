@@ -1,0 +1,66 @@
+# Created by issue-runner init. Replace repository, checkout, runnerAccount,
+# and every start/resume command before running. Core and the selected terminal
+# plugin must be installed globally in the same npm environment.
+repository: your-account/your-repository
+# Absolute checkout path; on Windows use e.g. C:\work\your-repository.
+checkout: /absolute/path/to/your-repository
+# Limits Parent selection, or supplies value-less --issue.
+issueList: []
+maxBatchSize: 2
+# Omit targetBranch to use the repository's default branch.
+targetBranch: main
+# Retry counts are additional attempts; positive delays are in seconds.
+# The last delay repeats when the budget exceeds the schedule.
+operationRetry: 4
+agentRetry: 2
+operationRetryDelay: [10, 20, 40, 80]
+agentRetryDelay: [300, 300]
+ticketClosure: runner
+maintenanceTicket:
+  title: Maintain project documentation
+  body: Update the documentation surfaces named by the documentation prompt.
+  label: doc-maintain
+workflow:
+  # Review defaults to enabled. Omit maxReviewRounds for no round cap.
+  review: true
+  # Exact case-sensitive delivery label. Empty/omitted disables automatic maintenance.
+  docMaintainTriggerLabel: ""
+tracker:
+  tokenEnv: GH_TOKEN
+  runnerAccount: your-github-account
+  reservationLabel: sandcastle:reserved
+codeHost:
+  tokenEnv: GH_TOKEN
+  adminMerge: false
+# Complete shell command strings, with shell-appropriate quoting supplied by you.
+# Core does not choose an Agent brand, rebuild argv, or interpret native options.
+# Every resume command must contain the exact {sessionref} placeholder.
+# submitKey is a Runner setting alongside start/resume, outside native options.
+agents:
+  implement:
+    start: my-agent
+    resume: 'my-agent --resume "{sessionref}"'
+    submitKey: Enter
+  review:
+    start: my-review-agent
+    resume: 'my-review-agent --resume "{sessionref}"'
+    submitKey: Enter
+  ciRepair:
+    start: my-agent
+    resume: 'my-agent --resume "{sessionref}"'
+    submitKey: Enter
+  conflictRepair:
+    start: my-agent
+    resume: 'my-agent --resume "{sessionref}"'
+    submitKey: Enter
+  documentation:
+    start: my-agent
+    resume: 'my-agent --resume "{sessionref}"'
+    submitKey: Enter
+# Positive minute thresholds retained for downstream delivery slices.
+# agentIdleMinutes is optional and defaults to 10.
+timeouts:
+  agentMinutes: 120
+  agentIdleMinutes: 10
+  requiredChecksMinutes: 60
+  mergeQueueMinutes: 60

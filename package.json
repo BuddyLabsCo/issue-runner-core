@@ -1,7 +1,7 @@
 {
   "name": "issue-runner-core",
   "version": "0.0.0-contract.1",
-  "description": "Public terminal contract for independent Issue Runner plugin development",
+  "description": "Issue Runner CLI startup and public terminal plugin contract",
   "type": "module",
   "exports": {
     "./terminal": {
@@ -10,10 +10,15 @@
     }
   },
   "files": [
-    "dist/terminal.js",
-    "dist/terminal.d.ts",
-    "docs/terminal-contract.md"
+    "dist",
+    "templates",
+    "skills/issue-runner-handoff",
+    "docs/terminal-contract.md",
+    "docs/configuration.md"
   ],
+  "bin": {
+    "issue-runner": "dist/cli.js"
+  },
   "engines": {
     "node": ">=22.18.0 <23",
     "npm": ">=11 <12"
@@ -26,7 +31,7 @@
     "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}\" --no-error-on-unmatched-pattern",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/*.test.mjs",
+    "test": "node --test --test-concurrency=1 \"tests/*.test.mjs\" \"tests/run/*.test.ts\"",
     "prepack": "npm run build",
     "verify": "npm run check && npm test"
   },
@@ -38,5 +43,9 @@
     "prettier": "3.9.6",
     "typescript": "5.9.3",
     "typescript-eslint": "8.70.0"
+  },
+  "dependencies": {
+    "cac": "7.0.0",
+    "yaml": "2.9.1"
   }
 }

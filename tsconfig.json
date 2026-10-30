@@ -15,6 +15,7 @@
     "noUncheckedIndexedAccess": true,
     "noUncheckedSideEffectImports": true,
     "noEmit": true,
+    "rewriteRelativeImportExtensions": true,
     "newLine": "lf",
     "noEmitOnError": true,
     "paths": {

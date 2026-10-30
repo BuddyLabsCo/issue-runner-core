@@ -1,9 +1,10 @@
 # Terminal contract v1
 
-This contract-only development package provides JavaScript and TypeScript
-declarations at `issue-runner-core/terminal`. It has no Runner executable,
-plugin loader, workflow, or terminal implementation. No package publication or
-real Core/Herdr acceptance is implied.
+This development package provides JavaScript and TypeScript declarations at
+`issue-runner-core/terminal`, plus the CLI startup and empty-parent slice
+described in [configuration and startup](configuration.md). It includes a global
+plugin loader, with no built-in terminal implementation. No package publication
+or real Core/Herdr acceptance is implied.
 
 The public boundary follows the accepted
 [terminal decision](https://github.com/BuddyLabsCo/issue-runner-core/issues/8#issuecomment-6506349277),
@@ -14,7 +15,7 @@ Contract version `1` is independent of the npm version `0.0.0-contract.1`.
 ## Build and identify a development artifact
 
 Use Node.js 22.18 or later within 22.x and npm 11.x. The lockfile pins the
-TypeScript build dependency; this package has no runtime dependencies.
+TypeScript build dependency. The CLI uses the source's `cac` and `yaml` parsers.
 From the Core checkout:
 
 ```sh
@@ -43,7 +44,8 @@ npm install --save-dev ../artifacts/issue-runner-core-0.0.0-contract.1.tgz
 Use the actual tarball's portable relative or absolute path, including quotes
 when it contains spaces. Keep its identity and the plugin lockfile together.
 This development-only installation supports type-only consumption; it does
-not require a Runner or Herdr source checkout.
+not require a Runner or Herdr source checkout. Product execution uses global
+installation as described below.
 
 ```typescript
 import type {
@@ -117,30 +119,32 @@ use finite backend I/O bounds and reject with actionable errors. They do not
 silently replay input or select replacement targets. Core serializes operations
 on each handle and may use independent handles concurrently.
 
-Declarations do not replace the future loader's runtime checks of the selected
+Declarations do not replace the loader's runtime checks of the selected
 module, exact contract version, initialized factory result, and three methods.
 
-## Verification limits and eventual installation
+## Verification limits and global installation
 
 `npm test` packs Core, installs that artifact into a separate temporary consumer
 directory (including a space in its path), imports the runtime entry, checks
 the package's file/export surface, and compiles a type-only plugin consumer
-against the installed declarations. These checks require no Herdr, Agent
-account, or model call.
+against the installed declarations. It also installs the artifact into an
+isolated global prefix and checks the CLI, init assets, selected sibling loading,
+and plugin failures. These checks require no Herdr, Agent account, or model call.
 
-The full product will support Core and its selected plugin installed globally
+Product execution requires Core and its selected plugin installed globally
 in the same active npm environment/prefix, including custom prefixes:
 
 ```sh
 npm install -g issue-runner-core issue-runner-herdr
-issue-runner run --env herdr
+issue-runner run --project my-project --env herdr --parent 42
 ```
 
-These commands describe future product usage. This contract artifact does not
-provide `issue-runner`, configuration parsing, or the manually installed handoff
-skill required by the future workflow. Project-local/npx and mixed-prefix
-product installations are outside the agreed support policy. Project
-configuration will remain `<launch-directory>/<project>/config.yaml`.
+Registry publication is still future work; use built tarballs for development.
+The current artifact provides `issue-runner`, configuration parsing, and the
+manually installed handoff skill. Delivery and native Agent orchestration remain
+downstream slices. Project-local/npx and mixed-prefix product installations are
+outside the agreed support policy. Project configuration remains
+`<launch-directory>/<project>/config.yaml`.
 
 The required full-product CI matrix is Ubuntu and Windows with Node 22.18+
 within 22.x/npm 11.x. Paths and child processes here use portable Node APIs;
