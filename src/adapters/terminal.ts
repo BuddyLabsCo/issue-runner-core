@@ -17,11 +17,17 @@ export class TerminalOperator implements OperatorIO {
       input: process.stdin,
       output: process.stdout,
     });
+    const closed = new Promise<null>((resolve) => {
+      terminal.once("close", () => resolve(null));
+    });
     try {
-      return await terminal.question(
-        `${message}\n> `,
-        this.signal ? { signal: this.signal } : {},
-      );
+      return await Promise.race([
+        terminal.question(
+          `${message}\n> `,
+          this.signal ? { signal: this.signal } : {},
+        ),
+        closed,
+      ]);
     } catch {
       return null;
     } finally {

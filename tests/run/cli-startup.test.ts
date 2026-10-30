@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external contracts retain asynchronous signatures. */
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -7,6 +8,7 @@ import test from "node:test";
 
 import { executeCli } from "../../src/cli.ts";
 import { createCliDependencies } from "../support/cli-dependencies.ts";
+import { createProject, validConfig } from "../support/cli-project.ts";
 
 await test("help and version need no Project, credentials, plugin, or delivery resources", async (t) => {
   const launchDirectory = await mkdtemp(path.join(tmpdir(), "core-startup "));
@@ -97,4 +99,49 @@ await test("init creates a Project without credentials and refuses to overwrite 
       1,
     );
   }
+});
+
+await test("EOF during a real Operator Pause returns and reports a cancelled Run", async (t) => {
+  const { root } = await createProject(t, {
+    ...validConfig,
+    operationRetry: 0,
+  });
+  const child = spawnSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "--eval",
+      `
+      import { executeCli } from ${JSON.stringify(new URL("../../src/cli.ts", import.meta.url).href)};
+      import { TerminalOperator } from ${JSON.stringify(new URL("../../src/adapters/terminal.ts", import.meta.url).href)};
+      import { createCliDependencies } from ${JSON.stringify(new URL("../support/cli-dependencies.ts", import.meta.url).href)};
+      const dependencies = createCliDependencies(${JSON.stringify(root)});
+      dependencies.tracker.getParent = async () => { throw new Error("tracker unavailable"); };
+      const result = await executeCli(
+        ["run", "--project", "demo", "--env", "fake", "--parent", "48"],
+        { ...dependencies, operator: new TerminalOperator() },
+      );
+      console.log("RESULT", result.exitCode, result.summary.outcome);
+    `,
+    ],
+    { input: "", encoding: "utf8", timeout: 10_000 },
+  );
+  assert.ifError(child.error);
+  assert.equal(child.status, 0, child.stderr);
+  assert.match(child.stdout, /Run cancelled: operator cancelled/);
+  assert.match(child.stdout, /RESULT 1 cancelled/);
+});
+
+await test("the application entry can be imported from a stdin script", () => {
+  const child = spawnSync(process.execPath, ["--input-type=module", "-"], {
+    input: `
+      import { executeCli } from ${JSON.stringify(new URL("../../src/cli.ts", import.meta.url).href)};
+      console.log(typeof executeCli);
+    `,
+    encoding: "utf8",
+    timeout: 10_000,
+  });
+  assert.ifError(child.error);
+  assert.equal(child.status, 0, child.stderr);
+  assert.equal(child.stdout.trim(), "function");
 });

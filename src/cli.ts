@@ -344,11 +344,17 @@ export async function executeRun(
   }
 }
 
-const entry = process.argv[1];
-if (
-  entry &&
-  realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url))
-) {
+function isDirectExecution(): boolean {
+  const entry = process.argv[1];
+  if (entry === undefined) return false;
+  try {
+    return realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isDirectExecution()) {
   const controller = new AbortController();
   const cancel = () => controller.abort();
   process.once("SIGINT", cancel);
