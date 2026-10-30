@@ -24,7 +24,11 @@ implementation conversation, and persist its independently verified local
 completion before closing the owned tab. This is an implementation checkpoint:
 Review, publication, integration, and successful Issue delivery remain downstream.
 The Run reports `incomplete` after that checkpoint, including `no_change`.
-Issue Lists, documentation, and nonempty parents remain unimplemented.
+Parent Runs select eligible direct children across all child/blocker pages,
+respect Issue List filtering and Reservation ownership, and execute one
+configured Batch through the same implementation checkpoint. Dispatch is
+currently sequential. Standalone Issue Lists and documentation remain
+unimplemented.
 No npm package has been published.
 
 See [terminal contract development](docs/terminal-contract.md) for the public

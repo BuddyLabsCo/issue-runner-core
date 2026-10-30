@@ -13,18 +13,21 @@ import {
 } from "../agent/handoff.ts";
 import type { Ticket, Tracker } from "./contracts.ts";
 import type { RunContext, RunSummary } from "./run.ts";
+import {
+  hasOpenBlocker,
+  readChildren,
+  type ReadOperation,
+} from "./discovery.ts";
+import { OperatorCancelled } from "./operations.ts";
 
 export async function runStandalone(input: {
   number: number;
+  parentTicket?: number;
   loaded: LoadedProject;
   tracker: Tracker;
   context: RunContext;
   summary: RunSummary;
-  read: <T>(
-    operation: string,
-    target: string,
-    action: () => Promise<T>,
-  ) => Promise<T>;
+  read: ReadOperation;
 }): Promise<RunSummary> {
   const { number, loaded, tracker, context, read, summary } = input;
   const config = loaded.config;
@@ -96,6 +99,29 @@ export async function runStandalone(input: {
     restored = saved as unknown as ImplementationProgress;
   }
   const inspect = async (): Promise<{ ticket: Ticket; reason?: string }> => {
+    if (input.parentTicket !== undefined) {
+      const parent = await read(
+        "read_parent",
+        `parent:${input.parentTicket}`,
+        () => tracker.getParent(repository, input.parentTicket!),
+      );
+      if (parent.state === "closed") {
+        if (parent.stateReason === "not_planned")
+          throw new OperatorCancelled("Parent Ticket is cancelled");
+        throw new Error("Parent Ticket changed to a terminal state");
+      }
+      const children = await readChildren(
+        repository,
+        input.parentTicket,
+        tracker,
+        read,
+      );
+      if (!children.some((child) => child.number === number))
+        return {
+          ticket: { number, state: "open", stateReason: null },
+          reason: "Issue left Parent scope",
+        };
+    }
     const ticket = await read("read_issue", `ticket:${number}`, () =>
       tracker.getTicket(repository, number),
     );
@@ -120,28 +146,8 @@ export async function runStandalone(input: {
       )
     )
       return { ticket, reason: "Issue is externally owned" };
-    const pages = new Set<number>();
-    let page: number | null = 1;
-    while (page !== null) {
-      if (!Number.isSafeInteger(page) || page <= 0 || pages.has(page))
-        throw new Error("invalid blocker pagination");
-      pages.add(page);
-      const currentPage: number = page;
-      const current: Awaited<ReturnType<Tracker["listBlockersPage"]>> =
-        await read("read_blockers", `ticket:${number}:page:${page}`, () =>
-          tracker.listBlockersPage(repository, number, currentPage),
-        );
-      if (
-        current.blockers.some(
-          (blocker) =>
-            blocker.state === "open" ||
-            (blocker.stateReason !== "completed" &&
-              blocker.stateReason !== "not_planned"),
-        )
-      )
-        return { ticket, reason: "Issue is blocked" };
-      page = current.nextPage;
-    }
+    if (await hasOpenBlocker(repository, number, tracker, read))
+      return { ticket, reason: "Issue is blocked" };
     return { ticket };
   };
   let selected = await inspect();
@@ -214,6 +220,8 @@ export async function runStandalone(input: {
   });
   selected = await inspect();
   if (selected.reason) return { ...summary, reasons: [selected.reason] };
+  if (!selected.ticket.labels?.includes(config.tracker.reservationLabel))
+    return { ...summary, reasons: ["Reservation changed before assignment"] };
   await read("add_runner_assignee", `ticket:${number}`, async () => {
     const current = await tracker.getTicket(repository, number);
     if (!current.assignees?.includes(config.tracker.runnerAccount))
