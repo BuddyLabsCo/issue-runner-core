@@ -48,8 +48,16 @@ export async function implementationProgress(
   ) as ImplementationProgress;
 }
 
-export async function implementationRun(t: TestContext, config = validConfig) {
-  const { root, directory } = await createProject(t, config);
+export async function implementationRun(
+  t: TestContext,
+  config: typeof validConfig & {
+    workflow?: { review?: boolean; maxReviewRounds?: number };
+  } = validConfig,
+) {
+  const { root, directory } = await createProject(t, {
+    ...config,
+    workflow: { review: false, ...config.workflow },
+  });
   const deps = createCliDependencies(root);
   const controller = new AbortController();
   const state = {
@@ -126,7 +134,7 @@ export async function implementationRun(t: TestContext, config = validConfig) {
       }
     },
     async closeTab(tab) {
-      assert.equal((await snapshot()).phase, "implementation_completed");
+      assert.match((await snapshot()).phase, /completed$/u);
       state.closedTabs.push(tab);
       state.events.push("close");
       await state.onClose();
@@ -164,9 +172,17 @@ export async function implementationRun(t: TestContext, config = validConfig) {
         state.evidence.branch = input.branch;
         await mkdir(input.worktree, { recursive: true });
       },
-      async inspect() {
+      async inspect(input: { base: string } = { base: state.evidence.base }) {
         state.events.push("verify");
-        return structuredClone(state.evidence);
+        const evidence = structuredClone(state.evidence);
+        const baseIndex = evidence.commits.findIndex(
+          (commit) => commit.sha === input.base,
+        );
+        if (input.base !== evidence.base && baseIndex >= 0) {
+          evidence.base = input.base;
+          evidence.commits = evidence.commits.slice(baseIndex + 1);
+        }
+        return evidence;
       },
     },
     clock: {

@@ -86,7 +86,7 @@ independently of parent discovery. It does not read a parent or expand the list
 with children, blockers, or other unselected Issues. List and parent selection
 share blocker, label, and Reservation eligibility checks, selecting ascending
 Issue numbers up to `maxBatchSize`. Selected Issues run concurrently through
-the standalone implementation checkpoint with its own Worktree, conversation,
+the standalone implementation/Review/fix checkpoint with their own Worktrees, conversations,
 and recovery evidence. A numbered `--issue <number>` selects only that Issue,
 regardless of the configured list. For example:
 
@@ -122,8 +122,8 @@ blockers. Other labels do not change eligibility. A nonempty `issueList`
 restricts selection to matching direct children; it never expands parent scope.
 Core selects ascending Issue numbers up to `maxBatchSize`, reports selected
 numbers and blocked/owned/reserved/missing work, and dispatches that Batch
-concurrently through the same implementation checkpoint as a numbered Issue.
-Review, publication, and further delivery Batches remain
+concurrently through the same implementation/Review/fix checkpoint as a numbered Issue.
+Publication and further delivery Batches remain
 downstream; local completion leaves the parent Run `incomplete`.
 
 `maxBatchSize` also bounds concurrency: a Batch of two can run two Issues at
@@ -209,6 +209,69 @@ exhaustion. A close retry targets the same owned handle without repeating the
 accepted implementation or discarding its persisted completion.
 Verified `no_change` also gets no delivery credit. Neither auto-merge flag
 changes this checkpoint's behavior.
+
+### Independent Review and required fixes
+
+When Review is enabled (the default), only a verified `committed` implementation
+starts it. A separate reviewer starts in a fresh Runner Tab in the original
+Worktree with its own per-call Git configuration. Core waits 10 seconds, Probes
+only the reviewer's native identity, and saves that role reference before the
+Review assignment. Review receives Standards/Spec requirements, the Project
+review prompt, Issue context, Worktree, branch, Review base, implementation HEAD,
+and an assigned absolute findings path outside the Worktree.
+
+Review accepts exactly `outcome`, `summary`, `commits`, and `findings_file`.
+Only `passed` and `findings` are allowed, with a nonempty summary and empty commits.
+`passed` requires null findings. `findings` requires the exact assigned absolute
+path and a regular nonempty report there. Independent Git inspection rejects
+reviewer commits, dirty files, changed branch/base, and rewritten implementation
+history. Review is instructed to write only its report and handoff, without
+implementation edits or remote operations.
+
+After accepted findings, Core saves the Review result and closes its tab before
+opening a fresh tab that resumes the exact original implementation conversation.
+After the 10-second wait, the fix receives the findings report, reviewed HEAD as
+its Base SHA, and a fresh handoff path. It must produce verified new commits and
+a clean Worktree. `no_change` cannot satisfy findings. Core verifies both this
+turn's commits relative to the reviewed HEAD and the complete accumulated history
+relative to the initial base. The original implementation result and each round's
+verified fix commits remain recorded separately; their ordered combination is
+the implementation eligible for publication. Initial Probe PR metadata remains
+fixed throughout.
+
+Later Reviews resume the exact original reviewer in fresh tabs, with a
+10-second wait and fresh invocation/path. The previous reviewed HEAD becomes the
+next Review base; the implementation HEAD includes the latest fixes.
+`workflow.maxReviewRounds` has no default cap. With a cap, every allowed findings
+round still receives its fix before the loop exits. For example:
+
+```yaml
+workflow:
+  review: true
+  maxReviewRounds: 1
+```
+
+This allows implementation -> Review findings -> verified fix -> publication
+eligibility, with no second Review. Validation corrections stay in their current
+stage tab, use fresh handoff paths and the ordinary correction budget, and do not
+spend another Review round or startup wait. Setting `workflow.review: false`
+skips Review and fixes. Initial `no_change` also skips Review.
+
+Snapshots preserve both role references, each round's base/HEAD/findings,
+invocations, pending prompts, budgets, accepted Review/fix results, and phase at
+transitions. Matching in-flight Review/fix recovery processes existing results
+before opening a tab; absent attempted output resumes the saved role and sends
+only `continue`. Original uncommitted fix work is retained. Invalid or missing
+role/round/ownership context fails visibly. Stop leftover native sessions before
+recovery as described below.
+
+Findings are retained during unfinished, failed, and cancelled loops, then removed
+after the complete Review/fix loop, including final-round fixes. Probe/handoff
+files and their temporary/superseded files remain until successful Issue cleanup.
+Per-call Git configuration is removed after every stage. Findings cleanup uses
+ordinary operation handling and can be retried from the completed checkpoint.
+Publication and delivery are still downstream; local eligibility reports
+`incomplete` and does not push, create a PR, or close the Issue.
 
 ### Rejected handoffs and manual correction
 
@@ -340,8 +403,12 @@ operation retries, cancellation, and audit failures. Package tests install built
 artifacts into an isolated custom global prefix and run from a separate Launch
 Directory. Complete implementation Runs exercise the real conversation/handoff
 coordinator over a private fake terminal, real Probe/result/snapshot files, and
-scripted boundary dependencies. Focused real Git Runs verify fresh bases,
-Worktrees, clean state, actual commits, and rejection of empty commits.
+scripted boundary dependencies. Review Runs cover independent role identity,
+Standards/Spec context, exact original-role resume, uncapped and final-round fixes,
+strict findings validation, correction budgets, and retained Review/fix progress.
+Focused real Git Runs verify fresh bases,
+Worktrees, clean state, actual commits, rejection of empty commits, reviewer edits,
+and fixes relative to the reviewed HEAD with cumulative commit evidence.
 Parent Runs cover paginated children/blockers, numeric Batch selection, Issue
 List and label semantics, mixed ownership, retained partial writes, lost-response
 reconciliation, revalidation changes, cancellation, and recorded execution

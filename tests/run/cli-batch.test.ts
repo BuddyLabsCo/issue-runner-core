@@ -55,7 +55,7 @@ for (const selector of ["parent", "issue"] as const) {
         assert.equal(assignment.ticket, number);
         assert.match(
           path.basename(assignment.path),
-          new RegExp(`^${number}-probe-`, "u"),
+          new RegExp(`^${number}-implement-probe-`, "u"),
         );
       }
       if (text.startsWith("Implementation assignment\n")) {

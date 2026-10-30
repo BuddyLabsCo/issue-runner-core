@@ -34,9 +34,13 @@ export async function parentRun(
   children: Ticket[],
   config: Omit<typeof validConfig, "issueList"> & {
     issueList: number[];
+    workflow?: { review?: boolean; maxReviewRounds?: number };
   } = validConfig,
 ) {
-  const { root, directory } = await createProject(t, config);
+  const { root, directory } = await createProject(t, {
+    ...config,
+    workflow: { review: false, ...config.workflow },
+  });
   const deps = createCliDependencies(root);
   const controller = new AbortController();
   const writes: string[] = [];

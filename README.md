@@ -21,16 +21,20 @@ the parent. It exports the runtime constant and TypeScript declarations at
 installation and is included in the tarball. A numbered standalone `--issue`
 can reserve eligible work, create a fresh Target Branch Worktree, start a native
 implementation conversation, and persist its independently verified local
-completion before closing the owned tab. This is an implementation checkpoint:
-Review, publication, integration, and successful Issue delivery remain downstream.
-The Run reports `incomplete` after that checkpoint, including `no_change`.
+completion before closing the owned tab. Enabled Review starts an independent
+reviewer, verifies its report and unchanged Git state, and resumes the original
+implementation conversation for every findings round. Later Reviews resume the
+original reviewer. The final allowed findings round also receives a verified fix.
+Publication, integration, and successful Issue delivery remain downstream.
+The Run reports `incomplete` after the local Review/fix checkpoint, including
+initial `no_change`, which does not start Review.
 Parent Runs select eligible direct children across all child/blocker pages,
 respect Issue List filtering and Reservation ownership, and execute one
-configured Batch concurrently through the same implementation checkpoint, bounded
+configured Batch concurrently through the same implementation/Review/fix checkpoint, bounded
 by `maxBatchSize`. Batch membership is checkpointed before dispatch and retained
 on recovery. A value-less `--issue` selects the configured Issue List
 independently of parent discovery, using the same eligibility checks and
-implementation checkpoint. Standalone documentation remains unimplemented.
+implementation/Review/fix checkpoint. Standalone documentation remains unimplemented.
 No npm package has been published.
 
 See [terminal contract development](docs/terminal-contract.md) for the public
@@ -49,7 +53,7 @@ npm install -g issue-runner-core issue-runner-herdr
 issue-runner init --project my-project
 # Edit my-project/config.yaml and the three prompts, then set its credentials.
 issue-runner run --project my-project --env herdr --parent 42
-# For one eligible standalone Issue, run its implementation checkpoint:
+# For one eligible standalone Issue, run implementation and enabled Review/fixes:
 issue-runner run --project my-project --env herdr --issue 123
 # For the standalone Issue List, set issueList in config.yaml, then run:
 issue-runner run --project my-project --env herdr --issue
@@ -129,7 +133,11 @@ automatic attempts. See [correction behavior](docs/configuration.md#rejected-han
 Recovery Snapshots retain role identity, fixed Probe PR metadata, invocation,
 Worktree/branch/base, consumed correction count, accepted commits, and stage
 completion under the Project's `recovery/`. Matching arguments and configuration
-can continue an assigned implementation using its exact saved native reference.
+can continue assigned implementation, Review, and fixes using each role's exact
+saved native reference. Review round/base/HEAD, assigned findings, per-stage
+correction budgets, and accepted fix commits are retained. Findings stay available
+through the loop and are deleted after the complete Review/fix loop; Probe and
+handoff files remain until successful Issue cleanup.
 A known unsent assignment or correction remains pending when eligibility stops
 dispatch and is submitted when eligibility returns, retaining its path and consumed
 retry count. Missing output from an attempted assignment resumes with only

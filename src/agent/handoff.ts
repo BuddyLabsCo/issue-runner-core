@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
-import type { ExecutionResult } from "../recovery.ts";
+import type { ExecutionResult, ReviewResult } from "../recovery.ts";
+import path from "node:path";
 
 export function object(value: unknown): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value))
@@ -67,5 +68,39 @@ export function parseExecution(text: string): ExecutionResult {
     summary: value.summary,
     commits,
     findings_file: null,
+  };
+}
+
+export function parseReview(text: string, findings: string): ReviewResult {
+  const value = object(JSON.parse(text) as unknown);
+  if (
+    Object.keys(value).sort().join(",") !==
+    "commits,findings_file,outcome,summary"
+  )
+    throw new Error(
+      "Review handoff requires exactly outcome, summary, commits, findings_file",
+    );
+  if (value.outcome !== "passed" && value.outcome !== "findings")
+    throw new Error("Invalid Review outcome");
+  if (
+    !nonempty(value.summary) ||
+    !Array.isArray(value.commits) ||
+    value.commits.length !== 0
+  )
+    throw new Error("Review requires a nonempty summary and no commits");
+  if (value.outcome === "passed") {
+    if (value.findings_file !== null)
+      throw new Error("Passed Review findings_file must be null");
+  } else {
+    if (!path.isAbsolute(findings) || value.findings_file !== findings)
+      throw new Error(
+        "Review findings_file must be the assigned absolute path",
+      );
+  }
+  return {
+    outcome: value.outcome,
+    summary: value.summary,
+    commits: [],
+    findings_file: value.outcome === "findings" ? findings : null,
   };
 }
