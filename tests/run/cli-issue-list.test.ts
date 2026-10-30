@@ -162,6 +162,33 @@ await test("a list of completed and cancelled Issues reports no_work without del
   assert.deepEqual(fixture.dispatched, []);
 });
 
+await test("a matching all-terminal Issue List reports no_work while retaining its recorded Batch", async (t) => {
+  const tickets = [child(51), child(52)];
+  const fixture = await issueListRun(t, tickets);
+  assert.equal((await fixture.run()).summary.outcome, "incomplete");
+  const recovery = path.join(fixture.directory, "recovery");
+  const files = await readdir(recovery);
+  const before = await Promise.all(
+    files.map((file) => readFile(path.join(recovery, file), "utf8")),
+  );
+  tickets[0]!.state = "closed";
+  tickets[0]!.stateReason = "completed";
+  tickets[1]!.state = "closed";
+  tickets[1]!.stateReason = "not_planned";
+
+  const result = await fixture.run();
+
+  assert.equal(result.summary.outcome, "no_work");
+  assert.equal(result.exitCode, 0);
+  assert.deepEqual([...fixture.dispatched].sort(), [51, 52]);
+  assert.deepEqual(
+    await Promise.all(
+      files.map((file) => readFile(path.join(recovery, file), "utf8")),
+    ),
+    before,
+  );
+});
+
 await test("unready open list Issues report incomplete rather than no_work", async (t) => {
   const fixture = await issueListRun(t, [child(51, { labels: [] })]);
   const result = await fixture.run();

@@ -7,20 +7,11 @@ import type { CreateTabOptions } from "../../src/terminal.ts";
 import { validConfig } from "../support/cli-project.ts";
 import {
   committed,
+  deferred,
   publish,
   implementationProgress as progress,
 } from "../support/implementation-run.ts";
 import { child, parentRun } from "../support/parent-run.ts";
-
-function gate() {
-  let resolve!: () => void;
-  let reject!: (error: Error) => void;
-  const promise = new Promise<void>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
 
 for (const selector of ["parent", "issue"] as const) {
   await test(`${selector} executes a bounded Batch concurrently with isolated Issue contexts and reversed completion`, async (t) => {
@@ -29,9 +20,11 @@ for (const selector of ["parent", "issue"] as const) {
       issueList: selector === "issue" ? [53, 52, 51] : [],
       maxBatchSize: 2,
     });
-    const gates = new Map([51, 52].map((number) => [number, gate()]));
-    const arrived = new Map([51, 52].map((number) => [number, gate()]));
-    const closedSecond = gate();
+    const gates = new Map([51, 52].map((number) => [number, deferred<void>()]));
+    const arrived = new Map(
+      [51, 52].map((number) => [number, deferred<void>()]),
+    );
+    const closedSecond = deferred<void>();
     const closed: number[] = [];
     const tabs = new Map<
       object,
@@ -291,8 +284,8 @@ await test("invalid Batch ownership or membership fails closed before dispatch",
 
 await test("a failed Issue cancels a sibling's delayed startup and waits for its resources to be retained", async (t) => {
   const fixture = await parentRun(t, [child(51), child(52)]);
-  const siblingStarted = gate();
-  const releaseSibling = gate();
+  const siblingStarted = deferred<void>();
+  const releaseSibling = deferred<void>();
   let starts = 0;
   fixture.dependencies.clock.sleep = async (ms) => {
     assert.equal(ms, 10_000);

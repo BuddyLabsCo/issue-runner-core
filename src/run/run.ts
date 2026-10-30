@@ -52,10 +52,36 @@ export async function runProject(
   const signal = context.signal
     ? AbortSignal.any([context.signal, controller.signal])
     : controller.signal;
+  const operator = serializeOperator(context.operator, controller, signal);
+  const dispatch = <T>(action: () => Promise<T>) =>
+    operator.advance(async () => {
+      try {
+        return await action();
+      } catch (error) {
+        controller.abort(error);
+        throw error;
+      }
+    });
+  const { git, terminal } = context;
   context = {
     ...context,
     signal,
-    operator: serializeOperator(context.operator, controller, signal),
+    operator,
+    git: {
+      fetchTargetBranch: (checkout, branch) =>
+        git.fetchTargetBranch(checkout, branch),
+      inspect: (input) => git.inspect(input),
+      createWorktree: (input) =>
+        operator.advance(() => git.createWorktree(input)),
+      withAgentEnvironment: (directory, action) =>
+        operator.advance(() => git.withAgentEnvironment(directory, action)),
+    },
+    terminal: {
+      createTab: (options) => dispatch(() => terminal.createTab(options)),
+      submitText: (tab, text, chord) =>
+        dispatch(() => terminal.submitText(tab, text, chord)),
+      closeTab: (tab) => operator.advance(() => terminal.closeTab(tab)),
+    },
   };
   const read = <T>(
     operation: string,
@@ -64,7 +90,7 @@ export async function runProject(
   ) =>
     externalRead({
       ...context,
-      action,
+      action: () => operator.advance(action),
       retryPolicy: loaded.config,
       event: (attempt) => ({
         timestamp: context.clock.now().toISOString(),
@@ -197,10 +223,9 @@ export async function runProject(
   return {
     ...summary,
     outcome:
-      selection.batch.length === 0 &&
-      (tickets.length === 0 ||
-        (options.selector === "issue" &&
-          tickets.every((ticket) => ticket.state === "closed")))
+      (selection.batch.length === 0 && tickets.length === 0) ||
+      (options.selector === "issue" &&
+        tickets.every((ticket) => ticket.state === "closed"))
         ? "no_work"
         : "incomplete",
     reasons: [

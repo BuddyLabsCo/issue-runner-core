@@ -146,9 +146,11 @@ fails recovery before dispatch. Changed arguments or configuration select a new
 Batch without adopting previous Reservations.
 
 Non-Agent Operator Pauses are serialized so concurrent failures cannot read the
-same terminal input together. Cancellation or a fatal Issue error stops sibling
-dispatch and automatic follow-ups; unfinished work and checkpoints remain
-available for recovery.
+same terminal input together. Pending pauses gate new workflow operations and
+Agent tab operations until the operator retries; already-running native
+conversations remain interactive. Cancellation or a fatal Issue error interrupts
+active operator input and stops sibling dispatch and automatic follow-ups;
+unfinished work and checkpoints remain available for recovery.
 
 Reservations remain best effort: the configured label is added before the
 runner assignee, with full eligibility and ownership revalidation inside every
