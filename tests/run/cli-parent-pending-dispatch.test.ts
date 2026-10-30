@@ -1,21 +1,15 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import assert from "node:assert/strict";
-import { readFile, readdir, writeFile } from "node:fs/promises";
+import { readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import type { ImplementationProgress } from "../../src/recovery.ts";
 import { child, parentRun } from "../support/parent-run.ts";
 import { validConfig } from "../support/cli-project.ts";
-import { committed, publish } from "../support/implementation-run.ts";
-
-async function snapshot(directory: string): Promise<ImplementationProgress> {
-  const recovery = path.join(directory, "recovery");
-  const files = await readdir(recovery);
-  assert.equal(files.length, 1);
-  return JSON.parse(
-    await readFile(path.join(recovery, files[0]!), "utf8"),
-  ) as ImplementationProgress;
-}
+import {
+  committed,
+  publish,
+  implementationProgress,
+} from "../support/implementation-run.ts";
 
 await test("a withheld initial assignment is submitted in its original conversation when eligibility returns", async (t) => {
   const ticket = child(51);
@@ -36,7 +30,7 @@ await test("a withheld initial assignment is submitted in its original conversat
   };
   assert.equal((await fixture.run()).summary.outcome, "incomplete");
   assert.deepEqual(fixture.dispatched, []);
-  const before = await snapshot(fixture.directory);
+  const before = await implementationProgress(fixture.directory, 51);
   assert.match(before.pendingPrompt!, /^Implementation assignment\n/u);
   const resumedAt = submitted.length;
   ticket.labels!.push("ready-for-agent");
@@ -50,7 +44,7 @@ await test("a withheld initial assignment is submitted in its original conversat
   assert.ok(resumed[1]!.includes(JSON.stringify(before.invocation!.path)));
   assert.deepEqual(fixture.dispatched, [51]);
   assert.deepEqual(fixture.writes, ["label:51", "assignee:51"]);
-  const after = await snapshot(fixture.directory);
+  const after = await implementationProgress(fixture.directory, 51);
   assert.equal(after.phase, "implementation_completed");
   assert.equal(after.execution_id, before.execution_id);
   assert.equal(after.run_id, before.run_id);
@@ -95,7 +89,7 @@ await test("a withheld correction retains its prompt, path and spent budget unti
     if (ms === 2000) ticket.labels = ["sandcastle:reserved"];
   };
   assert.equal((await fixture.run()).summary.outcome, "incomplete");
-  const before = await snapshot(fixture.directory);
+  const before = await implementationProgress(fixture.directory, 51);
   assert.equal(before.corrections, 1);
   assert.equal(before.superseded.length, 1);
   assert.match(before.pendingPrompt!, /^Correct the implementation handoff:/u);
@@ -109,7 +103,7 @@ await test("a withheld correction retains its prompt, path and spent budget unti
   assert.equal(resumed[1], before.pendingPrompt);
   assert.ok(resumed[1]!.includes(JSON.stringify(before.invocation!.path)));
   assert.deepEqual(fixture.dispatched, [51]);
-  const after = await snapshot(fixture.directory);
+  const after = await implementationProgress(fixture.directory, 51);
   assert.equal(after.phase, "implementation_completed");
   assert.equal(after.execution_id, before.execution_id);
   assert.equal(after.run_id, before.run_id);
@@ -142,14 +136,14 @@ await test("cancellation inside the dispatch gate retains the known unsent assig
     return { number: 48, state: "open", stateReason: null };
   };
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  const before = await snapshot(fixture.directory);
+  const before = await implementationProgress(fixture.directory, 51);
   assert.match(before.pendingPrompt!, /^Implementation assignment\n/u);
   assert.deepEqual(fixture.dispatched, []);
   fixture.dependencies.signal = new AbortController().signal;
   assert.equal((await fixture.run()).summary.outcome, "incomplete");
   assert.deepEqual(fixture.dispatched, [51]);
   assert.deepEqual(
-    (await snapshot(fixture.directory)).invocation,
+    (await implementationProgress(fixture.directory, 51)).invocation,
     before.invocation,
   );
 });
@@ -166,7 +160,7 @@ await test("valid output at a pending assignment completes without reopening its
       ticket.labels = ["sandcastle:reserved"];
   };
   assert.equal((await fixture.run()).summary.outcome, "incomplete");
-  const before = await snapshot(fixture.directory);
+  const before = await implementationProgress(fixture.directory, 51);
   await publish(before.invocation!.path, {
     outcome: "no_change",
     summary: "No changes needed.",
@@ -178,7 +172,7 @@ await test("valid output at a pending assignment completes without reopening its
     assert.fail("valid retained output does not need another prompt");
   };
   assert.equal((await fixture.run()).summary.outcome, "incomplete");
-  const after = await snapshot(fixture.directory);
+  const after = await implementationProgress(fixture.directory, 51);
   assert.equal(after.phase, "implementation_completed");
   assert.equal(after.pendingPrompt, undefined);
   assert.deepEqual(after.invocation, before.invocation);
@@ -195,13 +189,13 @@ await test("a transport attempt is not replayed as a known unsent assignment aft
     submitted.push(text);
     if (text.startsWith("Implementation assignment\n")) {
       assert.equal(
-        (await snapshot(fixture.directory)).pendingPrompt,
+        (await implementationProgress(fixture.directory, 51)).pendingPrompt,
         undefined,
       );
       throw new Error("transport acknowledgement lost");
     }
     if (text === "continue") {
-      const current = await snapshot(fixture.directory);
+      const current = await implementationProgress(fixture.directory, 51);
       await publish(current.invocation!.path, {
         outcome: "no_change",
         summary: "No changes needed.",
@@ -213,7 +207,7 @@ await test("a transport attempt is not replayed as a known unsent assignment aft
     await submitText(tab, text);
   };
   assert.equal((await fixture.run()).summary.outcome, "failed");
-  const before = await snapshot(fixture.directory);
+  const before = await implementationProgress(fixture.directory, 51);
   assert.equal(before.pendingPrompt, undefined);
   const resumedAt = submitted.length;
   assert.equal((await fixture.run()).summary.outcome, "incomplete");
@@ -222,7 +216,7 @@ await test("a transport attempt is not replayed as a known unsent assignment aft
     "continue",
   ]);
   assert.deepEqual(
-    (await snapshot(fixture.directory)).invocation,
+    (await implementationProgress(fixture.directory, 51)).invocation,
     before.invocation,
   );
 });
@@ -239,9 +233,11 @@ await test("malformed pending prompt evidence fails recovery before another Agen
       ticket.labels = ["sandcastle:reserved"];
   };
   await fixture.run();
-  const before = await snapshot(fixture.directory);
+  const before = await implementationProgress(fixture.directory, 51);
   const recovery = path.join(fixture.directory, "recovery");
-  const [file] = await readdir(recovery);
+  const [file] = (await readdir(recovery)).filter((file) =>
+    file.endsWith("-51.json"),
+  );
   await writeFile(
     path.join(recovery, file!),
     JSON.stringify({ ...before, pendingPrompt: 17 }),

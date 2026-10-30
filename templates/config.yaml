@@ -6,6 +6,7 @@ repository: your-account/your-repository
 checkout: /absolute/path/to/your-repository
 # Limits Parent selection, or supplies value-less --issue.
 issueList: []
+# Maximum selected Issues and concurrent executions in one Batch.
 maxBatchSize: 2
 # Omit targetBranch to use the repository's default branch.
 targetBranch: main

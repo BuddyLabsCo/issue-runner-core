@@ -1,13 +1,15 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 import { LocalGitWorkspace } from "../../src/adapters/git-workspace.ts";
 import { executeCli } from "../../src/cli.ts";
+import type { CreateTabOptions } from "../../src/terminal.ts";
+import { child, parentRun } from "../support/parent-run.ts";
 import {
   implementationCommand,
   implementationRun,
@@ -102,3 +104,131 @@ for (const scenario of ["changed", "empty"] as const) {
     assert.equal(await git(checkout, "rev-parse", "HEAD"), base);
   });
 }
+
+await test("a concurrent Batch uses a fresh fetched base and isolated real Git Worktrees and configurations", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "core-batch-git "));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const origin = path.join(root, "origin");
+  const checkout = path.join(root, "checkout");
+  await mkdir(origin);
+  await git(origin, "init", "--initial-branch=main");
+  await writeFile(path.join(origin, "README.md"), "initial\n");
+  await git(origin, "add", ".");
+  await git(origin, "commit", "-m", "Initial base");
+  const initial = await git(origin, "rev-parse", "HEAD");
+  await git(root, "clone", origin, checkout);
+  await writeFile(path.join(origin, "README.md"), "fresh target\n");
+  await git(origin, "commit", "-am", "Advance Target Branch");
+  const fresh = await git(origin, "rev-parse", "HEAD");
+  const fixture = await parentRun(t, [child(51), child(52)], {
+    ...validConfig,
+    checkout,
+    maxBatchSize: 2,
+  });
+  fixture.dependencies.codeHost.resolveTargetBranch = async () => "main";
+  const tabs = new Map<object, CreateTabOptions>();
+  const closed = new Set<object>();
+  const configs: string[] = [];
+  const inheritedConfig = process.env.GIT_CONFIG_GLOBAL;
+  let release!: () => void;
+  const bothTasks = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let tasks = 0;
+  const result = await executeCli(
+    ["run", "--project", "demo", "--env", "fake", "--parent", "48"],
+    {
+      ...fixture.dependencies,
+      gitWorkspace: new LocalGitWorkspace("unused-local-test-token"),
+      terminalPlugin: {
+        async createTab(options) {
+          const tab = {};
+          tabs.set(tab, options);
+          configs.push(options.env.GIT_CONFIG_GLOBAL!);
+          const { stdout } = await execute(
+            "git",
+            ["config", "--global", "--get", "user.name"],
+            {
+              cwd: options.cwd,
+              env: { ...process.env, ...options.env },
+              encoding: "utf8",
+            },
+          );
+          assert.equal(stdout.trim(), "Issue Runner");
+          return tab;
+        },
+        async submitText(tab, text) {
+          const options = tabs.get(tab)!;
+          const number = Number(/ticket-(\d+)$/u.exec(options.cwd)![1]);
+          if (text.startsWith("Session Probe\n")) {
+            const assignment = JSON.parse(text.split("\n")[1]!) as {
+              path: string;
+              ticket: number;
+            };
+            assert.equal(assignment.ticket, number);
+            await publish(assignment.path, {
+              ...assignment,
+              sessionid: `native-${number}`,
+              pr_title: `feat: [issue-${number}] implement`,
+              pr_body: `Implement.\n\nCloses #${number}`,
+            });
+          } else if (text.startsWith("Implementation assignment\n")) {
+            const assignment = JSON.parse(text.split("\n")[1]!) as {
+              path: string;
+            };
+            assert.ok(text.includes(`Base SHA: ${fresh}`));
+            assert.equal(await git(options.cwd, "rev-parse", "HEAD"), fresh);
+            if (++tasks === 2) release();
+            await bothTasks;
+            await writeFile(
+              path.join(options.cwd, `issue-${number}.txt`),
+              `Issue #${number}\n`,
+            );
+            await git(options.cwd, "add", ".");
+            const message = `feat: implement Issue #${number}`;
+            await git(options.cwd, "commit", "-m", message);
+            await publish(assignment.path, {
+              outcome: "committed",
+              summary: `Implemented #${number}`,
+              commits: [
+                { sha: await git(options.cwd, "rev-parse", "HEAD"), message },
+              ],
+              findings_file: null,
+            });
+          }
+        },
+        async closeTab(tab) {
+          assert.equal(tabs.has(tab), true);
+          assert.equal(closed.has(tab), false);
+          closed.add(tab);
+        },
+      },
+    },
+  );
+  assert.equal(
+    result.summary.outcome,
+    "incomplete",
+    JSON.stringify(result.summary),
+  );
+  assert.equal(tasks, 2);
+  assert.equal(closed.size, 2);
+  assert.equal(new Set(configs).size, 2);
+  assert.equal(process.env.GIT_CONFIG_GLOBAL, inheritedConfig);
+  for (const file of configs)
+    await assert.rejects(readFile(file), { code: "ENOENT" });
+  for (const { cwd } of tabs.values()) {
+    const own = Number(/ticket-(\d+)$/u.exec(cwd)![1]);
+    const other = own === 51 ? 52 : 51;
+    assert.equal(
+      await readFile(path.join(cwd, `issue-${own}.txt`), "utf8"),
+      `Issue #${own}\n`,
+    );
+    await assert.rejects(readFile(path.join(cwd, `issue-${other}.txt`)), {
+      code: "ENOENT",
+    });
+    assert.equal(await git(cwd, "status", "--porcelain"), "");
+    assert.equal(await git(cwd, "merge-base", fresh, "HEAD"), fresh);
+  }
+  assert.equal(await git(checkout, "branch", "--show-current"), "main");
+  assert.equal(await git(checkout, "rev-parse", "HEAD"), initial);
+});

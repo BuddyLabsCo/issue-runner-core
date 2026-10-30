@@ -85,7 +85,7 @@ A value-less `--issue` reads exactly the configured nonempty `issueList`,
 independently of parent discovery. It does not read a parent or expand the list
 with children, blockers, or other unselected Issues. List and parent selection
 share blocker, label, and Reservation eligibility checks, selecting ascending
-Issue numbers up to `maxBatchSize`. Each selected Issue runs sequentially through
+Issue numbers up to `maxBatchSize`. Selected Issues run concurrently through
 the standalone implementation checkpoint with its own Worktree, conversation,
 and recovery evidence. A numbered `--issue <number>` selects only that Issue,
 regardless of the configured list. For example:
@@ -122,9 +122,33 @@ blockers. Other labels do not change eligibility. A nonempty `issueList`
 restricts selection to matching direct children; it never expands parent scope.
 Core selects ascending Issue numbers up to `maxBatchSize`, reports selected
 numbers and blocked/owned/reserved/missing work, and dispatches that Batch
-sequentially through the same implementation checkpoint as a numbered Issue.
-Review, concurrent execution, publication, and further delivery Batches remain
+concurrently through the same implementation checkpoint as a numbered Issue.
+Review, publication, and further delivery Batches remain
 downstream; local completion leaves the parent Run `incomplete`.
+
+`maxBatchSize` also bounds concurrency: a Batch of two can run two Issues at
+once, and completion order may differ from ascending selection order. No
+replacement work starts when one Issue finishes. Core fetches the Target Branch
+once for the Batch's fresh Worktrees and uses that exact SHA for each initial
+branch. Each Issue keeps its own Worktree, branch, native identity, Probe and
+handoff paths, temporary Git configuration, and implementation checkpoint.
+Closing one Issue's tab or removing its temporary Git configuration does not
+close or alter another Issue's resources.
+
+Before Reservation writes, Core saves Batch membership and ownership at
+`recovery/<input-hash>-batch.json`. Per-Issue progress remains at
+`recovery/<input-hash>-<issue-number>.json`. Matching reruns retain the recorded
+Batch, including members that are now ineligible or have left parent scope;
+Core revalidates each member and reports why it cannot continue rather than
+filling its slot from newly eligible work. Cancellation before the first Issue
+checkpoint still retains this membership. Invalid Batch ownership or membership
+fails recovery before dispatch. Changed arguments or configuration select a new
+Batch without adopting previous Reservations.
+
+Non-Agent Operator Pauses are serialized so concurrent failures cannot read the
+same terminal input together. Cancellation or a fatal Issue error stops sibling
+dispatch and automatic follow-ups; unfinished work and checkpoints remain
+available for recovery.
 
 Reservations remain best effort: the configured label is added before the
 runner assignee, with full eligibility and ownership revalidation inside every
@@ -269,7 +293,8 @@ Unknown or obsolete fields are rejected at every Runner-owned object.
 - `tracker.tokenEnv` and `codeHost.tokenEnv` name nonempty inherited credential
   values. Credentials are not written into audit records. `runnerAccount` and
   `reservationLabel` are required. `codeHost.adminMerge` is a required boolean.
-- `maxBatchSize` is a positive safe integer. `targetBranch`, when supplied, is
+- `maxBatchSize` is a positive safe integer that bounds both Batch membership
+  and concurrent Issue execution. `targetBranch`, when supplied, is
   nonempty; omission selects the repository default.
 - Each Agent purpose has complete nonempty `start` and `resume` shell-command
   strings. `resume` must contain exactly spelled `{sessionref}` at least once.
@@ -322,6 +347,10 @@ continuation through the real Core coordinator and a private fake terminal.
 Standalone Issue List Runs cover exact scope, ordering, eligibility, terminal
 and incomplete outcomes, startup rejection, numbered-Issue precedence,
 cancellation, and matching versus changed-input recovery at the same boundary.
+Both selectors cover bounded concurrency with explicitly reversed completion,
+isolated contexts and targeted closes, retained Batch membership, and sibling
+cancellation. Real Git checks run concurrent Issues from a freshly advanced
+Target Branch with separate per-call Git configurations.
 No public testing entry, filesystem port, or scheduler is added.
 
 Installed-package cases also relocate the global prefix and invoke Core through

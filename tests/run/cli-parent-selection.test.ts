@@ -17,13 +17,14 @@ await test("parent dispatches the lowest eligible direct children up to the conf
     },
   );
   const result = await fixture.run();
-  assert.deepEqual(fixture.dispatched, [51, 52]);
-  assert.deepEqual(fixture.writes, [
-    "label:51",
-    "assignee:51",
-    "label:52",
-    "assignee:52",
-  ]);
+  assert.deepEqual(
+    [...fixture.dispatched].sort((a, b) => a - b),
+    [51, 52],
+  );
+  assert.deepEqual(
+    [...fixture.writes].sort(),
+    ["label:51", "assignee:51", "label:52", "assignee:52"].sort(),
+  );
   assert.equal(result.summary.outcome, "incomplete");
   assert.match(
     result.summary.reasons.join(" "),
@@ -110,13 +111,14 @@ await test("parent reads every child and blocker page before selecting across la
     return discoveryBlockers(...args);
   };
   const result = await fixture.run();
-  assert.deepEqual(fixture.dispatched, [57, 60]);
-  assert.deepEqual(fixture.writes, [
-    "label:57",
-    "assignee:57",
-    "label:60",
-    "assignee:60",
-  ]);
+  assert.deepEqual(
+    [...fixture.dispatched].sort((a, b) => a - b),
+    [57, 60],
+  );
+  assert.deepEqual(
+    [...fixture.writes].sort(),
+    ["label:57", "assignee:57", "label:60", "assignee:60"].sort(),
+  );
   assert.deepEqual(childPages.slice(0, 3), [1, 2, 3]);
   assert.deepEqual(blockerPages.slice(0, 13), [
     "51:1",
@@ -213,16 +215,14 @@ await test("matching parent progress continues only recorded Reservations among 
     /selected Delivery Tickets: 55, 56/u,
   );
   assert.deepEqual(
-    fixture.dispatched,
+    [...fixture.dispatched].sort((a, b) => a - b),
     [55, 56],
     "completed implementations are never redispatched",
   );
-  assert.deepEqual(fixture.writes, [
-    "label:55",
-    "assignee:55",
-    "label:56",
-    "assignee:56",
-  ]);
+  assert.deepEqual(
+    [...fixture.writes].sort(),
+    ["label:55", "assignee:55", "label:56", "assignee:56"].sort(),
+  );
   const retained = await Promise.all(
     checkpoints.map((file) =>
       readFile(path.join(fixture.directory, "recovery", file), "utf8"),
@@ -403,7 +403,9 @@ await test("a parent consumes retained handoff evidence for its recorded executi
       fixture.controller.abort();
   };
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  const [checkpoint] = await readdir(path.join(fixture.directory, "recovery"));
+  const [checkpoint] = (
+    await readdir(path.join(fixture.directory, "recovery"))
+  ).filter((file) => file.endsWith("-51.json"));
   const file = path.join(fixture.directory, "recovery", checkpoint!);
   const before = JSON.parse(await readFile(file, "utf8")) as Record<
     string,
@@ -425,7 +427,10 @@ await test("a parent consumes retained handoff evidence for its recorded executi
 });
 
 await test("cancellation after one child completes prevents subsequent Batch dispatch", async (t) => {
-  const fixture = await parentRun(t, [child(51), child(52)]);
+  const fixture = await parentRun(t, [child(51), child(52)], {
+    ...validConfig,
+    maxBatchSize: 1,
+  });
   fixture.dependencies.terminalPlugin.closeTab = async () => {
     fixture.controller.abort();
   };

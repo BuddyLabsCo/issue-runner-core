@@ -24,6 +24,20 @@ export const implementationCommit = {
   message: "feat: implement the Issue",
 };
 
+export async function implementationProgress(
+  directory: string,
+  ticket: number,
+): Promise<ImplementationProgress> {
+  const recovery = path.join(directory, "recovery");
+  const files = (await readdir(recovery)).filter((file) =>
+    file.endsWith(`-${ticket}.json`),
+  );
+  assert.equal(files.length, 1);
+  return JSON.parse(
+    await readFile(path.join(recovery, files[0]!), "utf8"),
+  ) as ImplementationProgress;
+}
+
 export async function implementationRun(t: TestContext, config = validConfig) {
   const { root, directory } = await createProject(t, config);
   const deps = createCliDependencies(root);
@@ -76,15 +90,7 @@ export async function implementationRun(t: TestContext, config = validConfig) {
       /* Controlled by the scenario. */
     },
   };
-  const snapshot = async (): Promise<ImplementationProgress> => {
-    const files = (await readdir(path.join(directory, "recovery"))).filter(
-      (file) => file.endsWith(".json"),
-    );
-    assert.equal(files.length, 1);
-    return JSON.parse(
-      await readFile(path.join(directory, "recovery", files[0]!), "utf8"),
-    ) as ImplementationProgress;
-  };
+  const snapshot = () => implementationProgress(directory, 50);
   const terminal: TerminalPlugin = {
     async createTab(options) {
       state.events.push("open");

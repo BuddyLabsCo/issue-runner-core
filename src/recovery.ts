@@ -57,9 +57,17 @@ export interface ImplementationProgress {
   superseded: string[];
 }
 
+export interface BatchProgress {
+  run_id: string;
+  input_hash: string;
+  repository: string;
+  target_branch: string;
+  tickets: number[];
+}
+
 export async function saveProgress(
   file: string,
-  progress: ImplementationProgress,
+  progress: ImplementationProgress | BatchProgress,
 ): Promise<void> {
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(`${file}.tmp`, `${JSON.stringify(progress, null, 2)}\n`);

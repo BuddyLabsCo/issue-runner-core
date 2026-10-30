@@ -26,8 +26,9 @@ Review, publication, integration, and successful Issue delivery remain downstrea
 The Run reports `incomplete` after that checkpoint, including `no_change`.
 Parent Runs select eligible direct children across all child/blocker pages,
 respect Issue List filtering and Reservation ownership, and execute one
-configured Batch through the same implementation checkpoint. Dispatch is
-currently sequential. A value-less `--issue` selects the configured Issue List
+configured Batch concurrently through the same implementation checkpoint, bounded
+by `maxBatchSize`. Batch membership is checkpointed before dispatch and retained
+on recovery. A value-less `--issue` selects the configured Issue List
 independently of parent discovery, using the same eligibility checks and
 implementation checkpoint. Standalone documentation remains unimplemented.
 No npm package has been published.

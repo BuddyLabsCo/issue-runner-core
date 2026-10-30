@@ -9,7 +9,7 @@ import type {
 } from "./contracts.ts";
 import type { TerminalPlugin } from "../terminal.ts";
 import type { AuditLog } from "../audit.ts";
-import { externalRead } from "./operations.ts";
+import { externalRead, serializeOperator } from "./operations.ts";
 import { runStandalone } from "./standalone.ts";
 import { readChildren, selectIssueBatch } from "./discovery.ts";
 
@@ -48,6 +48,15 @@ export async function runProject(
   codeHost: CodeHost,
   context: RunContext,
 ): Promise<RunSummary> {
+  const controller = new AbortController();
+  const signal = context.signal
+    ? AbortSignal.any([context.signal, controller.signal])
+    : controller.signal;
+  context = {
+    ...context,
+    signal,
+    operator: serializeOperator(context.operator, controller, signal),
+  };
   const read = <T>(
     operation: string,
     target: string,
@@ -82,6 +91,11 @@ export async function runProject(
     targetBranch,
     reasons: [],
   };
+  let base: Promise<string> | undefined;
+  const fetchBase = () =>
+    (base ??= read("fetch_target_branch", targetBranch, () =>
+      context.git.fetchTargetBranch(loaded.config.checkout, targetBranch),
+    ));
   if (options.selector === "issue" && options.issueTicket !== undefined)
     return runStandalone({
       number: options.issueTicket,
@@ -90,6 +104,7 @@ export async function runProject(
       context,
       summary,
       read,
+      fetchBase,
     });
   if (options.selector === "document") {
     return {
@@ -138,56 +153,61 @@ export async function runProject(
       return { ...summary, outcome: "succeeded" };
     }
   }
-  if (tickets.length > 0) {
-    const selection = await selectIssueBatch({
-      tickets,
-      loaded,
-      tracker,
-      context,
-      read,
-    });
-    const reasons = [...selection.reasons];
-    for (const child of selection.batch) {
-      context.signal?.throwIfAborted();
-      const result = await runStandalone({
-        number: child.number,
+  const selection = await selectIssueBatch({
+    tickets,
+    loaded,
+    tracker,
+    context,
+    read,
+    targetBranch,
+  });
+  const reasons = [...selection.reasons];
+  const attempts = selection.batch.map(async (number) => {
+    try {
+      signal.throwIfAborted();
+      return await runStandalone({
+        number,
         ...(options.selector === "parent"
           ? { parentTicket: summary.parentTicket }
           : {}),
         loaded,
         tracker,
-        context,
+        context: { ...context, runId: selection.runId },
         summary,
         read,
+        fetchBase,
       });
-      reasons.push(
-        ...result.reasons.map((reason) => `Issue #${child.number}: ${reason}`),
-      );
+    } catch (error) {
+      controller.abort(error);
+      throw error;
     }
-    return {
-      ...summary,
-      outcome:
-        options.selector === "issue" &&
-        tickets.every((ticket) => ticket.state === "closed")
-          ? "no_work"
-          : "incomplete",
-      reasons: [
-        ...(selection.batch.length
-          ? [
-              `selected Delivery Tickets: ${selection.batch.map((child) => child.number).join(", ")}`,
-            ]
-          : []),
-        ...reasons,
-      ],
-    };
+  });
+  try {
+    const results = await Promise.all(attempts);
+    for (const [index, result] of results.entries())
+      reasons.push(
+        ...result.reasons.map(
+          (reason) => `Issue #${selection.batch[index]!}: ${reason}`,
+        ),
+      );
+  } catch (error) {
+    await Promise.allSettled(attempts);
+    throw error;
   }
   return {
     ...summary,
-    outcome: "no_work",
-    reasons: loaded.config.issueList.length
-      ? [
-          `configured Delivery Tickets not found: ${loaded.config.issueList.join(", ")}`,
-        ]
-      : [],
+    outcome:
+      selection.batch.length === 0 &&
+      (tickets.length === 0 ||
+        (options.selector === "issue" &&
+          tickets.every((ticket) => ticket.state === "closed")))
+        ? "no_work"
+        : "incomplete",
+    reasons: [
+      ...(selection.batch.length
+        ? [`selected Delivery Tickets: ${selection.batch.join(", ")}`]
+        : []),
+      ...reasons,
+    ],
   };
 }

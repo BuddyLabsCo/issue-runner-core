@@ -50,14 +50,15 @@ await test("an explicit Issue List dispatches only selected Issues in ascending 
 
   const result = await fixture.run(["--issue"]);
 
-  assert.deepEqual(fixture.dispatched, [51, 53]);
+  assert.deepEqual(
+    [...fixture.dispatched].sort((a, b) => a - b),
+    [51, 53],
+  );
   assert.deepEqual([...new Set(requested)], [51, 53, 54]);
-  assert.deepEqual(fixture.writes, [
-    "label:51",
-    "assignee:51",
-    "label:53",
-    "assignee:53",
-  ]);
+  assert.deepEqual(
+    [...fixture.writes].sort(),
+    ["label:51", "assignee:51", "label:53", "assignee:53"].sort(),
+  );
   assert.equal(result.summary.outcome, "incomplete");
   assert.equal(result.exitCode, 1);
   assert.equal(result.summary.targetBranch, "default-branch");
@@ -115,7 +116,10 @@ await test("list discovery filters blocked, externally owned, unready and reserv
 
   const result = await fixture.run();
 
-  assert.deepEqual(fixture.dispatched, [57, 60]);
+  assert.deepEqual(
+    [...fixture.dispatched].sort((a, b) => a - b),
+    [57, 60],
+  );
   assert.deepEqual(
     [...new Set(pages)],
     [
@@ -294,13 +298,14 @@ await test("list recovery preserves recorded ownership and verified completion w
   );
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "incomplete");
-  assert.deepEqual(fixture.dispatched, [55, 56]);
-  assert.deepEqual(fixture.writes, [
-    "label:55",
-    "assignee:55",
-    "label:56",
-    "assignee:56",
-  ]);
+  assert.deepEqual(
+    [...fixture.dispatched].sort((a, b) => a - b),
+    [55, 56],
+  );
+  assert.deepEqual(
+    [...fixture.writes].sort(),
+    ["label:55", "assignee:55", "label:56", "assignee:56"].sort(),
+  );
   assert.deepEqual(
     await Promise.all(
       files.map((file) => readFile(path.join(recovery, file), "utf8")),
@@ -318,11 +323,14 @@ await test("list recovery preserves recorded ownership and verified completion w
     changed.summary.reasons.join("; "),
     /existing Reservations: 51 \(complete\), 55 \(complete\), 56 \(complete\)/u,
   );
-  assert.deepEqual(fixture.dispatched, [55, 56]);
+  assert.deepEqual(
+    [...fixture.dispatched].sort((a, b) => a - b),
+    [55, 56],
+  );
 });
 
-await test("cancellation during a list assignment stops later dispatch and preserves handoff evidence for recovery", async (t) => {
-  const fixture = await issueListRun(t, [child(51), child(52)]);
+await test("cancellation during a list assignment retains its Batch and handoff evidence without dispatching replacements", async (t) => {
+  const fixture = await issueListRun(t, [child(51), child(52)], undefined, 1);
   const submitText = fixture.dependencies.terminalPlugin.submitText.bind(
     fixture.dependencies.terminalPlugin,
   );
@@ -334,7 +342,9 @@ await test("cancellation during a list assignment stops later dispatch and prese
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   assert.deepEqual(fixture.dispatched, [51]);
   assert.deepEqual(fixture.writes, ["label:51", "assignee:51"]);
-  const [file] = await readdir(path.join(fixture.directory, "recovery"));
+  const [file] = (
+    await readdir(path.join(fixture.directory, "recovery"))
+  ).filter((file) => file.endsWith("-51.json"));
   const checkpoint = path.join(fixture.directory, "recovery", file!);
   const before = JSON.parse(await readFile(checkpoint, "utf8")) as Record<
     string,
@@ -352,7 +362,7 @@ await test("cancellation during a list assignment stops later dispatch and prese
   assert.equal(after.execution_id, before.execution_id);
   assert.equal(after.run_id, before.run_id);
   assert.deepEqual(after.roles, before.roles);
-  assert.deepEqual(fixture.dispatched, [51, 52]);
+  assert.deepEqual(fixture.dispatched, [51]);
 });
 
 await test("a verified no_change list implementation remains incomplete and retains its checkpoint", async (t) => {
@@ -377,7 +387,9 @@ await test("a verified no_change list implementation remains incomplete and reta
     result.summary.reasons.join("; "),
     /no_change; no Issue delivery/u,
   );
-  const [file] = await readdir(path.join(fixture.directory, "recovery"));
+  const [file] = (
+    await readdir(path.join(fixture.directory, "recovery"))
+  ).filter((file) => file.endsWith("-51.json"));
   const checkpoint = JSON.parse(
     await readFile(path.join(fixture.directory, "recovery", file!), "utf8"),
   ) as Record<string, unknown>;

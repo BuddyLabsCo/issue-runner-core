@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import type { TestContext } from "node:test";
 import { executeCli } from "../../src/cli.ts";
+import type { CreateTabOptions } from "../../src/terminal.ts";
 import type {
   Ticket,
   Tracker,
@@ -87,7 +88,7 @@ export async function parentRun(
       },
     },
     terminalPlugin: {
-      async createTab(options: { cwd: string }) {
+      async createTab(options: CreateTabOptions) {
         const tab = {};
         tabs.set(tab, worktrees.get(options.cwd)!);
         return tab;
@@ -115,8 +116,8 @@ export async function parentRun(
           await publish(assignment.path, committed());
         }
       },
-      async closeTab() {
-        assert.ok(tabs.size > 0);
+      async closeTab(tab: object) {
+        assert.ok(tabs.has(tab));
       },
     },
   };
