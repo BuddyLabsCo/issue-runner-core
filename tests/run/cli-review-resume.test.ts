@@ -160,6 +160,48 @@ await test("a completed Review/fix checkpoint revalidates all accumulated commit
   assert.equal(fixture.state.submissions.length, before);
 });
 
+for (const mismatch of ["dirty", "wrong branch"] as const) {
+  await test(`a persisted passed Review with ${mismatch} evidence cannot restore publication eligibility`, async (t) => {
+    const fixture = await reviewRun(t, 1);
+    fixture.state.onClose = async () => {
+      if (fixture.state.closedTabs.length === 2) fixture.controller.abort();
+    };
+    assert.equal((await fixture.run()).summary.outcome, "cancelled");
+    const saved = await fixture.snapshot();
+    assert.equal(saved.phase, "review_completed");
+    assert.equal(saved.reviews![0]!.result!.outcome, "passed");
+    if (mismatch === "dirty") fixture.state.evidence.clean = false;
+    else fixture.state.evidence.branch = "unexpected-branch";
+    const before = fixture.state.submissions.length;
+    const resume = () =>
+      executeCli(implementationCommand, {
+        ...fixture.dependencies,
+        signal: new AbortController().signal,
+      });
+    const result = await resume();
+    assert.equal(result.summary.outcome, "failed", JSON.stringify(result));
+    assert.match(
+      result.summary.reasons.join(" "),
+      mismatch === "dirty"
+        ? /Worktree must be clean/u
+        : /Delivery branch mismatch/u,
+    );
+    assert.equal((await fixture.snapshot()).phase, "review_completed");
+    assert.equal(fixture.state.submissions.length, before);
+
+    fixture.state.evidence.clean = true;
+    fixture.state.evidence.branch = saved.branch;
+    const recovered = await resume();
+    assert.match(
+      recovered.summary.reasons.join(" "),
+      /eligible for publication/u,
+    );
+    assert.equal((await fixture.snapshot()).phase, "publication_eligible");
+    assert.equal(fixture.state.submissions.length, before);
+    assert.deepEqual((await fixture.snapshot()).reviews, saved.reviews);
+  });
+}
+
 for (const missing of [
   "reviewer identity",
   "findings ownership",

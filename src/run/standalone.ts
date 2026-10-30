@@ -214,6 +214,7 @@ export async function runStandalone(input: {
       if (
         [
           "implementation_completed",
+          "review_completed",
           "fix_review_completed",
           "publication_eligible",
         ].includes(progress.phase)
