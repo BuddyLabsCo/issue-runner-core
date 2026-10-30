@@ -78,8 +78,35 @@ Parent Runs resolve
 all child pages, and return `no_work` without closing an initially empty open
 parent. A configured Issue List does not make an empty parent nonempty; missing
 numbers appear in the summary. Cancelled parents return `cancelled` without
-rewriting children. Standalone Issue Lists and documentation remain
-unimplemented and report `incomplete` without delivery mutations.
+rewriting children. Standalone documentation remains unimplemented and reports
+`incomplete` without delivery mutations.
+
+A value-less `--issue` reads exactly the configured nonempty `issueList`,
+independently of parent discovery. It does not read a parent or expand the list
+with children, blockers, or other unselected Issues. List and parent selection
+share blocker, label, and Reservation eligibility checks, selecting ascending
+Issue numbers up to `maxBatchSize`. Each selected Issue runs sequentially through
+the standalone implementation checkpoint with its own Worktree, conversation,
+and recovery evidence. A numbered `--issue <number>` selects only that Issue,
+regardless of the configured list. For example:
+
+```yaml
+issueList: [60, 51, 57]
+maxBatchSize: 2
+```
+
+```sh
+issue-runner run --project my-project --env herdr --issue
+```
+
+If all three Issues are eligible, this selects 51 and 57. Ineligible Issues do
+not consume Batch slots. A list whose Issues are all closed (`completed` or
+`not_planned`) returns `no_work` with exit zero; remaining open work reports
+`incomplete` with nonzero exit, including when none is eligible. Local
+implementation completion, including `no_change`, remains `incomplete` until
+the downstream delivery workflow exists. Invalid or empty lists fail at startup.
+An unreadable Issue or incomplete blocker read uses ordinary operation
+retry/pause handling before any Reservations; it cannot silently become no-work.
 
 For a nonempty open parent, Core reads every direct child's native blocker pages
 before selecting work, including terminal children, children outside the
@@ -292,6 +319,9 @@ Parent Runs cover paginated children/blockers, numeric Batch selection, Issue
 List and label semantics, mixed ownership, retained partial writes, lost-response
 reconciliation, revalidation changes, cancellation, and recorded execution
 continuation through the real Core coordinator and a private fake terminal.
+Standalone Issue List Runs cover exact scope, ordering, eligibility, terminal
+and incomplete outcomes, startup rejection, numbered-Issue precedence,
+cancellation, and matching versus changed-input recovery at the same boundary.
 No public testing entry, filesystem port, or scheduler is added.
 
 Installed-package cases also relocate the global prefix and invoke Core through

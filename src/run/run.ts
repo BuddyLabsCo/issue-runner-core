@@ -5,12 +5,13 @@ import type {
   Clock,
   OperatorIO,
   GitWorkspace,
+  Ticket,
 } from "./contracts.ts";
 import type { TerminalPlugin } from "../terminal.ts";
 import type { AuditLog } from "../audit.ts";
 import { externalRead } from "./operations.ts";
 import { runStandalone } from "./standalone.ts";
-import { readChildren, selectParentBatch } from "./discovery.ts";
+import { readChildren, selectIssueBatch } from "./discovery.ts";
 
 export interface RunContext {
   audit: AuditLog;
@@ -90,39 +91,56 @@ export async function runProject(
       summary,
       read,
     });
-  if (options.selector !== "parent") {
+  if (options.selector === "document") {
     return {
       ...summary,
       reasons: [`${options.selector} delivery is not implemented yet`],
     };
   }
-  const parent = await read(
-    "read_parent",
-    `parent:${summary.parentTicket}`,
-    () => tracker.getParent(loaded.config.repository, summary.parentTicket),
-  );
-  if (parent.state === "closed" && parent.stateReason === "not_planned")
-    return {
-      ...summary,
-      outcome: "cancelled",
-      reasons: ["Parent Ticket is cancelled"],
-    };
-  if (parent.state === "closed" && parent.stateReason === null)
-    throw new Error("closed Parent Ticket has no supported closure reason");
-  const children = await readChildren(
-    loaded.config.repository,
-    summary.parentTicket,
-    tracker,
-    read,
-  );
-  if (parent.state === "closed") {
-    if (children.some((child) => child.state === "open"))
-      throw new Error("completed Parent Ticket has open children");
-    return { ...summary, outcome: "succeeded" };
+  let tickets: Ticket[];
+  if (options.selector === "issue") {
+    tickets = [];
+    for (const number of loaded.config.issueList) {
+      const ticket = await read("read_issue", `ticket:${number}`, () =>
+        tracker.getTicket(loaded.config.repository, number),
+      );
+      if (
+        ticket.number !== number ||
+        (ticket.repository !== undefined &&
+          ticket.repository !== loaded.config.repository)
+      )
+        throw new Error("Unexpected Issue ownership");
+      tickets.push(ticket);
+    }
+  } else {
+    const parent = await read(
+      "read_parent",
+      `parent:${summary.parentTicket}`,
+      () => tracker.getParent(loaded.config.repository, summary.parentTicket),
+    );
+    if (parent.state === "closed" && parent.stateReason === "not_planned")
+      return {
+        ...summary,
+        outcome: "cancelled",
+        reasons: ["Parent Ticket is cancelled"],
+      };
+    if (parent.state === "closed" && parent.stateReason === null)
+      throw new Error("closed Parent Ticket has no supported closure reason");
+    tickets = await readChildren(
+      loaded.config.repository,
+      summary.parentTicket,
+      tracker,
+      read,
+    );
+    if (parent.state === "closed") {
+      if (tickets.some((ticket) => ticket.state === "open"))
+        throw new Error("completed Parent Ticket has open children");
+      return { ...summary, outcome: "succeeded" };
+    }
   }
-  if (children.length > 0) {
-    const selection = await selectParentBatch({
-      children,
+  if (tickets.length > 0) {
+    const selection = await selectIssueBatch({
+      tickets,
       loaded,
       tracker,
       context,
@@ -133,7 +151,9 @@ export async function runProject(
       context.signal?.throwIfAborted();
       const result = await runStandalone({
         number: child.number,
-        parentTicket: summary.parentTicket,
+        ...(options.selector === "parent"
+          ? { parentTicket: summary.parentTicket }
+          : {}),
         loaded,
         tracker,
         context,
@@ -146,6 +166,11 @@ export async function runProject(
     }
     return {
       ...summary,
+      outcome:
+        options.selector === "issue" &&
+        tickets.every((ticket) => ticket.state === "closed")
+          ? "no_work"
+          : "incomplete",
       reasons: [
         ...(selection.batch.length
           ? [

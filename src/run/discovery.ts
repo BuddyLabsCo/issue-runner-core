@@ -72,20 +72,20 @@ export async function hasOpenBlocker(
   return blocked;
 }
 
-export async function selectParentBatch(input: {
-  children: Ticket[];
+export async function selectIssueBatch(input: {
+  tickets: Ticket[];
   loaded: LoadedProject;
   tracker: Tracker;
   context: RunContext;
   read: ReadOperation;
 }): Promise<{ batch: Ticket[]; reasons: string[] }> {
-  const { children, loaded, tracker, context, read } = input;
+  const { tickets, loaded, tracker, context, read } = input;
   const config = loaded.config;
   const eligible: Ticket[] = [];
   const blocked: number[] = [];
   const externallyOwned: number[] = [];
   const reservations: string[] = [];
-  for (const child of [...children].sort((a, b) => a.number - b.number)) {
+  for (const child of [...tickets].sort((a, b) => a.number - b.number)) {
     const isBlocked = await hasOpenBlocker(
       config.repository,
       child.number,
@@ -135,7 +135,7 @@ export async function selectParentBatch(input: {
     eligible.push(child);
   }
   const missing = config.issueList.filter(
-    (number) => !children.some((child) => child.number === number),
+    (number) => !tickets.some((child) => child.number === number),
   );
   return {
     batch: eligible.slice(0, config.maxBatchSize),
