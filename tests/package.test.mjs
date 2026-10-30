@@ -55,6 +55,8 @@ await test("a packed contract imports from an independent plugin directory", asy
     "dist/cli.js",
     "dist/terminal.js",
     "dist/terminal.d.ts",
+    "dist/prompts/implement.js",
+    "dist/agent/implementation.js",
     "templates/config.yaml",
     "templates/prompts/implement.md",
     "templates/prompts/review.md",

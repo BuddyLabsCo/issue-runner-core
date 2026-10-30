@@ -5,9 +5,23 @@ import type {
   Clock,
   OperatorIO,
   ChildPage,
+  GitWorkspace,
 } from "./contracts.ts";
+import type { TerminalPlugin } from "../terminal.ts";
 import type { AuditLog } from "../audit.ts";
 import { externalRead } from "./operations.ts";
+import { runStandalone } from "./standalone.ts";
+
+export interface RunContext {
+  audit: AuditLog;
+  runId: string;
+  inputHash: string;
+  clock: Clock;
+  operator: OperatorIO;
+  git: GitWorkspace;
+  terminal: TerminalPlugin;
+  signal?: AbortSignal;
+}
 
 export interface RunSummary {
   outcome: "succeeded" | "no_work" | "incomplete" | "cancelled" | "failed";
@@ -31,13 +45,7 @@ export async function runProject(
   loaded: LoadedProject,
   tracker: Tracker,
   codeHost: CodeHost,
-  context: {
-    audit: AuditLog;
-    runId: string;
-    clock: Clock;
-    operator: OperatorIO;
-    signal?: AbortSignal;
-  },
+  context: RunContext,
 ): Promise<RunSummary> {
   const read = <T>(
     operation: string,
@@ -73,6 +81,15 @@ export async function runProject(
     targetBranch,
     reasons: [],
   };
+  if (options.selector === "issue" && options.issueTicket !== undefined)
+    return runStandalone({
+      number: options.issueTicket,
+      loaded,
+      tracker,
+      context,
+      summary,
+      read,
+    });
   if (options.selector !== "parent") {
     return {
       ...summary,

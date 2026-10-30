@@ -18,10 +18,14 @@ plugin loading, and an empty-parent Run that returns `no_work` without closing
 the parent. It exports the runtime constant and TypeScript declarations at
 `issue-runner-core/terminal`. The accepted
 [handoff skill](skills/issue-runner-handoff/SKILL.md) is available for manual
-installation and is included in the tarball. Delivery, Agent dispatch, and
-durable recovery are downstream slices. Valid standalone scopes and nonempty
-parents currently return `incomplete` without delivery mutations. No npm
-package has been published.
+installation and is included in the tarball. A numbered standalone `--issue`
+can reserve eligible work, create a fresh Target Branch Worktree, start a native
+implementation conversation, and persist its independently verified local
+completion before closing the owned tab. This is an implementation checkpoint:
+Review, publication, integration, and successful Issue delivery remain downstream.
+The Run reports `incomplete` after that checkpoint, including `no_change`.
+Issue Lists, documentation, and nonempty parents remain unimplemented.
+No npm package has been published.
 
 See [terminal contract development](docs/terminal-contract.md) for the public
 API, build/test commands, tarball identity, and independent plugin consumption.
@@ -39,6 +43,8 @@ npm install -g issue-runner-core issue-runner-herdr
 issue-runner init --project my-project
 # Edit my-project/config.yaml and the three prompts, then set its credentials.
 issue-runner run --project my-project --env herdr --parent 42
+# For one eligible standalone Issue, run its implementation checkpoint:
+issue-runner run --project my-project --env herdr --issue 123
 ```
 
 Core supplies the executable and shared behavior. The separately installed
@@ -99,6 +105,26 @@ task completion, required checks and commits, Review write restrictions,
 post-handoff work restrictions, and remote-operation ownership. Runner owns
 push, PR, integration, and tracker operations. The skill only submits the
 handoff; submission alone does not establish successful delivery.
+
+Numbered Issue Runs display `sessionid=pending`, then the Probe-validated native
+identity and the active handoff path. Commands use Enter; after one 10-second
+startup wait, Probe and task use the configured Agent chord as separate
+submissions. Approvals, questions, native errors, and missing output require
+direct handling in that native conversation. Runner sends no missing-output
+reminders. Invalid results get bounded corrections at new paths; after exhaustion,
+manually invoke the skill at the current displayed path.
+
+Recovery Snapshots retain role identity, fixed Probe PR metadata, invocation,
+Worktree/branch/base, consumed correction count, accepted commits, and stage
+completion under the Project's `recovery/`. Matching arguments and configuration
+can continue an assigned implementation using its exact saved native reference;
+missing output resumes with only `continue`. Before rerunning, manually close
+leftover tabs and stop their Agent sessions, retaining native history and working
+resources. Runner does not adopt live tabs. Incomplete earlier startup checkpoints
+are retained and reported as unrecoverable; whole-Issue restart interaction and
+broader workflow recovery remain downstream. Changed input ignores old snapshots
+and never adopts unrelated Reservations. Local completion retains owned files
+and Worktrees for later workflow steps.
 
 ## Development checks
 

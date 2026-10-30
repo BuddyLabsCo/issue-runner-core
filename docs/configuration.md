@@ -78,14 +78,69 @@ The current implementation executes the empty-parent case: resolve
 all child pages, then return `no_work` without closing an initially empty open
 parent. A configured Issue List does not make an empty parent nonempty; missing
 numbers appear in the summary. Cancelled parents return `cancelled` without
-rewriting children. Nonempty parents and valid standalone scopes return
-`incomplete` because delivery belongs to later slices. They do not reserve,
-create/fetch Worktrees, dispatch Agents, or publish.
+rewriting children. Nonempty parents, Issue Lists, and standalone documentation
+remain unimplemented and report `incomplete` without delivery mutations.
+
+A numbered `--issue` also supports the implementation checkpoint. The Issue
+must be open, have `ready-for-agent`, have no open blockers (including blockers
+on later pages), and have no external assignee or unrelated/partial Reservation.
+Core adds the configured Reservation label and runner assignee, revalidates
+eligibility/ownership, fetches the Target Branch, and creates an isolated
+Worktree and branch from that exact base. Partial writes remain retained.
+The Reservation label must already exist in the repository.
+
+Core opens a tab with an absolute cwd and a unique temporary `GIT_CONFIG_GLOBAL`
+overlay. It submits the full configured start command with Enter, waits 10
+seconds, then separately submits a correlated Session Probe with the Agent
+chord. Probe identity, Issue/project/repository/role ownership, and complete
+PR title/body are validated and saved atomically. The Agent reads the target
+repository's PR conventions when producing this metadata. Metadata remains fixed
+for the execution. A fresh invocation and absolute handoff path are persisted
+before task submission, without another startup delay. The built-in instructions
+and Project implementation prompt explicitly invoke the installed handoff skill.
+The temporary Git configuration is removed when the call finishes.
+
+Invalid Probe output uses `operationRetry` and `operationRetryDelay`, separately
+from execution-result corrections. Each Probe retry saves its consumed count and
+a fresh correlation/path before submission; missing output never spends this
+budget or causes reminders. After exhaustion, the active Probe path remains
+available for manual publication in the native conversation.
+All generated Probe IDs remain recorded for the execution and are rejected as
+native identity, including IDs from superseded Probe assignments.
+
+Only the exact four-field execution schema is accepted, after independent
+Worktree, branch, base, clean-state and full commit/message checks. A `committed`
+result must also contain real changes relative to the base. Accepted facts and
+stage completion are saved before targeted tab closure. A local implementation
+is not delivered: the Run reports `incomplete` until later workflow steps exist.
+Tab close uses ordinary operation retries/delays and Operator Pause after
+exhaustion. A close retry targets the same owned handle without repeating the
+accepted implementation or discarding its persisted completion.
+Verified `no_change` also gets no delivery credit. Neither auto-merge flag
+changes this checkpoint's behavior.
 
 `succeeded`/`no_work` exit zero. `incomplete`/`cancelled`/`failed` exit nonzero.
 Workflow observations and outcomes have JSONL audits under the Project's
-`logs/`. There are no Agent transcripts. This slice has no durable execution
-progress to restore and does not create recovery snapshots.
+`logs/`. There are no Agent transcripts. Implementation snapshots under
+`recovery/` record execution/Run identities, role references, Probe metadata,
+invocation/path, correction count, result facts and stage completion. Handles
+are process-local and never persisted. A hash of Run arguments and raw
+`config.yaml` scopes matching progress. In-flight assigned implementation
+can resume its exact saved native conversation in the original Worktree; no
+replacement assignment is sent. An existing expected result is verified before
+opening a terminal; valid retained output can complete without a native tab.
+Invalid retained output opens the original conversation only for an automatic
+correction that needs submission; exhausted output can be corrected manually at
+its current path. An absent expected result receives only
+`continue` after the resume wait. Completed stages are verified without
+redispatch. Earlier incomplete startup snapshots fail visibly and remain
+retained; broader recovery/restart policy belongs to downstream slices.
+
+Before recovery, manually close leftover Agent tabs and stop their sessions
+while retaining native histories and original resources. Core neither enforces
+this premise nor adopts surviving handles. Mismatched inputs ignore old progress
+and do not adopt its Reservation. Unfinished and locally completed checkpoint
+files/Worktrees are retained; only per-call Git configuration is removed.
 
 ## Configuration rules
 
@@ -117,7 +172,7 @@ Unknown or obsolete fields are rejected at every Runner-owned object.
   validated when their feature is disabled.
 - All timeouts are positive finite minutes. `agentIdleMinutes` defaults to 10;
   `agentMinutes`, `requiredChecksMinutes`, and `mergeQueueMinutes` are required.
-  Their delivery behavior is deferred with those modes.
+  They do not authorize automated missing-output reminders or Agent-session Pause.
 - `operationRetry` and `agentRetry` are nonnegative safe integers counting
   additional attempts. Both delay schedules are nonempty positive finite
   seconds; the last delay repeats. Exhausted operation reads retain non-Agent
@@ -138,7 +193,11 @@ the fake terminal records forbidden terminal operations. Tests cover
 startup rejection, conditional purposes, scope ordering, no-work, pagination,
 operation retries, cancellation, and audit failures. Package tests install built
 artifacts into an isolated custom global prefix and run from a separate Launch
-Directory. No public testing entry, filesystem port, or scheduler is added.
+Directory. Complete implementation Runs exercise the real conversation/handoff
+coordinator over a private fake terminal, real Probe/result/snapshot files, and
+scripted boundary dependencies. Focused real Git Runs verify fresh bases,
+Worktrees, clean state, actual commits, and rejection of empty commits.
+No public testing entry, filesystem port, or scheduler is added.
 
 Installed-package cases also relocate the global prefix and invoke Core through
 a link. They exercise public import selection, asynchronous initialization,

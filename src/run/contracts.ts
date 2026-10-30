@@ -17,6 +17,18 @@ export interface ChildPage {
 }
 
 export interface Tracker {
+  getTicket(repository: string, ticket: number): Promise<Ticket>;
+  listBlockersPage(
+    repository: string,
+    ticket: number,
+    page: number,
+  ): Promise<{ blockers: Ticket[]; nextPage: number | null }>;
+  addLabel(repository: string, ticket: number, label: string): Promise<void>;
+  addAssignee(
+    repository: string,
+    ticket: number,
+    account: string,
+  ): Promise<void>;
   getParent(repository: string, parentTicket: number): Promise<Ticket>;
   listChildrenPage(
     repository: string,
@@ -30,6 +42,10 @@ export interface CodeHost {
 }
 
 export interface GitWorkspace {
+  withAgentEnvironment<T>(
+    directory: string,
+    action: (env: Readonly<Record<string, string>>) => Promise<T>,
+  ): Promise<T>;
   fetchTargetBranch(checkout: string, targetBranch: string): Promise<string>;
   createWorktree(input: {
     checkout: string;
@@ -37,6 +53,24 @@ export interface GitWorkspace {
     branch: string;
     base: string;
   }): Promise<void>;
+  inspect(input: {
+    worktree: string;
+    base: string;
+  }): Promise<WorkspaceEvidence>;
+}
+
+export interface CommitEvidence {
+  sha: string;
+  message: string;
+}
+
+export interface WorkspaceEvidence {
+  worktree: string;
+  branch: string;
+  base: string;
+  commits: CommitEvidence[];
+  clean: boolean;
+  changed: boolean;
 }
 
 export interface Clock {

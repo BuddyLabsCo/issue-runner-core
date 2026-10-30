@@ -7,8 +7,10 @@ import { setTimeout as delay } from "node:timers/promises";
 import { cac } from "cac";
 import { initializeProject, loadProject } from "./config.ts";
 import { AuditLog } from "./audit.ts";
+import { hashRunInput } from "./recovery.ts";
 import { GitHubTracker } from "./adapters/github-tracker.ts";
 import { GitHubCodeHost } from "./adapters/github-code-host.ts";
+import { LocalGitWorkspace } from "./adapters/git-workspace.ts";
 import { loadTerminalPlugin } from "./adapters/terminal-plugin.ts";
 import { TerminalOperator } from "./adapters/terminal.ts";
 import type {
@@ -57,7 +59,8 @@ Exactly one of --parent, --issue, or --document is required.
 --issue without a number uses the configured issueList.
 --no-auto-merge applies only to --issue <number> or --document, and accepts no value.
 --env <name> selects the globally installed issue-runner-<name> plugin.
-This slice executes empty parents only; delivery modes are not yet implemented.
+Numbered --issue runs through a verified native implementation checkpoint.
+Review and publication are not implemented; local completion reports incomplete.
 
 Example: issue-runner run --project my-project --env herdr --parent 42`;
 
@@ -289,8 +292,16 @@ export async function executeRun(
       {
         audit,
         runId,
+        inputHash: hashRunInput(
+          argv,
+          readFileSync(path.join(loaded.directory, "config.yaml")),
+        ),
         clock,
         operator: dependencies.operator,
+        git:
+          dependencies.gitWorkspace ??
+          new LocalGitWorkspace(loaded.codeHostToken),
+        terminal: terminalPlugin,
         ...(dependencies.signal === undefined
           ? {}
           : { signal: dependencies.signal }),
