@@ -5,9 +5,10 @@ installed terminal execution environment plugins.
 
 The project will reuse the workflow behavior of
 [sandcastle-runner](https://github.com/BuddyLabsCo/sandcastle-runner), excluding
-Agent-session Operator Pause. Interactive Agent CLIs run in terminals owned by
-the selected environment, where operators can intervene directly. Native
-session references and task results return through file handoffs.
+Agent-session Operator Pause and Runner-recorded Agent conversation logs.
+Interactive Agent CLIs run in terminals owned by the selected environment,
+where operators can intervene directly. Native session references and task
+results return through file handoffs.
 
 ## Status
 

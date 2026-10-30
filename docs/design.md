@@ -8,7 +8,8 @@ implemented or published product.
 ## Goal
 
 Reuse sandcastle-runner's workflow control and all existing workflow behavior
-except Agent-session Operator Pause. Replace its Sandcastle-managed,
+except Agent-session Operator Pause and Runner-recorded Agent conversation
+logs. Replace its Sandcastle-managed,
 non-interactive Agent execution with native interactive Agent CLIs hosted by an
 external terminal multiplexer.
 
@@ -77,6 +78,11 @@ Preserve:
 The intentional workflow exception is Agent-session Operator Pause: operators
 handle the native interactive conversation directly instead of entering the
 existing pause/kill/manual-resume/acknowledge sequence.
+
+Runner also stops recording Agent conversation transcripts as log files.
+Operators inspect the native interactive conversations directly. This removes
+duplicate transcript capture, not workflow audit records, Recovery Snapshots,
+or the native session storage needed for resume.
 
 Do not remove unrelated retries or failure behavior as a side effect of
 changing the execution transport. Do not replace a schema-validated result or
@@ -172,13 +178,20 @@ resume commands are not required to accept a `{prompt}` argument. Core builds
 the prompt and submits it through the terminal interface after startup
 readiness has been established.
 
-A still-running conversation can receive another assigned prompt without
-restarting. A closed conversation is reopened using the configured resume
-command when the workflow requires its original context.
+Before continuing a conversation, Core checks whether its assigned terminal
+still exists and hosts that conversation. If it does, Core submits the next
+prompt directly there without running the resume command. If the operator has
+closed the terminal, Core creates a new one, executes the configured resume
+command with the saved native reference, establishes readiness, and submits the
+next prompt. The new terminal replaces the saved terminal association.
+Terminal existence alone does not prove that the original Agent is still
+running; Core must not submit a task prompt into a shell after the Agent exits.
 
 ## Session Probe file handoff
 
-When a native recovery reference is needed, send a Session Probe to the
+Establish a native reference for each conversation so it can be identified in
+stage output and resumed if its terminal is closed. When the reference is not
+already supplied by the configured launcher, send a Session Probe to the
 interactive Agent. Ask it to obtain its real native session ID or session-file
 reference using its available tools and write it to an assigned file.
 
@@ -259,8 +272,37 @@ resumed elsewhere.
 
 Preserve the original implementation and Review conversations across the
 rounds that need them. Receiving one intermediate result does not automatically
-mean the conversation is disposable. Close Runner-owned terminals when their
-workflow lifetime ends and the required execution/resource checks are met.
+mean the conversation is disposable. For example, after Review submits
+findings, send the fix prompt directly to the original implementation terminal
+if it still hosts that conversation; otherwise open a new terminal and resume
+the original implementation conversation before submitting the fix prompt.
+
+When an Issue completes, close all Runner-created terminals belonging to that
+Issue, including implementation, Review, repair, and replacement terminals that
+still exist. In Herdr, this means closing the corresponding tabs. Settle the
+required processes before deleting the Worktree and clean up disposable
+per-Issue logs under the existing cleanup policy. Keep required audit and
+recovery records under their existing retention rules. Do not close the
+operator's Runner terminal or terminals belonging to other Issues. A failed or
+uncertain close must not be reported as successful cleanup.
+
+### Stage output
+
+Keep the existing per-Issue stage output and add the native conversation
+reference as `sessionid`, for example:
+
+```text
+issue-43: implement sessionid=<implementation-native-session-ref>
+issue-43: review sessionid=<review-native-session-ref>
+issue-43: implement sessionid=<implementation-native-session-ref>
+```
+
+The fix round reports the same implementation reference even if it resumes in
+a new tab. Use the validated opaque `session_ref`, not a terminal handle,
+Runner-generated probe ID, or an ambiguous latest-session reference. While
+the native reference is being established, report `sessionid=pending`; emit
+the stage with its actual reference once available. Stages without an
+associated Agent conversation report `sessionid=n/a`.
 
 ## Open execution details
 
@@ -271,6 +313,8 @@ The following must be specified and proven during implementation:
   alone is insufficient.
 - Input ordering when the operator is typing or has interrupted a turn, and
   when existing automatic continuation/correction becomes eligible.
+- Detecting an open terminal whose Agent has exited, and recovering without
+  submitting prompts to its shell or starting duplicate execution.
 - The exact replacement for every removed Agent-session pause branch,
   including blocked results, timeout, missing output, crash, and exhausted
   recovery. Preserve the remaining policy; do not silently turn these into
@@ -300,13 +344,20 @@ define the minimal public contracts, then connect the Herdr plugin.
 Acceptance requires:
 
 - Existing workflow scenarios retain their outcomes except the explicitly
-  removed Agent-session Operator Pause behavior.
+  removed Agent-session Operator Pause behavior and Agent transcript capture.
 - Core plus the selected plugin works through local installation and the
   documented multi-package `npx` entry point.
 - A configured interactive CLI starts, receives a separately submitted probe
   and task, permits manual intervention, and submits valid file handoffs.
 - Exact conversation restoration recalls prior context, including a
   multi-round implementation/Review/fix scenario.
+- Continuation uses the existing conversation directly when its tab is open;
+  closing that tab causes a new tab to resume the exact saved conversation.
+- Agent stage output includes the correct native session reference and keeps
+  that reference across continuation and terminal replacement.
+- Issue completion closes its remaining Runner-created tabs and cleans up
+  disposable logs and Worktrees without affecting other Issues or the Runner
+  terminal.
 - Partial, malformed, stale, duplicate, and missing files do not advance an
   invocation incorrectly.
 - Cancellation, process failure, restart, and concurrent tasks preserve
