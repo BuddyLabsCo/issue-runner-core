@@ -184,3 +184,50 @@ await test("exhausted retained output can be corrected manually without reopenin
     saved.invocation?.path,
   );
 });
+
+await test("a consumed nonzero correction budget stays exhausted across restart and invalid manual writes", async (t) => {
+  const fixture = await implementationRun(t, { ...validConfig, agentRetry: 1 });
+  fixture.state.onTask = async (file) => {
+    fixture.state.evidence.commits = committed().commits;
+    await publish(file, {});
+  };
+  fixture.state.onCorrection = async (file) => {
+    await publish(file, { ...committed(), findings_file: file });
+  };
+  fixture.state.onSleep = async (ms) => {
+    if (ms === 250) fixture.controller.abort();
+  };
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  const saved = await fixture.snapshot();
+  assert.equal(saved.corrections, 1);
+  const before = fixture.state.submissions.length;
+  let polls = 0;
+  fixture.state.onSleep = async (ms) => {
+    assert.equal(ms, 250);
+    assert.ok(++polls <= 2);
+    assert.equal((await fixture.snapshot()).corrections, 1);
+    await publish(
+      saved.invocation!.path,
+      polls === 1 ? { ...committed(), outcome: "blocked" } : committed(),
+    );
+  };
+  const result = await executeCli(implementationCommand, {
+    ...fixture.dependencies,
+    signal: new AbortController().signal,
+    terminalPlugin: {
+      ...fixture.dependencies.terminalPlugin,
+      async createTab() {
+        assert.fail("exhaustion must not dispatch automatic corrections");
+      },
+    },
+  });
+  assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
+  assert.equal(fixture.state.submissions.length, before);
+  const accepted = await fixture.snapshot();
+  assert.equal(accepted.phase, "implementation_completed");
+  assert.equal(accepted.corrections, 1);
+  assert.deepEqual(accepted.invocation, saved.invocation);
+  assert.deepEqual(accepted.superseded, saved.superseded);
+  assert.equal(accepted.execution_id, saved.execution_id);
+  assert.equal(accepted.pr_body, saved.pr_body);
+});

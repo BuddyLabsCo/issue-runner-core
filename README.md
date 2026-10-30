@@ -111,8 +111,12 @@ identity and the active handoff path. Commands use Enter; after one 10-second
 startup wait, Probe and task use the configured Agent chord as separate
 submissions. Approvals, questions, native errors, and missing output require
 direct handling in that native conversation. Runner sends no missing-output
-reminders. Invalid results get bounded corrections at new paths; after exhaustion,
-manually invoke the skill at the current displayed path.
+reminders. Invalid results get specific corrections in the same tab at new paths,
+without another startup wait. `agentRetry` allows additional corrections;
+`agentRetryDelay` is in seconds and reuses its final delay. After exhaustion,
+fix the reported problem and manually invoke the skill at the current displayed
+path. Runner keeps watching that path; further invalid writes do not restore
+automatic attempts. See [correction behavior](docs/configuration.md#rejected-handoffs-and-manual-correction).
 
 Recovery Snapshots retain role identity, fixed Probe PR metadata, invocation,
 Worktree/branch/base, consumed correction count, accepted commits, and stage

@@ -119,6 +119,32 @@ accepted implementation or discarding its persisted completion.
 Verified `no_change` also gets no delivery credit. Neither auto-merge flag
 changes this checkpoint's behavior.
 
+### Rejected handoffs and manual correction
+
+Invalid JSON, wrong fields or outcomes, invalid execution findings, and false
+Git claims leave the implementation incomplete. Core sends the validation error
+and a fresh absolute handoff path to the current tab and native conversation,
+using the configured Agent chord without another startup wait. Each correction's
+unique invocation/path, superseded path, and consumed count are saved before its
+delay and prompt. Superseded files cannot satisfy the active assignment.
+
+`agentRetry` counts additional automatic corrections after the initial result.
+For example, `agentRetry: 3` with `agentRetryDelay: [2, 5]` allows three
+corrections, after 2, 5, and 5 seconds. This budget is independent of
+`operationRetry`, Probe retries, and CI/conflict repair budgets. Cancellation
+during a delay prevents submission and retains the consumed count. Missing
+output, including a temporary sibling without its final file, spends no
+correction budget and causes no automatic prompt.
+
+After exhaustion (immediately when `agentRetry: 0`), Core displays diagnostics,
+the native session identity, and the current path. It keeps the stage and tab
+available and stops automatic correction prompts. Fix the reported problem in
+that native conversation, including the actual Git state when needed, then
+explicitly invoke `issue-runner-handoff` with the displayed path to replace its
+file. Further invalid writes leave the budget exhausted; a later valid write is
+independently verified and can complete the stage. Restarting with matching
+inputs retains the consumed budget and active path.
+
 `succeeded`/`no_work` exit zero. `incomplete`/`cancelled`/`failed` exit nonzero.
 Workflow observations and outcomes have JSONL audits under the Project's
 `logs/`. There are no Agent transcripts. Implementation snapshots under

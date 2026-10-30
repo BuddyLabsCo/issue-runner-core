@@ -38,12 +38,12 @@ export function parseExecution(text: string): ExecutionResult {
     );
   if (value.outcome !== "committed" && value.outcome !== "no_change")
     throw new Error("Invalid implementation outcome");
-  if (
-    !nonempty(value.summary) ||
-    value.findings_file !== null ||
-    !Array.isArray(value.commits)
-  )
-    throw new Error("Invalid summary, commits, or findings_file");
+  if (!nonempty(value.summary))
+    throw new Error("Execution summary must be a nonempty string");
+  if (value.findings_file !== null)
+    throw new Error("Execution findings_file must be null");
+  if (!Array.isArray(value.commits))
+    throw new Error("Execution commits must be an array");
   const commits = value.commits.map((entry: unknown) => {
     const commit = object(entry);
     if (
