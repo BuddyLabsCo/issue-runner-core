@@ -68,7 +68,22 @@ export async function implementIssue(input: {
       ));
     const submitWork = async (text: string) => {
       const tab = await open();
-      if (!(await input.beforeDispatch())) return false;
+      const pending = progress.pendingPrompt;
+      let allowed = false;
+      try {
+        if (pending !== undefined) {
+          // An interrupted transport attempt must not blindly replay the prompt.
+          delete progress.pendingPrompt;
+          await persist();
+        }
+        allowed = await input.beforeDispatch();
+      } finally {
+        if (!allowed && pending !== undefined) {
+          progress.pendingPrompt = pending;
+          await persist();
+        }
+      }
+      if (!allowed) return false;
       await conversations.submit(tab, text, profile.submitKey);
       return true;
     };
@@ -169,33 +184,34 @@ export async function implementIssue(input: {
       }
     }
     let resumeIfMissing = progress.invocation !== undefined;
-    progress.invocation ??= {
-      invocation_id: randomUUID(),
-      path: assignment("implement"),
-    };
-    progress.phase = "implementing";
-    await persist();
-    show(progress.invocation.path);
-    if (!resumeIfMissing) {
+    if (!progress.invocation) {
       const projectPrompt = await readFile(
         path.join(loaded.directory, "prompts", "implement.md"),
         "utf8",
       );
-      if (
-        !(await submitWork(
-          `Implementation assignment\n${JSON.stringify({ execution_id: progress.execution_id, ...progress.invocation })}\n\n${implementationInstructions}\n\n${projectPrompt}\n\n` +
-            `Repository: ${progress.repository}\nIssue #${progress.ticket}: ${input.ticket.title ?? ""}\n${input.ticket.body ?? ""}\n` +
-            `Worktree: ${progress.worktree}\nDelivery branch: ${progress.branch}\nBase SHA: ${progress.base}\nTarget Branch: ${progress.target_branch}\n` +
-            `Fixed PR title: ${progress.pr_title}\nFixed PR body:\n${progress.pr_body}\n\n` +
-            `Explicitly invoke the installed issue-runner-handoff skill with this sole absolute output-path argument: ${JSON.stringify(progress.invocation.path)}`,
-        ))
-      )
-        return;
+      progress.invocation = {
+        invocation_id: randomUUID(),
+        path: assignment("implement"),
+      };
+      progress.pendingPrompt =
+        `Implementation assignment\n${JSON.stringify({ execution_id: progress.execution_id, ...progress.invocation })}\n\n${implementationInstructions}\n\n${projectPrompt}\n\n` +
+        `Repository: ${progress.repository}\nIssue #${progress.ticket}: ${input.ticket.title ?? ""}\n${input.ticket.body ?? ""}\n` +
+        `Worktree: ${progress.worktree}\nDelivery branch: ${progress.branch}\nBase SHA: ${progress.base}\nTarget Branch: ${progress.target_branch}\n` +
+        `Fixed PR title: ${progress.pr_title}\nFixed PR body:\n${progress.pr_body}\n\n` +
+        `Explicitly invoke the installed issue-runner-handoff skill with this sole absolute output-path argument: ${JSON.stringify(progress.invocation.path)}`;
     }
+    progress.phase = "implementing";
+    await persist();
+    show(progress.invocation.path);
     let previous = "";
     for (;;) {
       signal?.throwIfAborted();
       const observed = await readHandoff(progress.invocation.path);
+      if (observed === undefined && progress.pendingPrompt !== undefined) {
+        if (!(await submitWork(progress.pendingPrompt))) return;
+        resumeIfMissing = false;
+        continue;
+      }
       if (
         resumeIfMissing &&
         observed === undefined &&
@@ -222,6 +238,7 @@ export async function implementIssue(input: {
               invocation_id: randomUUID(),
               path: assignment("implement"),
             };
+            progress.pendingPrompt = `Correct the implementation handoff: ${reason}\nExplicitly invoke issue-runner-handoff with the sole absolute output-path argument: ${JSON.stringify(progress.invocation.path)}`;
             await persist();
             show(progress.invocation.path);
             await sleep(
@@ -233,12 +250,6 @@ export async function implementIssue(input: {
                   )
                 ]!,
             );
-            if (
-              !(await submitWork(
-                `Correct the implementation handoff: ${reason}\nExplicitly invoke issue-runner-handoff with the sole absolute output-path argument: ${JSON.stringify(progress.invocation.path)}`,
-              ))
-            )
-              return;
             previous = "";
             continue;
           }
@@ -250,6 +261,7 @@ export async function implementIssue(input: {
           continue;
         }
         progress.result = result;
+        delete progress.pendingPrompt;
         progress.phase = "implementation_completed";
         await persist();
         signal?.throwIfAborted();

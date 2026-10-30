@@ -125,8 +125,11 @@ automatic attempts. See [correction behavior](docs/configuration.md#rejected-han
 Recovery Snapshots retain role identity, fixed Probe PR metadata, invocation,
 Worktree/branch/base, consumed correction count, accepted commits, and stage
 completion under the Project's `recovery/`. Matching arguments and configuration
-can continue an assigned implementation using its exact saved native reference;
-missing output resumes with only `continue`. Before rerunning, manually close
+can continue an assigned implementation using its exact saved native reference.
+A known unsent assignment or correction remains pending when eligibility stops
+dispatch and is submitted when eligibility returns, retaining its path and consumed
+retry count. Missing output from an attempted assignment resumes with only
+`continue`. Before rerunning, manually close
 leftover tabs and stop their Agent sessions, retaining native history and working
 resources. Runner does not adopt live tabs. Incomplete earlier startup checkpoints
 are retained and reported as unrecoverable; whole-Issue restart interaction and

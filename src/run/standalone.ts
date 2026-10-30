@@ -47,10 +47,13 @@ export async function runStandalone(input: {
     "recovery",
     `${context.inputHash}-${number}.json`,
   );
+  // Cancellation must still retain known unsent work in the local checkpoint.
   const persist = (progress: ImplementationProgress) =>
-    read("save_implementation_checkpoint", `ticket:${number}`, () =>
-      saveProgress(progressFile, progress),
-    );
+    context.signal?.aborted
+      ? saveProgress(progressFile, progress)
+      : read("save_implementation_checkpoint", `ticket:${number}`, () =>
+          saveProgress(progressFile, progress),
+        );
   const previous = await readHandoff(progressFile);
   let restored: ImplementationProgress | undefined;
   if (previous !== undefined) {
@@ -91,6 +94,7 @@ export async function runStandalone(input: {
           (saved.probeRetries as number) < 0)) ||
       (saved.probeIds !== undefined &&
         (!Array.isArray(saved.probeIds) || !saved.probeIds.every(nonempty))) ||
+      (saved.pendingPrompt !== undefined && !nonempty(saved.pendingPrompt)) ||
       !Array.isArray(saved.superseded)
     )
       throw new Error(

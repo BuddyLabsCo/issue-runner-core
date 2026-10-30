@@ -201,7 +201,8 @@ inputs retains the consumed budget and active path.
 Workflow observations and outcomes have JSONL audits under the Project's
 `logs/`. There are no Agent transcripts. Implementation snapshots under
 `recovery/` record execution/Run identities, role references, Probe metadata,
-invocation/path, correction count, result facts and stage completion. Handles
+invocation/path, a known unsent assignment or correction prompt, correction count,
+result facts and stage completion. Handles
 are process-local and never persisted. A hash of Run arguments and raw
 `config.yaml` scopes matching progress. In-flight assigned implementation
 can resume its exact saved native conversation in the original Worktree; no
@@ -209,8 +210,20 @@ replacement assignment is sent. An existing expected result is verified before
 opening a terminal; valid retained output can complete without a native tab.
 Invalid retained output opens the original conversation only for an automatic
 correction that needs submission; exhausted output can be corrected manually at
-its current path. An absent expected result receives only
-`continue` after the resume wait. Completed stages are verified without
+its current path. When eligibility revalidation withholds an assignment or
+correction, its exact prompt remains pending in the checkpoint. Once eligible,
+Core resumes the original native conversation and submits that prompt with the
+same invocation/path and fixed PR metadata. A withheld correction keeps its
+already consumed budget and superseded paths; recovery does not spend another
+retry. Cancellation during the dispatch gate also retains known unsent work.
+
+Core processes a valid expected result before sending a pending prompt. Once a
+dispatch attempt begins, the checkpoint no longer classifies the prompt as known
+unsent; a rejected eligibility check restores that evidence. If an attempted
+assignment has no expected result, recovery sends only `continue` after the resume
+wait. Checkpoints without pending-prompt evidence retain this continuation-only
+behavior. Uncertain transport and abrupt process loss around dispatch retain
+the existing continuation-only recovery behavior. Completed stages are verified without
 redispatch. Earlier incomplete startup snapshots fail visibly and remain
 retained; broader recovery/restart policy belongs to downstream slices.
 
