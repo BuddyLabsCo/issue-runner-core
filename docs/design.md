@@ -226,18 +226,31 @@ configuration; matching a string alone is insufficient.
 
 ## Task result file handoff
 
-For each substantive invocation or correction, Core assigns fresh absolute
-temporary and final result paths and appends the handoff instructions to the
-existing task prompt:
+The [accepted handoff decision](https://github.com/BuddyLabsCo/issue-runner-core/issues/5#issuecomment-6497094791)
+supersedes earlier result payloads. Operators manually install the unchanged
+[`issue-runner-handoff` skill](../skills/issue-runner-handoff/SKILL.md), following
+the [README](../README.md#install-the-handoff-skill-manually). Built-in
+purpose-specific prompts explicitly name the skill and supply its sole
+argument: the assigned absolute final JSON output path.
 
-1. Complete the requested work, tool operations, checks, and required commits.
-2. Write the existing required result JSON to the assigned `.json.tmp` path.
-3. Close the completed file and rename it to the assigned `.json` path.
-4. Treat publication as this invocation's final handoff: do not continue
-   modifying the Worktree or launching work for this invocation afterward.
+For each substantive invocation, automatic correction, or retry, Core assigns
+a fresh unique path under
+`<runner-working-directory>/<project-name>/handoffs/<issue-number>-<phase>-<timestamp>.json`.
+The skill writes exactly `outcome`, `summary`, `commits`, and `findings_file`.
+Execution outcomes are `committed` and `no_change`; Review outcomes are
+`passed` and `findings`. Commit entries use full Git SHAs and messages.
 
-Temporary and final files belong in the same directory. The submission must
-use a real rename, not a cross-filesystem copy presented as equivalent.
+The skill writes `<handoff-path>.tmp` in the final file's directory, validates
+the JSON, closes the temporary file, then atomically renames it to the final
+path as its last step, replacing any existing final file. An operator can
+explicitly reinvoke the skill in the original conversation with the same
+assigned path to correct that invocation. Core never reuses that path for a
+different invocation.
+
+Task completion, required checks and commits, Review write restrictions,
+post-handoff work restrictions, and remote-operation ownership belong in the
+purpose-specific prompts. Runner owns push, PR, integration, and tracker
+operations.
 
 Core ignores temporary files. It checks the final path, reads the payload, and
 applies existing result-schema and independent Git verification. Final-file
@@ -245,17 +258,14 @@ existence is the submission signal, not automatic successful delivery.
 
 Use distinct paths for each Run, task, operation, and invocation/correction,
 including repeated turns in one native conversation. Associate results with
-their assigned invocation and consume an accepted result once. The existing
-business result payload need not change solely to carry transport metadata.
+their assigned invocation and consume an accepted result once.
 
 File notifications may accelerate observation, but startup reads and periodic
 checks must also find completed handoffs after missed events or reconnection.
 
 No Core-owned screen recognizer, `working`/`idle` classifier, or native
 turn-completion hook is required to declare this protocol's result submission.
-File submission does not prove process exit or descendant cleanup. Keep those
-lifecycle guarantees where the workflow requires them, especially before
-cleanup, replacement execution, or concurrent work on the same Worktree.
+File submission and tab close do not prove process exit or descendant cleanup.
 
 ## Operator experience and conversation lifetime
 
