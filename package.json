@@ -1,0 +1,31 @@
+{
+  "name": "issue-runner-core",
+  "version": "0.0.0-contract.1",
+  "description": "Public terminal contract for independent Issue Runner plugin development",
+  "type": "module",
+  "exports": {
+    "./terminal": {
+      "types": "./dist/terminal.d.ts",
+      "default": "./dist/terminal.js"
+    }
+  },
+  "files": [
+    "dist/terminal.js",
+    "dist/terminal.d.ts",
+    "docs/terminal-contract.md"
+  ],
+  "engines": {
+    "node": ">=22.18.0 <23",
+    "npm": ">=11 <12"
+  },
+  "packageManager": "npm@11.6.2",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.mjs",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}
