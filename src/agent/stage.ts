@@ -1,22 +1,25 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { LoadedProject } from "../config.ts";
-import type { ExecutionResult, ImplementationProgress } from "../recovery.ts";
+import type {
+  ExecutionResult,
+  ImplementationProgress,
+  ReviewResult,
+  StageProgress,
+} from "../recovery.ts";
 import type { Clock, OperatorIO, Ticket } from "../run/contracts.ts";
 import { OperatorCancelled } from "../run/operations.ts";
 import type { TabHandle, TerminalPlugin } from "../terminal.ts";
 import { NativeConversations } from "./conversation.ts";
-import { implementationInstructions } from "../prompts/implement.ts";
 import { nonempty, object, readHandoff } from "./handoff.ts";
 
-export async function implementIssue(input: {
+export interface IssueStageContext {
   loaded: LoadedProject;
-  ticket: Ticket;
   progress: ImplementationProgress;
+  ticket: Ticket;
   persist: () => Promise<void>;
   beforeDispatch: () => Promise<boolean>;
-  accept: (text: string) => Promise<ExecutionResult>;
   closeTab: (close: () => Promise<void>) => Promise<void>;
   withEnvironment: <T>(
     action: (env: Readonly<Record<string, string>>) => Promise<T>,
@@ -25,9 +28,31 @@ export async function implementIssue(input: {
   clock: Clock;
   operator: OperatorIO;
   signal?: AbortSignal;
-}): Promise<void> {
-  const { loaded, progress, signal, clock, operator } = input;
-  const profile = loaded.config.agents.implement;
+}
+
+export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
+  input: IssueStageContext & {
+    stage: StageProgress<R>;
+    purpose: "implement" | "review" | "fix_review";
+    task: () => string | Promise<string>;
+    accept: (text: string) => Promise<R>;
+  },
+): Promise<void> {
+  const { loaded, progress, stage, purpose, signal, clock, operator } = input;
+  const role = purpose === "review" ? "review" : "implement";
+  const name =
+    purpose === "implement"
+      ? "implementation"
+      : purpose === "review"
+        ? "Review"
+        : "Review fix";
+  const heading =
+    purpose === "implement"
+      ? "Implementation"
+      : purpose === "review"
+        ? "Review"
+        : "Fix";
+  const profile = loaded.config.agents[role]!;
   const conversations = new NativeConversations(input.terminal, clock, signal);
   const persist = input.persist;
   const assignment = (phase: string) =>
@@ -38,7 +63,7 @@ export async function implementIssue(input: {
     );
   const show = (file: string) =>
     operator.write(
-      `Issue #${progress.ticket} implement sessionid=${progress.roles.implement?.sessionid ?? "pending"} handoff=${file}`,
+      `Issue #${progress.ticket} ${purpose} sessionid=${progress.roles[role]?.sessionid ?? "pending"} handoff=${file}`,
     );
   const sleep = async (ms: number) => {
     signal?.throwIfAborted();
@@ -47,39 +72,45 @@ export async function implementIssue(input: {
   };
   await mkdir(path.join(loaded.directory, "handoffs"), { recursive: true });
   await input.withEnvironment(async (env) => {
-    progress.probe ??= { probe_id: randomUUID(), path: assignment("probe") };
-    const probeIds = (progress.probeIds ??= []);
-    if (!probeIds.includes(progress.probe.probe_id))
-      probeIds.push(progress.probe.probe_id);
-    progress.probeRetries ??= 0;
-    if (!progress.roles.implement) progress.phase = "probing";
+    if (!progress.roles[role]) {
+      stage.probe ??= {
+        probe_id: randomUUID(),
+        path: assignment(`${purpose}-probe`),
+      };
+      const probeIds = (stage.probeIds ??= []);
+      if (!probeIds.includes(stage.probe.probe_id))
+        probeIds.push(stage.probe.probe_id);
+      stage.probeRetries ??= 0;
+      if (purpose === "implement") progress.phase = "probing";
+    }
     await persist();
-    show(progress.invocation?.path ?? progress.probe.path);
+    if (stage.invocation || stage.probe)
+      show(stage.invocation?.path ?? stage.probe!.path);
     let tab: TabHandle | undefined;
     const open = async () =>
       (tab ??= await conversations.open(
         {
           cwd: progress.worktree,
           env,
-          label: `Issue #${progress.ticket} implement`,
+          label: `Issue #${progress.ticket} ${purpose}`,
         },
         profile,
-        progress.roles.implement?.sessionid,
+        progress.roles[role]?.sessionid,
       ));
     const submitWork = async (text: string) => {
       const tab = await open();
-      const pending = progress.pendingPrompt;
+      const pending = stage.pendingPrompt;
       let allowed = false;
       try {
         if (pending !== undefined) {
           // An interrupted transport attempt must not blindly replay the prompt.
-          delete progress.pendingPrompt;
+          delete stage.pendingPrompt;
           await persist();
         }
         allowed = await input.beforeDispatch();
       } finally {
         if (!allowed && pending !== undefined) {
-          progress.pendingPrompt = pending;
+          stage.pendingPrompt = pending;
           await persist();
         }
       }
@@ -87,29 +118,30 @@ export async function implementIssue(input: {
       await conversations.submit(tab, text, profile.submitKey);
       return true;
     };
-    if (!progress.roles.implement) {
+    if (!progress.roles[role]) {
       const tab = await open();
       let probeAssignment = {
-        ...progress.probe,
+        ...stage.probe!,
         run_id: progress.run_id,
         execution_id: progress.execution_id,
         project: progress.project,
         repository: progress.repository,
         ticket: progress.ticket,
-        role: "implement",
+        role,
       };
       const prompt = (error?: string) =>
         `Session Probe\n${JSON.stringify(probeAssignment)}\n\n` +
         (error ? `Correct the previous Probe: ${error}\n` : "") +
-        `Before implementation, determine the actual native conversation sessionid from your native CLI context. Never use a generated ID, tab ID, or latest-session alias. ` +
-        `Inspect the repository's AGENTS.md, contribution instructions and PR conventions. Generate complete pr_title and pr_body for ${progress.repository}#${progress.ticket}.\n` +
-        `Issue: ${input.ticket.title ?? ""}\n${input.ticket.body ?? ""}\n` +
-        `Write exactly the assignment fields above plus sessionid, pr_title, pr_body as JSON to ${probeAssignment.path}.tmp, close it, and atomically rename it to ${probeAssignment.path}. Do not implement yet.`;
+        `Determine the actual native conversation sessionid from your native CLI context. Never use a generated ID, tab ID, or latest-session alias. ` +
+        (role === "implement"
+          ? `Inspect the repository's AGENTS.md, contribution instructions and PR conventions. Generate complete pr_title and pr_body for ${progress.repository}#${progress.ticket}.\nIssue: ${input.ticket.title ?? ""}\n${input.ticket.body ?? ""}\n`
+          : "Establish only your independent reviewer identity. Do not review or modify the implementation yet.\n") +
+        `Write exactly the assignment fields above plus ${role === "implement" ? "sessionid, pr_title, pr_body" : "sessionid"} as JSON to ${probeAssignment.path}.tmp, close it, and atomically rename it to ${probeAssignment.path}. Do not begin the task yet.`;
       await conversations.submit(tab, prompt(), profile.submitKey);
       let previous = "";
       for (;;) {
         signal?.throwIfAborted();
-        const observed = await readHandoff(progress.probe.path);
+        const observed = await readHandoff(stage.probe!.path);
         if (observed !== undefined && observed.revision !== previous) {
           previous = observed.revision;
           let accepted = false;
@@ -120,12 +152,14 @@ export async function implementIssue(input: {
                 throw new Error(`Probe ${key} ownership/correlation mismatch`);
             if (
               Object.keys(probe).length !==
-                Object.keys(probeAssignment).length + 3 ||
+                Object.keys(probeAssignment).length +
+                  (role === "implement" ? 3 : 1) ||
               !nonempty(probe.sessionid) ||
-              !nonempty(probe.pr_title) ||
-              !nonempty(probe.pr_body) ||
+              (role === "implement" &&
+                (!nonempty(probe.pr_title) || !nonempty(probe.pr_body))) ||
               [
-                ...probeIds,
+                ...(progress.probeIds ?? []),
+                ...(stage.probeIds ?? []),
                 progress.execution_id,
                 progress.run_id,
                 "latest",
@@ -133,11 +167,15 @@ export async function implementIssue(input: {
               ].includes(probe.sessionid)
             )
               throw new Error(
-                "Probe requires actual native identity and complete PR metadata",
+                role === "implement"
+                  ? "Probe requires actual native identity and complete PR metadata"
+                  : "Probe requires actual native reviewer identity",
               );
-            progress.roles.implement = { sessionid: probe.sessionid };
-            progress.pr_title = probe.pr_title;
-            progress.pr_body = probe.pr_body;
+            progress.roles[role] = { sessionid: probe.sessionid };
+            if (role === "implement") {
+              progress.pr_title = probe.pr_title as string;
+              progress.pr_body = probe.pr_body as string;
+            }
             accepted = true;
           } catch (error) {
             const reason =
@@ -145,18 +183,18 @@ export async function implementIssue(input: {
             operator.write(
               `Invalid Probe: ${reason}. Correct the displayed Probe file in the native conversation.`,
             );
-            const retries: number = progress.probeRetries ?? 0;
+            const retries: number = stage.probeRetries ?? 0;
             if (retries < loaded.config.operationRetry) {
-              progress.superseded.push(progress.probe.path);
-              progress.probeRetries = retries + 1;
-              progress.probe = {
+              stage.superseded.push(stage.probe!.path);
+              stage.probeRetries = retries + 1;
+              stage.probe = {
                 probe_id: randomUUID(),
-                path: assignment("probe"),
+                path: assignment(`${purpose}-probe`),
               };
-              probeIds.push(progress.probe.probe_id);
-              probeAssignment = { ...probeAssignment, ...progress.probe };
+              stage.probeIds!.push(stage.probe.probe_id);
+              probeAssignment = { ...probeAssignment, ...stage.probe };
               await persist();
-              show(progress.probe.path);
+              show(stage.probe.path);
               await sleep(
                 1000 *
                   loaded.config.operationRetryDelay[
@@ -183,32 +221,31 @@ export async function implementIssue(input: {
         await sleep(250);
       }
     }
-    let resumeIfMissing = progress.invocation !== undefined;
-    if (!progress.invocation) {
-      const projectPrompt = await readFile(
-        path.join(loaded.directory, "prompts", "implement.md"),
-        "utf8",
-      );
-      progress.invocation = {
+    let resumeIfMissing = stage.invocation !== undefined;
+    if (!stage.invocation) {
+      stage.invocation = {
         invocation_id: randomUUID(),
-        path: assignment("implement"),
+        path: assignment(purpose),
       };
-      progress.pendingPrompt =
-        `Implementation assignment\n${JSON.stringify({ execution_id: progress.execution_id, ...progress.invocation })}\n\n${implementationInstructions}\n\n${projectPrompt}\n\n` +
-        `Repository: ${progress.repository}\nIssue #${progress.ticket}: ${input.ticket.title ?? ""}\n${input.ticket.body ?? ""}\n` +
-        `Worktree: ${progress.worktree}\nDelivery branch: ${progress.branch}\nBase SHA: ${progress.base}\nTarget Branch: ${progress.target_branch}\n` +
+      stage.pendingPrompt =
+        `${heading} assignment\n${JSON.stringify({ execution_id: progress.execution_id, ...stage.invocation })}\n\n${await input.task()}\n\n` +
         `Fixed PR title: ${progress.pr_title}\nFixed PR body:\n${progress.pr_body}\n\n` +
-        `Explicitly invoke the installed issue-runner-handoff skill with this sole absolute output-path argument: ${JSON.stringify(progress.invocation.path)}`;
+        `Explicitly invoke the installed issue-runner-handoff skill with this sole absolute output-path argument: ${JSON.stringify(stage.invocation.path)}`;
     }
-    progress.phase = "implementing";
+    progress.phase =
+      purpose === "implement"
+        ? "implementing"
+        : purpose === "review"
+          ? "reviewing"
+          : "fixing_review";
     await persist();
-    show(progress.invocation.path);
+    show(stage.invocation.path);
     let previous = "";
     for (;;) {
       signal?.throwIfAborted();
-      const observed = await readHandoff(progress.invocation.path);
-      if (observed === undefined && progress.pendingPrompt !== undefined) {
-        if (!(await submitWork(progress.pendingPrompt))) return;
+      const observed = await readHandoff(stage.invocation.path);
+      if (observed === undefined && stage.pendingPrompt !== undefined) {
+        if (!(await submitWork(stage.pendingPrompt))) return;
         resumeIfMissing = false;
         continue;
       }
@@ -229,23 +266,23 @@ export async function implementIssue(input: {
           signal?.throwIfAborted();
           if (error instanceof OperatorCancelled) throw error;
           const reason = error instanceof Error ? error.message : String(error);
-          operator.write(`Invalid implementation handoff: ${reason}`);
+          operator.write(`Invalid ${name} handoff: ${reason}`);
           // Missing output never spends this budget or generates reminders.
-          if (progress.corrections < loaded.config.agentRetry) {
-            progress.superseded.push(progress.invocation.path);
-            progress.corrections += 1;
-            progress.invocation = {
+          if (stage.corrections < loaded.config.agentRetry) {
+            stage.superseded.push(stage.invocation.path);
+            stage.corrections += 1;
+            stage.invocation = {
               invocation_id: randomUUID(),
-              path: assignment("implement"),
+              path: assignment(purpose),
             };
-            progress.pendingPrompt = `Correct the implementation handoff: ${reason}\nExplicitly invoke issue-runner-handoff with the sole absolute output-path argument: ${JSON.stringify(progress.invocation.path)}`;
+            stage.pendingPrompt = `Correct the ${name} handoff: ${reason}\nExplicitly invoke issue-runner-handoff with the sole absolute output-path argument: ${JSON.stringify(stage.invocation.path)}`;
             await persist();
-            show(progress.invocation.path);
+            show(stage.invocation.path);
             await sleep(
               1000 *
                 loaded.config.agentRetryDelay[
                   Math.min(
-                    progress.corrections - 1,
+                    stage.corrections - 1,
                     loaded.config.agentRetryDelay.length - 1,
                   )
                 ]!,
@@ -256,13 +293,18 @@ export async function implementIssue(input: {
           operator.write(
             "Automatic correction budget exhausted. Correct the work and manually invoke issue-runner-handoff at the current handoff path; Runner will keep watching it.",
           );
-          show(progress.invocation.path);
+          show(stage.invocation.path);
           await sleep(250);
           continue;
         }
-        progress.result = result;
-        delete progress.pendingPrompt;
-        progress.phase = "implementation_completed";
+        stage.result = result;
+        delete stage.pendingPrompt;
+        progress.phase =
+          purpose === "implement"
+            ? "implementation_completed"
+            : purpose === "review"
+              ? "review_completed"
+              : "fix_review_completed";
         await persist();
         signal?.throwIfAborted();
         if (tab) {

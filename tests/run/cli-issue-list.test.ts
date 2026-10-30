@@ -188,7 +188,12 @@ await test("list option ordering preserves the configured Target Branch", async 
   const fixture = await issueListRun(t, [child(51)]);
   await writeFile(
     path.join(fixture.directory, "config.yaml"),
-    stringify({ ...validConfig, issueList: [51], targetBranch: "release" }),
+    stringify({
+      ...validConfig,
+      workflow: { review: false },
+      issueList: [51],
+      targetBranch: "release",
+    }),
   );
   fixture.dependencies.codeHost.resolveTargetBranch = async () =>
     assert.fail("the configured Target Branch wins");
@@ -310,7 +315,12 @@ await test("list recovery preserves recorded ownership and verified completion w
 
   await writeFile(
     path.join(fixture.directory, "config.yaml"),
-    stringify({ ...validConfig, issueList: [51, 55, 56], maxBatchSize: 1 }),
+    stringify({
+      ...validConfig,
+      workflow: { review: false },
+      issueList: [51, 55, 56],
+      maxBatchSize: 1,
+    }),
   );
   const changed = await fixture.run();
   assert.equal(changed.summary.outcome, "incomplete");

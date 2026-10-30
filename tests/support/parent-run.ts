@@ -35,7 +35,10 @@ export async function parentRun(
     issueList: number[];
   } = validConfig,
 ) {
-  const { root, directory } = await createProject(t, config);
+  const { root, directory } = await createProject(t, {
+    ...config,
+    workflow: { review: false },
+  });
   const deps = createCliDependencies(root);
   const controller = new AbortController();
   const writes: string[] = [];

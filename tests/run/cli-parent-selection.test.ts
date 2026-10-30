@@ -242,6 +242,7 @@ await test("changed configuration never adopts parent Reservations from a differ
     path.join(fixture.directory, "config.yaml"),
     stringify({
       ...validConfig,
+      workflow: { review: false },
       maxBatchSize: 1,
     }),
   );
