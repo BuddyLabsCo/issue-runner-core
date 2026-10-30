@@ -4,13 +4,13 @@ import type {
   CodeHost,
   Clock,
   OperatorIO,
-  ChildPage,
   GitWorkspace,
 } from "./contracts.ts";
 import type { TerminalPlugin } from "../terminal.ts";
 import type { AuditLog } from "../audit.ts";
 import { externalRead } from "./operations.ts";
 import { runStandalone } from "./standalone.ts";
+import { readChildren, selectParentBatch } from "./discovery.ts";
 
 export interface RunContext {
   audit: AuditLog;
@@ -109,44 +109,53 @@ export async function runProject(
     };
   if (parent.state === "closed" && parent.stateReason === null)
     throw new Error("closed Parent Ticket has no supported closure reason");
-  const children = [];
-  let page: number | null = 1;
-  const pages = new Set<number>();
-  while (page !== null) {
-    if (!Number.isSafeInteger(page) || page <= 0 || pages.has(page))
-      throw new Error("invalid child pagination");
-    pages.add(page);
-    const currentPage: number = page;
-    const current: ChildPage = await read(
-      "read_children",
-      `parent:${summary.parentTicket}:page:${page}`,
-      () =>
-        tracker.listChildrenPage(
-          loaded.config.repository,
-          summary.parentTicket,
-          currentPage,
-        ),
-    );
-    children.push(...current.children);
-    page = current.nextPage;
-  }
-  const foreignChild = children.find(
-    (child) => child.repository !== loaded.config.repository,
+  const children = await readChildren(
+    loaded.config.repository,
+    summary.parentTicket,
+    tracker,
+    read,
   );
-  if (foreignChild)
-    throw new Error(
-      `cross-repository child ${foreignChild.repository}#${foreignChild.number} is unsupported`,
-    );
   if (parent.state === "closed") {
     if (children.some((child) => child.state === "open"))
       throw new Error("completed Parent Ticket has open children");
     return { ...summary, outcome: "succeeded" };
   }
-  if (children.length > 0)
+  if (children.length > 0) {
+    const selection = await selectParentBatch({
+      children,
+      loaded,
+      tracker,
+      context,
+      read,
+    });
+    const reasons = [...selection.reasons];
+    for (const child of selection.batch) {
+      context.signal?.throwIfAborted();
+      const result = await runStandalone({
+        number: child.number,
+        parentTicket: summary.parentTicket,
+        loaded,
+        tracker,
+        context,
+        summary,
+        read,
+      });
+      reasons.push(
+        ...result.reasons.map((reason) => `Issue #${child.number}: ${reason}`),
+      );
+    }
     return {
       ...summary,
-      reasons: ["Nonempty parent delivery is not implemented yet"],
+      reasons: [
+        ...(selection.batch.length
+          ? [
+              `selected Delivery Tickets: ${selection.batch.map((child) => child.number).join(", ")}`,
+            ]
+          : []),
+        ...reasons,
+      ],
     };
+  }
   return {
     ...summary,
     outcome: "no_work",

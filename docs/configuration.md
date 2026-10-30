@@ -73,13 +73,51 @@ safe integers and is sorted numerically. `--auto-merge` and `--no-auto-merge`
 are mutually exclusive, accept no values, and require a numbered `--issue` or
 `--document`. Auto-merge defaults on. Unknown options are rejected.
 
-The current implementation executes the empty-parent case: resolve
+Parent Runs resolve
 `targetBranch` from config or the CodeHost default, inspect parent state, read
-all child pages, then return `no_work` without closing an initially empty open
+all child pages, and return `no_work` without closing an initially empty open
 parent. A configured Issue List does not make an empty parent nonempty; missing
 numbers appear in the summary. Cancelled parents return `cancelled` without
-rewriting children. Nonempty parents, Issue Lists, and standalone documentation
-remain unimplemented and report `incomplete` without delivery mutations.
+rewriting children. Standalone Issue Lists and documentation remain
+unimplemented and report `incomplete` without delivery mutations.
+
+For a nonempty open parent, Core reads every direct child's native blocker pages
+before selecting work, including terminal children, children outside the
+configured Issue List, and children with external ownership or Reservations.
+Blockers outside the parent, including other repositories, participate.
+Both `completed` and `not_planned` closed blockers unblock work; open blockers
+prevent selection. Unsupported terminal reasons, incomplete reads, and invalid
+pagination prevent selection. Cross-repository direct children are unsupported.
+
+Eligible children are open, carry the exact case-sensitive `ready-for-agent`
+label, have no assignee other than the configured runner, and have no open
+blockers. Other labels do not change eligibility. A nonempty `issueList`
+restricts selection to matching direct children; it never expands parent scope.
+Core selects ascending Issue numbers up to `maxBatchSize`, reports selected
+numbers and blocked/owned/reserved/missing work, and dispatches that Batch
+sequentially through the same implementation checkpoint as a numbered Issue.
+Review, concurrent execution, publication, and further delivery Batches remain
+downstream; local completion leaves the parent Run `incomplete`.
+
+Reservations remain best effort: the configured label is added before the
+runner assignee, with full eligibility and ownership revalidation inside every
+write attempt, including retries after failed requests or backoff. Core
+revalidates parent state, direct-child membership, Issue eligibility, blockers,
+and Reservation markers between writes and immediately before substantive Agent
+submission, after startup/Probe waits. The same dispatch check gates recovery
+continuations and automatic correction prompts after their waits. Parent
+cancellation stops subsequent work. A child leaving scope, becoming terminal, blocked or
+externally owned, or losing required labels/markers stops its continuation.
+Partial writes and other residual markers are retained without automatic
+compensation. These checks do not provide a lock or an atomic claim.
+
+A complete Reservation (label and runner assignee) can continue only with a
+matching input-hash checkpoint that validates the recorded execution ownership.
+Unrelated complete Reservations and partial Reservations (only one marker)
+are reported and skipped, without consuming a Batch slot. Changed arguments
+or configuration never adopt earlier Reservations. Matching completed
+implementations are verified without redispatch; matching in-flight work uses
+the existing native conversation/handoff recovery path.
 
 A numbered `--issue` also supports the implementation checkpoint. The Issue
 must be open, have `ready-for-agent`, have no open blockers (including blockers
@@ -163,7 +201,8 @@ inputs retains the consumed budget and active path.
 Workflow observations and outcomes have JSONL audits under the Project's
 `logs/`. There are no Agent transcripts. Implementation snapshots under
 `recovery/` record execution/Run identities, role references, Probe metadata,
-invocation/path, correction count, result facts and stage completion. Handles
+invocation/path, a known unsent assignment or correction prompt, correction count,
+result facts and stage completion. Handles
 are process-local and never persisted. A hash of Run arguments and raw
 `config.yaml` scopes matching progress. In-flight assigned implementation
 can resume its exact saved native conversation in the original Worktree; no
@@ -171,8 +210,20 @@ replacement assignment is sent. An existing expected result is verified before
 opening a terminal; valid retained output can complete without a native tab.
 Invalid retained output opens the original conversation only for an automatic
 correction that needs submission; exhausted output can be corrected manually at
-its current path. An absent expected result receives only
-`continue` after the resume wait. Completed stages are verified without
+its current path. When eligibility revalidation withholds an assignment or
+correction, its exact prompt remains pending in the checkpoint. Once eligible,
+Core resumes the original native conversation and submits that prompt with the
+same invocation/path and fixed PR metadata. A withheld correction keeps its
+already consumed budget and superseded paths; recovery does not spend another
+retry. Cancellation during the dispatch gate also retains known unsent work.
+
+Core processes a valid expected result before sending a pending prompt. Once a
+dispatch attempt begins, the checkpoint no longer classifies the prompt as known
+unsent; a rejected eligibility check restores that evidence. If an attempted
+assignment has no expected result, recovery sends only `continue` after the resume
+wait. Checkpoints without pending-prompt evidence retain this continuation-only
+behavior. Uncertain transport and abrupt process loss around dispatch retain
+the existing continuation-only recovery behavior. Completed stages are verified without
 redispatch. Earlier incomplete startup snapshots fail visibly and remain
 retained; broader recovery/restart policy belongs to downstream slices.
 
@@ -237,6 +288,10 @@ Directory. Complete implementation Runs exercise the real conversation/handoff
 coordinator over a private fake terminal, real Probe/result/snapshot files, and
 scripted boundary dependencies. Focused real Git Runs verify fresh bases,
 Worktrees, clean state, actual commits, and rejection of empty commits.
+Parent Runs cover paginated children/blockers, numeric Batch selection, Issue
+List and label semantics, mixed ownership, retained partial writes, lost-response
+reconciliation, revalidation changes, cancellation, and recorded execution
+continuation through the real Core coordinator and a private fake terminal.
 No public testing entry, filesystem port, or scheduler is added.
 
 Installed-package cases also relocate the global prefix and invoke Core through

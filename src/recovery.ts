@@ -49,6 +49,7 @@ export interface ImplementationProgress {
   pr_title?: string;
   pr_body?: string;
   invocation?: Invocation;
+  pendingPrompt?: string;
   result?: ExecutionResult;
   corrections: number;
   probeRetries?: number;

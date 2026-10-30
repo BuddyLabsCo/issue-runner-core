@@ -74,6 +74,7 @@ export async function externalRead<T>(operation: {
           "failed",
           error instanceof Error ? error.message : "external read failed",
         );
+        if (error instanceof OperatorCancelled) throw error;
         if (attempt <= policy.operationRetry) {
           const delay =
             policy.operationRetryDelay[

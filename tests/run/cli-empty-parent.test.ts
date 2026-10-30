@@ -65,7 +65,7 @@ await test("a failed audit append retries logging without replaying a completed 
   assert.equal(reads, 1);
 });
 
-await test("pagination cannot hide children or turn unsupported delivery into no_work", async (t) => {
+await test("pagination cannot hide ineligible children or turn a nonempty parent into no_work", async (t) => {
   const { root } = await createProject(t);
   const deps = createCliDependencies(root);
   const result = await executeCli(
