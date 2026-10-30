@@ -100,10 +100,13 @@ Review, concurrent execution, publication, and further delivery Batches remain
 downstream; local completion leaves the parent Run `incomplete`.
 
 Reservations remain best effort: the configured label is added before the
-runner assignee, with current state checked before retrying a write. Core
+runner assignee, with full eligibility and ownership revalidation inside every
+write attempt, including retries after failed requests or backoff. Core
 revalidates parent state, direct-child membership, Issue eligibility, blockers,
-and Reservation markers between writes and before dispatch. Parent cancellation
-stops subsequent work. A child leaving scope, becoming terminal, blocked or
+and Reservation markers between writes and immediately before substantive Agent
+submission, after startup/Probe waits. The same dispatch check gates recovery
+continuations and automatic correction prompts after their waits. Parent
+cancellation stops subsequent work. A child leaving scope, becoming terminal, blocked or
 externally owned, or losing required labels/markers stops its continuation.
 Partial writes and other residual markers are retained without automatic
 compensation. These checks do not provide a lock or an atomic claim.

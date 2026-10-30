@@ -15,6 +15,7 @@ export async function implementIssue(input: {
   ticket: Ticket;
   progress: ImplementationProgress;
   persist: () => Promise<void>;
+  beforeDispatch: () => Promise<boolean>;
   accept: (text: string) => Promise<ExecutionResult>;
   closeTab: (close: () => Promise<void>) => Promise<void>;
   withEnvironment: <T>(
@@ -65,6 +66,12 @@ export async function implementIssue(input: {
         profile,
         progress.roles.implement?.sessionid,
       ));
+    const submitWork = async (text: string) => {
+      const tab = await open();
+      if (!(await input.beforeDispatch())) return false;
+      await conversations.submit(tab, text, profile.submitKey);
+      return true;
+    };
     if (!progress.roles.implement) {
       const tab = await open();
       let probeAssignment = {
@@ -174,22 +181,27 @@ export async function implementIssue(input: {
         path.join(loaded.directory, "prompts", "implement.md"),
         "utf8",
       );
-      await conversations.submit(
-        await open(),
-        `Implementation assignment\n${JSON.stringify({ execution_id: progress.execution_id, ...progress.invocation })}\n\n${implementationInstructions}\n\n${projectPrompt}\n\n` +
-          `Repository: ${progress.repository}\nIssue #${progress.ticket}: ${input.ticket.title ?? ""}\n${input.ticket.body ?? ""}\n` +
-          `Worktree: ${progress.worktree}\nDelivery branch: ${progress.branch}\nBase SHA: ${progress.base}\nTarget Branch: ${progress.target_branch}\n` +
-          `Fixed PR title: ${progress.pr_title}\nFixed PR body:\n${progress.pr_body}\n\n` +
-          `Explicitly invoke the installed issue-runner-handoff skill with this sole absolute output-path argument: ${JSON.stringify(progress.invocation.path)}`,
-        profile.submitKey,
-      );
+      if (
+        !(await submitWork(
+          `Implementation assignment\n${JSON.stringify({ execution_id: progress.execution_id, ...progress.invocation })}\n\n${implementationInstructions}\n\n${projectPrompt}\n\n` +
+            `Repository: ${progress.repository}\nIssue #${progress.ticket}: ${input.ticket.title ?? ""}\n${input.ticket.body ?? ""}\n` +
+            `Worktree: ${progress.worktree}\nDelivery branch: ${progress.branch}\nBase SHA: ${progress.base}\nTarget Branch: ${progress.target_branch}\n` +
+            `Fixed PR title: ${progress.pr_title}\nFixed PR body:\n${progress.pr_body}\n\n` +
+            `Explicitly invoke the installed issue-runner-handoff skill with this sole absolute output-path argument: ${JSON.stringify(progress.invocation.path)}`,
+        ))
+      )
+        return;
     }
     let previous = "";
     for (;;) {
       signal?.throwIfAborted();
       const observed = await readHandoff(progress.invocation.path);
-      if (resumeIfMissing && observed === undefined)
-        await conversations.submit(await open(), "continue", profile.submitKey);
+      if (
+        resumeIfMissing &&
+        observed === undefined &&
+        !(await submitWork("continue"))
+      )
+        return;
       resumeIfMissing = false;
       if (observed !== undefined && observed.revision !== previous) {
         previous = observed.revision;
@@ -221,11 +233,12 @@ export async function implementIssue(input: {
                   )
                 ]!,
             );
-            await conversations.submit(
-              await open(),
-              `Correct the implementation handoff: ${reason}\nExplicitly invoke issue-runner-handoff with the sole absolute output-path argument: ${JSON.stringify(progress.invocation.path)}`,
-              profile.submitKey,
-            );
+            if (
+              !(await submitWork(
+                `Correct the implementation handoff: ${reason}\nExplicitly invoke issue-runner-handoff with the sole absolute output-path argument: ${JSON.stringify(progress.invocation.path)}`,
+              ))
+            )
+              return;
             previous = "";
             continue;
           }

@@ -161,6 +161,16 @@ export async function runStandalone(input: {
     selected.ticket.assignees?.includes(config.tracker.runnerAccount) ?? false;
   const hasLabel =
     selected.ticket.labels?.includes(config.tracker.reservationLabel) ?? false;
+  const beforeDispatch = async () => {
+    selected = await inspect();
+    if (
+      !selected.reason &&
+      (!selected.ticket.assignees?.includes(config.tracker.runnerAccount) ||
+        !selected.ticket.labels?.includes(config.tracker.reservationLabel))
+    )
+      selected.reason = "Reservation changed before dispatch";
+    return selected.reason === undefined;
+  };
   if (restored) {
     if (!hasRunner || !hasLabel)
       return {
@@ -183,6 +193,7 @@ export async function runStandalone(input: {
         ticket: selected.ticket,
         progress,
         persist: () => persist(progress),
+        beforeDispatch,
         accept: (text) => accept(progress, text),
         closeTab: (close) =>
           read("close_implementation_tab", `ticket:${number}`, close),
@@ -197,7 +208,8 @@ export async function runStandalone(input: {
     return {
       ...summary,
       reasons: [
-        "Implementation stage completed; Issue delivery remains incomplete",
+        selected.reason ??
+          "Implementation stage completed; Issue delivery remains incomplete",
       ],
     };
   }
@@ -210,27 +222,35 @@ export async function runStandalone(input: {
     };
   // Confirm each write from current tracker state before retrying it.
   await read("add_reservation_label", `ticket:${number}`, async () => {
-    const current = await tracker.getTicket(repository, number);
-    if (!current.labels?.includes(config.tracker.reservationLabel))
+    selected = await inspect();
+    if (selected.reason) return;
+    if (selected.ticket.assignees?.includes(config.tracker.runnerAccount)) {
+      selected.reason = "Reservation changed before label";
+      return;
+    }
+    if (!selected.ticket.labels?.includes(config.tracker.reservationLabel))
       await tracker.addLabel(
         repository,
         number,
         config.tracker.reservationLabel,
       );
   });
-  selected = await inspect();
   if (selected.reason) return { ...summary, reasons: [selected.reason] };
-  if (!selected.ticket.labels?.includes(config.tracker.reservationLabel))
-    return { ...summary, reasons: ["Reservation changed before assignment"] };
   await read("add_runner_assignee", `ticket:${number}`, async () => {
-    const current = await tracker.getTicket(repository, number);
-    if (!current.assignees?.includes(config.tracker.runnerAccount))
+    selected = await inspect();
+    if (selected.reason) return;
+    if (!selected.ticket.labels?.includes(config.tracker.reservationLabel)) {
+      selected.reason = "Reservation changed before assignment";
+      return;
+    }
+    if (!selected.ticket.assignees?.includes(config.tracker.runnerAccount))
       await tracker.addAssignee(
         repository,
         number,
         config.tracker.runnerAccount,
       );
   });
+  if (selected.reason) return { ...summary, reasons: [selected.reason] };
   selected = await inspect();
   if (
     selected.reason ||
@@ -292,6 +312,7 @@ export async function runStandalone(input: {
     ticket: selected.ticket,
     progress,
     persist: () => persist(progress),
+    beforeDispatch,
     accept: (text) => accept(progress, text),
     closeTab: (close) =>
       read("close_implementation_tab", `ticket:${number}`, close),
@@ -305,9 +326,10 @@ export async function runStandalone(input: {
   return {
     ...summary,
     reasons: [
-      progress.result?.outcome === "no_change"
-        ? "Implementation completed with no_change; no Issue delivery"
-        : "Implementation stage completed; Review and publication are not implemented yet",
+      selected.reason ??
+        (progress.result?.outcome === "no_change"
+          ? "Implementation completed with no_change; no Issue delivery"
+          : "Implementation stage completed; Review and publication are not implemented yet"),
     ],
   };
 }
