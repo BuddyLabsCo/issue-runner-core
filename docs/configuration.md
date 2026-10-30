@@ -40,6 +40,23 @@ initialization, and all three methods before workflow reads or mutations.
 Project-local packages, other global prefixes, and caches cannot substitute for
 a missing sibling. No automatic installation or backend fallback occurs.
 
+Lookup follows the executing Core package's real location, including after
+relocating a portable installation or invoking Core through a link. It does not
+ask the `npm` on PATH to choose a prefix. A sibling link into another prefix
+or a package cache is rejected, as is a public entry that escapes the selected
+package. Nested Core dependencies cannot substitute for the selected sibling.
+The package's public `import` entry is used; private entries and unrelated
+plugins are not initialized.
+
+Startup errors name `issue-runner-<name>`, retain the underlying import or
+initialization error, and explain the required contract-v1/same-prefix
+installation. For a missing package, install the selected plugin into the
+prefix containing the Core executable you actually invoked. For a version,
+export, factory, or method error, use a compatible plugin in that same prefix.
+An incompatible sibling is never replaced with a Project-local or cached copy.
+These failures happen before audit creation, Reservations, Worktrees, or Agent
+dispatch.
+
 ## Run scope
 
 Option ordering is independent. Exactly one selector is required:
@@ -122,6 +139,11 @@ startup rejection, conditional purposes, scope ordering, no-work, pagination,
 operation retries, cancellation, and audit failures. Package tests install built
 artifacts into an isolated custom global prefix and run from a separate Launch
 Directory. No public testing entry, filesystem port, or scheduler is added.
+
+Installed-package cases also relocate the global prefix and invoke Core through
+a link. They exercise public import selection, asynchronous initialization,
+malformed modules/factories/methods, and isolation from Project packages, other
+prefixes, PATH, NODE_PATH, npm caches, and linked entries outside the package.
 
 These checks do not prove live Herdr delivery, native Agent restoration, full
 delivery workflows, or macOS operation. Those remain downstream verification.

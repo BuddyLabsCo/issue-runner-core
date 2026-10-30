@@ -16,10 +16,18 @@ export async function loadTerminalPlugin(
       fileURLToPath(new URL("../../", import.meta.url)),
     );
     const sibling = await realpath(path.join(path.dirname(core), name));
+    if (path.dirname(sibling) !== path.dirname(core))
+      throw new Error(
+        "selected package must be a sibling of the executing Core package",
+      );
     // Node selects the public import entry; containment forbids local/cache fallbacks.
     const entry = await realpath(fileURLToPath(import.meta.resolve(name)));
     const relative = path.relative(sibling, entry);
-    if (relative.startsWith("..") || path.isAbsolute(relative))
+    if (
+      relative === ".." ||
+      relative.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(relative)
+    )
       throw new Error(
         "selected module is not the sibling of the executing Core package",
       );
