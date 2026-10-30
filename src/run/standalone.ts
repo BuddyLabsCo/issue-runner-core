@@ -86,6 +86,8 @@ export async function runStandalone(input: {
       (saved.probeRetries !== undefined &&
         (!Number.isSafeInteger(saved.probeRetries) ||
           (saved.probeRetries as number) < 0)) ||
+      (saved.probeIds !== undefined &&
+        (!Array.isArray(saved.probeIds) || !saved.probeIds.every(nonempty))) ||
       !Array.isArray(saved.superseded)
     )
       throw new Error(

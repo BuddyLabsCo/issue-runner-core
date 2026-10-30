@@ -52,6 +52,7 @@ export interface ImplementationProgress {
   result?: ExecutionResult;
   corrections: number;
   probeRetries?: number;
+  probeIds?: string[];
   superseded: string[];
 }
 

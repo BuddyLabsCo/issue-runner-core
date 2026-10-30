@@ -5,6 +5,58 @@ import test from "node:test";
 import { implementationRun, publish } from "../support/implementation-run.ts";
 import { validConfig } from "../support/cli-project.ts";
 
+await test("a superseded Probe ID cannot become native identity on a correlated retry", async (t) => {
+  const fixture = await implementationRun(t);
+  const ids: string[] = [];
+  fixture.state.onProbe = async (assignment) => {
+    ids.push(String(assignment.probe_id));
+    await publish(String(assignment.path), {
+      ...assignment,
+      sessionid: ids[0],
+      pr_title: "Title",
+      pr_body: "Body",
+    });
+  };
+  fixture.state.onSleep = async (ms) => {
+    if (ms === 250) fixture.controller.abort();
+  };
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  assert.equal(fixture.state.probeCount, 2);
+  assert.notEqual(ids[0], ids[1]);
+  assert.equal(fixture.state.taskCount, 0);
+  const progress = await fixture.snapshot();
+  assert.equal(progress.phase, "probing");
+  assert.deepEqual(progress.probeIds, ids);
+  assert.equal(progress.roles.implement, undefined);
+  assert.equal(progress.pr_title, undefined);
+});
+
+await test("identity validation retains intermediate Probe IDs across multiple retries", async (t) => {
+  const fixture = await implementationRun(t, {
+    ...validConfig,
+    operationRetry: 2,
+  });
+  const ids: string[] = [];
+  fixture.state.onProbe = async (assignment) => {
+    ids.push(String(assignment.probe_id));
+    await publish(String(assignment.path), {
+      ...assignment,
+      sessionid: ids.length === 3 ? ids[1] : assignment.probe_id,
+      pr_title: "Title",
+      pr_body: "Body",
+    });
+  };
+  fixture.state.onSleep = async (ms) => {
+    if (ms === 250) fixture.controller.abort();
+  };
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  assert.equal(fixture.state.probeCount, 3);
+  assert.equal(fixture.state.taskCount, 0);
+  const progress = await fixture.snapshot();
+  assert.deepEqual(progress.probeIds, ids);
+  assert.equal(progress.roles.implement, undefined);
+});
+
 await test("invalid Probes use their persisted operation budget and fresh assignments before implementation", async (t) => {
   const fixture = await implementationRun(t, {
     ...validConfig,
@@ -17,6 +69,10 @@ await test("invalid Probes use their persisted operation budget and fresh assign
     const progress = await fixture.snapshot();
     assert.equal(progress.probeRetries ?? 0, assignments.length - 1);
     assert.equal(progress.probe?.path, assignment.path);
+    assert.deepEqual(
+      progress.probeIds,
+      assignments.map((assigned) => assigned.probe_id),
+    );
     await publish(String(assignment.path), {
       ...assignment,
       sessionid:

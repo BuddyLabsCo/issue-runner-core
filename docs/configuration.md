@@ -105,6 +105,8 @@ from execution-result corrections. Each Probe retry saves its consumed count and
 a fresh correlation/path before submission; missing output never spends this
 budget or causes reminders. After exhaustion, the active Probe path remains
 available for manual publication in the native conversation.
+All generated Probe IDs remain recorded for the execution and are rejected as
+native identity, including IDs from superseded Probe assignments.
 
 Only the exact four-field execution schema is accepted, after independent
 Worktree, branch, base, clean-state and full commit/message checks. A `committed`

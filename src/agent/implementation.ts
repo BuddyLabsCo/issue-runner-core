@@ -47,6 +47,9 @@ export async function implementIssue(input: {
   await mkdir(path.join(loaded.directory, "handoffs"), { recursive: true });
   await input.withEnvironment(async (env) => {
     progress.probe ??= { probe_id: randomUUID(), path: assignment("probe") };
+    const probeIds = (progress.probeIds ??= []);
+    if (!probeIds.includes(progress.probe.probe_id))
+      probeIds.push(progress.probe.probe_id);
     progress.probeRetries ??= 0;
     if (!progress.roles.implement) progress.phase = "probing";
     await persist();
@@ -100,7 +103,7 @@ export async function implementIssue(input: {
               !nonempty(probe.pr_title) ||
               !nonempty(probe.pr_body) ||
               [
-                progress.probe.probe_id,
+                ...probeIds,
                 progress.execution_id,
                 progress.run_id,
                 "latest",
@@ -128,6 +131,7 @@ export async function implementIssue(input: {
                 probe_id: randomUUID(),
                 path: assignment("probe"),
               };
+              probeIds.push(progress.probe.probe_id);
               probeAssignment = { ...probeAssignment, ...progress.probe };
               await persist();
               show(progress.probe.path);
