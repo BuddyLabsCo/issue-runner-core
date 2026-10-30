@@ -25,7 +25,33 @@ export interface Invocation {
   path: string;
 }
 
-export interface ImplementationProgress {
+export interface ReviewResult {
+  outcome: "passed" | "findings";
+  summary: string;
+  commits: [];
+  findings_file: string | null;
+}
+
+export interface StageProgress<R> {
+  probe?: { probe_id: string; path: string };
+  invocation?: Invocation;
+  pendingPrompt?: string;
+  result?: R;
+  corrections: number;
+  probeRetries?: number;
+  probeIds?: string[];
+  superseded: string[];
+}
+
+export interface ReviewProgress extends StageProgress<ReviewResult> {
+  round: number;
+  base: string;
+  head: string;
+  findings: string;
+  fix?: StageProgress<ExecutionResult>;
+}
+
+export interface ImplementationProgress extends StageProgress<ExecutionResult> {
   run_id: string;
   execution_id: string;
   project: string;
@@ -40,21 +66,16 @@ export interface ImplementationProgress {
     | "worktree_created"
     | "probing"
     | "implementing"
-    | "implementation_completed";
-  probe?: {
-    probe_id: string;
-    path: string;
-  };
+    | "implementation_completed"
+    | "reviewing"
+    | "review_completed"
+    | "fixing_review"
+    | "fix_review_completed"
+    | "publication_eligible";
   roles: Partial<Record<"implement" | "review", { sessionid: string }>>;
   pr_title?: string;
   pr_body?: string;
-  invocation?: Invocation;
-  pendingPrompt?: string;
-  result?: ExecutionResult;
-  corrections: number;
-  probeRetries?: number;
-  probeIds?: string[];
-  superseded: string[];
+  reviews?: ReviewProgress[];
 }
 
 export async function saveProgress(

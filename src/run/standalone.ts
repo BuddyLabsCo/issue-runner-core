@@ -1,9 +1,16 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { readFile } from "node:fs/promises";
 import type { LoadedProject } from "../config.ts";
 import type { ImplementationProgress } from "../recovery.ts";
 import { saveProgress } from "../recovery.ts";
-import { implementIssue } from "../agent/implementation.ts";
+import { runIssueStage, type IssueStageContext } from "../agent/stage.ts";
+import { implementationInstructions } from "../prompts/implement.ts";
+import {
+  reviewImplementation,
+  validateReviewContext,
+  verifiedImplementation,
+} from "./review.ts";
 import { verifyWorkspace } from "./verification.ts";
 import {
   readHandoff,
@@ -69,9 +76,16 @@ export async function runStandalone(input: {
       !path.isAbsolute(saved.worktree) ||
       !nonempty(saved.branch) ||
       !nonempty(saved.base) ||
-      !["implementing", "implementation_completed"].includes(
-        String(saved.phase),
-      )
+      (saved.phase !== "implementing" && saved.result === undefined) ||
+      ![
+        "implementing",
+        "implementation_completed",
+        "reviewing",
+        "review_completed",
+        "fixing_review",
+        "fix_review_completed",
+        "publication_eligible",
+      ].includes(String(saved.phase))
     )
       throw new Error(
         "unable to recover: incomplete or invalid implementation checkpoint",
@@ -101,6 +115,7 @@ export async function runStandalone(input: {
         "unable to recover: missing native implementation context",
       );
     restored = saved as unknown as ImplementationProgress;
+    validateReviewContext(restored, loaded);
   }
   const inspect = async (): Promise<{ ticket: Ticket; reason?: string }> => {
     if (input.parentTicket !== undefined) {
@@ -175,47 +190,82 @@ export async function runStandalone(input: {
       selected.reason = "Reservation changed before dispatch";
     return selected.reason === undefined;
   };
+  const execute = async (progress: ImplementationProgress) => {
+    const stageInput: IssueStageContext = {
+      loaded,
+      progress,
+      ticket: selected.ticket,
+      persist: () => persist(progress),
+      beforeDispatch,
+      closeTab: (close) =>
+        read(
+          `close_${progress.phase.replace("_completed", "")}_tab`,
+          `ticket:${number}`,
+          close,
+        ),
+      withEnvironment: (action) =>
+        context.git.withAgentEnvironment(loaded.directory, action),
+      terminal: context.terminal,
+      clock: context.clock,
+      operator: context.operator,
+      ...(context.signal ? { signal: context.signal } : {}),
+    };
+    if (progress.result) {
+      if (
+        [
+          "implementation_completed",
+          "fix_review_completed",
+          "publication_eligible",
+        ].includes(progress.phase)
+      )
+        verifyWorkspace(
+          progress,
+          await read(
+            "inspect_completed_implementation",
+            `ticket:${number}`,
+            () => context.git.inspect(progress),
+          ),
+          parseExecution(JSON.stringify(verifiedImplementation(progress))),
+        );
+    } else {
+      await runIssueStage({
+        ...stageInput,
+        stage: progress,
+        purpose: "implement",
+        task: async () =>
+          `${implementationInstructions}\n\n${await readFile(path.join(loaded.directory, "prompts", "implement.md"), "utf8")}\n\n` +
+          `Repository: ${repository}\nIssue #${number}: ${selected.ticket.title ?? ""}\n${selected.ticket.body ?? ""}\n` +
+          `Worktree: ${progress.worktree}\nDelivery branch: ${progress.branch}\nBase SHA: ${progress.base}\nTarget Branch: ${progress.target_branch}`,
+        accept: (text) => accept(progress, text),
+      });
+    }
+    if (progress.result?.outcome === "committed" && config.workflow.review)
+      await reviewImplementation({
+        ...stageInput,
+        ticket: selected.ticket,
+        git: context.git,
+        read,
+      });
+    return {
+      ...summary,
+      reasons: [
+        selected.reason ??
+          (progress.phase === "publication_eligible" ||
+          (progress.result?.outcome === "committed" && !config.workflow.review)
+            ? "Implementation stage completed and is eligible for publication; publication is not implemented yet"
+            : progress.result?.outcome === "no_change"
+              ? "Implementation completed with no_change; no Issue delivery"
+              : "Implementation stage completed; Issue delivery remains incomplete"),
+      ],
+    };
+  };
   if (restored) {
     if (!hasRunner || !hasLabel)
       return {
         ...summary,
         reasons: ["Recorded Reservation changed before continuation"],
       };
-    if (restored.phase === "implementation_completed") {
-      const result = parseExecution(JSON.stringify(restored.result));
-      verifyWorkspace(
-        restored,
-        await read("inspect_completed_implementation", `ticket:${number}`, () =>
-          context.git.inspect(restored),
-        ),
-        result,
-      );
-    } else {
-      const progress = restored;
-      await implementIssue({
-        loaded,
-        ticket: selected.ticket,
-        progress,
-        persist: () => persist(progress),
-        beforeDispatch,
-        accept: (text) => accept(progress, text),
-        closeTab: (close) =>
-          read("close_implementation_tab", `ticket:${number}`, close),
-        withEnvironment: (action) =>
-          context.git.withAgentEnvironment(loaded.directory, action),
-        terminal: context.terminal,
-        clock: context.clock,
-        operator: context.operator,
-        ...(context.signal ? { signal: context.signal } : {}),
-      });
-    }
-    return {
-      ...summary,
-      reasons: [
-        selected.reason ??
-          "Implementation stage completed; Issue delivery remains incomplete",
-      ],
-    };
+    return execute(restored);
   }
   if (hasRunner || hasLabel)
     return {
@@ -311,29 +361,5 @@ export async function runStandalone(input: {
   );
   progress.phase = "worktree_created";
   await persist(progress);
-  await implementIssue({
-    loaded,
-    ticket: selected.ticket,
-    progress,
-    persist: () => persist(progress),
-    beforeDispatch,
-    accept: (text) => accept(progress, text),
-    closeTab: (close) =>
-      read("close_implementation_tab", `ticket:${number}`, close),
-    withEnvironment: (action) =>
-      context.git.withAgentEnvironment(loaded.directory, action),
-    terminal: context.terminal,
-    clock: context.clock,
-    operator: context.operator,
-    ...(context.signal ? { signal: context.signal } : {}),
-  });
-  return {
-    ...summary,
-    reasons: [
-      selected.reason ??
-        (progress.result?.outcome === "no_change"
-          ? "Implementation completed with no_change; no Issue delivery"
-          : "Implementation stage completed; Review and publication are not implemented yet"),
-    ],
-  };
+  return execute(progress);
 }

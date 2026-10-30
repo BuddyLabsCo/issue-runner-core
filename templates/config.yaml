@@ -22,6 +22,8 @@ maintenanceTicket:
   label: doc-maintain
 workflow:
   # Review defaults to enabled. Omit maxReviewRounds for no round cap.
+  # Every findings round gets a fix, including the final allowed round.
+  # maxReviewRounds: 1 permits findings -> fix with no second Review.
   review: true
   # Exact case-sensitive delivery label. Empty/omitted disables automatic maintenance.
   docMaintainTriggerLabel: ""

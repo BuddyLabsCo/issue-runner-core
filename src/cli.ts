@@ -59,8 +59,9 @@ Exactly one of --parent, --issue, or --document is required.
 --issue without a number uses the configured issueList.
 --no-auto-merge applies only to --issue <number> or --document, and accepts no value.
 --env <name> selects the globally installed issue-runner-<name> plugin.
---issue runs selected Issues through a verified native implementation checkpoint.
-Review and publication are not implemented; local completion reports incomplete.
+--issue runs selected Issues through verified implementation, independent Review,
+and required fixes in their original native conversations.
+Publication is not implemented; local completion reports incomplete.
 
 Example: issue-runner run --project my-project --env herdr --parent 42`;
 
