@@ -1,6 +1,7 @@
 import path from "node:path";
 import type { LoadedProject } from "../config.ts";
-import { readHandoff } from "../agent/handoff.ts";
+import { nonempty, object, readHandoff } from "../agent/handoff.ts";
+import { saveProgress, type BatchProgress } from "../recovery.ts";
 import type { ChildPage, Ticket, Tracker } from "./contracts.ts";
 import type { RunContext } from "./run.ts";
 
@@ -72,15 +73,55 @@ export async function hasOpenBlocker(
   return blocked;
 }
 
+function parseBatch(
+  text: string,
+  expected: Omit<BatchProgress, "run_id" | "tickets">,
+  maxBatchSize: number,
+): BatchProgress {
+  const saved = object(JSON.parse(text) as unknown);
+  if (
+    Object.entries(expected).some(([key, value]) => saved[key] !== value) ||
+    !nonempty(saved.run_id) ||
+    !Array.isArray(saved.tickets) ||
+    saved.tickets.length === 0 ||
+    saved.tickets.length > maxBatchSize ||
+    !saved.tickets.every(
+      (number: unknown, index: number, numbers: unknown[]) =>
+        Number.isSafeInteger(number) &&
+        (number as number) > 0 &&
+        (index === 0 || (number as number) > (numbers[index - 1] as number)),
+    )
+  )
+    throw new Error("unable to recover: invalid Batch checkpoint");
+  return saved as unknown as BatchProgress;
+}
+
 export async function selectIssueBatch(input: {
   tickets: Ticket[];
   loaded: LoadedProject;
   tracker: Tracker;
   context: RunContext;
   read: ReadOperation;
-}): Promise<{ batch: Ticket[]; reasons: string[] }> {
+  targetBranch: string;
+}): Promise<{ batch: number[]; runId: string; reasons: string[] }> {
   const { tickets, loaded, tracker, context, read } = input;
   const config = loaded.config;
+  const batchFile = path.join(
+    loaded.directory,
+    "recovery",
+    `${context.inputHash}-batch.json`,
+  );
+  const previous = await read("read_batch_checkpoint", batchFile, () =>
+    readHandoff(batchFile),
+  );
+  const ownership = {
+    input_hash: context.inputHash,
+    repository: config.repository,
+    target_branch: input.targetBranch,
+  };
+  const recorded = previous
+    ? parseBatch(previous.text, ownership, config.maxBatchSize)
+    : undefined;
   const eligible: Ticket[] = [];
   const blocked: number[] = [];
   const externallyOwned: number[] = [];
@@ -137,8 +178,23 @@ export async function selectIssueBatch(input: {
   const missing = config.issueList.filter(
     (number) => !tickets.some((child) => child.number === number),
   );
+  const batch =
+    recorded?.tickets ??
+    [...new Set(eligible.map((ticket) => ticket.number))].slice(
+      0,
+      config.maxBatchSize,
+    );
+  if (!recorded && batch.length > 0)
+    await read("save_batch_checkpoint", batchFile, () =>
+      saveProgress(batchFile, {
+        run_id: context.runId,
+        ...ownership,
+        tickets: batch,
+      }),
+    );
   return {
-    batch: eligible.slice(0, config.maxBatchSize),
+    batch,
+    runId: recorded?.run_id ?? context.runId,
     reasons: [
       ...(blocked.length
         ? [`blocked Delivery Tickets: ${blocked.join(", ")}`]

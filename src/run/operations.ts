@@ -3,6 +3,72 @@ import type { Clock, OperatorIO, RetryPolicy } from "./contracts.ts";
 
 export class OperatorCancelled extends Error {}
 
+export function serializeOperator(
+  operator: OperatorIO,
+  controller: AbortController,
+  signal: AbortSignal,
+): OperatorIO & { advance<T>(action: () => Promise<T>): Promise<T> } {
+  let pending: Promise<unknown> = Promise.resolve();
+  let pauses = 0;
+  let resumed: Promise<void>;
+  let resume!: () => void;
+  return {
+    advance(action) {
+      if (pauses > 0) return resumed.then(() => this.advance(action));
+      signal.throwIfAborted();
+      return action();
+    },
+    write: (message) => operator.write(message),
+    pause(message) {
+      if (pauses++ === 0)
+        resumed = new Promise<void>((resolve) => {
+          resume = resolve;
+        });
+      const next = pending
+        .then(async () => {
+          signal.throwIfAborted();
+          let abort!: () => void;
+          const cancelled = new Promise<never>((_resolve, reject) => {
+            abort = () => {
+              const reason: unknown = signal.reason;
+              reject(
+                reason instanceof Error ? reason : new Error(String(reason)),
+              );
+            };
+            signal.addEventListener("abort", abort, { once: true });
+          });
+          try {
+            for (;;) {
+              const response = await Promise.race([
+                Promise.resolve().then(() => {
+                  signal.throwIfAborted();
+                  return operator.pause(message, signal);
+                }),
+                cancelled,
+              ]);
+              signal.throwIfAborted();
+              if (response === "q" || response === null)
+                controller.abort(new OperatorCancelled("operator cancelled"));
+              if (response === "" || response === "q" || response === null)
+                return response;
+              operator.write("Unsupported input.");
+            }
+          } catch (error) {
+            controller.abort(error);
+            throw error;
+          } finally {
+            signal.removeEventListener("abort", abort);
+          }
+        })
+        .finally(() => {
+          if (--pauses === 0) resume();
+        });
+      pending = next.catch(() => undefined);
+      return next;
+    },
+  };
+}
+
 export async function supervisedAuditWrite(
   action: () => Promise<void>,
   operator: OperatorIO,
@@ -32,6 +98,7 @@ async function pauseForOperator(
     signal?.throwIfAborted();
     const response = await operator.pause(
       `${reason} Enter to retry, q/EOF to cancel. Other input is unsupported.`,
+      signal,
     );
     signal?.throwIfAborted();
     if (response === "q" || response === null)

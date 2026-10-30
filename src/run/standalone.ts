@@ -35,6 +35,7 @@ export async function runStandalone(input: {
   context: RunContext;
   summary: RunSummary;
   read: ReadOperation;
+  fetchBase: () => Promise<string>;
 }): Promise<RunSummary> {
   const { number, loaded, tracker, context, read, summary } = input;
   const config = loaded.config;
@@ -331,9 +332,7 @@ export async function runStandalone(input: {
       `ticket-${number}`,
     ),
     branch: `issue-runner/${context.runId}/ticket-${number}`,
-    base: await read("fetch_target_branch", summary.targetBranch, () =>
-      context.git.fetchTargetBranch(config.checkout, summary.targetBranch),
-    ),
+    base: await input.fetchBase(),
     phase: "reserved",
     roles: {},
     corrections: 0,

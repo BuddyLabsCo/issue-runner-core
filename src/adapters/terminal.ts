@@ -12,7 +12,11 @@ export class TerminalOperator implements OperatorIO {
     process.stdout.write(`${message}\n`);
   }
 
-  async pause(message: string): Promise<string | null> {
+  async pause(message: string, signal?: AbortSignal): Promise<string | null> {
+    const activeSignal =
+      this.signal && signal
+        ? AbortSignal.any([this.signal, signal])
+        : (signal ?? this.signal);
     const terminal = createInterface({
       input: process.stdin,
       output: process.stdout,
@@ -24,7 +28,7 @@ export class TerminalOperator implements OperatorIO {
       return await Promise.race([
         terminal.question(
           `${message}\n> `,
-          this.signal ? { signal: this.signal } : {},
+          activeSignal ? { signal: activeSignal } : {},
         ),
         closed,
       ]);

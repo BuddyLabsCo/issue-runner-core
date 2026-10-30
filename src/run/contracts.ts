@@ -80,7 +80,8 @@ export interface Clock {
 
 export interface OperatorIO {
   write(message: string): void;
-  pause(message: string): Promise<string | null>;
+  // Close active input when the supplied Run signal is cancelled.
+  pause(message: string, signal?: AbortSignal): Promise<string | null>;
 }
 
 export interface RetryPolicy {
