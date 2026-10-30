@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-test("repository ships the exact accepted explicit handoff skill", () => {
+await test("repository ships the exact accepted explicit handoff skill", () => {
   const content = readFileSync(
     new URL("../skills/issue-runner-handoff/SKILL.md", import.meta.url),
     "utf8",

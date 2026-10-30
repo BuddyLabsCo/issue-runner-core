@@ -89,6 +89,17 @@ post-handoff work restrictions, and remote-operation ownership. Runner owns
 push, PR, integration, and tracker operations. The skill only submits the
 handoff; submission alone does not establish successful delivery.
 
+## Development checks
+
+Run `npm ci`, then `npm run verify` for formatting, lint, type checks and tests.
+Use `npm run format` to apply code formatting and `npm run check` for static checks
+only. CI runs the build and verification on Ubuntu and Windows.
+
+ESLint limits code files to 500 lines, excluding blank lines and comments.
+Business modules reject concrete adapter/known Agent SDK imports, direct platform
+access and dynamic loading. These checks support the
+[architecture boundaries](docs/code-architecture.md); they do not replace review.
+
 ## Verify the repository skill
 
 With Node.js available, run the focused asset check:

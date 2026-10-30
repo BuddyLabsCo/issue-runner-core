@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,29 +16,44 @@ import { test } from "node:test";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const require = createRequire(import.meta.url);
 
-test("a packed contract imports from an independent plugin directory", (t) => {
+await test("a packed contract imports from an independent plugin directory", (t) => {
   const consumer = mkdtempSync(join(tmpdir(), "issue-runner-contract "));
   t.after(() => rmSync(consumer, { recursive: true, force: true }));
+  const npmCli = process.env.npm_execpath;
+  assert.ok(npmCli, "Run this package test through npm test.");
+  /** @param {string[]} args @param {string} cwd */
   const npm = (args, cwd) =>
-    execFileSync(process.execPath, [process.env.npm_execpath, ...args], {
+    execFileSync(process.execPath, [npmCli, ...args], {
       cwd,
       encoding: "utf8",
       timeout: 120_000,
     });
 
-  const [artifact] = JSON.parse(
+  /** @type {unknown} */
+  const packed = JSON.parse(
     npm(["pack", "--json", "--pack-destination", consumer], root),
   );
-  assert.deepEqual(
-    artifact.files.map(({ path }) => path).sort(),
-    [
-      "README.md",
-      "dist/terminal.d.ts",
-      "dist/terminal.js",
-      "docs/terminal-contract.md",
-      "package.json",
-    ],
+  assert.ok(Array.isArray(packed));
+  /** @type {unknown} */
+  const artifact = packed[0];
+  assert.ok(artifact && typeof artifact === "object");
+  assert.ok("filename" in artifact && typeof artifact.filename === "string");
+  assert.ok("files" in artifact && Array.isArray(artifact.files));
+  const files = artifact.files.map(
+    /** @param {unknown} file */
+    (file) => {
+      assert.ok(file && typeof file === "object" && "path" in file);
+      assert.equal(typeof file.path, "string");
+      return file.path;
+    },
   );
+  assert.deepEqual(files.sort(), [
+    "README.md",
+    "dist/terminal.d.ts",
+    "dist/terminal.js",
+    "docs/terminal-contract.md",
+    "package.json",
+  ]);
 
   writeFileSync(
     join(consumer, "package.json"),
@@ -40,23 +61,44 @@ test("a packed contract imports from an independent plugin directory", (t) => {
   );
   npm(
     [
-      "install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund",
-      "--package-lock=false", "--omit=dev", join(consumer, artifact.filename),
+      "install",
+      "--offline",
+      "--ignore-scripts",
+      "--no-audit",
+      "--no-fund",
+      "--package-lock=false",
+      "--omit=dev",
+      join(consumer, artifact.filename),
     ],
     consumer,
   );
+  /** @type {unknown} */
   const manifest = JSON.parse(
-    readFileSync(join(consumer, "node_modules/issue-runner-core/package.json"), "utf8"),
+    readFileSync(
+      join(consumer, "node_modules/issue-runner-core/package.json"),
+      "utf8",
+    ),
+  );
+  assert.ok(manifest && typeof manifest === "object");
+  assert.ok(
+    "exports" in manifest &&
+      manifest.exports &&
+      typeof manifest.exports === "object",
   );
   assert.deepEqual(Object.keys(manifest.exports), ["./terminal"]);
-  assert.equal(manifest.bin, undefined);
-  assert.equal(manifest.dependencies, undefined);
-  assert.deepEqual(manifest.engines, { node: ">=22.18.0 <23", npm: ">=11 <12" });
+  assert.equal("bin" in manifest, false);
+  assert.equal("dependencies" in manifest, false);
+  assert.ok("engines" in manifest);
+  assert.deepEqual(manifest.engines, {
+    node: ">=22.18.0 <23",
+    npm: ">=11 <12",
+  });
 
   const output = execFileSync(
     process.execPath,
     [
-      "--input-type=module", "--eval",
+      "--input-type=module",
+      "--eval",
       `import assert from "node:assert/strict";
        const contract = await import("issue-runner-core/terminal");
        assert.deepEqual(Object.keys(contract), ["terminalContractVersion"]);
@@ -76,9 +118,17 @@ test("a packed contract imports from an independent plugin directory", (t) => {
   execFileSync(
     process.execPath,
     [
-      require.resolve("typescript/bin/tsc"), "--strict", "--target", "ES2022",
-      "--module", "NodeNext", "--moduleResolution", "NodeNext",
-      "--outDir", "output", "consumer.mts",
+      require.resolve("typescript/bin/tsc"),
+      "--strict",
+      "--target",
+      "ES2022",
+      "--module",
+      "NodeNext",
+      "--moduleResolution",
+      "NodeNext",
+      "--outDir",
+      "output",
+      "consumer.mts",
     ],
     { cwd: consumer, stdio: "inherit", timeout: 30_000 },
   );

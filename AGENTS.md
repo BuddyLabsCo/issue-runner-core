@@ -1,5 +1,9 @@
 ## Agent skills
 
+### Code architecture
+
+Before adding, moving, reviewing, or extracting runtime code, read `docs/code-architecture.md` for code placement, dependency direction, and ownership boundaries.
+
 ### Issue tracker
 
 Before working with issues or pull requests, read `docs/agents/issue-tracker.md` for the GitHub workflow, pull request conventions, and E2E sub-issue rules.
