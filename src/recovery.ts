@@ -44,6 +44,8 @@ export interface StageProgress<R> {
   pendingPrompt?: string;
   result?: R;
   corrections: number;
+  correctionNotBefore?: number;
+  correctionExhausted?: true;
   probeRetries?: number;
   probeIds?: string[];
   superseded: string[];
@@ -57,7 +59,14 @@ export interface ReviewProgress extends StageProgress<ReviewResult> {
   fix?: StageProgress<ExecutionResult>;
 }
 
+export interface OperationProgress {
+  consumed: number;
+  error: string;
+  notBefore?: number;
+}
+
 export interface ImplementationProgress extends StageProgress<ExecutionResult> {
+  operations?: Record<string, OperationProgress>;
   purpose?: "documentation";
   noChangeClosure?: "pending" | "completed";
   run_id: string;

@@ -16,7 +16,7 @@ import { verifyWorkspace } from "./verification.ts";
 import { parseExecution } from "../agent/handoff.ts";
 import type { CodeHost, Ticket, Tracker } from "./contracts.ts";
 import { publishImplementation } from "./publication.ts";
-import { restoreExecution } from "./execution-recovery.ts";
+import { recoveringRead, restoreExecution } from "./execution-recovery.ts";
 import { cleanupExecution, executionTerminal } from "./cleanup.ts";
 import type { RunContext, RunSummary } from "./run.ts";
 import { reportTicket } from "./report.ts";
@@ -59,11 +59,13 @@ async function executeStandalone(
       ? input.context.operator
       : scopeOperator(input.context.operator, `Issue #${number}`),
   };
-  const read: ReadOperation = (operation, target, action, settings) =>
-    input.read(operation, target, action, {
-      operator: context.operator,
-      ...settings,
-    });
+  let execution: ImplementationProgress | undefined;
+  const read = recoveringRead({
+    read: input.read,
+    current: () => execution,
+    persist: (progress) => persist(progress),
+    operator: context.operator,
+  });
   const config = loaded.config;
   const purpose = input.documentation ? "documentation" : "implement";
   const repository = config.repository;
@@ -108,6 +110,7 @@ async function executeStandalone(
     inputHash: context.inputHash,
     runArguments: context.runArguments,
   });
+  execution = restored;
   if (restored) context.retained?.set(progressFile, restored);
   const inspect = async (): Promise<{ ticket: Ticket; reason?: string }> => {
     if (input.parentTicket !== undefined) {
@@ -445,7 +448,7 @@ async function executeStandalone(
       reasons: [selected.reason ?? "Reservation changed before dispatch"],
     };
   const executionId = randomUUID();
-  const progress: ImplementationProgress = restored ?? {
+  const progress: ImplementationProgress = (execution = restored ?? {
     ...(input.documentation ? { purpose: "documentation" } : {}),
     run_id: context.runId,
     run_arguments: context.runArguments,
@@ -467,7 +470,7 @@ async function executeStandalone(
     roles: {},
     corrections: 0,
     superseded: [],
-  };
+  });
   context.retained?.set(progressFile, progress);
   await persist(progress);
   if (!restored || !existsSync(progress.worktree))

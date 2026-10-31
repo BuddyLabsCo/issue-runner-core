@@ -436,6 +436,10 @@ await test("recovery uses persisted delivery labels after a partial Batch was in
   for (const ticket of tickets)
     ticket.labels = ticket.labels!.filter((label) => label !== "Docs");
   host.requestSquashMerge = merge;
+  fixture.dependencies.operator.pause = async (message) => {
+    assert.match(message, /merge forbidden/u);
+    return "";
+  };
   fixture.dependencies.signal = new AbortController().signal;
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));

@@ -339,6 +339,10 @@ await test("failed findings cleanup retains the completed checkpoint and retries
   const saved = await fixture.snapshot();
   assert.equal(saved.phase, "publication_eligible");
   await rmdir(saved.reviews![0]!.findings);
+  fixture.dependencies.operator.pause = async (message) => {
+    assert.match(message, /Operation failed:/u);
+    return "";
+  };
   const before = fixture.state.submissions.length;
   const result = await fixture.run();
   assert.match(result.summary.reasons.join(" "), /CI-ready/u);

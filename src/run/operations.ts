@@ -1,4 +1,5 @@
 import type { AuditEvent, AuditLog } from "../audit.ts";
+import type { OperationProgress } from "../recovery.ts";
 import type { Clock, OperatorIO, RetryPolicy } from "./contracts.ts";
 
 export class OperatorCancelled extends Error {}
@@ -33,6 +34,11 @@ export interface OperationOptions<T> {
   reconcile?: () => Promise<
     { outcome: "pending" } | { outcome: "completed"; result: T }
   >;
+  recovery?: {
+    states: Record<string, OperationProgress>;
+    key: string;
+    persist: () => Promise<void>;
+  };
 }
 
 // A rejected bound cannot cancel the underlying I/O or prove that no effect occurred.
@@ -271,25 +277,55 @@ export async function externalRead<T>(
     operation.retry === undefined || operation.retry === "automatic"
       ? policy.operationRetry
       : 0;
+  const recovery = operation.recovery;
+  const persist = async (state?: OperationProgress) => {
+    if (!recovery) return;
+    if (state) recovery.states[recovery.key] = state;
+    else delete recovery.states[recovery.key];
+    await recovery.persist();
+  };
+  let progress = recovery?.states[recovery.key] ?? { consumed: 0, error: "" };
   for (;;) {
-    let lastError: unknown;
-    for (let attempt = 1; attempt <= retries + 1; attempt += 1) {
-      const result = await attemptOperation(operation, attempt);
-      if (result.outcome === "succeeded") return result.result;
-      lastError = result.error;
-      if (attempt <= retries) {
-        const delay =
-          policy.operationRetryDelay[
-            Math.min(attempt - 1, policy.operationRetryDelay.length - 1)
-          ]!;
-        await operation.clock.sleep(delay * 1000);
-      }
+    if (progress.consumed > retries) {
+      await pauseForOperator(
+        operator,
+        `Operation failed: ${progress.error}`,
+        signal,
+        true,
+      );
+      progress = { consumed: 0, error: "" };
+      await persist();
+      continue;
     }
-    await pauseForOperator(
-      operator,
-      `Operation failed: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
-      signal,
-      true,
-    );
+    signal?.throwIfAborted();
+    if (progress.notBefore !== undefined) {
+      const remaining = progress.notBefore - operation.clock.now().getTime();
+      if (remaining > 0) await operation.clock.sleep(remaining);
+      signal?.throwIfAborted();
+      delete progress.notBefore;
+    }
+    const attempt = progress.consumed + 1;
+    if (progress.consumed) {
+      progress.consumed = attempt;
+      await persist(progress);
+    }
+    const result = await attemptOperation(operation, attempt);
+    if (result.outcome === "succeeded") {
+      if (progress.consumed) await persist();
+      return result.result;
+    }
+    progress.consumed = attempt;
+    progress.error =
+      result.error instanceof Error
+        ? result.error.message
+        : String(result.error);
+    if (progress.consumed <= retries) {
+      const delay =
+        policy.operationRetryDelay[
+          Math.min(progress.consumed - 1, policy.operationRetryDelay.length - 1)
+        ]!;
+      progress.notBefore = operation.clock.now().getTime() + delay * 1000;
+    }
+    await persist(progress);
   }
 }
