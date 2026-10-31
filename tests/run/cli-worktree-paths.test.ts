@@ -6,6 +6,7 @@ import {
   mkdir,
   mkdtemp,
   realpath,
+  readlink,
   rm,
   symlink,
   writeFile,
@@ -189,6 +190,57 @@ async function directoryAlias(
   assert.equal(await realpath(alias), physical);
   return alias;
 }
+
+await test(
+  "real Git cleanup ignores unreadable unrelated Worktrees but rejects an unreadable requested path",
+  { skip: process.platform === "win32" },
+  async (t) => {
+    const { root, checkout, base } = await repository(t);
+    const alias = await directoryAlias(t, root, "directory");
+    assert.ok(alias);
+    const workspace = new LocalGitWorkspace("unused-local-test-token");
+    const foreign = path.join(root, "a-foreign");
+    await workspace.createWorktree({
+      checkout,
+      worktree: foreign,
+      branch: "foreign",
+      base,
+    });
+    const worktree = path.join(alias, "z-owned");
+    const branch = "owned";
+    await workspace.createWorktree({ checkout, worktree, branch, base });
+    await rm(foreign, { recursive: true });
+    await symlink(foreign, foreign, "dir");
+    await assert.rejects(realpath(foreign), { code: "ELOOP" });
+
+    const input = { checkout, worktree, branch, headSha: base };
+    await workspace.cleanupWorktree(input);
+    await workspace.cleanupWorktree(input);
+    await assert.rejects(access(worktree), { code: "ENOENT" });
+    assert.equal(
+      await git(
+        checkout,
+        "for-each-ref",
+        "--format=%(refname)",
+        "refs/heads/owned",
+      ),
+      "",
+    );
+
+    await assert.rejects(
+      workspace.cleanupWorktree({
+        checkout,
+        worktree: path.join(alias, "a-foreign"),
+        branch: "foreign",
+        headSha: base,
+      }),
+      { code: "ELOOP" },
+    );
+    assert.equal(await readlink(foreign), foreign);
+    assert.equal(await git(checkout, "rev-parse", "refs/heads/foreign"), base);
+    assert.equal(await git(checkout, "branch", "--show-current"), "main");
+  },
+);
 
 for (const kind of ["directory", "8.3"] as const) {
   await test(

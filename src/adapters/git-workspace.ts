@@ -146,8 +146,12 @@ export class LocalGitWorkspace implements GitWorkspace {
     for (const entry of entries) {
       const fields = entry.split("\0");
       const listed = fields.find((field) => field.startsWith("worktree "));
-      if (!listed || (await this.resolvePath(listed.slice(9))) !== requested)
-        continue;
+      if (!listed) continue;
+      // Unrelated registrations may be unreadable; requested-path errors still propagate above.
+      const observed = await this.resolvePath(listed.slice(9)).catch(
+        () => undefined,
+      );
+      if (observed !== requested) continue;
       if (!fields.includes(`branch refs/heads/${branch}`))
         throw new Error(
           "Cleanup Worktree ownership changed; retaining resources",
