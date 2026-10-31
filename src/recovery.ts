@@ -93,6 +93,7 @@ export interface ImplementationProgress extends StageProgress<ExecutionResult> {
   pr_body?: string;
   reviews?: ReviewProgress[];
   publication?: PublicationProgress;
+  cleanup?: { worktrees: string[]; files: string[] };
 }
 
 export interface PublicationProgress {

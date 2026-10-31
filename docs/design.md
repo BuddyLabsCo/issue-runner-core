@@ -280,21 +280,11 @@ Keep native conversation identity and terminal identity separate. The terminal
 is a UI/process location; the native reference identifies context that may be
 resumed elsewhere.
 
-Preserve the original implementation and Review conversations across the
-rounds that need them. Receiving one intermediate result does not automatically
-mean the conversation is disposable. For example, after Review submits
-findings, send the fix prompt directly to the original implementation terminal
-if it still hosts that conversation; otherwise open a new terminal and resume
-the original implementation conversation before submitting the fix prompt.
+Preserve the original implementation and Review conversations across the rounds that need them. Close each accepted stage's Runner Tab before its successor starts. A later fix or Review opens a new tab and resumes the exact saved conversation after the startup delay.
 
-When an Issue completes, close all Runner-created terminals belonging to that
-Issue, including implementation, Review, repair, and replacement terminals that
-still exist. In Herdr, this means closing the corresponding tabs. Settle the
-required processes before deleting the Worktree and clean up disposable
-per-Issue logs under the existing cleanup policy. Keep required audit and
-recovery records under their existing retention rules. Do not close the
-operator's Runner terminal or terminals belonging to other Issues. A failed or
-uncertain close must not be reported as successful cleanup.
+When an Issue completes successfully, close its residual owned Runner Tabs and remove its owned Worktrees, local branches, and assigned Probe/handoff final and temporary files, including superseded corrections. Stage completion alone never deletes these files. Retain unfinished execution resources and native conversation histories. Keep workflow audit and recovery records. Checkpoint completed cleanup actions so recovery retries only unfinished actions.
+
+Targeted tab close completes Runner's termination responsibility without process, descendant, or external-writer settlement. Do not close the operator's Runner terminal or another Issue's tabs. A rejected or unresolved close remains incomplete cleanup. [Cleanup configuration and recovery](configuration.md#successful-issue-cleanup) describe retries and retained evidence.
 
 ### Stage output
 

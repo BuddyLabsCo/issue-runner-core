@@ -1,5 +1,5 @@
 import path from "node:path";
-import { rename, rm } from "node:fs/promises";
+import { rename } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { nonempty, object, readHandoff } from "../agent/handoff.ts";
 import { saveProgress, type MaintenanceProgress } from "../recovery.ts";
@@ -14,7 +14,7 @@ import {
 import type { Tracker } from "./contracts.ts";
 import type { RunSummary } from "./run.ts";
 import { restoreExecution } from "./execution-recovery.ts";
-import { publishedHead, verifiedPublication } from "./publication.ts";
+import { cleanupExecution } from "./cleanup.ts";
 
 export async function runDocumentation(
   input: Omit<Parameters<typeof runStandalone>[0], "number"> & {
@@ -216,54 +216,20 @@ export async function runDocumentation(
     if (!progress)
       throw new Error("Missing owned documentation execution for cleanup");
     context.retained?.set(executionFile, progress);
-    if (
-      progress.noChangeClosure !== "completed" &&
-      (!progress.publication ||
-        verifiedPublication(progress).phase !== "delivered" ||
-        !progress.publication.merge?.merged ||
-        progress.publication.merge.headSha !==
-          publishedHead(progress.publication) ||
-        progress.publication.closure?.stateReason !== "completed")
-    )
-      throw new Error(
-        "Documentation cleanup requires recorded completion evidence",
-      );
-    const repairs = [
-      ...(progress.publication?.ciRepair?.attempts ?? []),
-      ...(progress.publication?.conflictRepair?.attempts ?? []),
-    ];
-    for (const resource of [progress, ...repairs]) {
-      const ownedRoot = path.join(loaded.directory, "worktrees");
-      if (
-        !path.isAbsolute(resource.worktree) ||
-        !resource.worktree.startsWith(`${ownedRoot}${path.sep}`)
-      )
-        throw new Error("Documentation cleanup path is not owned");
-      await read("cleanup_documentation_worktree", resource.worktree, () =>
-        context.git.cleanupWorktree({
-          checkout: loaded.config.checkout,
-          worktree: resource.worktree,
-          branch: resource.branch,
-          headSha: resource.result?.commits.at(-1)?.sha ?? resource.base,
-        }),
-      );
-    }
-    for (const stage of [progress, ...repairs]) {
-      const paths = [
-        stage.probe?.path,
-        stage.invocation?.path,
-        ...stage.superseded,
-      ];
-      for (const assigned of paths) {
-        if (assigned === undefined) continue;
-        if (path.dirname(assigned) !== path.join(loaded.directory, "handoffs"))
-          throw new Error("Documentation handoff cleanup ownership mismatch");
-        await read("cleanup_documentation_handoff", assigned, async () => {
-          await rm(assigned, { force: true });
-          await rm(`${assigned}.tmp`, { force: true });
-        });
-      }
-    }
+    await cleanupExecution({
+      progress,
+      loaded,
+      git: context.git,
+      read,
+      persist: () =>
+        context.signal?.aborted
+          ? saveProgress(executionFile, progress)
+          : read(
+              "save_implementation_checkpoint",
+              `ticket:${maintenance.ticket}`,
+              () => saveProgress(executionFile, progress),
+            ),
+    });
     maintenance.phase = "completed";
     await persist();
     return result;

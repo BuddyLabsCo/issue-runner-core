@@ -38,6 +38,7 @@ for (const scenario of [
   "repaired",
   "no_change",
   "ownership_changed",
+  "branch_in_use",
 ] as const) {
   await test(`standalone documentation ${scenario} verifies real Git and cleans only owned resources`, async (t) => {
     const fixture = await documentationRun(t);
@@ -169,6 +170,26 @@ for (const scenario of [
         return "q";
       };
     }
+    const otherWorktree = path.join(fixture.directory, "other-worktree");
+    if (scenario === "branch_in_use") {
+      fixture.integrationState.onClose = async () => {
+        fixture.state.ticket.state = "closed";
+        fixture.state.ticket.stateReason = "completed";
+        const progress = await fixture.snapshot();
+        await git(
+          checkout,
+          "worktree",
+          "add",
+          "--force",
+          otherWorktree,
+          progress.branch,
+        );
+      };
+      fixture.dependencies.operator.pause = async (message) => {
+        assert.match(message, /used by worktree|checked out/u);
+        return "q";
+      };
+    }
     const run = () =>
       executeCli(documentCommand, {
         ...fixture.dependencies,
@@ -178,7 +199,9 @@ for (const scenario of [
     const progress = await fixture.snapshot();
     assert.equal(
       result.summary.outcome,
-      scenario === "ownership_changed" ? "cancelled" : "succeeded",
+      scenario === "ownership_changed" || scenario === "branch_in_use"
+        ? "cancelled"
+        : "succeeded",
       JSON.stringify(result),
     );
     assert.equal(await git(checkout, "branch", "--show-current"), "main");
@@ -192,6 +215,21 @@ for (const scenario of [
       await access(progress.invocation!.path);
       await git(progress.worktree, "clean", "-f");
       await git(progress.worktree, "switch", progress.branch);
+      fixture.dependencies.signal = new AbortController().signal;
+      assert.equal((await run()).summary.outcome, "succeeded");
+      assert.equal(fixture.state.taskCount, 1);
+      assert.equal(fixture.integrationState.closures, 1);
+    }
+    if (scenario === "branch_in_use") {
+      await assert.rejects(access(progress.worktree), { code: "ENOENT" });
+      await access(otherWorktree);
+      await access(progress.invocation!.path);
+      assert.deepEqual(progress.cleanup?.worktrees, []);
+      assert.equal(
+        await git(checkout, "rev-parse", progress.branch),
+        progress.base,
+      );
+      await git(checkout, "worktree", "remove", "--", otherWorktree);
       fixture.dependencies.signal = new AbortController().signal;
       assert.equal((await run()).summary.outcome, "succeeded");
       assert.equal(fixture.state.taskCount, 1);

@@ -17,6 +17,7 @@ import { parseExecution } from "../agent/handoff.ts";
 import type { CodeHost, Ticket, Tracker } from "./contracts.ts";
 import { publishImplementation } from "./publication.ts";
 import { restoreExecution } from "./execution-recovery.ts";
+import { cleanupExecution, executionTerminal } from "./cleanup.ts";
 import type { RunContext, RunSummary } from "./run.ts";
 import {
   hasOpenBlocker,
@@ -181,6 +182,7 @@ export async function runStandalone(input: {
       selected.reason = "Reservation changed before dispatch";
     return selected.reason === undefined;
   };
+  let tabs: ReturnType<typeof executionTerminal> | undefined;
   const stageInput = (progress: ImplementationProgress): IssueStageContext => ({
     loaded,
     progress,
@@ -195,23 +197,11 @@ export async function runStandalone(input: {
       ),
     withEnvironment: (action) =>
       context.git.withAgentEnvironment(loaded.directory, action),
-    terminal: {
-      createTab: (options) =>
-        read(
-          "create_tab",
-          options.label,
-          () => context.terminal.createTab(options),
-          { retry: "manual" },
-        ),
-      submitText: (tab, text, chord) =>
-        read(
-          "submit_text",
-          `ticket:${number}:${progress.phase}`,
-          () => context.terminal.submitText(tab, text, chord),
-          { retry: "never" },
-        ),
-      closeTab: (tab) => context.terminal.closeTab(tab),
-    },
+    terminal: (tabs ??= executionTerminal({
+      terminal: context.terminal,
+      progress,
+      read,
+    })).terminal,
     clock: context.clock,
     operator: context.operator,
     ...(context.signal ? { signal: context.signal } : {}),
@@ -245,6 +235,17 @@ export async function runStandalone(input: {
           inspectTicket: inspect,
           continuePublication: () => publish(progress),
         });
+        if (delivery.outcome === "succeeded") {
+          await tabs?.closeResidual();
+          if (!input.documentation)
+            await cleanupExecution({
+              progress,
+              loaded,
+              git: context.git,
+              read,
+              persist: () => persist(progress),
+            });
+        }
         if (delivery.outcome === "succeeded")
           input.onDelivery?.(progress.publication!.deliveryLabels!);
         return {
@@ -356,6 +357,7 @@ export async function runStandalone(input: {
           await accept(progress, JSON.stringify(progress.result));
         },
       });
+      await tabs?.closeResidual();
       return {
         ...summary,
         outcome: "succeeded",
@@ -386,7 +388,7 @@ export async function runStandalone(input: {
       ],
     };
   if (!input.documentation) {
-    const { runnerAccount } = config.tracker;
+    const { runnerAccount, reservationLabel } = config.tracker;
     // Confirm each write from current tracker state before retrying it.
     await read(
       "add_reservation_label",
@@ -398,19 +400,13 @@ export async function runStandalone(input: {
           selected.reason = "Reservation changed before label";
           return;
         }
-        if (!selected.ticket.labels?.includes(config.tracker.reservationLabel))
-          await tracker.addLabel(
-            repository,
-            number,
-            config.tracker.reservationLabel,
-          );
+        if (!selected.ticket.labels?.includes(reservationLabel))
+          await tracker.addLabel(repository, number, reservationLabel);
       },
       {
         reconcile: async () => {
           selected = await inspect();
-          return selected.ticket.labels?.includes(
-            config.tracker.reservationLabel,
-          )
+          return selected.ticket.labels?.includes(reservationLabel)
             ? { outcome: "completed", result: undefined }
             : { outcome: "pending" };
         },
@@ -423,9 +419,7 @@ export async function runStandalone(input: {
       async () => {
         selected = await inspect();
         if (selected.reason) return;
-        if (
-          !selected.ticket.labels?.includes(config.tracker.reservationLabel)
-        ) {
+        if (!selected.ticket.labels?.includes(reservationLabel)) {
           selected.reason = "Reservation changed before assignment";
           return;
         }

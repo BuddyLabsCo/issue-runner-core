@@ -6,7 +6,11 @@ import type { TestContext } from "node:test";
 import { executeCli } from "../../src/cli.ts";
 import type { ImplementationProgress } from "../../src/recovery.ts";
 import type { TerminalPlugin } from "../../src/terminal.ts";
-import type { Ticket, WorkspaceEvidence } from "../../src/run/contracts.ts";
+import type {
+  GitWorkspace,
+  Ticket,
+  WorkspaceEvidence,
+} from "../../src/run/contracts.ts";
 import { createProject, validConfig } from "./cli-project.ts";
 import { createCliDependencies } from "./cli-dependencies.ts";
 
@@ -88,6 +92,7 @@ export async function implementationRun(
     sleeps: [] as number[],
     taskCount: 0,
     probeCount: 0,
+    cleanup: [] as Parameters<GitWorkspace["cleanupWorktree"]>[0][],
     onProbe: async (assignment: Record<string, unknown>) => {
       await publish(String(assignment.path), {
         ...assignment,
@@ -164,6 +169,11 @@ export async function implementationRun(
     },
     gitWorkspace: {
       ...deps.gitWorkspace,
+      async cleanupWorktree(
+        input: Parameters<GitWorkspace["cleanupWorktree"]>[0],
+      ) {
+        state.cleanup.push(input);
+      },
       async fetchTargetBranch() {
         state.events.push("fetch");
         return "a".repeat(40);

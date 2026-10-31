@@ -6,6 +6,7 @@ import { executeCli } from "../../src/cli.ts";
 import type { CreateTabOptions } from "../../src/terminal.ts";
 import type {
   CodeHost,
+  GitWorkspace,
   Ticket,
   Tracker,
   WorkspaceEvidence,
@@ -71,6 +72,11 @@ export async function parentRun(
     signal: controller.signal,
     gitWorkspace: {
       ...deps.gitWorkspace,
+      async cleanupWorktree(
+        input: Parameters<GitWorkspace["cleanupWorktree"]>[0],
+      ) {
+        assert.ok(worktrees.has(input.worktree));
+      },
       async createWorktree(input: {
         worktree: string;
         branch: string;

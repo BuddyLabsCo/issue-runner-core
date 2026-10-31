@@ -1,7 +1,14 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -227,11 +234,13 @@ for (const kind of ["ci", "conflict"] as const) {
         pushed[1]!.head,
       );
       assert.equal(
-        await git(pushed[1]!.worktree, "merge-base", pushed[0]!.head, "HEAD"),
+        await git(checkout, "merge-base", pushed[0]!.head, pushed[1]!.head),
         pushed[0]!.head,
       );
       assert.notEqual(
-        await git(pushed[1]!.worktree, "branch", "--show-current"),
+        saved.publication![
+          kind === "ci" ? "ciRepair" : "conflictRepair"
+        ]!.attempts.at(-1)!.branch,
         saved.branch,
       );
       assert.equal(
@@ -241,7 +250,7 @@ for (const kind of ["ci", "conflict"] as const) {
       if (kind === "conflict") {
         assert.notEqual(targetBase, base);
         assert.equal(
-          await git(pushed[1]!.worktree, "merge-base", targetBase, "HEAD"),
+          await git(checkout, "merge-base", targetBase, pushed[1]!.head),
           targetBase,
         );
         if (emptyFirst)
@@ -249,6 +258,24 @@ for (const kind of ["ci", "conflict"] as const) {
             saved.publication!.conflictRepair!.attempts[0]!.verificationError!,
             /Target Branch SHA/u,
           );
+        for (const resource of [
+          saved,
+          ...saved.publication!.conflictRepair!.attempts,
+        ]) {
+          await assert.rejects(access(resource.worktree), { code: "ENOENT" });
+          assert.equal(
+            await git(
+              checkout,
+              "for-each-ref",
+              "--format=%(refname)",
+              `refs/heads/${resource.branch}`,
+            ),
+            "",
+          );
+          await assert.rejects(access(resource.invocation!.path), {
+            code: "ENOENT",
+          });
+        }
       }
       assert.equal(await git(checkout, "rev-parse", "HEAD"), base);
       assert.equal(fixture.publicationState.creations, 1);

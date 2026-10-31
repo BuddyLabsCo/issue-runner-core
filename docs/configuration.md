@@ -353,7 +353,17 @@ With `ticketClosure: code_host`, Runner leaves closure to the host. It waits 10 
 
 Delivery requires confirmed integration and tracker `closed/completed`. Reservation release, an unmerged PR, and `not_planned` closure earn no delivery credit. The checkpoint saves merge confirmation, completed closure, and the exact case-sensitive labels observed at confirmed delivery. Matching recovery skips completed Agent/merge work and preserves those delivery-time labels for downstream documentation maintenance.
 
-Successful numbered Issues and fully delivered Issue Lists return `succeeded` with exit zero after any triggered maintenance succeeds. Parent Runs continue through subsequent Batches and confirm parent closure when all children are terminal. Ordinary Issue Worktrees, handoffs, and Reservation markers remain retained in this slice.
+Successful numbered Issues and fully delivered Issue Lists return `succeeded` with exit zero after cleanup and any triggered maintenance succeed. Parent Runs continue through subsequent Batches and confirm parent closure when all children are terminal.
+
+### Successful Issue cleanup
+
+After confirmed delivery, Runner closes residual owned Runner Tabs and removes that execution's Worktrees and local branches. Cleanup verifies each Worktree's ownership and expected branch HEAD before removal. Ownership changes or rejected operations retain unfinished resources and use ordinary retries and Operator Pause.
+
+Cleanup removes assigned Session Probe and handoff JSON files, their `.tmp` siblings, and superseded corrections across implementation, Review, fixes, and repairs. A completed stage alone never deletes these files. Failed, cancelled, interrupted, skipped, unfinished, and `--no-auto-merge` executions retain them. Native conversation histories, other Issues' files and tabs, and the operator's Runner terminal remain outside cleanup.
+
+Atomic execution checkpoints record each completed Worktree/branch removal and each final or temporary file deletion separately. Matching recovery retries only unfinished actions, without repeating Agent work, merge, or tracker closure. Audit records retain operation attempts and failures. If interruption prevents saving an action's completion, cleanup rechecks current Git state and tolerates already absent files. Keep native sessions stopped before recovery; Runner does not look up old tab handles.
+
+A rejected or unresolved targeted close remains incomplete cleanup. A resolved close completes Runner's termination responsibility; Runner does not wait for processes, descendants, or external writers. Per-call Git configuration cleanup and Review-loop findings cleanup keep their existing timing. Workflow audits and Recovery Snapshots remain available after successful cleanup.
 
 ### Automatic documentation after a Batch
 
