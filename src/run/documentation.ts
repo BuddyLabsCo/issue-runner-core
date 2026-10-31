@@ -45,6 +45,7 @@ export async function runDocumentation(
   let maintenance: MaintenanceProgress = {
     run_id: context.runId,
     input_hash: context.inputHash,
+    run_arguments: context.runArguments,
     repository: loaded.config.repository,
     target_branch: summary.targetBranch,
     phase: "scheduled",
@@ -69,6 +70,8 @@ export async function runDocumentation(
       }
       if (
         saved.input_hash !== context.inputHash ||
+        JSON.stringify(saved.run_arguments) !==
+          JSON.stringify(context.runArguments) ||
         saved.repository !== maintenance.repository ||
         saved.target_branch !== maintenance.target_branch ||
         saved.batch !== input.batch ||
@@ -213,6 +216,8 @@ export async function runDocumentation(
       targetBranch: summary.targetBranch,
       documentation: true,
       runId: maintenance.run_id,
+      inputHash: context.inputHash,
+      runArguments: context.runArguments,
     });
     if (!progress)
       throw new Error("Missing owned documentation execution for cleanup");

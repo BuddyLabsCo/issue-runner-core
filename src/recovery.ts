@@ -61,6 +61,8 @@ export interface ImplementationProgress extends StageProgress<ExecutionResult> {
   purpose?: "documentation";
   noChangeClosure?: "pending" | "completed";
   run_id: string;
+  run_arguments: readonly string[];
+  input_hash: string;
   execution_id: string;
   project: string;
   repository: string;
@@ -154,6 +156,7 @@ export interface RepairProgress extends StageProgress<ExecutionResult> {
 
 export interface BatchProgress {
   run_id: string;
+  run_arguments: readonly string[];
   input_hash: string;
   repository: string;
   target_branch: string;
@@ -164,6 +167,7 @@ export interface BatchProgress {
 
 export interface MaintenanceProgress {
   run_id: string;
+  run_arguments: readonly string[];
   input_hash: string;
   repository: string;
   target_branch: string;

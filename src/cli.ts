@@ -293,10 +293,8 @@ export async function executeRun(
       {
         audit,
         runId,
-        inputHash: hashRunInput(
-          argv,
-          readFileSync(path.join(loaded.directory, "config.yaml")),
-        ),
+        runArguments: [...argv],
+        inputHash: hashRunInput(argv, loaded.configBytes),
         clock,
         operator: dependencies.operator,
         git:

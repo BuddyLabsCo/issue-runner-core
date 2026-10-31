@@ -29,6 +29,7 @@ export interface RunContext {
   audit: AuditLog;
   runId: string;
   inputHash: string;
+  runArguments: readonly string[];
   clock: Clock;
   operator: OperatorIO;
   git: GitWorkspace;

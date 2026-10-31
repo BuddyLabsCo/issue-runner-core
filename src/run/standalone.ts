@@ -20,11 +20,8 @@ import { restoreExecution } from "./execution-recovery.ts";
 import { cleanupExecution, executionTerminal } from "./cleanup.ts";
 import type { RunContext, RunSummary } from "./run.ts";
 import { reportTicket } from "./report.ts";
-import {
-  hasOpenBlocker,
-  readChildren,
-  type ReadOperation,
-} from "./discovery.ts";
+import { hasOpenBlocker, readChildren } from "./discovery.ts";
+import type { ReadOperation } from "./discovery.ts";
 import {
   OperationStopped,
   OperatorCancelled,
@@ -108,6 +105,8 @@ async function executeStandalone(
     targetBranch: summary.targetBranch,
     documentation: input.documentation === true,
     runId: context.runId,
+    inputHash: context.inputHash,
+    runArguments: context.runArguments,
   });
   if (restored) context.retained?.set(progressFile, restored);
   const inspect = async (): Promise<{ ticket: Ticket; reason?: string }> => {
@@ -266,15 +265,11 @@ async function executeStandalone(
       }
     };
     if (input.deferIntegration) {
-      input.deferIntegration(
-        progress.publication!.pullRequest!.number,
-        complete,
-      );
+      const pullRequest = progress.publication!.pullRequest!;
+      input.deferIntegration(pullRequest.number, complete);
       return {
         ...summary,
-        reasons: [
-          `CI-ready PR ${progress.publication!.pullRequest!.url} awaits Batch integration`,
-        ],
+        reasons: [`CI-ready PR ${pullRequest.url} awaits Batch integration`],
       };
     }
     return complete();
@@ -453,6 +448,8 @@ async function executeStandalone(
   const progress: ImplementationProgress = restored ?? {
     ...(input.documentation ? { purpose: "documentation" } : {}),
     run_id: context.runId,
+    run_arguments: context.runArguments,
+    input_hash: context.inputHash,
     execution_id: executionId,
     project: summary.project,
     repository,

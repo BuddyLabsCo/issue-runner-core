@@ -40,6 +40,11 @@ await test("a retained implementation resumes only its saved role with literal a
   await access(
     path.join(fixture.directory, "recovery", `${legacyHash}-50.json`),
   );
+  assert.deepEqual(saved, {
+    ...saved,
+    run_arguments: implementationCommand,
+    input_hash: legacyHash,
+  });
   const controller = new AbortController();
   const before = fixture.state.submissions.length;
   fixture.state.onSleep = async (ms) => {

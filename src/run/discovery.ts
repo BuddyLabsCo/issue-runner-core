@@ -78,12 +78,17 @@ export async function hasOpenBlocker(
 
 function parseBatch(
   text: string,
-  expected: Pick<BatchProgress, "input_hash" | "repository" | "target_branch">,
+  expected: Pick<
+    BatchProgress,
+    "input_hash" | "run_arguments" | "repository" | "target_branch"
+  >,
   maxBatchSize: number,
 ): BatchProgress {
   const saved = object(JSON.parse(text) as unknown);
   if (
-    Object.entries(expected).some(([key, value]) => saved[key] !== value) ||
+    Object.entries(expected).some(
+      ([key, value]) => JSON.stringify(saved[key]) !== JSON.stringify(value),
+    ) ||
     !nonempty(saved.run_id) ||
     (saved.completed !== undefined && typeof saved.completed !== "boolean") ||
     (saved.documentation !== undefined &&
@@ -131,6 +136,7 @@ export async function selectIssueBatch(input: {
   );
   const ownership = {
     input_hash: context.inputHash,
+    run_arguments: context.runArguments,
     repository: config.repository,
     target_branch: input.targetBranch,
   };

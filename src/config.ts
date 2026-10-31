@@ -58,6 +58,7 @@ export interface ProjectConfig {
 
 export interface LoadedProject {
   config: ProjectConfig;
+  configBytes: Uint8Array;
   directory: string;
   trackerToken: string;
   codeHostToken: string;
@@ -374,8 +375,10 @@ export async function loadProject(
   const directory = resolveProjectDirectory(launchDirectory, projectKey);
   const configPath = path.join(directory, "config.yaml");
   let value: unknown;
+  let configBytes: Buffer;
   try {
-    value = parse(await readFile(configPath, "utf8"));
+    configBytes = await readFile(configPath);
+    value = parse(configBytes.toString("utf8"));
   } catch (error) {
     throw new Error(
       `failed to load ${configPath}: ${error instanceof Error ? error.message : String(error)}`,
@@ -428,7 +431,7 @@ export async function loadProject(
     throw new Error(`missing credential ${config.tracker.tokenEnv}`);
   if (!codeHostToken?.trim())
     throw new Error(`missing credential ${config.codeHost.tokenEnv}`);
-  return { config, directory, trackerToken, codeHostToken };
+  return { config, configBytes, directory, trackerToken, codeHostToken };
 }
 
 // `--project` is a key for one child of the launch directory, never a path.
