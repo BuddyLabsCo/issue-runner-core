@@ -162,21 +162,26 @@ async function pauseForOperator(
   signal?: AbortSignal,
   allowsSkip = false,
 ): Promise<void> {
-  for (;;) {
-    signal?.throwIfAborted();
-    const response = await operator.pause(
-      `${reason} Enter to retry, ${allowsSkip && operator.skipScope ? `s to skip ${operator.skipScope}, ` : ""}q/EOF to cancel. Other input is unsupported.`,
-      signal,
-    );
-    signal?.throwIfAborted();
-    if (response === "q" || response === null)
-      throw new OperatorCancelled("operator cancelled");
-    if (response === "") return;
-    if (response === "s" && allowsSkip && operator.skipScope)
-      throw new TicketSkipped(
-        `skipped ${operator.skipScope}; side effects may remain, including unknown resources from unobserved writes`,
+  const release = operator.intervene?.();
+  try {
+    for (;;) {
+      signal?.throwIfAborted();
+      const response = await operator.pause(
+        `${reason} Enter to retry, ${allowsSkip && operator.skipScope ? `s to skip ${operator.skipScope}, ` : ""}q/EOF to cancel. Other input is unsupported.`,
+        signal,
       );
-    operator.write("Unsupported input.");
+      signal?.throwIfAborted();
+      if (response === "q" || response === null)
+        throw new OperatorCancelled("operator cancelled");
+      if (response === "") return;
+      if (response === "s" && allowsSkip && operator.skipScope)
+        throw new TicketSkipped(
+          `skipped ${operator.skipScope}; side effects may remain, including unknown resources from unobserved writes`,
+        );
+      operator.write("Unsupported input.");
+    }
+  } finally {
+    release?.();
   }
 }
 
