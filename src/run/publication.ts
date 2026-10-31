@@ -192,107 +192,135 @@ export async function publishImplementation(input: {
     publication.discoveryNotBefore = context.clock.now().getTime() + 30_000;
     await persist();
   }
-  const confirm = (expectedHead = publishedHead(publication)) =>
-    read("confirm_publication", target, async () => {
-      await verify();
-      if ((await remoteHead()) !== expectedHead)
-        throw new Error("Remote branch advanced during required checks");
-      const candidate = await matchingPullRequest(expectedHead);
-      if (!candidate) throw new Error("Published Pull Request is missing");
-      return candidate;
-    });
-  if (publication.phase === "conflict_repair") {
-    do {
-      await repairPullRequest({
-        ...input.stageInput,
-        kind: "conflict",
-        git: context.git,
-        read,
-        confirm,
-        remoteHead,
+  const merged = new OperationStopped("Published Pull Request merged");
+  try {
+    const confirm = (expectedHead = publishedHead(publication)) =>
+      read("confirm_publication", target, async () => {
+        await verify();
+        if ((await remoteHead()) !== expectedHead)
+          throw new Error("Remote branch advanced during required checks");
+        const candidate = await matchingPullRequest(expectedHead);
+        if (!candidate) throw new Error("Published Pull Request is missing");
+        if (
+          candidate.state === "merged" &&
+          expectedHead === publishedHead(publication)
+        ) {
+          const merge = await codeHost.getPullRequest(
+            repository,
+            candidate.number,
+          );
+          if (!merge.merged || merge.headSha !== expectedHead)
+            throw new Error(
+              "Pull Request merge does not match the recorded publication head",
+            );
+          publication.merge = merge;
+          publication.phase = "merged";
+          await persist();
+          // Unwind nested repairs before they can dispatch or push again.
+          throw merged;
+        }
       });
-    } while (publication.phase === "conflict_repair");
-    if (publication.conflictRepair?.retryAuthorized)
-      return "Conflict repair budget exhausted; awaiting refreshed merge evidence";
-  }
-  const repair = async () => {
-    do {
-      await repairPullRequest({
-        kind: "ci",
-        ...input.stageInput,
-        git: context.git,
-        read,
-        confirm,
-        remoteHead,
-      });
-    } while (
-      publication.phase === "checks_failed" &&
-      !publication.ciRepair?.retryAuthorized
+    const pendingPush =
+      publication.ciRepair?.attempts.at(-1)?.pendingPush ??
+      publication.conflictRepair?.attempts.at(-1)?.pendingPush;
+    // Let the repair checkpoint a push already confirmed at its recorded head.
+    await confirm(
+      pendingPush && (await remoteHead()) === pendingPush
+        ? pendingPush
+        : undefined,
     );
-  };
-  const pending = publication.ciRepair?.attempts.at(-1);
-  if (
-    pending &&
-    !pending.pushed &&
-    !pending.verificationError &&
-    pending.result?.outcome !== "no_change"
-  )
-    await repair();
-  for (;;) {
-    if ((await confirm()).state === "merged") {
-      publication.phase = "checks_ready";
-      await persist();
+    if (publication.phase === "conflict_repair") {
+      do {
+        await repairPullRequest({
+          ...input.stageInput,
+          kind: "conflict",
+          git: context.git,
+          read,
+          confirm,
+          remoteHead,
+        });
+      } while (publication.phase === "conflict_repair");
+      if (publication.conflictRepair?.retryAuthorized)
+        return "Conflict repair budget exhausted; awaiting refreshed merge evidence";
     }
-    if (publication.phase === "checks_ready") break;
-    const wait =
-      (publication.discoveryNotBefore ?? 0) - context.clock.now().getTime();
-    if (wait > 0) {
-      context.signal?.throwIfAborted();
-      await context.clock.sleep(wait);
-      context.signal?.throwIfAborted();
-    }
-    publication.checksDeadline ??=
-      context.clock.now().getTime() +
-      loaded.config.timeouts.requiredChecksMinutes * 60_000;
-    await persist();
+    const repair = async () => {
+      do {
+        await repairPullRequest({
+          kind: "ci",
+          ...input.stageInput,
+          git: context.git,
+          read,
+          confirm,
+          remoteHead,
+        });
+      } while (
+        publication.phase === "checks_failed" &&
+        !publication.ciRepair?.retryAuthorized
+      );
+    };
+    const pending = publication.ciRepair?.attempts.at(-1);
+    if (
+      pending &&
+      !pending.pushed &&
+      !pending.verificationError &&
+      pending.result?.outcome !== "no_change"
+    )
+      await repair();
     for (;;) {
       await confirm();
-      const checks = await read("required_checks", target, () =>
-        codeHost.getRequiredChecks(repository, pullRequest.number),
-      );
-      publication.checks = checks;
-      if (
-        checks.some(({ bucket }) => bucket === "fail" || bucket === "cancel")
-      ) {
-        publication.phase = "checks_failed";
-        await persist();
-        await repair();
-        break;
+      if (publication.phase === "checks_ready") break;
+      const wait =
+        (publication.discoveryNotBefore ?? 0) - context.clock.now().getTime();
+      if (wait > 0) {
+        context.signal?.throwIfAborted();
+        await context.clock.sleep(wait);
+        context.signal?.throwIfAborted();
       }
-      if (!checks.some(({ bucket }) => bucket === "pending")) {
-        publication.phase = "checks_ready";
-        await persist();
-        break;
-      }
+      publication.checksDeadline ??=
+        context.clock.now().getTime() +
+        loaded.config.timeouts.requiredChecksMinutes * 60_000;
       await persist();
-      const remaining =
-        publication.checksDeadline - context.clock.now().getTime();
-      if (remaining <= 0) {
-        await pauseForOperator(
-          context.operator,
-          "Required checks timed out.",
-          context.signal,
+      for (;;) {
+        await confirm();
+        const checks = await read("required_checks", target, () =>
+          codeHost.getRequiredChecks(repository, pullRequest.number),
         );
-        publication.checksDeadline =
-          context.clock.now().getTime() +
-          loaded.config.timeouts.requiredChecksMinutes * 60_000;
+        publication.checks = checks;
+        if (
+          checks.some(({ bucket }) => bucket === "fail" || bucket === "cancel")
+        ) {
+          publication.phase = "checks_failed";
+          await persist();
+          await repair();
+          break;
+        }
+        if (!checks.some(({ bucket }) => bucket === "pending")) {
+          publication.phase = "checks_ready";
+          await persist();
+          break;
+        }
         await persist();
-      } else {
-        context.signal?.throwIfAborted();
-        await context.clock.sleep(Math.min(10_000, remaining));
-        context.signal?.throwIfAborted();
+        const remaining =
+          publication.checksDeadline - context.clock.now().getTime();
+        if (remaining <= 0) {
+          await pauseForOperator(
+            context.operator,
+            "Required checks timed out.",
+            context.signal,
+          );
+          publication.checksDeadline =
+            context.clock.now().getTime() +
+            loaded.config.timeouts.requiredChecksMinutes * 60_000;
+          await persist();
+        } else {
+          context.signal?.throwIfAborted();
+          await context.clock.sleep(Math.min(10_000, remaining));
+          context.signal?.throwIfAborted();
+        }
       }
     }
+  } catch (error) {
+    if (error !== merged) throw error;
   }
   return `CI-ready PR ${pullRequest.url} retained with branch ${progress.branch}, Worktree ${progress.worktree}, handoffs and progress evidence${publication.ciRepair ? `; repair Worktrees: ${publication.ciRepair.attempts.map(({ worktree }) => worktree).join(", ")}` : ""}${input.autoMerge ? "; ready for integration" : "; auto-merge disabled"}`;
 }
