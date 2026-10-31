@@ -181,13 +181,23 @@ for (const selector of ["parent", "issue"] as const) {
         tasks.get(51)!.resolve();
         await Promise.race([observed.get(82)!.promise, running]);
         assert.deepEqual(fixture.requests, []);
-        checks.get(82)!.resolve();
         tasks.get(52)!.resolve();
         await Promise.race([observed.get(83)!.promise, running]);
         assert.deepEqual(fixture.dispatched, [53, 51, 52]);
-        assert.deepEqual([...fixture.ready].sort(), [81, 82]);
+        assert.deepEqual([...fixture.ready], [81]);
         assert.deepEqual(fixture.requests, []);
         checks.get(83)!.resolve();
+        const deadline = Date.now() + 3_000;
+        while (
+          (await implementationProgress(fixture.directory, 52)).publication
+            ?.phase !== "checks_ready"
+        ) {
+          assert.ok(Date.now() < deadline, "PR 83 must become CI-ready first");
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        }
+        assert.deepEqual([...fixture.ready], [81, 83]);
+        assert.deepEqual(fixture.requests, []);
+        checks.get(82)!.resolve();
         await Promise.race([queued.promise, running]);
         assert.deepEqual(fixture.requests, [82]);
         assert.equal(fixture.merged.size, 0);
