@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import { promptAssignment } from "../support/prompt-assignment.ts";
 import assert from "node:assert/strict";
 import { readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -80,7 +81,7 @@ await test("a withheld correction retains its prompt, path and spent budget unti
     }
     await submitText(tab, text);
     if (text.startsWith("Implementation assignment\n")) {
-      const invocation = JSON.parse(text.split("\n")[1]!) as { path: string };
+      const invocation = promptAssignment(text) as { path: string };
       await publish(invocation.path, {});
     }
   };

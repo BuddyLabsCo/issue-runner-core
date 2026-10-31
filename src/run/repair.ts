@@ -98,9 +98,6 @@ function validateRepairBudget(
       (attempt.probeRetries !== undefined &&
         (!Number.isSafeInteger(attempt.probeRetries) ||
           attempt.probeRetries < 0)) ||
-      (attempt.probeIds !== undefined &&
-        (!Array.isArray(attempt.probeIds) ||
-          !attempt.probeIds.every(nonempty))) ||
       [attempt.worktreeCreated, attempt.counted, attempt.pushed].some(
         (value) => value !== undefined && value !== true,
       )
@@ -108,12 +105,15 @@ function validateRepairBudget(
       throw invalid();
     ids.add(attempt.attempt_id);
     for (const [key, id] of [
-      ["probe", "probe_id"],
+      ["probe", undefined],
       ["invocation", "invocation_id"],
     ] as const) {
       if (attempt[key] !== undefined) {
         const assignment = object(attempt[key]);
-        if (!nonempty(assignment[id]) || !owned(assignment.path))
+        if (
+          (id !== undefined && !nonempty(assignment[id])) ||
+          !owned(assignment.path)
+        )
           throw invalid();
       }
     }
@@ -308,7 +308,10 @@ export async function repairPullRequest(
       purpose: kind === "ci" ? "ci_repair" : "conflict_repair",
       worktree: repair.worktree,
       task: () =>
-        `${kind === "ci" ? ciRepairInstructions : conflictRepairInstructions}\n\nRepository: ${progress.repository}\nIssue #${progress.ticket}: ${input.ticket.title ?? ""}\n${input.ticket.body ?? ""}\nPR: ${publication.pullRequest!.url}\nWorktree: ${repair.worktree}\nDelivery branch: ${repair.branch}\nRemote branch: ${publication.branch}\nBase SHA: ${repair.base}\nTarget Branch: ${publication.targetBranch}\nFailed checks: ${JSON.stringify(repair.failedChecks)}${kind === "conflict" ? `\nTarget Branch SHA: ${repair.targetBase}\nMerge conflict: ${repair.conflict}` : ""}`,
+        `${(kind === "ci" ? ciRepairInstructions : conflictRepairInstructions).replace("{{issue}}", () => String(progress.ticket))}\n\nPR: ${publication.pullRequest!.url}\n` +
+        (kind === "ci"
+          ? `Failed checks: ${JSON.stringify(repair.failedChecks.map(({ name, state, link }) => ({ name, state, link })))}`
+          : `Base SHA: ${repair.base}\nTarget Branch SHA: ${repair.targetBase}\nMerge conflict: ${repair.conflict}`),
       accept: async (text) => {
         const result = parseExecution(text);
         const { evidence, ancestry } = await read(

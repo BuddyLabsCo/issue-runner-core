@@ -64,18 +64,20 @@ export function validateReviewContext(
       (stage.pendingPrompt !== undefined && !nonempty(stage.pendingPrompt)) ||
       (stage.probeRetries !== undefined &&
         (!Number.isSafeInteger(stage.probeRetries) ||
-          (stage.probeRetries as number) < 0)) ||
-      (stage.probeIds !== undefined &&
-        (!Array.isArray(stage.probeIds) || !stage.probeIds.every(nonempty)))
+          (stage.probeRetries as number) < 0))
     )
       throw invalid();
     for (const [key, id] of [
-      ["probe", "probe_id"],
+      ["probe", undefined],
       ["invocation", "invocation_id"],
     ] as const) {
       if (stage[key] === undefined) continue;
       const assignment = object(stage[key]);
-      if (!nonempty(assignment[id]) || !owned(assignment.path)) throw invalid();
+      if (
+        (id !== undefined && !nonempty(assignment[id])) ||
+        !owned(assignment.path)
+      )
+        throw invalid();
     }
   };
   if (
@@ -164,10 +166,8 @@ export async function reviewImplementation(
         stage: round,
         purpose: "review",
         task: async () =>
-          `${reviewInstructions}\n\n${await readFile(path.join(loaded.directory, "prompts", "review.md"), "utf8")}\n\n` +
-          `Repository: ${progress.repository}\nIssue #${progress.ticket}: ${input.ticket.title ?? ""}\n${input.ticket.body ?? ""}\n` +
-          `Worktree: ${progress.worktree}\nDelivery branch: ${progress.branch}\nTarget Branch: ${progress.target_branch}\n` +
-          `Review round: ${round.round}\nReview base: ${round.base}\nImplementation HEAD: ${round.head}\nAssigned findings path: ${round.findings}`,
+          `${reviewInstructions.replace("{{issue}}", () => String(progress.ticket))}\n\n${await readFile(path.join(loaded.directory, "prompts", "review.md"), "utf8")}\n\n` +
+          `Review base: ${round.base}\nImplementation HEAD: ${round.head}\nAssigned findings path: ${JSON.stringify(round.findings)}`,
         accept: async (text) => {
           const result = parseReview(text, round.findings);
           if (result.outcome === "findings") {
@@ -205,8 +205,7 @@ export async function reviewImplementation(
         stage: round.fix,
         purpose: "fix_review",
         task: () =>
-          `${reviewFixInstructions}\n\nFindings report: ${round.findings}\n` +
-          `Worktree: ${progress.worktree}\nDelivery branch: ${progress.branch}\nBase SHA: ${round.head}\nTarget Branch: ${progress.target_branch}`,
+          `${reviewFixInstructions}\n\nFindings report: ${JSON.stringify(round.findings)}\nBase SHA: ${round.head}`,
         accept: async (text) => {
           const result = parseExecution(text);
           if (result.outcome !== "committed")

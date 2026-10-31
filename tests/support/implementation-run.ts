@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import { promptAssignment } from "./prompt-assignment.ts";
 import assert from "node:assert/strict";
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -95,7 +96,6 @@ export async function implementationRun(
     cleanup: [] as Parameters<GitWorkspace["cleanupWorktree"]>[0][],
     onProbe: async (assignment: Record<string, unknown>) => {
       await publish(String(assignment.path), {
-        ...assignment,
         sessionid: "native/$&/$`/$'/session",
         pr_title: "feat: [issue-50] implement the Issue",
         pr_body: "Implement the Issue.\n\nCloses #50",
@@ -127,9 +127,7 @@ export async function implementationRun(
       state.events.push("submit");
       if (text.startsWith("Session Probe\n")) {
         state.probeCount += 1;
-        const assignment = JSON.parse(
-          text.slice(text.indexOf("\n") + 1, text.indexOf("\n\n")),
-        ) as Record<string, unknown>;
+        const assignment = promptAssignment(text) as Record<string, unknown>;
         await state.onProbe(assignment);
       } else if (text.startsWith("Implementation assignment\n")) {
         state.taskCount += 1;

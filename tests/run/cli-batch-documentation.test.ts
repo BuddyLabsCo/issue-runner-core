@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import { promptAssignment } from "../support/prompt-assignment.ts";
 import assert from "node:assert/strict";
 import { access, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -164,7 +165,7 @@ await test("ordinary implementation no_change earns no delivery trigger", async 
   );
   fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
     if (text.startsWith("Implementation assignment\n")) {
-      const assignment = JSON.parse(text.split("\n")[1]!) as { path: string };
+      const assignment = promptAssignment(text) as { path: string };
       await publish(assignment.path, documentationNoChange);
     } else await submit(tab, text);
   };

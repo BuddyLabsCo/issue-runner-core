@@ -1,8 +1,6 @@
-Maintain the project documentation in the assigned Worktree on its delivery branch.
-Read the repository instructions and contribution/PR conventions first.
-Run relevant checks, commit changed documentation locally, and leave a clean Worktree.
-If documentation is already current, report no_change with no commits and a clean, unchanged Worktree.
-Do not push, create or modify a Pull Request, operate CI, merge, or mutate the tracker.
-Preserve the supplied PR metadata.
-Use the explicitly invoked installed issue-runner-handoff skill with the assigned absolute final JSON path.
-After atomically publishing the handoff, do no further work or Git writes.
+Maintain the documentation requested by issue #{{issue}}.
+Read the issue and applicable repository instructions and contribution conventions.
+Work only in the current worktree on the current branch.
+Do not fetch or pull code, switch branches, push, create or modify a pull request, operate CI, merge, or mutate the tracker.
+Run relevant checks, commit changed documentation locally, and leave the working tree clean.
+If documentation is already current, leave the working tree unchanged.

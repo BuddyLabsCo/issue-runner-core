@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import { promptAssignment } from "./prompt-assignment.ts";
 import assert from "node:assert/strict";
 import type { TestContext } from "node:test";
 import type { CreateTabOptions } from "../../src/terminal.ts";
@@ -89,13 +90,9 @@ export async function fiveIssueRun(t: TestContext) {
     assert.ok(active.has(tab), "submit only to an active owned Runner Tab");
     submissions.push({ tab, text, chord });
     const number = Number(/ticket-(\d+)$/u.exec(tabs.get(tab)!.cwd)![1]);
-    if (
-      text.startsWith("Session Probe\n") &&
-      text.includes('"role":"review"')
-    ) {
-      const assignment = JSON.parse(text.split("\n")[1]!) as { path: string };
+    if (text.startsWith("Session Probe\n") && text.includes("-review-probe-")) {
+      const assignment = promptAssignment(text) as { path: string };
       await publish(assignment.path, {
-        ...assignment,
         sessionid: `review-${number}`,
       });
     } else if (text.startsWith("Review assignment\n")) {

@@ -5,6 +5,7 @@ disable-model-invocation: true
 argument-hint: "<absolute-handoff-json-path>"
 ---
 
+Invoke this skill only after completing all task work, checks, and local commits.
 Use the argument as the absolute path of the final JSON handoff file.
 
 Write one JSON object with exactly these fields:
@@ -31,9 +32,10 @@ Write one JSON object with exactly these fields:
 
 `summary`: briefly explain what was implemented or reviewed and why the
 outcome applies. Include verification actually performed, its results,
-and relevant limitations.
+and relevant limitations. Report only work and checks actually performed.
 
-`commits`: this invocation's commits, each with its full SHA and message.
+`commits`: this task's commits, each with its full SHA and message.
+When the task supplies a commit range, include every commit in that range, including commits introduced by a merge.
 Nonempty for `committed`; otherwise `[]`.
 
 `findings_file`: the findings report's absolute path for `findings`;
@@ -44,3 +46,4 @@ Validate the JSON and close the temporary file.
 
 As the final step, atomically rename the temporary file to the final path,
 replacing the existing final file if present.
+After publishing the final file, stop. Do not modify files, create commits, or perform further task work.

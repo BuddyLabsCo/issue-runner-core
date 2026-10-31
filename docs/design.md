@@ -203,18 +203,22 @@ Example payload:
 
 ```json
 {
-  "probe_id": "<assigned-probe-id>",
-  "session_ref": "<actual-native-session-reference>"
+  "sessionid": "<actual-native-session-reference>"
 }
 ```
 
-Core validates the response and persists its association with the Run,
-conversation role, Worktree, terminal, and required storage/configuration.
-`session_ref` is opaque: Core need not parse a particular vendor's ID format.
+Core associates the response with its execution and conversation role through the
+persisted unique output path. The response does not echo application IDs or its
+own path. Implementation and documentation Probes also return `pr_title` and
+`pr_body`, generated after reading the Issue by number and the repository's PR
+conventions. Reviewer and repair Probes return only `sessionid`.
+
+Core validates the response and saves the native identity and any PR metadata.
+`sessionid` is opaque: Core does not parse a particular vendor's ID format.
 Subsequent resume commands receive that saved value.
 
-The reference must identify the real native conversation. A Runner-generated
-probe ID is not automatically a native session ID. Where a CLI supports
+The reference must identify the real native conversation. Application IDs cannot
+establish native identity; Core does not generate a separate Probe ID. Where a CLI supports
 preassigned identity, or a configured launcher/hook/wrapper can supply it, that
 mechanism can establish the reference through the same contract without
 requiring model guesswork. These are alternatives, not mandatory extra setup
@@ -227,11 +231,13 @@ configuration; matching a string alone is insufficient.
 ## Task result file handoff
 
 The [accepted handoff decision](https://github.com/BuddyLabsCo/issue-runner-core/issues/5#issuecomment-6497094791)
-supersedes earlier result payloads. Operators manually install the unchanged
+supersedes earlier result payloads. Operators manually install the bundled
 [`issue-runner-handoff` skill](../skills/issue-runner-handoff/SKILL.md), following
 the [README](../README.md#install-the-handoff-skill-manually). Built-in
-purpose-specific prompts explicitly name the skill and supply its sole
-argument: the assigned absolute final JSON output path.
+purpose-specific prompts invoke the skill as the final action after all task
+work, checks, and local commits. Its sole argument is the assigned absolute
+final JSON output path. Result schema instructions live in the skill rather
+than being repeated in each task prompt.
 
 For each substantive invocation, automatic correction, or retry, Core assigns
 a fresh unique path under
@@ -248,8 +254,9 @@ assigned path to correct that invocation. Core never reuses that path for a
 different invocation.
 
 Task completion, required checks and commits, Review write restrictions,
-post-handoff work restrictions, and remote-operation ownership belong in the
-purpose-specific prompts. Runner owns push, PR, integration, and tracker
+and remote-operation restrictions belong in the purpose-specific prompts.
+The shared skill owns the result schema, truthful reporting, atomic publication,
+and the requirement to stop all work after publication. Runner owns push, PR, integration, and tracker
 operations.
 
 Core ignores temporary files. It checks the final path, reads the payload, and
@@ -299,7 +306,7 @@ issue-43: implement sessionid=<implementation-native-session-ref>
 
 The fix round reports the same implementation reference even if it resumes in
 a new tab. Use the validated opaque `session_ref`, not a terminal handle,
-Runner-generated probe ID, or an ambiguous latest-session reference. While
+application ID, or an ambiguous latest-session reference. While
 the native reference is being established, report `sessionid=pending`; emit
 the stage with its actual reference once available. Stages without an
 associated Agent conversation report `sessionid=n/a`.

@@ -1,1 +1,1 @@
-Explicitly invoke the installed issue-runner-handoff skill with this sole absolute output-path argument: {{path}}
+After completing all work, checks, and commits, explicitly invoke the installed issue-runner-handoff skill as your final action, with this sole absolute output-path argument: {{path}}

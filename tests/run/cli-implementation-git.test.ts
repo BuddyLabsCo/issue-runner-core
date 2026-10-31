@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import { promptAssignment } from "../support/prompt-assignment.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -434,22 +435,21 @@ await test("a concurrent Batch uses a fresh fetched base and isolated real Git W
           const options = tabs.get(tab)!;
           const number = Number(/ticket-(\d+)$/u.exec(options.cwd)![1]);
           if (text.startsWith("Session Probe\n")) {
-            const assignment = JSON.parse(text.split("\n")[1]!) as {
+            const assignment = promptAssignment(text) as {
               path: string;
               ticket: number;
             };
             assert.equal(assignment.ticket, number);
             await publish(assignment.path, {
-              ...assignment,
               sessionid: `native-${number}`,
               pr_title: `feat: [issue-${number}] implement`,
               pr_body: `Implement.\n\nCloses #${number}`,
             });
           } else if (text.startsWith("Implementation assignment\n")) {
-            const assignment = JSON.parse(text.split("\n")[1]!) as {
+            const assignment = promptAssignment(text) as {
               path: string;
             };
-            assert.ok(text.includes(`Base SHA: ${fresh}`));
+            assert.doesNotMatch(text, /Base SHA:/u);
             assert.equal(await git(options.cwd, "rev-parse", "HEAD"), fresh);
             if (++tasks === 2) release();
             await bothTasks;

@@ -67,8 +67,6 @@ await test("built artifacts work in isolated consumer and npm global installatio
     "prompts/conflict-repair.md",
     "prompts/probe.md",
     "prompts/probe-metadata.md",
-    "prompts/probe-review.md",
-    "prompts/probe-repair.md",
     "prompts/probe-correction.md",
     "prompts/handoff-invocation.md",
     "prompts/handoff-correction.md",

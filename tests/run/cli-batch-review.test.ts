@@ -1,3 +1,4 @@
+import { promptAssignment } from "../support/prompt-assignment.ts";
 import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
@@ -46,7 +47,7 @@ for (const selector of ["parent", "issue"] as const) {
     fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
       const { number, review } = tabs.get(tab)!;
       if (review && text.startsWith("Session Probe\n")) {
-        const assignment = JSON.parse(text.split("\n")[1]!) as {
+        const assignment = promptAssignment(text) as {
           ticket: number;
           role: string;
           path: string;
@@ -54,15 +55,14 @@ for (const selector of ["parent", "issue"] as const) {
         assert.equal(assignment.ticket, number);
         assert.equal(assignment.role, "review");
         await publish(assignment.path, {
-          ...assignment,
           sessionid: `review-${number}`,
         });
       } else if (review && text.startsWith("Review assignment\n")) {
         const saved = await progress(fixture.directory, number);
         const round = saved.reviews![0]!;
-        assert.ok(text.includes(saved.worktree));
-        assert.ok(text.includes(saved.branch));
-        assert.ok(text.includes(round.findings));
+        assert.ok(text.includes(`Review issue #${number} against`));
+        assert.doesNotMatch(text, /Worktree:|Delivery branch:/u);
+        assert.ok(text.includes(JSON.stringify(round.findings)));
         assert.match(
           path.basename(round.invocation!.path),
           new RegExp(`^${number}-review-`, "u"),

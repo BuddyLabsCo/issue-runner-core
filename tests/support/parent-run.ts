@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import { promptAssignment } from "./prompt-assignment.ts";
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import type { TestContext } from "node:test";
@@ -102,18 +103,14 @@ export async function parentRun(
       },
       async submitText(tab: object, text: string) {
         if (text.startsWith("Session Probe\n")) {
-          const assignment = JSON.parse(text.split("\n")[1]!) as Record<
-            string,
-            unknown
-          >;
+          const assignment = promptAssignment(text) as Record<string, unknown>;
           await publish(String(assignment.path), {
-            ...assignment,
             sessionid: `native-${String(assignment.ticket)}`,
             pr_title: `feat: [issue-${String(assignment.ticket)}] implement`,
             pr_body: `Implement.\n\nCloses #${String(assignment.ticket)}`,
           });
         } else if (text.startsWith("Implementation assignment\n")) {
-          const assignment = JSON.parse(text.split("\n")[1]!) as {
+          const assignment = promptAssignment(text) as {
             path: string;
           };
           const evidence = tabs.get(tab)!;

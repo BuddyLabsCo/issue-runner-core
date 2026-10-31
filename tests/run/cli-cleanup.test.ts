@@ -153,7 +153,6 @@ await test("successful cleanup includes Review and fix assignments while finding
   fixture.state.onProbe = async (assignment) => {
     if (assignment.role === "review")
       await publish(String(assignment.path), {
-        ...assignment,
         sessionid: "review-native",
       });
     else await probe(assignment);

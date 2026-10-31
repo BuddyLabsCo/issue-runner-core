@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import { promptAssignment } from "../support/prompt-assignment.ts";
 import assert from "node:assert/strict";
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -29,7 +30,6 @@ await test("one standalone implementation persists verified completion before cl
   const effects: string[] = [];
   let worktree = "";
   let branch = "";
-  let probe: Record<string, unknown>;
   let handoff = "";
   const labels = ["ready-for-agent"];
   const assignees: string[] = [];
@@ -112,17 +112,14 @@ await test("one standalone implementation persists verified completion before cl
           return;
         }
         assert.equal(chord, "Shift+Enter");
-        const assignment = JSON.parse(
-          text.slice(text.indexOf("\n") + 1, text.indexOf("\n\n")),
-        ) as Record<string, unknown>;
+        const assignment = promptAssignment(text) as Record<string, unknown>;
         if (!effects.includes("probe")) {
           effects.push("probe");
-          probe = assignment;
-          assert.match(text, /Keep literal \$& and Unicode: \u4f60\u597d/);
+          assert.doesNotMatch(text, /Keep literal/u);
+          assert.match(text, /Read issue #50/u);
           await writeFile(
             `${String(assignment.path)}.tmp`,
             JSON.stringify({
-              ...assignment,
               sessionid: "native/$&/$`/$'/session",
               pr_title: "feat: [issue-50] implement the Issue",
               pr_body: "Implement the requested behavior.\n\nCloses #50",
@@ -142,7 +139,7 @@ await test("one standalone implementation persists verified completion before cl
           assert.equal((saved.invocation as { path: string }).path, handoff);
           assert.match(text, /issue-runner-handoff/);
           assert.match(text, /Project implement instructions/);
-          assert.equal(assignment.execution_id, probe.execution_id);
+          assert.doesNotMatch(text, /execution_id|invocation_id|Fixed PR/u);
           effects.push("task");
           await writeFile(
             `${handoff}.tmp`,

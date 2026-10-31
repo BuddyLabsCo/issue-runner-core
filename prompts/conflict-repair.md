@@ -1,5 +1,5 @@
-Work only in the supplied repair Worktree on its delivery branch. Read the Issue and repository instructions.
-Do not fetch or pull another branch. Merge the supplied Target Branch SHA into the delivery branch and resolve the explicit merge conflict. Preserve the existing PR and remote branch identity.
-Do not rebase, force-push, push, create or modify a PR, operate CI, merge remotely, or mutate the tracker.
-Commit local repairs and report all actual commits relative to the supplied Base SHA, with a clean Worktree. The repaired HEAD must descend from both the Base SHA and Target Branch SHA.
-Use no_change only when no repair commits are required. Do not return blocked.
+Resolve the pull request merge conflict for issue #{{issue}}.
+Read the issue and repository instructions. Merge the supplied Target Branch SHA into the current branch and resolve conflicts while preserving both changes' intended behavior.
+Work only in the current worktree on the current branch. Run relevant checks, commit local repairs, and leave the working tree clean.
+Report all commits after the supplied Base SHA, including commits introduced by the merge.
+Do not fetch or pull code, switch branches, rebase, push, create or modify a pull request, operate CI, merge remotely, or mutate the tracker.

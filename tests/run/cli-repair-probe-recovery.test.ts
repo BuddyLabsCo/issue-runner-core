@@ -17,7 +17,10 @@ for (const kind of ["ci", "conflict"] as const) {
       chord,
     ) => {
       await submit(tab, text, chord);
-      if (text.startsWith("Session Probe\n") && text.includes(`${kind}Repair`))
+      if (
+        text.startsWith("Session Probe\n") &&
+        text.includes(`-${kind}_repair-probe-`)
+      )
         fixture.controller.abort();
     };
     assert.equal((await fixture.run()).summary.outcome, "cancelled");
@@ -65,7 +68,7 @@ for (const kind of ["ci", "conflict"] as const) {
         await submit(tab, text, chord);
         if (
           text.startsWith("Session Probe\n") &&
-          text.includes(`${kind}Repair`)
+          text.includes(`-${kind}_repair-probe-`)
         )
           fixture.controller.abort();
       };

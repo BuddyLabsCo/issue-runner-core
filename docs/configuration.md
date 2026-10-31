@@ -213,14 +213,26 @@ The Reservation label must already exist in the repository.
 
 Core opens a tab with an absolute cwd and a unique temporary `GIT_CONFIG_GLOBAL`
 overlay. It submits the full configured start command with Enter, waits 10
-seconds, then separately submits a correlated Session Probe with the Agent
-chord. Probe identity, Issue/project/repository/role ownership, and complete
-PR title/body are validated and saved atomically. The Agent reads the target
-repository's PR conventions when producing this metadata. Metadata remains fixed
-for the execution. A fresh invocation and absolute handoff path are persisted
-before task submission, without another startup delay. The built-in instructions
-and Project implementation prompt explicitly invoke the installed handoff skill.
-The temporary Git configuration is removed when the call finishes.
+seconds, then separately submits a Session Probe with the Agent chord. The
+persisted unique output path associates the response with its execution and stage;
+the Agent does not receive or echo internal correlation fields. Implementation
+and documentation Probes return exactly `sessionid`, `pr_title`, and `pr_body`.
+Reviewer and repair Probes return only `sessionid`.
+
+The Agent reads the Issue by number and the repository's contribution/PR
+conventions from its current Worktree context. Configure `repository` and
+`checkout` to identify the same repository as the checkout's Git remote;
+Core does not validate that agreement. Issue titles and bodies are not copied
+into prompts. Accepted PR metadata stays fixed in application state and is not
+sent back to the Agent.
+
+A fresh invocation and absolute handoff path are persisted before task submission,
+without another startup delay. Tasks include built-in instructions, any applicable
+Project prompt, and only the context needed for that stage. They omit internal
+assignment JSON and redundant Worktree/branch details. The final instruction
+explicitly invokes the installed handoff skill after all work, checks, and commits.
+The skill defines the result schema and requires all work to stop after atomic
+publication. The temporary Git configuration is removed when the call finishes.
 
 Built-in instructions live in the package's `prompts/*.md` assets, covering
 implementation, Review, Review fixes, documentation, repairs, Probe and handoff
@@ -231,11 +243,15 @@ the three user-editable Project prompts; `init` still copies those from
 
 Invalid Probe output uses `operationRetry` and `operationRetryDelay`, separately
 from execution-result corrections. Each Probe retry saves its consumed count and
-a fresh correlation/path before submission; missing output never spends this
+a fresh output path before submission; missing output never spends this
 budget or causes reminders. After exhaustion, the active Probe path remains
 available for manual publication in the native conversation.
-All generated Probe IDs remain recorded for the execution and are rejected as
-native identity, including IDs from superseded Probe assignments.
+Probe IDs are not generated. Responses require nonempty native session identity;
+Run/execution IDs and latest-session aliases are rejected. Only the active path
+can establish identity; superseded output cannot satisfy a later attempt.
+Unaccepted Probe responses from the earlier echo-field protocol must be rewritten
+with the current fields, or the affected Issue must be restarted. Accepted native
+identities and the four-field task handoff schema are unchanged.
 
 Only the exact four-field execution schema is accepted, after independent
 Worktree, branch, base, clean-state and full commit/message checks. A `committed`
@@ -254,8 +270,8 @@ When Review is enabled (the default), only a verified `committed` implementation
 starts it. A separate reviewer starts in a fresh Runner Tab in the original
 Worktree with its own per-call Git configuration. Core waits 10 seconds, Probes
 only the reviewer's native identity, and saves that role reference before the
-Review assignment. Review receives Standards/Spec requirements, the Project
-review prompt, Issue context, Worktree, branch, Review base, implementation HEAD,
+Review assignment. Review receives the Issue number, repository/spec review
+instructions, the Project review prompt, Review base, implementation HEAD,
 and an assigned absolute findings path outside the Worktree.
 
 Review accepts exactly `outcome`, `summary`, `commits`, and `findings_file`.
@@ -327,7 +343,7 @@ Recovery can adopt an exact merged PR and skip required-check discovery. If the 
 
 Runner waits 30 seconds before required-check discovery. Empty checks or checks with no pending, failed, or cancelled entries establish readiness, preserving the source treatment of skipped checks. Pending checks are polled every 10 seconds, bounded by `timeouts.requiredChecksMinutes`. A timeout enters Operator Pause; Enter starts another configured wait window and q/EOF cancels.
 
-Failed or cancelled required checks start CI repair using `agents.ciRepair`. Each attempt uses a fresh native conversation and a separate repair Worktree and local branch based on the recorded PR head. Its assignment includes the Issue, PR URL, failed check names/states/links, Git context, and original fixed PR metadata. The original PR and remote branch remain unchanged in identity. Repair Probes establish only native session identity; they never regenerate publication metadata. Each start or exact resume waits 10 seconds, and each completed stage closes its own Runner Tab.
+Failed or cancelled required checks start CI repair using `agents.ciRepair`. Each attempt uses a fresh native conversation and a separate repair Worktree and local branch based on the recorded PR head. Its assignment includes the Issue number, PR URL, and failed check names/states/links. The Agent reads the check logs; log bodies are not embedded in the prompt. The original PR and remote branch remain unchanged in identity. Repair Probes establish only native session identity; they never regenerate publication metadata. Each start or exact resume waits 10 seconds, and each completed stage closes its own Runner Tab.
 
 Runner verifies the repair Worktree, local branch, base, cleanliness, actual changes, and exact commit claims before pushing the verified HEAD to the original remote branch. It never force-pushes. Lost push responses reconcile against persisted pending-push evidence; unexpected remote advancement or PR identity changes require ordinary operation recovery. Each repair push restarts the 30-second discovery delay and required-check timeout window. CI repair does not enter ordinary Review.
 
@@ -353,7 +369,7 @@ Runner confirms each merge and completed Issue closure before starting the next 
 
 Explicit conflict evidence starts repair using `agents.conflictRepair`: either the host reports `conflicting`, or the squash request returns an explicit conflict. Unknown mergeability and generic rejections do not start repair. Other rejections preserve their original cause through ordinary operation retries and Operator Pause.
 
-Each conflict attempt starts a fresh native conversation in a separate repair Worktree and local branch from the latest verified PR head. Runner fetches the current Target Branch SHA and supplies it with the conflict, Issue, PR URL, Git context, and fixed PR metadata. The Agent merges that SHA locally and resolves conflicts. Runner verifies the original-head ancestry, fetched-target ancestry, branch, base, cleanliness, actual changes, and exact commit claims before pushing to the original remote branch. It never force-pushes, recreates the PR, or enters ordinary Review.
+Each conflict attempt starts a fresh native conversation in a separate repair Worktree and local branch from the latest verified PR head. Runner fetches the current Target Branch SHA and supplies it with the conflict, Issue number, and PR URL. The Agent merges that SHA locally and resolves conflicts. Runner verifies the original-head ancestry, fetched-target ancestry, branch, base, cleanliness, actual changes, and exact commit claims before pushing to the original remote branch. It never force-pushes, recreates the PR, or enters ordinary Review.
 
 A conflict push restarts the normal 30-second check-discovery delay and configured check timeout. Failed checks use the separate CI budget. The conflict budget permits two consumed attempts per generation; `no_change` and failed Git verification consume an attempt without a push. Invalid handoffs use the same stage's correction policy. After exhaustion, Enter authorizes refreshed merge-state observation. Continued explicit conflict starts a new generation; unknown mergeability is polled within `timeouts.mergeQueueMinutes`. A resolved conflict refreshes required checks before integration, without consuming another conflict attempt. `q` or EOF cancels; Issue-scoped pauses also support skip.
 

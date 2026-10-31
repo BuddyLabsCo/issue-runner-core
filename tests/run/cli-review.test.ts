@@ -1,3 +1,4 @@
+import { promptAssignment } from "../support/prompt-assignment.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { implementationRun, publish } from "../support/implementation-run.ts";
@@ -29,28 +30,26 @@ await test("verified implementation starts an independent Standards/Spec Review 
   );
   let reviews = 0;
   fixture.dependencies.terminalPlugin.submitText = async (tab, text, chord) => {
-    if (
-      text.startsWith("Session Probe\n") &&
-      text.includes('"role":"review"')
-    ) {
+    if (text.startsWith("Session Probe\n") && text.includes("-review-probe-")) {
       assert.equal(fixture.state.closedTabs.length, 1);
       assert.doesNotMatch(text, /pr_title|pr_body/u);
-      const assignment = JSON.parse(text.split("\n")[1]!) as { path: string };
+      const assignment = promptAssignment(text) as { path: string };
       await publish(assignment.path, {
-        ...assignment,
         sessionid: "native-review",
       });
     } else if (text.startsWith("Review assignment\n")) {
       reviews += 1;
-      const assignment = JSON.parse(text.split("\n")[1]!) as { path: string };
-      assert.match(text, /Standards/u);
-      assert.match(text, /Spec/u);
+      const assignment = promptAssignment(text) as { path: string };
+      assert.match(text, /repository instructions/u);
+      assert.match(text, /issue requirements/u);
       assert.match(text, /Project review instructions/u);
-      assert.match(text, /Accepted scope/u);
+      assert.match(text, /Review issue #50/u);
+      assert.doesNotMatch(
+        text,
+        /Accepted scope|Worktree:|Delivery branch:|Fixed PR/u,
+      );
       assert.ok(text.includes("a".repeat(40)));
       assert.ok(text.includes("b".repeat(40)));
-      assert.ok(text.includes(fixture.state.evidence.worktree));
-      assert.ok(text.includes(fixture.state.evidence.branch));
       assert.match(text, /issue-runner-handoff/u);
       await publish(assignment.path, {
         outcome: "passed",
@@ -166,10 +165,7 @@ await test("cap=1 still fixes final findings in the exact implementation convers
       /missing accepted behavior/u,
     );
     const prompt = fixture.state.submissions.at(-1)!.text;
-    assert.match(
-      prompt,
-      /Fixed PR title: feat: \[issue-50\] implement the Issue/u,
-    );
+    assert.doesNotMatch(prompt, /Fixed PR|Worktree:|Delivery branch:/u);
     assert.ok(prompt.includes("b".repeat(40)));
     fixture.state.evidence.commits.push(fixCommit);
     await publish(round.fix!.invocation!.path, {

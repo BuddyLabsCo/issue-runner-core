@@ -54,7 +54,6 @@ export async function reviewRun(
   fixture.state.onProbe = async (assignment) => {
     if (assignment.role === "review") {
       await publish(String(assignment.path), {
-        ...assignment,
         sessionid: "review-native/$&",
       });
     } else await onProbe(assignment);

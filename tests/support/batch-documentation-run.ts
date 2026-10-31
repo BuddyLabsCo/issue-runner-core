@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import { promptAssignment } from "./prompt-assignment.ts";
 import { rm } from "node:fs/promises";
 import type { TestContext } from "node:test";
 import type { GitWorkspace, Ticket } from "../../src/run/contracts.ts";
@@ -87,7 +88,7 @@ export async function batchDocumentationRun(
   );
   fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
     if (text.startsWith("Documentation assignment\n")) {
-      const assignment = JSON.parse(text.split("\n")[1]!) as { path: string };
+      const assignment = promptAssignment(text) as { path: string };
       events.push("document");
       await state.onDocument(assignment.path, () =>
         submit(

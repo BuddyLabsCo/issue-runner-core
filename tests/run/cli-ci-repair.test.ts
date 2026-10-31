@@ -92,9 +92,9 @@ await test("failed required checks receive a verified fresh repair on the same P
   assert.equal(fixture.publicationState.pushes, 2);
   assert.equal(fixture.repairs.tasks.length, 1);
   assert.match(fixture.repairs.tasks[0]!, /https:\/\/checks\/build\/1/u);
-  assert.match(
+  assert.doesNotMatch(
     fixture.repairs.tasks[0]!,
-    /Fixed PR title: feat: \[issue-50\]/u,
+    /Fixed PR|Worktree:|Delivery branch:|Base SHA:|bucket/u,
   );
   const saved = await fixture.snapshot();
   assert.equal(
@@ -159,7 +159,6 @@ await test("CI repair never enters ordinary Review, including after matching-inp
   fixture.state.onProbe = async (assignment) => {
     if (assignment.role === "review")
       await publish(String(assignment.path), {
-        ...assignment,
         sessionid: "review-session",
       });
     else await probe(assignment);

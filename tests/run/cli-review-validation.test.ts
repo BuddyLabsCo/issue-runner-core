@@ -106,12 +106,10 @@ for (const scenario of [
       reviewProbes += 1;
       if (reviewProbes > 1) return probe(assignment);
       const invalid: Record<string, unknown> = {
-        ...assignment,
         sessionid: "independent-reviewer",
       };
       if (scenario === "PR metadata") invalid.pr_title = "Not allowed";
-      if (scenario === "generated identity")
-        invalid.sessionid = assignment.probe_id;
+      if (scenario === "generated identity") invalid.sessionid = "latest";
       if (scenario === "wrong ownership") invalid.ticket = 999;
       await publish(String(assignment.path), invalid);
     };

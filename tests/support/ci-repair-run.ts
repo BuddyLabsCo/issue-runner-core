@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import { promptAssignment } from "./prompt-assignment.ts";
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import type { TestContext } from "node:test";
@@ -88,9 +89,8 @@ export async function ciRepairRun(
     fixture.state.submissions.push({ tab, text, ...(chord ? { chord } : {}) });
     if (text.startsWith("Session Probe\n")) {
       repairs.probes.push(text);
-      const assignment = JSON.parse(text.split("\n")[1]!) as { path: string };
+      const assignment = promptAssignment(text) as { path: string };
       await publish(assignment.path, {
-        ...assignment,
         sessionid: `${kind}-session-${repairs.probes.length}`,
       });
     } else if (
@@ -99,7 +99,7 @@ export async function ciRepairRun(
       )
     ) {
       repairs.tasks.push(text);
-      const assignment = JSON.parse(text.split("\n")[1]!) as { path: string };
+      const assignment = promptAssignment(text) as { path: string };
       await repairs.onTask(assignment.path, evidence);
     } else if (
       text === "continue" ||

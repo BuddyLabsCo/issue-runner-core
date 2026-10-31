@@ -105,16 +105,14 @@ export async function testInstalledArtifacts(
       import { pathToFileURL } from "node:url";
       const core = ${JSON.stringify(core)};
       for (const [file, name, asset, expected] of [
-        ["implement", "implementationInstructions", "implement", "Implement the accepted Issue"],
-        ["review", "reviewInstructions", "review", "Standards"],
-        ["review", "reviewFixInstructions", "review-fix", "original implementation conversation"],
-        ["documentation", "documentationInstructions", "documentation", "Maintain the project documentation"],
-        ["ci-repair", "ciRepairInstructions", "ci-repair", "Diagnose the failed required checks"],
-        ["conflict-repair", "conflictRepairInstructions", "conflict-repair", "resolve the explicit merge conflict"],
-        ["session", "probeInstructions", "probe", "actual native conversation sessionid"],
-        ["session", "probeMetadataInstructions", "probe-metadata", "Generate complete pr_title and pr_body"],
-        ["session", "probeReviewInstructions", "probe-review", "independent reviewer identity"],
-        ["session", "probeRepairInstructions", "probe-repair", "native repair identity"],
+        ["implement", "implementationInstructions", "implement", "Implement issue #{{issue}}"],
+        ["review", "reviewInstructions", "review", "issue requirements"],
+        ["review", "reviewFixInstructions", "review-fix", "assigned review report"],
+        ["documentation", "documentationInstructions", "documentation", "Maintain the documentation requested"],
+        ["ci-repair", "ciRepairInstructions", "ci-repair", "Fix the failed required checks"],
+        ["conflict-repair", "conflictRepairInstructions", "conflict-repair", "Resolve the pull request merge conflict"],
+        ["session", "probeInstructions", "probe", "actual native conversation session ID"],
+        ["session", "probeMetadataInstructions", "probe-metadata", "Generate pr_title and pr_body"],
         ["session", "probeCorrectionInstructions", "probe-correction", "Correct the previous Probe"],
         ["session", "handoffInvocationInstructions", "handoff-invocation", "sole absolute output-path argument"],
         ["session", "handoffCorrectionInstructions", "handoff-correction", "Correct the {{name}} handoff"]

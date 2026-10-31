@@ -221,9 +221,6 @@ export async function restoreExecution(input: {
         (saved.probeRetries !== undefined &&
           (!Number.isSafeInteger(saved.probeRetries) ||
             (saved.probeRetries as number) < 0)) ||
-        (saved.probeIds !== undefined &&
-          (!Array.isArray(saved.probeIds) ||
-            !saved.probeIds.every(nonempty))) ||
         (saved.pendingPrompt !== undefined && !nonempty(saved.pendingPrompt)) ||
         !Array.isArray(saved.superseded)
       )
@@ -248,9 +245,7 @@ export async function restoreExecution(input: {
           saved.branch !== `issue-runner/${restored.run_id}/ticket-${number}` ||
           saved.reviews !== undefined ||
           !restored.superseded.every(owned) ||
-          (restored.probe !== undefined &&
-            (!nonempty(restored.probe.probe_id) ||
-              !owned(restored.probe.path))) ||
+          (restored.probe !== undefined && !owned(restored.probe.path)) ||
           (restored.invocation !== undefined &&
             (!nonempty(restored.invocation.invocation_id) ||
               !owned(restored.invocation.path))) ||

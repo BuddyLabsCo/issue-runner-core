@@ -16,8 +16,6 @@ import { nonempty, object, readHandoff } from "./handoff.ts";
 import {
   probeInstructions,
   probeMetadataInstructions,
-  probeReviewInstructions,
-  probeRepairInstructions,
   probeCorrectionInstructions,
   handoffInvocationInstructions,
   handoffCorrectionInstructions,
@@ -133,12 +131,8 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
   await input.withEnvironment(async (env) => {
     if (!sessionid()) {
       stage.probe ??= {
-        probe_id: randomUUID(),
         path: assignment(`${purpose}-probe`),
       };
-      const probeIds = (stage.probeIds ??= []);
-      if (!probeIds.includes(stage.probe.probe_id))
-        probeIds.push(stage.probe.probe_id);
       stage.probeRetries ??= 0;
       if (generatesMetadata) progress.phase = "probing";
     }
@@ -178,39 +172,27 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
       return true;
     };
     if (!sessionid()) {
-      let probeAssignment = {
-        ...stage.probe!,
-        run_id: progress.run_id,
-        execution_id: progress.execution_id,
-        project: progress.project,
-        repository: progress.repository,
-        ticket: progress.ticket,
-        role: repairRole ?? role,
-      };
       const prompt = (error?: string) => {
         const values = {
           identity: generatesMetadata
-            ? probeMetadataInstructions.replace(
-                "{{issue}}",
-                () => `${progress.repository}#${progress.ticket}`,
-              ) +
-              `\nIssue: ${input.ticket.title ?? ""}\n${input.ticket.body ?? ""}`
-            : purpose === "review"
-              ? probeReviewInstructions
-              : probeRepairInstructions,
+            ? probeMetadataInstructions.replace("{{issue}}", () =>
+                String(progress.ticket),
+              )
+            : "",
           fields: generatesMetadata
             ? "sessionid, pr_title, pr_body"
             : "sessionid",
-          path: probeAssignment.path,
+          temporary: JSON.stringify(`${stage.probe!.path}.tmp`),
+          path: JSON.stringify(stage.probe!.path),
         };
         return (
-          `Session Probe\n${JSON.stringify(probeAssignment)}\n\n` +
+          "Session Probe\n" +
           (error
             ? probeCorrectionInstructions.replace("{{reason}}", () => error) +
               "\n"
             : "") +
           probeInstructions.replace(
-            /\{\{(identity|fields|path)\}\}/gu,
+            /\{\{(identity|fields|temporary|path)\}\}/gu,
             (_, key: keyof typeof values) => values[key],
           )
         );
@@ -229,19 +211,15 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
           let accepted = false;
           try {
             const probe = object(JSON.parse(observed.text) as unknown);
-            for (const [key, value] of Object.entries(probeAssignment))
-              if (probe[key] !== value)
-                throw new Error(`Probe ${key} ownership/correlation mismatch`);
             if (
-              Object.keys(probe).length !==
-                Object.keys(probeAssignment).length +
-                  (generatesMetadata ? 3 : 1) ||
+              Object.keys(probe).sort().join(",") !==
+                (generatesMetadata
+                  ? "pr_body,pr_title,sessionid"
+                  : "sessionid") ||
               !nonempty(probe.sessionid) ||
               (generatesMetadata &&
                 (!nonempty(probe.pr_title) || !nonempty(probe.pr_body))) ||
               [
-                ...(progress.probeIds ?? []),
-                ...(stage.probeIds ?? []),
                 progress.execution_id,
                 progress.run_id,
                 "latest",
@@ -276,11 +254,8 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
               stage.superseded.push(stage.probe!.path);
               stage.probeRetries = retries + 1;
               stage.probe = {
-                probe_id: randomUUID(),
                 path: assignment(`${purpose}-probe`),
               };
-              stage.probeIds!.push(stage.probe.probe_id);
-              probeAssignment = { ...probeAssignment, ...stage.probe };
               await persist();
               show(stage.probe.path);
               await sleep(
@@ -316,8 +291,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
         path: assignment(purpose),
       };
       stage.pendingPrompt =
-        `${heading} assignment\n${JSON.stringify({ execution_id: progress.execution_id, ...stage.invocation })}\n\n${await input.task()}\n\n` +
-        `Fixed PR title: ${progress.pr_title}\nFixed PR body:\n${progress.pr_body}\n\n` +
+        `${heading} assignment\n${await input.task()}\n\n` +
         handoffInvocationInstructions.replace("{{path}}", () =>
           JSON.stringify(stage.invocation!.path),
         );
