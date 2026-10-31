@@ -11,6 +11,7 @@ import { basename, delimiter, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { stringify } from "yaml";
 import { validConfig } from "../support/cli-project.ts";
+import { testInstalledArtifacts } from "./installed-artifacts.mjs";
 
 /**
  * @param {import("node:test").TestContext} t
@@ -23,20 +24,6 @@ export async function testGlobalPluginLoading(
   { consumer, artifact, npm, runNode },
 ) {
   const prefix = join(consumer, "global prefix");
-  npm(
-    [
-      "install",
-      "--global",
-      "--prefix",
-      prefix,
-      "--offline",
-      "--ignore-scripts",
-      "--no-audit",
-      "--no-fund",
-      artifact,
-    ],
-    consumer,
-  );
   const globalRoot = npm(
     ["root", "--global", "--prefix", prefix],
     consumer,
@@ -44,29 +31,6 @@ export async function testGlobalPluginLoading(
   let core = join(globalRoot, "issue-runner-core");
   const launch = join(consumer, "launch");
   mkdirSync(launch);
-  /** @param {string[]} args */
-  const cli = (args) => runNode([join(core, "dist/cli.js"), ...args], launch);
-  /** @type {unknown} */
-  const installedManifest = JSON.parse(
-    readFileSync(join(core, "package.json"), "utf8"),
-  );
-  assert.ok(
-    installedManifest &&
-      typeof installedManifest === "object" &&
-      "version" in installedManifest,
-  );
-  assert.equal(cli(["--version"]).trim(), installedManifest.version);
-  assert.match(cli(["run", "--help"]), /--env/);
-  assert.match(cli(["init", "--project", "demo"]), /Initialized Project/);
-  assert.ok(
-    readFileSync(join(launch, "demo/config.yaml"), "utf8").includes(
-      "{sessionref}",
-    ),
-  );
-  writeFileSync(
-    join(launch, "demo/config.yaml"),
-    stringify({ ...validConfig, targetBranch: "main" }),
-  );
   /** @param {string} environment @param {NodeJS.ProcessEnv} [env] */
   const runInstalled = (environment, env = process.env) => {
     /** @type {unknown} */
@@ -131,7 +95,10 @@ export async function testGlobalPluginLoading(
   };
   const events = join(consumer, "plugin-events");
   const validPlugin = `
+    import assert from "node:assert/strict";
     import { appendFileSync } from "node:fs";
+    import { terminalContractVersion } from "issue-runner-core/terminal";
+    assert.equal(terminalContractVersion, 1);
     appendFileSync(${JSON.stringify(events)}, "module\\n");
     export const contractVersion = 1;
     export async function createTerminalPlugin() {
@@ -152,6 +119,8 @@ export async function testGlobalPluginLoading(
       join(directory, "package.json"),
       JSON.stringify({
         name: basename(directory),
+        version: "1.0.0",
+        private: true,
         type: "module",
         main: "./private.js",
         exports: { ".": { import: "./index.js", require: "./private.js" } },
@@ -164,7 +133,92 @@ export async function testGlobalPluginLoading(
     );
   };
   const plugin = join(globalRoot, "issue-runner-scripted");
-  writePlugin(plugin);
+  const pluginSource = join(
+    consumer,
+    "private plugin",
+    "issue-runner-scripted",
+  );
+  writePlugin(pluginSource);
+  /** @type {unknown} */
+  const packed = JSON.parse(
+    npm(
+      ["pack", "--json", "--ignore-scripts", "--pack-destination", consumer],
+      pluginSource,
+    ),
+  );
+  assert.ok(Array.isArray(packed));
+  assert.equal(packed.length, 1);
+  /** @type {unknown} */
+  const pluginArtifact = packed[0];
+  assert.ok(pluginArtifact && typeof pluginArtifact === "object");
+  assert.ok(
+    "filename" in pluginArtifact && typeof pluginArtifact.filename === "string",
+  );
+  npm(
+    [
+      "install",
+      "--global",
+      "--prefix",
+      prefix,
+      "--offline",
+      "--ignore-scripts",
+      "--no-audit",
+      "--no-fund",
+      artifact,
+      join(consumer, pluginArtifact.filename),
+    ],
+    launch,
+  );
+  /** @type {unknown} */
+  const installedManifest = JSON.parse(
+    readFileSync(join(core, "package.json"), "utf8"),
+  );
+  assert.ok(installedManifest && typeof installedManifest === "object");
+  assert.ok(
+    "version" in installedManifest &&
+      typeof installedManifest.version === "string",
+  );
+  await testInstalledArtifacts(t, {
+    core,
+    plugin,
+    prefix,
+    launch,
+    version: installedManifest.version,
+    runNode,
+  });
+  writeFileSync(
+    join(launch, "demo/config.yaml"),
+    stringify({ ...validConfig, targetBranch: "main" }),
+  );
+  await t.test(
+    "Core and a private plugin tarball share the custom global prefix",
+    () => {
+      /** @type {unknown} */
+      const manifest = JSON.parse(
+        readFileSync(join(plugin, "package.json"), "utf8"),
+      );
+      assert.ok(manifest && typeof manifest === "object");
+      assert.ok("private" in manifest && manifest.private === true);
+      assert.ok("version" in manifest && manifest.version === "1.0.0");
+      /** @type {unknown} */
+      const installed = JSON.parse(
+        npm(
+          ["ls", "--global", "--prefix", prefix, "--depth=0", "--json"],
+          launch,
+        ),
+      );
+      assert.ok(installed && typeof installed === "object");
+      assert.ok(
+        "dependencies" in installed &&
+          installed.dependencies &&
+          typeof installed.dependencies === "object",
+      );
+      assert.deepEqual(Object.keys(installed.dependencies).sort(), [
+        "issue-runner-core",
+        "issue-runner-scripted",
+      ]);
+    },
+  );
   writePlugin(
     join(globalRoot, "issue-runner-unrelated"),
     'throw new Error("unrelated plugins must never be imported");',

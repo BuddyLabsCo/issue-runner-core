@@ -32,6 +32,7 @@
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "node --test --test-concurrency=1 \"tests/*.test.mjs\" \"tests/run/*.test.ts\"",
+    "test:package": "node --test tests/package.test.mjs",
     "prepack": "npm run build",
     "verify": "npm run check && npm test"
   },

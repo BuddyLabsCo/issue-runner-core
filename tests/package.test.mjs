@@ -1,13 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import {
-  copyFileSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { createRequire } from "node:module";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,9 +8,8 @@ import { test } from "node:test";
 import { testGlobalPluginLoading } from "./package/terminal-plugin.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const require = createRequire(import.meta.url);
 
-await test("a packed contract imports from an independent plugin directory", async (t) => {
+await test("built artifacts work in isolated consumer and npm global installations", async (t) => {
   const consumer = mkdtempSync(join(tmpdir(), "issue-runner-contract "));
   t.after(() => rmSync(consumer, { recursive: true, force: true }));
   const npmCli = process.env.npm_execpath;
@@ -126,32 +118,6 @@ await test("a packed contract imports from an independent plugin directory", asy
     { cwd: consumer, encoding: "utf8", timeout: 30_000 },
   );
   assert.equal(output.trim(), "terminal contract v1");
-
-  copyFileSync(
-    new URL("fixtures/terminal-consumer.mts", import.meta.url),
-    join(consumer, "consumer.mts"),
-  );
-  execFileSync(
-    process.execPath,
-    [
-      require.resolve("typescript/bin/tsc"),
-      "--strict",
-      "--target",
-      "ES2022",
-      "--module",
-      "NodeNext",
-      "--moduleResolution",
-      "NodeNext",
-      "--outDir",
-      "output",
-      "consumer.mts",
-    ],
-    { cwd: consumer, stdio: "inherit", timeout: 30_000 },
-  );
-  assert.equal(
-    readFileSync(join(consumer, "output/consumer.mjs"), "utf8").trim(),
-    "export {};",
-  );
 
   await testGlobalPluginLoading(t, {
     consumer,

@@ -664,6 +664,13 @@ mutations and transport. They use real audit-file failures and controlled timers
 no Herdr installation, Agent account, or model call is required.
 No public testing entry, filesystem port, or scheduler is added.
 
+Run `npm run test:package` to check built Core and private fake-plugin tarballs
+installed together in a custom npm global prefix. A separate Launch Directory
+exercises npm's installed executable, init templates, bundled purpose prompts,
+public JavaScript/types, and the exact manually installable handoff asset.
+See [package verification](terminal-contract.md#verification-limits-and-global-installation)
+for setup and evidence limits.
+
 Installed-package cases also relocate the global prefix and invoke Core through
 a link. They exercise public import selection, asynchronous initialization,
 malformed modules/factories/methods, and isolation from Project packages, other
