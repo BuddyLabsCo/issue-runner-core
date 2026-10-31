@@ -24,6 +24,13 @@ await test("concurrent fixture PR creation assigns unique numbers after delayed 
     created.map((pr) => pr.number),
     [81, 82],
   );
+  const states = await Promise.all(
+    created.map((pr) => codeHost.getPullRequest("owner/repo", pr.number)),
+  );
+  assert.deepEqual(
+    states.map((pr) => pr.headSha),
+    ["a".repeat(40), "b".repeat(40)],
+  );
   const records = await codeHost.listPullRequests();
   assert.deepEqual(
     records.map(({ number, branch, headSha }) => ({ number, branch, headSha })),
