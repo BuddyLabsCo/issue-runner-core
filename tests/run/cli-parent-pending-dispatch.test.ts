@@ -250,8 +250,15 @@ await test("malformed pending prompt evidence fails recovery before another Agen
   fixture.dependencies.terminalPlugin.createTab = async () => {
     assert.fail("invalid checkpoint cannot authorize a submission");
   };
+  fixture.dependencies.operator.pause = async (message) => {
+    assert.equal(
+      message,
+      "Enter to restart the entire Issue #51, or q to exit Runner.",
+    );
+    return "q";
+  };
   const result = await fixture.run();
-  assert.equal(result.summary.outcome, "failed");
-  assert.match(result.summary.reasons.join("; "), /unable to recover/u);
+  assert.equal(result.summary.outcome, "cancelled");
+  assert.ok(fixture.dependencies.messages.includes("unable to recover"));
   assert.deepEqual(fixture.dispatched, []);
 });

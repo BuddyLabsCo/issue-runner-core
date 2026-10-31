@@ -586,9 +586,28 @@ if their handoff files later change or disappear; changed Git evidence can still
 prevent advancement. Runner never reopens or closes an old opaque tab handle.
 Earlier incomplete startup snapshots fail visibly and remain retained.
 
-A missing original Worktree fails with `unable to recover` before native dispatch;
-Runner creates no replacement Worktree or conversation.
-Broader recovery/restart policy belongs to downstream slices.
+If required original context cannot be restored, Runner prints exactly
+`unable to recover`. This includes missing original Worktrees, missing native role
+references, rejected native resume submissions, and invalid execution, Review/fix,
+or repair checkpoints. Runner offers exactly two choices:
+
+- Enter restarts the entire affected Issue from implementation.
+- `q` exits Runner. EOF also cancels.
+
+There is no retry-recovery or skip choice at this prompt. Cancellation creates no
+replacement execution. Runner does not inspect Agent screens or infer history
+availability from terminal activity; successful command submission cannot prove
+that the native CLI restored its history.
+
+An explicit restart creates a new execution, branch, Worktree, conversations,
+Probe/handoff assignments, and Probe-generated PR metadata. Execution correction
+and repair counts start fresh. Other Issues keep their progress and counts.
+Runner archives the failed checkpoint as `<checkpoint>.<id>.retained` before
+starting replacement work. Old Worktrees, branches, handoff files, and native
+histories remain under the failed-resource retention policy. Existing remote PRs
+still require normal publication ownership checks; restart does not authorize
+overwriting them. Standalone documentation restarts at its document entry point
+through its existing whole-occurrence interaction.
 
 Before recovery, manually close leftover Agent tabs and stop their sessions
 while retaining native histories and original resources. Core neither enforces

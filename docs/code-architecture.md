@@ -32,7 +32,8 @@ tests/
   recovery scope. It reuses `run/standalone.ts` for document execution and normal
   publication/integration, with no business-Issue selection or ordinary Review.
   `run/execution-recovery.ts` validates saved execution context before continuation
-  or documentation cleanup. `run/integration.ts` also owns verified no-change closure.
+  or documentation cleanup and owns explicit Issue restart after recovery failure.
+  `run/integration.ts` also owns verified no-change closure.
 - `run/cleanup.ts` removes successfully delivered execution resources for ordinary
   Issues and documentation. It validates ownership and checkpoints completed actions
   so recovery retries unfinished Worktree/branch and handoff-file cleanup.

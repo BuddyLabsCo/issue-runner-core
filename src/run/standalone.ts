@@ -16,7 +16,7 @@ import { verifyWorkspace } from "./verification.ts";
 import { parseExecution } from "../agent/handoff.ts";
 import type { CodeHost, Ticket, Tracker } from "./contracts.ts";
 import { publishImplementation } from "./publication.ts";
-import { restoreExecution } from "./execution-recovery.ts";
+import { recoverIssue, restoreExecution } from "./execution-recovery.ts";
 import { cleanupExecution, executionTerminal } from "./cleanup.ts";
 import type { RunContext, RunSummary } from "./run.ts";
 import { reportTicket } from "./report.ts";
@@ -46,11 +46,12 @@ export async function runStandalone(input: {
     complete: () => Promise<RunSummary>,
   ) => void;
 }): Promise<RunSummary> {
-  return reportTicket(input, executeStandalone);
+  return reportTicket(input, (issue) => recoverIssue(issue, executeStandalone));
 }
 
 async function executeStandalone(
   input: Parameters<typeof runStandalone>[0],
+  restarting = false,
 ): Promise<RunSummary> {
   const { number, loaded, tracker, summary } = input;
   const context = {
@@ -177,6 +178,7 @@ async function executeStandalone(
     selected.ticket.assignees?.includes(config.tracker.runnerAccount) ?? false;
   const hasLabel =
     selected.ticket.labels?.includes(config.tracker.reservationLabel) ?? false;
+  const ownsReservation = restarting && hasRunner && hasLabel;
   const beforeDispatch = async () => {
     selected = await inspect();
     if (
@@ -382,14 +384,14 @@ async function executeStandalone(
       reasons: ["Recorded Reservation changed before continuation"],
     };
   if (restored && restored.phase !== "reserved") return run(restored);
-  if (!input.documentation && (hasRunner || hasLabel))
+  if (!input.documentation && !ownsReservation && (hasRunner || hasLabel))
     return {
       ...summary,
       reasons: [
         `existing Reservation${hasRunner !== hasLabel ? " (partial)" : ""}; no recorded ownership for this Run`,
       ],
     };
-  if (!input.documentation) {
+  if (!input.documentation && !ownsReservation) {
     const { runnerAccount, reservationLabel } = config.tracker;
     // Confirm each write from current tracker state before retrying it.
     await read(
