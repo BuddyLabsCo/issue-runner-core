@@ -29,16 +29,19 @@ Runner pushes the verified HEAD and creates a non-draft PR using the fixed Probe
 title and body. It waits 30 seconds before discovering required checks.
 With `--no-auto-merge`, CI-ready PRs, branches, Worktrees, handoffs, and progress
 evidence remain available. Unmerged work reports `incomplete` without successful
-delivery credit or success cleanup. Integration and CI repair remain downstream;
-`--auto-merge` currently stops at the same CI-ready checkpoint. Initial
+delivery credit or success cleanup. Auto-merge requests squash integration against
+the observed HEAD and confirms both merge completion and tracker `closed/completed`
+before granting delivery credit. Checkpoints retain those facts and exact delivery-time labels.
+CI/conflict repair and success cleanup remain downstream. Initial
 `no_change` skips Review and publication and also reports `incomplete`.
 Parent Runs select eligible direct children across all child/blocker pages,
 respect Issue List filtering and Reservation ownership, and execute one
-configured Batch concurrently through the same publication and CI checkpoint, bounded
-by `maxBatchSize`. Batch membership is checkpointed before dispatch and retained
+configured Batch concurrently through publication and CI, bounded by `maxBatchSize`.
+Every Batch PR must be CI-ready before serial integration by creation time and PR number.
+Batch membership is checkpointed before dispatch and retained
 on recovery. A value-less `--issue` selects the configured Issue List
 independently of parent discovery, using the same eligibility checks and
-publication and CI checkpoint. Standalone documentation remains unimplemented.
+publication, CI barrier, and integration workflow. Standalone documentation remains unimplemented.
 No npm package has been published.
 
 Non-Agent failures retain bounded safe retries and Operator Pause. Enter retries;

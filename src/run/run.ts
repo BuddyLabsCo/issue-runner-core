@@ -15,6 +15,7 @@ import {
   serializeOperator,
   TicketSkipped,
 } from "./operations.ts";
+import { integrateBatch } from "./integration.ts";
 import { runStandalone } from "./standalone.ts";
 import {
   readChildren,
@@ -72,6 +73,10 @@ export async function runProject(
       host.getRequiredChecks(repository, pullRequest),
     createPullRequest: (input) =>
       operator.advance(() => host.createPullRequest(input)),
+    getPullRequest: (repository, pullRequest) =>
+      host.getPullRequest(repository, pullRequest),
+    requestSquashMerge: (input) =>
+      operator.advance(() => host.requestSquashMerge(input)),
   };
   const { git, terminal } = context;
   context = {
@@ -229,6 +234,11 @@ export async function runProject(
     targetBranch,
   });
   const reasons = [...selection.reasons];
+  const integrations = new Map<
+    number,
+    { pullRequest: number; complete: () => Promise<RunSummary> }
+  >();
+  let delivered: number[] = [];
   const attempts = selection.batch.map(async (number) => {
     try {
       signal.throwIfAborted();
@@ -245,6 +255,9 @@ export async function runProject(
         fetchBase,
         codeHost,
         autoMerge: options.autoMerge,
+        deferIntegration: (pullRequest, complete) => {
+          integrations.set(number, { pullRequest, complete });
+        },
       });
     } catch (error) {
       controller.abort(error);
@@ -252,7 +265,17 @@ export async function runProject(
     }
   });
   try {
-    const results = await Promise.all(attempts);
+    const results = await integrateBatch({
+      batch: selection.batch,
+      ready: integrations,
+      results: await Promise.all(attempts),
+      repository: loaded.config.repository,
+      codeHost,
+      read,
+    });
+    delivered = selection.batch.filter(
+      (_number, index) => results[index]!.outcome === "succeeded",
+    );
     for (const [index, result] of results.entries())
       reasons.push(
         ...result.reasons.map(
@@ -270,7 +293,13 @@ export async function runProject(
       (options.selector === "issue" &&
         tickets.every((ticket) => ticket.state === "closed"))
         ? "no_work"
-        : "incomplete",
+        : options.selector === "issue" &&
+            tickets.every(
+              (ticket) =>
+                ticket.state === "closed" || delivered.includes(ticket.number),
+            )
+          ? "succeeded"
+          : "incomplete",
     reasons: [
       ...(selection.batch.length
         ? [`selected Delivery Tickets: ${selection.batch.join(", ")}`]

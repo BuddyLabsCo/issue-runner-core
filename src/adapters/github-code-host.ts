@@ -5,6 +5,8 @@ import type {
   CodeHost,
   PullRequestRecord,
   RequiredCheck,
+  PullRequestState,
+  MergeRequestResult,
 } from "../run/contracts.ts";
 import { GitHubClient, type GitHubCommand } from "./github-client.ts";
 
@@ -13,6 +15,55 @@ export class GitHubCodeHost implements CodeHost {
 
   constructor(token: string, command?: GitHubCommand) {
     this.client = new GitHubClient(token, command);
+  }
+
+  async getPullRequest(
+    repository: string,
+    pullRequest: number,
+  ): Promise<PullRequestState> {
+    const [owner, name] = repository.split("/");
+    const response = JSON.parse(
+      await this.client.request([
+        "api",
+        "graphql",
+        "-f",
+        "query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid createdAt state mergedAt mergeable autoMergeRequest{enabledAt} mergeQueueEntry{id}}}}",
+        "-f",
+        `owner=${owner}`,
+        "-f",
+        `name=${name}`,
+        "-F",
+        `number=${pullRequest}`,
+      ]),
+    ) as { data?: { repository?: { pullRequest?: Record<string, unknown> } } };
+    return parsePullRequestState(response, pullRequest);
+  }
+
+  async requestSquashMerge(
+    input: Parameters<CodeHost["requestSquashMerge"]>[0],
+  ): Promise<MergeRequestResult> {
+    try {
+      await this.client.request([
+        "pr",
+        "merge",
+        String(input.pullRequest),
+        "--repo",
+        input.repository,
+        "--squash",
+        "--match-head-commit",
+        input.headSha,
+        ...(input.admin ? ["--admin"] : []),
+      ]);
+      return { outcome: "accepted" };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        outcome: /conflict|cannot be cleanly created/iu.test(message)
+          ? "conflict"
+          : "rejected",
+        error,
+      };
+    }
   }
 
   async resolveTargetBranch(repository: string): Promise<string> {
@@ -201,5 +252,51 @@ function parsePullRequest(value: unknown): {
       state:
         row.merged_at !== null ? "merged" : (row.state as "open" | "closed"),
     },
+  };
+}
+
+function parsePullRequestState(
+  response: {
+    data?: { repository?: { pullRequest?: Record<string, unknown> } };
+  },
+  pullRequest: number,
+): PullRequestState {
+  const value = response?.data?.repository?.pullRequest;
+  if (
+    !value ||
+    typeof value.headRefOid !== "string" ||
+    !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(value.headRefOid) ||
+    typeof value.createdAt !== "string" ||
+    !Number.isFinite(Date.parse(value.createdAt)) ||
+    !["OPEN", "CLOSED", "MERGED"].includes(String(value.state)) ||
+    !["MERGEABLE", "CONFLICTING", "UNKNOWN"].includes(
+      String(value.mergeable),
+    ) ||
+    (value.mergedAt !== null &&
+      (typeof value.mergedAt !== "string" ||
+        !Number.isFinite(Date.parse(value.mergedAt)))) ||
+    ![value.autoMergeRequest, value.mergeQueueEntry].every(
+      (entry) =>
+        entry === null || (typeof entry === "object" && !Array.isArray(entry)),
+    )
+  )
+    throw new Error("GitHub returned invalid Pull Request state");
+  const merged = value.state === "MERGED" || value.mergedAt !== null;
+  return {
+    headSha: value.headRefOid,
+    createdAt: value.createdAt,
+    merged,
+    mergeRequested:
+      value.autoMergeRequest !== null || value.mergeQueueEntry !== null,
+    mergeable:
+      value.mergeable === "MERGEABLE"
+        ? "mergeable"
+        : value.mergeable === "CONFLICTING"
+          ? "conflicting"
+          : "unknown",
+    mergeFailure:
+      value.state === "CLOSED" && !merged
+        ? `Pull Request ${pullRequest} closed without merging`
+        : null,
   };
 }

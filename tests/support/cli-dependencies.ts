@@ -5,6 +5,8 @@ import type {
   CodeHost,
   PullRequestRecord,
   RequiredCheck,
+  PullRequestState,
+  MergeRequestResult,
 } from "../../src/run/contracts.ts";
 
 export function createCliDependencies(launchDirectory: string) {
@@ -23,6 +25,9 @@ export function createCliDependencies(launchDirectory: string) {
     reads,
     pauses,
     tracker: {
+      async closeTicket() {
+        assert.fail("unexpected Issue closure");
+      },
       async getTicket(_repository: string, ticket: number) {
         return { number: ticket, state: "open" as const, stateReason: null };
       },
@@ -52,6 +57,27 @@ export function createCliDependencies(launchDirectory: string) {
       },
     },
     codeHost: {
+      async getPullRequest(
+        _repository: string,
+        number: number,
+      ): Promise<PullRequestState> {
+        return {
+          headSha:
+            pullRequests.find((pr) => pr.number === number)?.headSha ??
+            "b".repeat(40),
+          createdAt: "2026-10-30T00:00:00Z",
+          merged: false,
+          mergeRequested: false,
+          mergeable: "conflicting",
+          mergeFailure: null,
+        };
+      },
+      async requestSquashMerge(): Promise<MergeRequestResult> {
+        return {
+          outcome: "conflict",
+          error: new Error("explicit merge conflict"),
+        };
+      },
       async resolveTargetBranch(repository: string) {
         reads.push(`branch:${repository}`);
         return "default-branch";

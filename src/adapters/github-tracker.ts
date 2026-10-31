@@ -93,6 +93,18 @@ export class GitHubTracker implements Tracker {
     return this.getParent(repository, ticket);
   }
 
+  async closeTicket(repository: string, ticket: number): Promise<void> {
+    await this.client.request([
+      "issue",
+      "close",
+      String(ticket),
+      "--repo",
+      repository,
+      "--reason",
+      "completed",
+    ]);
+  }
+
   async listBlockersPage(repository: string, ticket: number, page: number) {
     const value = JSON.parse(
       await this.client.request([

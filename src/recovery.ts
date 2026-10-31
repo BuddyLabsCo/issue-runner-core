@@ -5,6 +5,7 @@ import type {
   CommitEvidence,
   PullRequestIdentity,
   RequiredCheck,
+  PullRequestState,
 } from "./run/contracts.ts";
 
 export function hashRunInput(
@@ -90,7 +91,11 @@ export interface PublicationProgress {
     | "pending_pr"
     | "pr_created"
     | "checks_ready"
-    | "checks_failed";
+    | "checks_failed"
+    | "pending_merge"
+    | "merge_requested"
+    | "merged"
+    | "delivered";
   branch: string;
   targetBranch: string;
   headSha: string;
@@ -102,6 +107,10 @@ export interface PublicationProgress {
   discoveryNotBefore?: number;
   checksDeadline?: number;
   checks?: RequiredCheck[];
+  mergeDeadline?: number;
+  merge?: PullRequestState;
+  closure?: { state: "closed"; stateReason: "completed" };
+  deliveryLabels?: string[];
 }
 
 export interface BatchProgress {
