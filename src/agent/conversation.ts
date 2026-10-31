@@ -30,7 +30,15 @@ export class NativeConversations {
       sessionid === undefined
         ? profile.start
         : profile.resume.replaceAll("{sessionref}", () => sessionid);
-    await this.submit(tab, command, "Enter");
+    try {
+      await this.submit(tab, command, "Enter");
+    } catch (error) {
+      this.signal?.throwIfAborted();
+      if (sessionid === undefined) throw error;
+      throw new Error("unable to recover: native conversation resume failed", {
+        cause: error,
+      });
+    }
     this.signal?.throwIfAborted();
     await this.clock.sleep(10_000);
     this.signal?.throwIfAborted();

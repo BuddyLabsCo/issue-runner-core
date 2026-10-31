@@ -1,10 +1,106 @@
 import path from "node:path";
+import { randomUUID } from "node:crypto";
+import { copyFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import type { LoadedProject } from "../config.ts";
 import type { ImplementationProgress } from "../recovery.ts";
 import { nonempty, object, readHandoff } from "../agent/handoff.ts";
 import { validateReviewContext } from "./review.ts";
 import { validateRepairContext } from "./repair.ts";
+import type { OperatorIO } from "./contracts.ts";
+import type { runStandalone } from "./standalone.ts";
+import type { RunSummary } from "./run.ts";
+import { OperatorCancelled } from "./operations.ts";
+
+export function recoverIssue(
+  attempt: Parameters<typeof runStandalone>[0],
+  execute: (
+    input: Parameters<typeof runStandalone>[0],
+    restarting: boolean,
+  ) => Promise<RunSummary>,
+): Promise<RunSummary> {
+  let restarting = false;
+  const start = () =>
+    execute(
+      {
+        ...attempt,
+        ...(attempt.deferIntegration
+          ? {
+              deferIntegration: (
+                pullRequest: number,
+                complete: () => Promise<RunSummary>,
+              ) =>
+                attempt.deferIntegration!(pullRequest, () => recover(complete)),
+            }
+          : {}),
+      },
+      restarting,
+    );
+  const recover = async (
+    action: () => Promise<RunSummary>,
+  ): Promise<RunSummary> => {
+    for (;;) {
+      try {
+        return await action();
+      } catch (error) {
+        attempt.context.signal?.throwIfAborted();
+        if (
+          attempt.documentation ||
+          !(error instanceof Error) ||
+          !error.message.startsWith("unable to recover")
+        )
+          throw error;
+        const { context, loaded, number } = attempt;
+        await restartUnrecoverable(
+          context.operator,
+          `Issue #${number}`,
+          context.signal,
+        );
+        const file = path.join(
+          loaded.directory,
+          "recovery",
+          `${context.inputHash}-${number}.json`,
+        );
+        const archive = `${file}.${randomUUID()}.retained`;
+        // Keep recovery ownership until the replacement saves its first checkpoint.
+        await attempt.read(
+          "retain_unrecoverable_issue",
+          `ticket:${number}`,
+          () => copyFile(file, archive),
+        );
+        context.retained?.set(archive, context.retained.get(file));
+        attempt = {
+          ...attempt,
+          context: { ...context, runId: randomUUID() },
+        };
+        restarting = true;
+        action = start;
+      }
+    }
+  };
+  return recover(start);
+}
+
+export async function restartUnrecoverable(
+  operator: OperatorIO,
+  scope: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  signal?.throwIfAborted();
+  operator.write("unable to recover");
+  for (;;) {
+    signal?.throwIfAborted();
+    const response = await operator.pause(
+      `Enter to restart the entire ${scope}, or q to exit Runner.`,
+      signal,
+    );
+    signal?.throwIfAborted();
+    if (response === "q" || response === null)
+      throw new OperatorCancelled("operator cancelled");
+    if (response === "") return;
+    operator.write("Unsupported input.");
+  }
+}
 
 export async function restoreExecution(input: {
   file: string;
@@ -17,7 +113,9 @@ export async function restoreExecution(input: {
   runId: string;
   inputHash: string;
   runArguments: readonly string[];
+  restarting?: boolean;
 }): Promise<ImplementationProgress | undefined> {
+  if (input.restarting) return;
   const {
     file,
     loaded,
@@ -162,13 +260,10 @@ export async function restoreExecution(input: {
       return restored;
     }
   } catch (error) {
-    if (
-      !documentation ||
-      (error instanceof Error && error.message.startsWith("unable to recover"))
-    )
+    if (error instanceof Error && error.message.startsWith("unable to recover"))
       throw error;
     throw new Error(
-      "unable to recover: invalid documentation execution context",
+      `unable to recover: invalid ${documentation ? "documentation" : "implementation"} execution context`,
       { cause: error },
     );
   }

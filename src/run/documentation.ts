@@ -9,11 +9,13 @@ import {
   pauseForOperator,
   scopeOperator,
   TicketSkipped,
-  OperatorCancelled,
 } from "./operations.ts";
 import type { Tracker } from "./contracts.ts";
 import type { RunSummary } from "./run.ts";
-import { restoreExecution } from "./execution-recovery.ts";
+import {
+  restartUnrecoverable,
+  restoreExecution,
+} from "./execution-recovery.ts";
 import { cleanupExecution } from "./cleanup.ts";
 import { reportTicket } from "./report.ts";
 
@@ -249,18 +251,11 @@ export async function runDocumentation(
       error instanceof Error &&
       error.message.startsWith("unable to recover")
     ) {
-      context.operator.write("unable to recover");
-      for (;;) {
-        const response = await context.operator.pause(
-          "Enter to restart the entire Documentation Maintenance occurrence, or q to exit Runner.",
-          context.signal,
-        );
-        context.signal?.throwIfAborted();
-        if (response === "q" || response === null)
-          throw new OperatorCancelled("operator cancelled");
-        if (response === "") break;
-        context.operator.write("Unsupported input.");
-      }
+      await restartUnrecoverable(
+        context.operator,
+        "Documentation Maintenance occurrence",
+        context.signal,
+      );
       const archive = `${file}.${randomUUID()}.retained`;
       await read("retain_unrecoverable_documentation", "document", () =>
         rename(file, archive),

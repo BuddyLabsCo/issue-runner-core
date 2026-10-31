@@ -13,7 +13,7 @@ import {
 } from "../support/implementation-run.ts";
 import { validConfig } from "../support/cli-project.ts";
 
-await test("missing original Worktree fails recovery before opening a tab or creating replacement work", async (t) => {
+await test("missing original Worktree offers only restart or exit before creating replacement work", async (t) => {
   const fixture = await implementationRun(t);
   fixture.state.onTask = async () => {
     fixture.controller.abort();
@@ -25,6 +25,12 @@ await test("missing original Worktree fails recovery before opening a tab or cre
   const worktrees = fixture.state.events.filter(
     (event) => event === "worktree",
   ).length;
+  const responses = ["s", "retry", "q"];
+  const prompts: string[] = [];
+  fixture.dependencies.operator.pause = async (message) => {
+    prompts.push(message);
+    return responses.shift()!;
+  };
   const result = await executeCli(implementationCommand, {
     ...fixture.dependencies,
     signal: new AbortController().signal,
@@ -35,11 +41,16 @@ await test("missing original Worktree fails recovery before opening a tab or cre
       },
     },
   });
-  assert.equal(result.summary.outcome, "failed");
-  assert.match(
-    result.summary.reasons.join(" "),
-    /unable to recover: original Worktree is missing/u,
+  assert.equal(result.summary.outcome, "cancelled");
+  assert.equal(prompts.length, 3);
+  assert.ok(
+    prompts.every(
+      (message) =>
+        message ===
+        "Enter to restart the entire Issue #50, or q to exit Runner.",
+    ),
   );
+  assert.ok(fixture.dependencies.messages.includes("unable to recover"));
   assert.equal(fixture.state.submissions.length, before);
   assert.equal(
     fixture.state.events.filter((event) => event === "worktree").length,

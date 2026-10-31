@@ -40,12 +40,16 @@ for (const kind of ["ci", "conflict"] as const) {
       throw new Error("Missing repair context must not open a Runner Tab");
     };
     fixture.dependencies.signal = new AbortController().signal;
+    fixture.dependencies.operator.pause = async (message) => {
+      assert.equal(
+        message,
+        "Enter to restart the entire Issue #50, or q to exit Runner.",
+      );
+      return "q";
+    };
     const result = await fixture.run();
-    assert.equal(result.summary.outcome, "failed");
-    assert.match(
-      result.summary.reasons.join(" "),
-      /unable to recover: original (CI|Conflict) repair Worktree is missing/u,
-    );
+    assert.equal(result.summary.outcome, "cancelled");
+    assert.ok(fixture.dependencies.messages.includes("unable to recover"));
     assert.equal(opens, 0);
     assert.equal(fixture.state.submissions.length, submissions);
     assert.equal(fixture.publicationState.pushes, pushes);
@@ -319,11 +323,17 @@ await test("recovery rejects corrupted repair ownership, pending evidence, and b
       attempt.invocation!.path = path.join(fixture.directory, "unowned.json");
     await writeFile(file, JSON.stringify(saved));
     fixture.dependencies.signal = new AbortController().signal;
+    fixture.dependencies.operator.pause = async (message) => {
+      assert.equal(
+        message,
+        "Enter to restart the entire Issue #50, or q to exit Runner.",
+      );
+      return "q";
+    };
     const result = await fixture.run();
-    assert.equal(result.summary.outcome, "failed", field);
-    assert.match(
-      result.summary.reasons.join(" "),
-      /unable to recover.*CI repair/u,
+    assert.equal(result.summary.outcome, "cancelled", field);
+    assert.ok(
+      fixture.dependencies.messages.includes("unable to recover"),
       field,
     );
   }
