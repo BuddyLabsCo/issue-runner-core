@@ -17,6 +17,7 @@ import { parseExecution } from "../agent/handoff.ts";
 import type { CodeHost, Ticket, Tracker } from "./contracts.ts";
 import { publishImplementation } from "./publication.ts";
 import { restoreExecution } from "./execution-recovery.ts";
+import { cleanupExecution, executionTerminal } from "./cleanup.ts";
 import type { RunContext, RunSummary } from "./run.ts";
 import {
   hasOpenBlocker,
@@ -179,6 +180,7 @@ export async function runStandalone(input: {
       selected.reason = "Reservation changed before dispatch";
     return selected.reason === undefined;
   };
+  let tabs: ReturnType<typeof executionTerminal> | undefined;
   const stageInput = (progress: ImplementationProgress): IssueStageContext => ({
     loaded,
     progress,
@@ -193,23 +195,11 @@ export async function runStandalone(input: {
       ),
     withEnvironment: (action) =>
       context.git.withAgentEnvironment(loaded.directory, action),
-    terminal: {
-      createTab: (options) =>
-        read(
-          "create_tab",
-          options.label,
-          () => context.terminal.createTab(options),
-          { retry: "manual" },
-        ),
-      submitText: (tab, text, chord) =>
-        read(
-          "submit_text",
-          `ticket:${number}:${progress.phase}`,
-          () => context.terminal.submitText(tab, text, chord),
-          { retry: "never" },
-        ),
-      closeTab: (tab) => context.terminal.closeTab(tab),
-    },
+    terminal: (tabs ??= executionTerminal({
+      terminal: context.terminal,
+      progress,
+      read,
+    })).terminal,
     clock: context.clock,
     operator: context.operator,
     ...(context.signal ? { signal: context.signal } : {}),
@@ -243,6 +233,17 @@ export async function runStandalone(input: {
           inspectTicket: inspect,
           continuePublication: () => publish(progress),
         });
+        if (delivery.outcome === "succeeded") {
+          await tabs?.closeResidual();
+          if (!input.documentation)
+            await cleanupExecution({
+              progress,
+              loaded,
+              git: context.git,
+              read,
+              persist: () => persist(progress),
+            });
+        }
         if (delivery.outcome === "succeeded")
           input.onDelivery?.(progress.publication!.deliveryLabels!);
         return {
@@ -354,6 +355,7 @@ export async function runStandalone(input: {
           await accept(progress, JSON.stringify(progress.result));
         },
       });
+      await tabs?.closeResidual();
       return {
         ...summary,
         outcome: "succeeded",
