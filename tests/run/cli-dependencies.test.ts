@@ -1,35 +1,42 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { setImmediate } from "node:timers/promises";
 import { createCliDependencies } from "../support/cli-dependencies.ts";
 
-await test("concurrent fake Pull Requests have distinct numbers and independent heads", async () => {
-  const { codeHost, gitWorkspace } = createCliDependencies(process.cwd());
-  const branches = ["issue-51", "issue-52"];
-  const heads = ["a".repeat(40), "b".repeat(40)];
-  await gitWorkspace.push(process.cwd(), branches[0]!, heads[0]!);
-  await gitWorkspace.push(process.cwd(), branches[1]!, heads[1]!);
-
-  const pullRequests = await Promise.all(
-    branches.map((branch) =>
+await test("concurrent fixture PR creation assigns unique numbers after delayed head lookups", async () => {
+  const { codeHost } = createCliDependencies(process.cwd());
+  codeHost.getRemoteBranchHead = async (_repository, branch) => {
+    await setImmediate();
+    return branch === "ticket-51" ? "a".repeat(40) : "b".repeat(40);
+  };
+  const created = await Promise.all(
+    [51, 52].map((ticket) =>
       codeHost.createPullRequest({
         repository: "owner/repo",
+        branch: `ticket-${ticket}`,
         targetBranch: "main",
-        branch,
-        title: `Implement ${branch}`,
-        body: `Implement ${branch}`,
+        title: `Implement #${ticket}`,
+        body: `Closes #${ticket}`,
       }),
     ),
   );
-
   assert.deepEqual(
-    pullRequests.map((pr) => pr.number),
+    created.map((pr) => pr.number),
     [81, 82],
   );
   const states = await Promise.all(
-    pullRequests.map((pr) => codeHost.getPullRequest("owner/repo", pr.number)),
+    created.map((pr) => codeHost.getPullRequest("owner/repo", pr.number)),
   );
   assert.deepEqual(
     states.map((pr) => pr.headSha),
-    heads,
+    ["a".repeat(40), "b".repeat(40)],
+  );
+  const records = await codeHost.listPullRequests();
+  assert.deepEqual(
+    records.map(({ number, branch, headSha }) => ({ number, branch, headSha })),
+    [
+      { number: 81, branch: "ticket-51", headSha: "a".repeat(40) },
+      { number: 82, branch: "ticket-52", headSha: "b".repeat(40) },
+    ],
   );
 });

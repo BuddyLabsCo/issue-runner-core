@@ -14,8 +14,9 @@ Contract version `1` is independent of the npm version `0.0.0-contract.1`.
 
 ## Build and identify a development artifact
 
-Use Node.js 22.18 or later within 22.x and npm 11.x. The lockfile pins the
-TypeScript build dependency. The CLI uses the source's `cac` and `yaml` parsers.
+Use Node.js 22.18.0 or later and npm 11 or later, including subsequent major versions.
+The lockfile pins the TypeScript build dependency.
+The CLI uses the source's `cac` and `yaml` parsers.
 From the Core checkout:
 
 ```sh
@@ -161,7 +162,8 @@ manually installed handoff skill. Project-local/npx and mixed-prefix product
 installations are outside the agreed support policy. Project configuration remains
 `<launch-directory>/<project>/config.yaml`.
 
-The required full-product CI matrix is Ubuntu and Windows with Node 22.18+
-within 22.x/npm 11.x. Paths and child processes here use portable Node APIs;
+The required full-product CI matrix is Ubuntu and Windows, currently pinned to
+Node.js 22.18.0 and npm 11.6.2. Supported versions have no upper major bound.
+Paths and child processes here use portable Node APIs;
 portable code does not establish tested macOS behavior. Package tests do not
 establish actual terminal delivery, native Agent behavior, or joint acceptance.
