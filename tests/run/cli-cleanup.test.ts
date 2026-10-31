@@ -15,10 +15,48 @@ import { integrationRun } from "../support/integration-run.ts";
 import { documentationRun } from "../support/documentation-run.ts";
 import {
   implementationCommand,
+  implementationProgress,
   publish,
 } from "../support/implementation-run.ts";
 import { validConfig } from "../support/cli-project.ts";
 import { findings, fixCommit } from "../support/review-run.ts";
+import { child, parentDeliveryRun } from "../support/parent-run.ts";
+
+await test("parent recovery finishes its final child's cleanup before parent closure without a documentation trigger", async (t) => {
+  const fixture = await parentDeliveryRun(t, [child(51)]);
+  let removals = 0;
+  fixture.dependencies.gitWorkspace.cleanupWorktree = async () => {
+    removals++;
+    fixture.controller.abort();
+  };
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  const saved = await implementationProgress(fixture.directory, 51);
+  assert.equal(fixture.children[0]!.stateReason, "completed");
+  assert.equal(fixture.parent.state, "open");
+  assert.deepEqual(saved.cleanup?.worktrees, [saved.worktree]);
+  assert.deepEqual(saved.cleanup?.files, []);
+  await access(saved.invocation!.path);
+
+  let parentClosedWithFiles = false;
+  const close = fixture.dependencies.tracker.closeTicket.bind(
+    fixture.dependencies.tracker,
+  );
+  fixture.dependencies.tracker.closeTicket = async (repository, number) => {
+    if (number === 48)
+      parentClosedWithFiles =
+        (await readdir(path.join(fixture.directory, "handoffs"))).length > 0;
+    await close(repository, number);
+  };
+  fixture.dependencies.signal = new AbortController().signal;
+  const result = await fixture.run();
+  assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
+  assert.equal(parentClosedWithFiles, false);
+  assert.equal(removals, 1);
+  assert.deepEqual(fixture.dispatched, [51]);
+  assert.deepEqual(fixture.closures, [51, 48]);
+  await assert.rejects(access(saved.invocation!.path), { code: "ENOENT" });
+  assert.deepEqual(await readdir(path.join(fixture.directory, "handoffs")), []);
+});
 
 await test("successful delivery removes only its owned Worktree and assigned final, temporary, and superseded files", async (t) => {
   const fixture = await integrationRun(t);

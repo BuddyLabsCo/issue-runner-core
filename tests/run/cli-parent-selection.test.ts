@@ -276,9 +276,10 @@ await test("failed assignee writes retain a partial Reservation without automati
   assert.equal(next.summary.outcome, "incomplete");
   assert.match(
     next.summary.reasons.join("; "),
-    /existing Reservations: 51 \(partial\)/u,
+    /Issue #51: existing Reservation \(partial\); no recorded ownership for this Run/u,
   );
   assert.deepEqual(fixture.writes, ["label:51"]);
+  assert.deepEqual(fixture.dispatched, []);
 });
 
 await test("a lost write response is reconciled before retrying the same Reservation mutation", async (t) => {
