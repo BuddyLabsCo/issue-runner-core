@@ -253,19 +253,17 @@ export async function runProject(
     return ticket;
   };
   const recoveredReasons: string[] = [];
-  if (trigger) {
-    const pending = await selectBatch([]);
-    if (pending.batch.length > 0) {
-      const result = await batch(
-        pending.documentation
-          ? []
-          : await Promise.all(pending.batch.map(readTicket)),
-        pending,
-      );
-      if (result.outcome !== "succeeded" || options.issueTicket !== undefined)
-        return result;
-      recoveredReasons.push(...result.reasons);
-    }
+  const pending = await selectBatch([]);
+  if (pending.batch.length > 0) {
+    const result = await batch(
+      pending.documentation
+        ? []
+        : await Promise.all(pending.batch.map(readTicket)),
+      pending,
+    );
+    if (result.outcome !== "succeeded" || options.issueTicket !== undefined)
+      return result;
+    recoveredReasons.push(...result.reasons);
   }
   if (options.selector === "parent") {
     const result = await runParent({

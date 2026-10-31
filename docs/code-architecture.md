@@ -33,6 +33,9 @@ tests/
   publication/integration, with no business-Issue selection or ordinary Review.
   `run/execution-recovery.ts` validates saved execution context before continuation
   or documentation cleanup. `run/integration.ts` also owns verified no-change closure.
+- `run/cleanup.ts` removes successfully delivered execution resources for ordinary
+  Issues and documentation. It validates ownership and checkpoints completed actions
+  so recovery retries unfinished Worktree/branch and handoff-file cleanup.
 - `run/batch.ts` owns Batch execution and the successful-delivery documentation
   trigger. `run/discovery.ts` persists the Batch's maintenance association before
   document work starts. `run/run.ts` restores pending Batch barriers before discovery;

@@ -61,7 +61,7 @@ await test("one documentation occurrence follows each matching successful Batch 
       "close:48",
     ],
   );
-  assert.equal(fixture.cleanup.length, 2);
+  assert.equal(fixture.cleanup.length, 7);
   assert.equal(
     fetches,
     4,
@@ -193,7 +193,7 @@ await test("a completed occurrence satisfies its restored Batch barrier without 
 
   assert.equal((await fixture.run()).summary.outcome, "succeeded");
   assert.equal(fixture.maintenance.length, 1);
-  assert.equal(fixture.cleanup.length, 1);
+  assert.equal(fixture.cleanup.length, 2);
   assert.equal(
     fixture.events.filter((event) => event === "document").length,
     1,
@@ -311,7 +311,9 @@ await test("changed configuration ignores the pending occurrence and retains all
   assert.equal((await fixture.run()).summary.outcome, "succeeded");
   assert.equal(fixture.maintenance.length, 1);
   assert.equal(fixture.maintenance[0]!.state, "open");
-  assert.deepEqual(fixture.cleanup, []);
+  assert.deepEqual(fixture.cleanup, [
+    (await implementationProgress(fixture.directory, 51)).worktree,
+  ]);
   await access(original.worktree);
   await access(original.probe!.path);
   assert.deepEqual(
@@ -368,7 +370,7 @@ await test("committed automatic documentation follows normal publication and int
     (await fixture.dependencies.codeHost.listPullRequests()).length,
     2,
   );
-  assert.equal(fixture.cleanup.length, 1);
+  assert.equal(fixture.cleanup.length, 2);
 });
 
 await test("unsuccessful documentation blocks later Batch discovery and parent closure, retaining its artifacts", async (t) => {
@@ -402,7 +404,9 @@ await test("unsuccessful documentation blocks later Batch discovery and parent c
   assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
   assert.deepEqual(fixture.dispatched, [51]);
   assert.equal(fixture.parent.state, "open");
-  assert.deepEqual(fixture.cleanup, []);
+  assert.deepEqual(fixture.cleanup, [
+    (await implementationProgress(fixture.directory, 51)).worktree,
+  ]);
   const progress = await implementationProgress(fixture.directory, 100);
   await access(progress.worktree);
   await access(progress.invocation!.path);
