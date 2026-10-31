@@ -235,16 +235,26 @@ export async function runProject(
       document,
     });
   };
+  const readTicket = async (number: number) => {
+    const ticket = await read("read_issue", `ticket:${number}`, () =>
+      tracker.getTicket(loaded.config.repository, number),
+    );
+    if (
+      ticket.number !== number ||
+      (ticket.repository !== undefined &&
+        ticket.repository !== loaded.config.repository)
+    )
+      throw new Error("Unexpected Issue ownership");
+    return ticket;
+  };
   const recoveredReasons: string[] = [];
   if (trigger) {
     const pending = await selectBatch([]);
     if (pending.batch.length > 0) {
       const result = await batch(
-        pending.batch.map((number) => ({
-          number,
-          state: "open",
-          stateReason: null,
-        })),
+        pending.documentation
+          ? []
+          : await Promise.all(pending.batch.map(readTicket)),
         pending,
       );
       if (result.outcome !== "succeeded" || options.issueTicket !== undefined)
@@ -268,16 +278,7 @@ export async function runProject(
   for (const number of options.issueTicket !== undefined
     ? [options.issueTicket]
     : loaded.config.issueList) {
-    const ticket = await read("read_issue", `ticket:${number}`, () =>
-      tracker.getTicket(loaded.config.repository, number),
-    );
-    if (
-      ticket.number !== number ||
-      (ticket.repository !== undefined &&
-        ticket.repository !== loaded.config.repository)
-    )
-      throw new Error("Unexpected Issue ownership");
-    tickets.push(ticket);
+    tickets.push(await readTicket(number));
   }
   const result = await batch(tickets);
   return {

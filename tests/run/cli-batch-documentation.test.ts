@@ -121,6 +121,25 @@ await test("unmerged work never triggers documentation", async (t) => {
   assert.equal(fixture.maintenance.length, 0);
 });
 
+for (const stateReason of ["not_planned", "completed"] as const) {
+  await test(`numbered Issue recovery reports no_work immediately when retained work is externally ${stateReason}`, async (t) => {
+    const ticket = child(51, { labels: ["ready-for-agent", "Docs"] });
+    const fixture = await batchDocumentationRun(t, [ticket]);
+    const flags = ["--issue", "51", "--no-auto-merge"];
+    assert.equal((await fixture.run(flags)).summary.outcome, "incomplete");
+    ticket.state = "closed";
+    ticket.stateReason = stateReason;
+
+    const result = await fixture.run(flags);
+
+    assert.equal(result.summary.outcome, "no_work", JSON.stringify(result));
+    assert.equal(result.exitCode, 0);
+    assert.deepEqual(fixture.dispatched, [51]);
+    assert.equal(fixture.maintenance.length, 0);
+    assert.deepEqual(fixture.cleanup, []);
+  });
+}
+
 await test("work cancelled after merge never triggers documentation", async (t) => {
   const ticket = child(51, { labels: ["ready-for-agent", "Docs"] });
   const fixture = await batchDocumentationRun(t, [ticket]);
@@ -214,6 +233,18 @@ await test("pending documentation recovers before any parent discovery, using it
   ) as { batch: string };
   assert.equal(occurrence.batch, batch.documentation);
   assert.equal(batch.completed, undefined);
+  const getTicket = fixture.dependencies.tracker.getTicket.bind(
+    fixture.dependencies.tracker,
+  );
+  fixture.dependencies.tracker.getTicket = async (...args) => {
+    if (args[1] === 51)
+      assert.equal(
+        fixture.maintenance[0]!.state,
+        "closed",
+        "maintenance blocks business-Issue reads after restart",
+      );
+    return getTicket(...args);
+  };
   let discovery = 0;
   const parent = fixture.dependencies.tracker.getParent.bind(
     fixture.dependencies.tracker,
