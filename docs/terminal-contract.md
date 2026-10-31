@@ -144,8 +144,9 @@ from the global plugin directory, and the exact manually installable
 The loader checks await selected-plugin initialization and reject local,
 other-prefix, linked-entry, PATH, NODE_PATH, and cache decoys. Temporary paths
 include spaces and are removed after the checks, including on failure.
-Installs use local tarballs and npm's offline dependency cache populated by
-`npm ci`; they require no registry publication, Herdr, Agent account, or model call.
+Installs use local tarballs and prefer npm's dependency cache, fetching missing
+metadata or packages from the registry. They require no registry publication,
+Herdr, Agent account, or model call.
 
 Product execution requires Core and its selected plugin installed globally
 in the same active npm environment/prefix, including custom prefixes:
