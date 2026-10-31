@@ -17,6 +17,17 @@ export interface ChildPage {
 }
 
 export interface Tracker {
+  createLabel(repository: string, label: string): Promise<void>;
+  listLabelsPage(
+    repository: string,
+    page: number,
+  ): Promise<{ labels: string[]; nextPage: number | null }>;
+  createMaintenanceTicket(
+    repository: string,
+    title: string,
+    body: string,
+    label: string,
+  ): Promise<Ticket>;
   closeTicket(repository: string, ticket: number): Promise<void>;
   getTicket(repository: string, ticket: number): Promise<Ticket>;
   listBlockersPage(
@@ -102,6 +113,12 @@ export interface RequiredCheck {
 }
 
 export interface GitWorkspace {
+  cleanupWorktree(input: {
+    checkout: string;
+    worktree: string;
+    branch: string;
+    headSha: string;
+  }): Promise<void>;
   push(worktree: string, branch: string, headSha: string): Promise<void>;
   withAgentEnvironment<T>(
     directory: string,
