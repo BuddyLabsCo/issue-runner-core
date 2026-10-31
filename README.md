@@ -58,6 +58,10 @@ independently verified `no_change` closes the Maintenance Ticket without a PR.
 Matching interrupted documentation Runs recover their own execution and maintenance
 state. Successful documentation removes owned Worktrees, local branches, and handoff
 files; unfinished and `--no-auto-merge` work remains available.
+Set `workflow.docMaintainTriggerLabel` to run this document workflow once after
+each successful Batch with a matching delivery-time label. Matching is exact and
+case-sensitive. Pending maintenance blocks later Batch discovery and parent closure,
+including after interruption; verified `no_change` satisfies the barrier.
 No npm package has been published.
 
 Non-Agent failures retain bounded safe retries and Operator Pause. Enter retries;

@@ -75,12 +75,15 @@ export async function runParent(
   input: ParentScope & {
     summary: RunSummary;
     runBatch: (tickets: Ticket[]) => Promise<RunSummary>;
+    maintenancePending: () => boolean;
   },
 ): Promise<RunSummary> {
   let hadChildren = false;
   let previous: RunSummary | undefined;
   const reasons: string[] = [];
   for (;;) {
+    if (input.maintenancePending())
+      return { ...input.summary, outcome: "incomplete", reasons };
     const { parent, tickets } = await readParentScope(input);
     hadChildren ||= tickets.length > 0;
     if (parent.state === "closed")
