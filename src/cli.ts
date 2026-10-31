@@ -61,7 +61,8 @@ Exactly one of --parent, --issue, or --document is required.
 --env <name> selects the globally installed issue-runner-<name> plugin.
 --issue runs selected Issues through verified implementation, independent Review,
 and required fixes in their original native conversations.
-Publication is not implemented; local completion reports incomplete.
+Runner owns publication and integration after verification.
+--no-auto-merge retains CI-ready unmerged work and exits nonzero.
 
 Example: issue-runner run --project my-project --env herdr --parent 42`;
 
@@ -228,6 +229,7 @@ export async function executeRun(
   let logPath: string | null = null;
   let parentTicket = 0;
   let targetBranch = "unresolved";
+  let summary: RunSummary | undefined;
   try {
     dependencies.signal?.throwIfAborted();
     const options = parseArguments(argv);
@@ -274,6 +276,7 @@ export async function executeRun(
       timestamp,
       parentTicket,
       runId,
+      [loaded.trackerToken, loaded.codeHostToken],
     );
     await supervisedAuditWrite(
       () => audit.create(),
@@ -281,7 +284,8 @@ export async function executeRun(
       dependencies.signal,
     );
     logPath = audit.path;
-    const summary = await runProject(
+    dependencies.operator.write(`${project}: workflow sessionid=n/a`);
+    const runSummary = await runProject(
       options,
       loaded,
       dependencies.tracker ?? new GitHubTracker(loaded.trackerToken),
@@ -304,30 +308,36 @@ export async function executeRun(
           : { signal: dependencies.signal }),
       },
     );
-    targetBranch = summary.targetBranch;
-    await supervisedAuditWrite(
-      () =>
-        audit.append({
-          timestamp: clock.now().toISOString(),
-          runId,
-          project,
-          parentTicket: summary.parentTicket,
-          phase: "complete",
-          operation: "run",
-          target: summary.targetBranch,
-          attempt: 1,
-          result: summary.outcome,
-          error: null,
-        }),
-      dependencies.operator,
-      dependencies.signal,
-    );
+    summary = runSummary;
+    targetBranch = runSummary.targetBranch;
+    for (const ticket of runSummary.tickets ?? [])
+      dependencies.operator.write(
+        `Issue #${ticket.ticket} ${ticket.kind}: ${ticket.status} PR=${ticket.pullRequest === null ? "-" : `#${ticket.pullRequest}`} ${ticket.detail.replace(/\s+/gu, " ").trim()}`,
+      );
+    if (!dependencies.signal?.aborted)
+      await supervisedAuditWrite(
+        () =>
+          audit.append({
+            timestamp: clock.now().toISOString(),
+            runId,
+            project,
+            parentTicket: runSummary.parentTicket,
+            phase: "complete",
+            operation: "run",
+            target: runSummary.targetBranch,
+            attempt: 1,
+            result: runSummary.outcome,
+            error: null,
+          }),
+        dependencies.operator,
+        dependencies.signal,
+      );
     dependencies.operator.write(
-      `${project}: ${summary.outcome} targetBranch=${summary.targetBranch}${summary.reasons.length ? `: ${summary.reasons.join("; ")}` : ""}`,
+      `${project}: ${runSummary.outcome} targetBranch=${runSummary.targetBranch}${runSummary.reasons.length ? `: ${runSummary.reasons.join("; ")}` : ""}`,
     );
     return {
-      exitCode: ["succeeded", "no_work"].includes(summary.outcome) ? 0 : 1,
-      summary,
+      exitCode: ["succeeded", "no_work"].includes(runSummary.outcome) ? 0 : 1,
+      summary: runSummary,
       logPath: audit.path,
     };
   } catch (error) {
@@ -341,11 +351,12 @@ export async function executeRun(
     return {
       exitCode: 1,
       summary: {
+        ...summary,
         outcome: cancelled ? "cancelled" : "failed",
         project,
         parentTicket,
         targetBranch,
-        reasons: [reason],
+        reasons: [...(summary?.reasons ?? []), reason],
       },
       logPath,
     };

@@ -496,9 +496,30 @@ file. Further invalid writes leave the budget exhausted; a later valid write is
 independently verified and can complete the stage. Restarting with matching
 inputs retains the consumed budget and active path.
 
+Run startup displays `sessionid=n/a` for workflow work without an Agent conversation.
+Each Agent stage identifies its Issue and purpose, with `sessionid=pending` before its Probe.
+After the Probe, progress shows the actual native identity and absolute active handoff path.
+Corrections update that path; resumed work displays its saved identity and assignment.
+
+The final report lists Issues in selection order, even when concurrent work finishes in another order.
+Documentation appears as maintenance work after its triggering Batch.
+Each structured CLI result includes `exitCode`, `logPath`, and a `summary` with the Run outcome and reasons.
+For a started Run, `summary.tickets` contains ordered records with Issue number, kind, status, PR number/URL, detail, and retained Worktrees.
+Failures and cancellation retain these records and resource details already observed by Runner.
+An abrupt termination can prevent a final report.
+
+`completed` requires confirmed merge and completed tracker state.
+Documentation can also finish as `no_change` after verified closure.
+An ordinary Issue's `no_change` handoff leaves delivery incomplete.
+`PR ready` identifies CI-ready unmerged work; it grants no delivery credit.
+A handoff or Reservation release alone never proves successful delivery.
 `succeeded`/`no_work` exit zero. `incomplete`/`cancelled`/`failed` exit nonzero.
+
 Workflow observations and outcomes have JSONL audits under the Project's
-`logs/`. There are no Agent transcripts. Implementation snapshots under
+`logs/`. Audit records redact configured tracker and code-host credentials in string values before JSON serialization.
+They record workflow operations and diagnostics, without Agent output or conversation transcripts.
+Cancellation stops audit retries; the final outcome event may be absent when the cancellation signal is already set.
+Implementation snapshots under
 `recovery/` record execution/Run identities, role references, Probe metadata,
 invocation/path, a known unsent assignment or correction prompt, correction count,
 result facts and stage completion. Handles

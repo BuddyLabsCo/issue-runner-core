@@ -1,3 +1,4 @@
+import { reportRetained, type TicketReport } from "./report.ts";
 import type { LoadedProject } from "../config.ts";
 import type {
   Tracker,
@@ -9,7 +10,6 @@ import type {
 } from "./contracts.ts";
 import type { TerminalPlugin } from "../terminal.ts";
 import type { AuditLog } from "../audit.ts";
-import { existsSync } from "node:fs";
 import type { ImplementationProgress } from "../recovery.ts";
 import {
   boundedOperation,
@@ -17,6 +17,7 @@ import {
   externalRead,
   serializeOperator,
   TicketSkipped,
+  OperatorCancelled,
 } from "./operations.ts";
 import { runBatch } from "./batch.ts";
 import { runStandalone } from "./standalone.ts";
@@ -34,6 +35,7 @@ export interface RunContext {
   terminal: TerminalPlugin;
   signal?: AbortSignal;
   retained?: Map<string, ImplementationProgress | undefined>;
+  reports?: TicketReport[];
 }
 
 export interface RunSummary {
@@ -42,6 +44,7 @@ export interface RunSummary {
   parentTicket: number;
   targetBranch: string;
   reasons: string[];
+  tickets?: TicketReport[];
 }
 
 export interface RunOptions {
@@ -61,48 +64,40 @@ export async function runProject(
   context: RunContext,
 ): Promise<RunSummary> {
   const retained = new Map<string, ImplementationProgress | undefined>();
-  let summary: RunSummary | undefined;
+  let summary: RunSummary = {
+    outcome: "incomplete",
+    project: options.project,
+    parentTicket: options.parentTicket ?? options.issueTicket ?? 0,
+    targetBranch: loaded.config.targetBranch ?? "unresolved",
+    reasons: [],
+    tickets: [],
+  };
   try {
-    return (summary = await executeProject(options, loaded, tracker, codeHost, {
-      ...context,
-      retained,
-    }));
+    return (summary = await executeProject(
+      options,
+      loaded,
+      tracker,
+      codeHost,
+      {
+        ...context,
+        retained,
+        reports: summary.tickets!,
+      },
+      summary,
+    ));
+  } catch (error) {
+    summary.outcome =
+      error instanceof OperatorCancelled || context.signal?.aborted
+        ? "cancelled"
+        : "failed";
+    const reason = error instanceof Error ? error.message : String(error);
+    summary.reasons.push(reason);
+    context.operator.write(
+      `Run ${summary.outcome}: ${reason.replace(/\s+/gu, " ").trim()}`,
+    );
+    return summary;
   } finally {
-    for (const [snapshot, progress] of retained) {
-      const repairs = [
-        ...(progress?.publication?.ciRepair?.attempts ?? []),
-        ...(progress?.publication?.conflictRepair?.attempts ?? []),
-      ];
-      const resources = progress ? [progress, ...repairs] : [];
-      const stages = [
-        ...resources,
-        ...(progress?.reviews ?? []).flatMap((round) => [round, round.fix]),
-      ];
-      const paths = [
-        snapshot,
-        `${snapshot}.tmp`,
-        ...resources.map((resource) => resource.worktree),
-        ...stages.flatMap((stage) =>
-          [
-            stage?.probe?.path,
-            stage?.invocation?.path,
-            ...(stage?.superseded ?? []),
-          ]
-            .filter((file) => file !== undefined)
-            .flatMap((file) => [file, `${file}.tmp`]),
-        ),
-        ...(progress?.reviews ?? []).flatMap((round) => [
-          round.findings,
-          `${round.findings}.tmp`,
-        ]),
-      ].filter(existsSync);
-      if (paths.length === 0) continue;
-      const report = progress
-        ? `Retained Issue #${progress.ticket} execution=${progress.execution_id}; recorded branches: ${resources.map((resource) => resource.branch).join(", ")}; resources: ${paths.join(", ")}`
-        : `Retained recovery evidence: ${paths.join(", ")}`;
-      if (summary) summary.reasons.push(report);
-      else context.operator.write(report);
-    }
+    reportRetained({ ...context, retained }, summary);
   }
 }
 
@@ -112,6 +107,7 @@ async function executeProject(
   tracker: Tracker,
   codeHost: CodeHost,
   context: RunContext,
+  summary: RunSummary,
 ): Promise<RunSummary> {
   const controller = new AbortController();
   const signal = context.signal
@@ -206,13 +202,7 @@ async function executeProject(
       codeHost.resolveTargetBranch(loaded.config.repository),
     ));
   if (!targetBranch.trim()) throw new Error("Target Branch must not be empty");
-  const summary: RunSummary = {
-    outcome: "incomplete",
-    project: options.project,
-    parentTicket: options.parentTicket ?? options.issueTicket ?? 0,
-    targetBranch,
-    reasons: [],
-  };
+  summary.targetBranch = targetBranch;
   let base: Promise<string> | undefined;
   const fetchBase = () =>
     (base ??= read("fetch_target_branch", targetBranch, () =>
