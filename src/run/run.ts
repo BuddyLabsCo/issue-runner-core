@@ -68,6 +68,8 @@ export async function runProject(
     signal,
     operator,
     git: {
+      push: (worktree, branch, headSha) =>
+        operator.advance(() => git.push(worktree, branch, headSha)),
       fetchTargetBranch: (checkout, branch) =>
         git.fetchTargetBranch(checkout, branch),
       inspect: (input) => git.inspect(input),
@@ -131,6 +133,8 @@ export async function runProject(
       summary,
       read,
       fetchBase,
+      codeHost,
+      autoMerge: options.autoMerge,
     });
   if (options.selector === "document") {
     return {
@@ -202,6 +206,8 @@ export async function runProject(
         summary,
         read,
         fetchBase,
+        codeHost,
+        autoMerge: options.autoMerge,
       });
     } catch (error) {
       controller.abort(error);

@@ -27,7 +27,10 @@ await test("execution findings receive a specific correction in the original con
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
   assert.equal((await fixture.snapshot()).phase, "implementation_completed");
-  assert.deepEqual(fixture.state.sleeps, [10_000, 2_000]);
+  assert.deepEqual(
+    fixture.state.sleeps.filter((ms) => ms !== 30_000),
+    [10_000, 2_000],
+  );
 });
 
 await test("additional corrections persist unique assignments, reuse the final seconds delay, and stay exhausted during manual recovery", async (t) => {
@@ -105,7 +108,7 @@ await test("additional corrections persist unique assignments, reuse the final s
   assert.equal(new Set(invocations).size, 4);
   assert.equal(manualWrites, 3);
   assert.deepEqual(
-    fixture.state.sleeps,
+    fixture.state.sleeps.filter((ms) => ms !== 30_000),
     [10_000, 1_000, 500, 750, 750, 250, 250, 250],
   );
   assert.equal(fixture.state.submissions.length, 7);

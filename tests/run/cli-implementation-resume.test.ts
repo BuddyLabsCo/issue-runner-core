@@ -109,7 +109,8 @@ await test("a valid result produced while Runner was stopped completes without o
   assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
   assert.equal(opens, 0);
   assert.equal(fixture.state.submissions.length, before);
-  assert.equal(fixture.state.sleeps.length, sleeps);
+  assert.equal(fixture.state.sleeps.length, sleeps + 1);
+  assert.equal(fixture.state.sleeps.at(-1), 30_000);
   const accepted = await fixture.snapshot();
   assert.equal(accepted.phase, "implementation_completed");
   assert.deepEqual(accepted.result?.commits, committed().commits);
@@ -203,6 +204,7 @@ await test("a consumed nonzero correction budget stays exhausted across restart 
   const before = fixture.state.submissions.length;
   let polls = 0;
   fixture.state.onSleep = async (ms) => {
+    if (ms === 30_000) return;
     assert.equal(ms, 250);
     assert.ok(++polls <= 2);
     assert.equal((await fixture.snapshot()).corrections, 1);

@@ -75,7 +75,7 @@ await test("a withheld correction retains its prompt, path and spent budget unti
       const file = JSON.parse(
         text.slice(text.lastIndexOf("argument: ") + 10),
       ) as string;
-      await publish(file, committed());
+      await publish(file, committed(51));
       return;
     }
     await submitText(tab, text);
@@ -85,7 +85,7 @@ await test("a withheld correction retains its prompt, path and spent budget unti
     }
   };
   fixture.dependencies.clock.sleep = async (ms) => {
-    assert.equal(ms === 10_000 || ms === 2000, true);
+    assert.equal(ms === 10_000 || ms === 2000 || ms === 30_000, true);
     if (ms === 2000) ticket.labels = ["sandcastle:reserved"];
   };
   assert.equal((await fixture.run()).summary.outcome, "incomplete");

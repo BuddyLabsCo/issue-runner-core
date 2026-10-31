@@ -18,14 +18,15 @@ import {
   nonempty,
   parseExecution,
 } from "../agent/handoff.ts";
-import type { Ticket, Tracker } from "./contracts.ts";
+import type { CodeHost, Ticket, Tracker } from "./contracts.ts";
+import { publishImplementation } from "./publication.ts";
 import type { RunContext, RunSummary } from "./run.ts";
 import {
   hasOpenBlocker,
   readChildren,
   type ReadOperation,
 } from "./discovery.ts";
-import { OperatorCancelled } from "./operations.ts";
+import { OperationStopped, OperatorCancelled } from "./operations.ts";
 
 export async function runStandalone(input: {
   number: number;
@@ -36,6 +37,8 @@ export async function runStandalone(input: {
   summary: RunSummary;
   read: ReadOperation;
   fetchBase: () => Promise<string>;
+  codeHost: CodeHost;
+  autoMerge: boolean;
 }): Promise<RunSummary> {
   const { number, loaded, tracker, context, read, summary } = input;
   const config = loaded.config;
@@ -248,16 +251,31 @@ export async function runStandalone(input: {
         git: context.git,
         read,
       });
+    if (!selected.reason && progress.result?.outcome === "committed") {
+      try {
+        const reason = await publishImplementation({
+          progress,
+          loaded,
+          context,
+          codeHost: input.codeHost,
+          read,
+          persist: () => persist(progress),
+          beforeDispatch,
+          autoMerge: input.autoMerge,
+        });
+        return { ...summary, reasons: [reason] };
+      } catch (error) {
+        if (!(error instanceof OperationStopped)) throw error;
+        return { ...summary, reasons: [selected.reason ?? error.message] };
+      }
+    }
     return {
       ...summary,
       reasons: [
         selected.reason ??
-          (progress.phase === "publication_eligible" ||
-          (progress.result?.outcome === "committed" && !config.workflow.review)
-            ? "Implementation stage completed and is eligible for publication; publication is not implemented yet"
-            : progress.result?.outcome === "no_change"
-              ? "Implementation completed with no_change; no Issue delivery"
-              : "Implementation stage completed; Issue delivery remains incomplete"),
+          (progress.result?.outcome === "no_change"
+            ? "Implementation completed with no_change; no Issue delivery"
+            : "Implementation stage completed; Issue delivery remains incomplete"),
       ],
     };
   };

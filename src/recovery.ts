@@ -1,7 +1,11 @@
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
-import type { CommitEvidence } from "./run/contracts.ts";
+import type {
+  CommitEvidence,
+  PullRequestIdentity,
+  RequiredCheck,
+} from "./run/contracts.ts";
 
 export function hashRunInput(
   argv: readonly string[],
@@ -76,6 +80,28 @@ export interface ImplementationProgress extends StageProgress<ExecutionResult> {
   pr_title?: string;
   pr_body?: string;
   reviews?: ReviewProgress[];
+  publication?: PublicationProgress;
+}
+
+export interface PublicationProgress {
+  phase:
+    | "pending_push"
+    | "pushed"
+    | "pending_pr"
+    | "pr_created"
+    | "checks_ready"
+    | "checks_failed";
+  branch: string;
+  targetBranch: string;
+  headSha: string;
+  title: string;
+  body: string;
+  commits: CommitEvidence[];
+  pullRequest?: PullRequestIdentity;
+  creationAttempted?: boolean;
+  discoveryNotBefore?: number;
+  checksDeadline?: number;
+  checks?: RequiredCheck[];
 }
 
 export interface BatchProgress {

@@ -2,6 +2,7 @@ import type { AuditEvent, AuditLog } from "../audit.ts";
 import type { Clock, OperatorIO, RetryPolicy } from "./contracts.ts";
 
 export class OperatorCancelled extends Error {}
+export class OperationStopped extends Error {}
 
 export function serializeOperator(
   operator: OperatorIO,
@@ -89,7 +90,7 @@ export async function supervisedAuditWrite(
   }
 }
 
-async function pauseForOperator(
+export async function pauseForOperator(
   operator: OperatorIO,
   reason: string,
   signal?: AbortSignal,
@@ -141,7 +142,11 @@ export async function externalRead<T>(operation: {
           "failed",
           error instanceof Error ? error.message : "external read failed",
         );
-        if (error instanceof OperatorCancelled) throw error;
+        if (
+          error instanceof OperatorCancelled ||
+          error instanceof OperationStopped
+        )
+          throw error;
         if (attempt <= policy.operationRetry) {
           const delay =
             policy.operationRetryDelay[

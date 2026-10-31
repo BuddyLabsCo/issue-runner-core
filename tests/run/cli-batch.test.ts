@@ -64,7 +64,7 @@ for (const selector of ["parent", "issue"] as const) {
         await submitText(tab, text);
         const assignment = JSON.parse(text.split("\n")[1]!) as { path: string };
         await publish(assignment.path, {
-          ...committed(),
+          ...committed(number),
           summary: `Completed Issue #${number}`,
         });
       } else await submitText(tab, text);

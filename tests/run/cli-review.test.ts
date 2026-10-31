@@ -65,9 +65,12 @@ await test("verified implementation starts an independent Standards/Spec Review 
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
   assert.equal(reviews, 1);
-  assert.match(result.summary.reasons.join(" "), /eligible for publication/u);
+  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
   assert.equal(fixture.state.closedTabs.length, 2);
-  assert.deepEqual(fixture.state.sleeps, [10_000, 10_000]);
+  assert.deepEqual(
+    fixture.state.sleeps.filter((ms) => ms !== 30_000),
+    [10_000, 10_000],
+  );
   assert.equal(
     (await fixture.snapshot()).roles.review?.sessionid,
     "native-review",
@@ -102,12 +105,15 @@ await test("with no default cap, every findings round receives a fix and later R
     });
   };
   const result = await fixture.run();
-  assert.match(result.summary.reasons.join(" "), /eligible for publication/u);
+  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
   assert.equal(fixture.reviewState.reviews.length, 4);
   assert.equal(fixture.reviewState.fixes.length, 3);
   assert.equal(fixture.state.probeCount, 2);
   assert.equal(fixture.state.closedTabs.length, 8);
-  assert.deepEqual(fixture.state.sleeps, Array<number>(8).fill(10_000));
+  assert.deepEqual(
+    fixture.state.sleeps.filter((ms) => ms !== 30_000),
+    Array<number>(8).fill(10_000),
+  );
   const reviewerCommands = fixture.state.submissions.filter((item) =>
     item.text.startsWith("review-cli"),
   );
@@ -131,7 +137,7 @@ await test("disabled Review and initial no_change never start a reviewer", async
   const disabled = await implementationRun(t);
   const result = await disabled.run();
   assert.equal(result.summary.outcome, "incomplete");
-  assert.match(result.summary.reasons.join(" "), /eligible for publication/u);
+  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
   assert.equal(disabled.state.closedTabs.length, 1);
   assert.equal((await disabled.snapshot()).reviews, undefined);
 
@@ -175,11 +181,14 @@ await test("cap=1 still fixes final findings in the exact implementation convers
   };
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
-  assert.match(result.summary.reasons.join(" "), /eligible for publication/u);
+  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
   assert.equal(fixture.reviewState.reviews.length, 1);
   assert.equal(fixture.reviewState.fixes.length, 1);
   assert.equal(fixture.state.closedTabs.length, 3);
-  assert.deepEqual(fixture.state.sleeps, [10_000, 10_000, 10_000]);
+  assert.deepEqual(
+    fixture.state.sleeps.filter((ms) => ms !== 30_000),
+    [10_000, 10_000, 10_000],
+  );
   const commands = fixture.state.submissions.filter(
     (item) => item.chord === "Enter",
   );
@@ -192,6 +201,12 @@ await test("cap=1 still fixes final findings in the exact implementation convers
   assert.equal(saved.pr_body, "Implement the Issue.\n\nCloses #50");
   assert.deepEqual(saved.result?.commits, [implementationCommit]);
   assert.deepEqual(saved.reviews?.[0]?.fix?.result?.commits, [fixCommit]);
+  assert.equal(saved.publication?.headSha, fixCommit.sha);
+  assert.deepEqual(saved.publication.commits, [
+    implementationCommit,
+    fixCommit,
+  ]);
+  assert.equal(saved.publication.body, "Implement the Issue.\n\nCloses #50");
   await assert.rejects(access(saved.reviews[0].findings));
   assert.equal(new Set(fixture.state.gitConfigs).size, 3);
   for (const file of fixture.state.gitConfigs)

@@ -39,9 +39,46 @@ export interface Tracker {
 
 export interface CodeHost {
   resolveTargetBranch(repository: string): Promise<string>;
+  getRemoteBranchHead(
+    repository: string,
+    branch: string,
+  ): Promise<string | null>;
+  listPullRequests(repository: string): Promise<PullRequestRecord[]>;
+  createPullRequest(input: {
+    repository: string;
+    targetBranch: string;
+    branch: string;
+    title: string;
+    body: string;
+  }): Promise<PullRequestIdentity>;
+  getRequiredChecks(
+    repository: string,
+    pullRequest: number,
+  ): Promise<RequiredCheck[]>;
+}
+
+export interface PullRequestIdentity {
+  number: number;
+  url: string;
+}
+
+export interface PullRequestRecord extends PullRequestIdentity {
+  branch: string;
+  targetBranch: string;
+  headSha: string;
+  state: "open" | "closed" | "merged";
+  draft?: boolean;
+}
+
+export interface RequiredCheck {
+  name: string;
+  state: string;
+  link: string;
+  bucket: "pass" | "fail" | "pending" | "skipping" | "cancel";
 }
 
 export interface GitWorkspace {
+  push(worktree: string, branch: string, headSha: string): Promise<void>;
   withAgentEnvironment<T>(
     directory: string,
     action: (env: Readonly<Record<string, string>>) => Promise<T>,

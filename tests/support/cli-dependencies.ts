@@ -1,6 +1,11 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external contracts retain asynchronous signatures. */
 import assert from "node:assert/strict";
 import { LocalGitWorkspace } from "../../src/adapters/git-workspace.ts";
+import type {
+  CodeHost,
+  PullRequestRecord,
+  RequiredCheck,
+} from "../../src/run/contracts.ts";
 
 export function createCliDependencies(launchDirectory: string) {
   const git = new LocalGitWorkspace("host-secret");
@@ -8,6 +13,8 @@ export function createCliDependencies(launchDirectory: string) {
   const effects: string[] = [];
   const reads: string[] = [];
   const pauses: string[] = [];
+  const remoteBranches = new Map<string, string>();
+  const pullRequests: PullRequestRecord[] = [];
   return {
     launchDirectory,
     env: { TRACKER_TOKEN: "tracker-secret", HOST_TOKEN: "host-secret" },
@@ -49,8 +56,41 @@ export function createCliDependencies(launchDirectory: string) {
         reads.push(`branch:${repository}`);
         return "default-branch";
       },
+      async getRemoteBranchHead(
+        _repository: string,
+        branch: string,
+      ): Promise<string | null> {
+        return remoteBranches.get(branch) ?? null;
+      },
+      async listPullRequests(): Promise<PullRequestRecord[]> {
+        return structuredClone(pullRequests);
+      },
+      async createPullRequest(
+        input: Parameters<CodeHost["createPullRequest"]>[0],
+      ) {
+        const number = 81 + pullRequests.length;
+        const record: PullRequestRecord = {
+          number,
+          url: `https://github.com/${input.repository}/pull/${number}`,
+          branch: input.branch,
+          targetBranch: input.targetBranch,
+          headSha: (await this.getRemoteBranchHead(
+            input.repository,
+            input.branch,
+          ))!,
+          state: "open",
+        };
+        pullRequests.push(record);
+        return { number, url: record.url };
+      },
+      async getRequiredChecks(): Promise<RequiredCheck[]> {
+        return [];
+      },
     },
     gitWorkspace: {
+      async push(_worktree: string, branch: string, headSha: string) {
+        remoteBranches.set(branch, headSha);
+      },
       withAgentEnvironment: git.withAgentEnvironment.bind(git),
       async inspect() {
         return {

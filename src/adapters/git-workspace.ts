@@ -111,6 +111,17 @@ export class LocalGitWorkspace implements GitWorkspace {
     ]);
   }
 
+  async push(worktree: string, branch: string, headSha: string): Promise<void> {
+    if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(headSha))
+      throw new Error("Invalid publication head SHA");
+    await this.command(worktree, ["check-ref-format", `refs/heads/${branch}`]);
+    await this.command(
+      worktree,
+      ["push", "origin", `${headSha}:refs/heads/${branch}`],
+      true,
+    );
+  }
+
   async inspect({ worktree, base }: { worktree: string; base: string }) {
     const [actualPath, branch, actualBase, log, status, diff] =
       await Promise.all([

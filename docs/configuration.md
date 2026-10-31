@@ -86,7 +86,7 @@ independently of parent discovery. It does not read a parent or expand the list
 with children, blockers, or other unselected Issues. List and parent selection
 share blocker, label, and Reservation eligibility checks, selecting ascending
 Issue numbers up to `maxBatchSize`. Selected Issues run concurrently through
-the standalone implementation/Review/fix checkpoint with their own Worktrees, conversations,
+the standalone implementation/Review/fix and publication workflow with their own Worktrees, conversations,
 and recovery evidence. A numbered `--issue <number>` selects only that Issue,
 regardless of the configured list. For example:
 
@@ -122,9 +122,8 @@ blockers. Other labels do not change eligibility. A nonempty `issueList`
 restricts selection to matching direct children; it never expands parent scope.
 Core selects ascending Issue numbers up to `maxBatchSize`, reports selected
 numbers and blocked/owned/reserved/missing work, and dispatches that Batch
-concurrently through the same implementation/Review/fix checkpoint as a numbered Issue.
-Publication and further delivery Batches remain
-downstream; local completion leaves the parent Run `incomplete`.
+concurrently through implementation, Review/fixes, publication, and required checks, as a numbered Issue does.
+Integration and further delivery Batches remain downstream; unmerged work leaves the parent Run `incomplete`.
 
 `maxBatchSize` also bounds concurrency: a Batch of two can run two Issues at
 once, and completion order may differ from ascending selection order. No
@@ -207,8 +206,8 @@ is not delivered: the Run reports `incomplete` until later workflow steps exist.
 Tab close uses ordinary operation retries/delays and Operator Pause after
 exhaustion. A close retry targets the same owned handle without repeating the
 accepted implementation or discarding its persisted completion.
-Verified `no_change` also gets no delivery credit. Neither auto-merge flag
-changes this checkpoint's behavior.
+Verified `no_change` also gets no delivery credit and skips publication.
+Verified commits proceed to publication after enabled Review/fixes.
 
 ### Independent Review and required fixes
 
@@ -270,8 +269,32 @@ after the complete Review/fix loop, including final-round fixes. Probe/handoff
 files and their temporary/superseded files remain until successful Issue cleanup.
 Per-call Git configuration is removed after every stage. Findings cleanup uses
 ordinary operation handling and can be retried from the completed checkpoint.
-Publication and delivery are still downstream; local eligibility reports
-`incomplete` and does not push, create a PR, or close the Issue.
+Verified local eligibility proceeds to publication below. Only merged work with
+confirmed tracker completion can receive successful-delivery credit.
+
+### Publication and CI-ready retention
+
+Runner owns pushes, PR creation, integration, and tracker writes. Agents only inspect, edit, check, and commit locally. Before pushing, Runner revalidates eligibility and verifies the original Worktree, delivery branch, base, cleanliness, and accumulated implementation/fix commits. It pushes the exact verified HEAD without force and creates a non-draft PR with the accepted Probe title and body. Probe metadata remains fixed even when fixes change the final implementation.
+
+Publication intent is saved before pushing or attempting PR creation. Checkpoints record the branch, Target Branch, intended HEAD, fixed metadata, verified commits, PR number/URL, discovery deadline, check deadline, and observed checks.
+
+A lost push response is reconciled against the intended remote HEAD. A lost PR response is reconciled against all PR pages using the exact branch, Target Branch, and HEAD. Multiple matches, conflicting identity, closed/draft PRs, or unexpected remote advancement enter ordinary non-Agent Operator Pause; Runner never force-pushes or creates a replacement automatically.
+
+An uncertain creation with no exact match requires explicit operator authorization before another creation attempt. Audit retries repeat only the audit action.
+
+Runner waits 30 seconds before required-check discovery. Empty checks or checks with no pending, failed, or cancelled entries establish readiness, preserving the source treatment of skipped checks. Pending checks are polled every 10 seconds, bounded by `timeouts.requiredChecksMinutes`. A timeout enters Operator Pause; Enter starts another configured wait window and q/EOF cancels.
+
+Failed or cancelled checks retain their evidence and report `incomplete`; CI repair remains downstream. Eligibility changes stop the affected Issue, and cancellation prevents new publication/check operations.
+
+With a numbered `--issue` or `--document`, the CLI accepts `--no-auto-merge`:
+
+```sh
+issue-runner run --project my-project --env herdr --issue 50 --no-auto-merge
+```
+
+For implemented Issue modes, a CI-ready unmerged PR retains its remote branch, original Worktree, Probe/handoff files, Reservation, and recovery evidence. The summary reports the PR URL and retained paths with outcome `incomplete` and nonzero exit. It grants no successful-delivery credit, performs no success cleanup, closes no Issue, and triggers no documentation maintenance.
+
+Integration is not implemented in this slice, so the default and explicit `--auto-merge` also stop at this checkpoint. Standalone documentation remains unimplemented.
 
 ### Rejected handoffs and manual correction
 
@@ -406,6 +429,9 @@ coordinator over a private fake terminal, real Probe/result/snapshot files, and
 scripted boundary dependencies. Review Runs cover independent role identity,
 Standards/Spec context, exact original-role resume, uncapped and final-round fixes,
 strict findings validation, correction budgets, and retained Review/fix progress.
+Publication Runs cover fixed metadata, exact PR identity, lost push/create responses,
+remote advancement, 30-second discovery, pending/passing/failed checks, timeouts,
+retention, cancellation, and the GitHub adapter through scripted command I/O.
 Focused real Git Runs verify fresh bases,
 Worktrees, clean state, actual commits, rejection of empty commits, reviewer edits,
 and fixes relative to the reviewed HEAD with cumulative commit evidence.
