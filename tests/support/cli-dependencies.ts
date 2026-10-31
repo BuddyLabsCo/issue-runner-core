@@ -108,16 +108,17 @@ export function createCliDependencies(launchDirectory: string) {
       async createPullRequest(
         input: Parameters<CodeHost["createPullRequest"]>[0],
       ) {
+        const headSha = (await this.getRemoteBranchHead(
+          input.repository,
+          input.branch,
+        ))!;
         const number = 81 + pullRequests.length;
         const record: PullRequestRecord = {
           number,
           url: `https://github.com/${input.repository}/pull/${number}`,
           branch: input.branch,
           targetBranch: input.targetBranch,
-          headSha: (await this.getRemoteBranchHead(
-            input.repository,
-            input.branch,
-          ))!,
+          headSha,
           state: "open",
         };
         pullRequests.push(record);
