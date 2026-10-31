@@ -35,6 +35,7 @@ async function git(cwd: string, ...args: string[]) {
 
 for (const scenario of [
   "committed",
+  "recovered",
   "repaired",
   "no_change",
   "ownership_changed",
@@ -84,6 +85,14 @@ for (const scenario of [
     fixture.state.onTask = async (file) => {
       const progress = await fixture.snapshot();
       assert.equal(await git(progress.worktree, "rev-parse", "HEAD"), base);
+      if (scenario === "recovered") {
+        await writeFile(
+          path.join(progress.worktree, "README.md"),
+          "unfinished\n",
+        );
+        fixture.controller.abort();
+        return;
+      }
       const commits = [];
       if (scenario === "committed" || scenario === "repaired") {
         await writeFile(
@@ -195,8 +204,54 @@ for (const scenario of [
         ...fixture.dependencies,
         gitWorkspace: workspace,
       });
+    if (scenario === "recovered") {
+      assert.equal((await run()).summary.outcome, "cancelled");
+      const saved = await fixture.snapshot();
+      const oldConfig = fixture.state.gitConfigs[0]!;
+      await assert.rejects(access(oldConfig), { code: "ENOENT" });
+      const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+        fixture.dependencies.terminalPlugin,
+      );
+      fixture.dependencies.terminalPlugin.submitText = async (
+        tab,
+        text,
+        chord,
+      ) => {
+        await submit(tab, text, chord);
+        if (text !== "continue") return;
+        assert.equal(
+          await readFile(path.join(saved.worktree, "README.md"), "utf8"),
+          "unfinished\n",
+        );
+        assert.match(
+          await git(saved.worktree, "status", "--porcelain"),
+          /README/u,
+        );
+        const config = fixture.state.gitConfigs.at(-1)!;
+        assert.notEqual(config, oldConfig);
+        await access(config);
+        await git(saved.worktree, "add", ".");
+        const message = "docs: complete interrupted maintenance";
+        await git(saved.worktree, "commit", "-m", message);
+        const sha = await git(saved.worktree, "rev-parse", "HEAD");
+        fixture.integrationState.pullRequest.headSha = sha;
+        await publish(saved.invocation!.path, {
+          outcome: "committed",
+          summary: "Recovered documentation",
+          commits: [{ sha, message }],
+          findings_file: null,
+        });
+      };
+      fixture.dependencies.signal = new AbortController().signal;
+    }
     const result = await run();
     const progress = await fixture.snapshot();
+    if (scenario === "recovered") {
+      assert.equal(fixture.state.taskCount, 1);
+      assert.equal(fixture.state.probeCount, 1);
+      for (const config of fixture.state.gitConfigs)
+        await assert.rejects(access(config), { code: "ENOENT" });
+    }
     assert.equal(
       result.summary.outcome,
       scenario === "ownership_changed" || scenario === "branch_in_use"

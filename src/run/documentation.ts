@@ -78,6 +78,7 @@ export async function runDocumentation(
         saved.repository !== maintenance.repository ||
         saved.target_branch !== maintenance.target_branch ||
         saved.batch !== input.batch ||
+        (input.batch !== undefined && saved.run_id !== context.runId) ||
         !nonempty(saved.run_id) ||
         ![
           "scheduled",
@@ -270,7 +271,10 @@ export async function runDocumentation(
       context.retained?.set(archive, undefined);
       return runDocumentation({
         ...input,
-        context: { ...input.context, runId: randomUUID() },
+        context: {
+          ...input.context,
+          runId: input.batch ? input.context.runId : randomUUID(),
+        },
       });
     }
     if (!(error instanceof TicketSkipped || error instanceof OperationStopped))
