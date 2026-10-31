@@ -184,7 +184,6 @@ export async function testGlobalPluginLoading(
     prefix,
     launch,
     version: installedManifest.version,
-    npm,
     runNode,
   });
   writeFileSync(

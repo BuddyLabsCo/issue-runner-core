@@ -134,7 +134,9 @@ These checks build and pack Core, then install its tarball into a temporary
 consumer directory to verify the public JavaScript entry and declarations.
 They also pack a private fake plugin and install both tarballs into the same
 isolated custom npm global prefix. From a separate Launch Directory, they
-invoke npm's installed `issue-runner` executable for help, version, and init.
+invoke npm's generated `issue-runner` executable by absolute path for help,
+version, and init. Hiding that executable must fail even with a local Core
+consumer installed, so an ancestor's local executable cannot satisfy the check.
 They verify all generated templates, installed purpose prompts, public types
 from the global plugin directory, and the exact manually installable
 `skills/issue-runner-handoff/SKILL.md` asset.
