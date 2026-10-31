@@ -15,7 +15,8 @@ export async function testPromptAssembly(
   execute: typeof executeCli,
 ) {
   const fixture = await implementationRun(t);
-  fixture.state.ticket.body = "Keep literal $& and {{path}} and Unicode: \u4f60\u597d";
+  fixture.state.ticket.body =
+    "Keep literal $& and {{path}} and Unicode: \u4f60\u597d";
   const probes: Record<string, unknown>[] = [];
   const nativeProbe = fixture.state.onProbe;
   fixture.state.onProbe = async (assignment) => {
