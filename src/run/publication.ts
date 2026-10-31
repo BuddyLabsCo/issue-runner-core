@@ -1,5 +1,8 @@
 import type { LoadedProject } from "../config.ts";
-import type { ImplementationProgress } from "../recovery.ts";
+import type {
+  ImplementationProgress,
+  PublicationProgress,
+} from "../recovery.ts";
 import type { CodeHost, PullRequestRecord } from "./contracts.ts";
 import type { ReadOperation } from "./discovery.ts";
 import type { RunContext } from "./run.ts";
@@ -70,31 +73,7 @@ export async function publishImplementation(input: {
     };
     await persist();
   }
-  const publication = progress.publication;
-  const publishedHead = () =>
-    publication.ciRepair?.attempts
-      .filter((attempt) => attempt.pushed)
-      .at(-1)
-      ?.result?.commits.at(-1)?.sha ?? head;
-  if (
-    publication.branch !== progress.branch ||
-    publication.targetBranch !== progress.target_branch ||
-    publication.headSha !== head ||
-    publication.title !== progress.pr_title ||
-    publication.body !== progress.pr_body ||
-    JSON.stringify(publication.commits) !== JSON.stringify(result.commits) ||
-    ![
-      "pending_push",
-      "pushed",
-      "pending_pr",
-      "pr_created",
-      "checks_ready",
-      "checks_failed",
-    ].includes(publication.phase)
-  )
-    throw new Error(
-      "Publication evidence does not match the verified execution",
-    );
+  const publication = verifiedPublication(progress);
 
   if (!publication.ciRepair)
     await read("push_verified_branch", target, async () => {
@@ -115,7 +94,7 @@ export async function publishImplementation(input: {
   }
 
   const matchingPullRequest = async (
-    expectedHead = publishedHead(),
+    expectedHead = publishedHead(publication),
   ): Promise<PullRequestRecord | undefined> => {
     context.signal?.throwIfAborted();
     const candidates = await codeHost.listPullRequests(repository);
@@ -188,7 +167,7 @@ export async function publishImplementation(input: {
     publication.discoveryNotBefore = context.clock.now().getTime() + 30_000;
     await persist();
   }
-  const confirm = (expectedHead = publishedHead()) =>
+  const confirm = (expectedHead = publishedHead(publication)) =>
     read("confirm_publication", target, async () => {
       await verify();
       if ((await remoteHead()) !== expectedHead)
@@ -270,5 +249,47 @@ export async function publishImplementation(input: {
     }
   }
   await confirm();
-  return `CI-ready PR ${pullRequest.url} retained with branch ${progress.branch}, Worktree ${progress.worktree}, handoffs and progress evidence${publication.ciRepair ? `; repair Worktrees: ${publication.ciRepair.attempts.map(({ worktree }) => worktree).join(", ")}` : ""}${input.autoMerge ? "; integration remains downstream" : "; auto-merge disabled"}`;
+  return `CI-ready PR ${pullRequest.url} retained with branch ${progress.branch}, Worktree ${progress.worktree}, handoffs and progress evidence${publication.ciRepair ? `; repair Worktrees: ${publication.ciRepair.attempts.map(({ worktree }) => worktree).join(", ")}` : ""}${input.autoMerge ? "; ready for integration" : "; auto-merge disabled"}`;
+}
+
+export function verifiedPublication(progress: ImplementationProgress) {
+  const publication = progress.publication;
+  const result = verifiedImplementation(progress);
+  const head = result.commits.at(-1)?.sha;
+  if (
+    !publication ||
+    !head ||
+    publication.branch !== progress.branch ||
+    publication.targetBranch !== progress.target_branch ||
+    publication.headSha !== head ||
+    publication.title !== progress.pr_title ||
+    publication.body !== progress.pr_body ||
+    JSON.stringify(publication.commits) !== JSON.stringify(result.commits) ||
+    ![
+      "pending_push",
+      "pushed",
+      "pending_pr",
+      "pr_created",
+      "checks_ready",
+      "checks_failed",
+      "pending_merge",
+      "merge_requested",
+      "merged",
+      "delivered",
+    ].includes(publication.phase)
+  )
+    throw new Error(
+      "Publication evidence does not match the verified execution",
+    );
+
+  return publication;
+}
+
+export function publishedHead(publication: PublicationProgress): string {
+  return (
+    publication.ciRepair?.attempts
+      .filter((attempt) => attempt.pushed)
+      .at(-1)
+      ?.result?.commits.at(-1)?.sha ?? publication.headSha
+  );
 }

@@ -1,14 +1,78 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import assert from "node:assert/strict";
 import test from "node:test";
+import { executeCli } from "../../src/cli.ts";
+import type { CodeHost } from "../../src/run/contracts.ts";
 import {
   ciRepairRun,
   failedCheck,
   repairCommit,
 } from "../support/ci-repair-run.ts";
 import { validConfig } from "../support/cli-project.ts";
-import { publish } from "../support/implementation-run.ts";
+import {
+  implementationCommand,
+  implementationCommit,
+  publish,
+} from "../support/implementation-run.ts";
 import { passed } from "../support/review-run.ts";
+
+await test("a repaired PR integrates its repaired HEAD and recovers queued and delivered checkpoints", async (t) => {
+  const fixture = await ciRepairRun(t);
+  let requests = 0;
+  let merged = false;
+  fixture.dependencies.codeHost.getPullRequest = async () => ({
+    headSha: fixture.publicationState.pullRequests[0]!.headSha,
+    createdAt: "2026-10-30T00:00:00Z",
+    merged,
+    mergeRequested: requests > 0,
+    mergeable: "mergeable",
+    mergeFailure: null,
+  });
+  Object.assign(fixture.dependencies.codeHost, {
+    async requestSquashMerge(
+      input: Parameters<CodeHost["requestSquashMerge"]>[0],
+    ) {
+      assert.equal(input.headSha, repairCommit.sha);
+      assert.equal(input.pullRequest, 81);
+      requests++;
+      return { outcome: "accepted" };
+    },
+  });
+  Object.assign(fixture.dependencies.tracker, {
+    async closeTicket() {
+      assert.equal(merged, true);
+      fixture.state.ticket.state = "closed";
+      fixture.state.ticket.stateReason = "completed";
+    },
+  });
+  fixture.state.onSleep = async () => {
+    if (requests > 0) fixture.controller.abort();
+  };
+  const run = () => executeCli(implementationCommand, fixture.dependencies);
+  assert.equal((await run()).summary.outcome, "cancelled");
+  assert.equal(
+    (await fixture.snapshot()).publication!.phase,
+    "merge_requested",
+  );
+  assert.equal(fixture.state.ticket.state, "open");
+  fixture.dependencies.signal = new AbortController().signal;
+  fixture.state.onSleep = async () => {
+    merged = true;
+  };
+  assert.equal((await run()).summary.outcome, "succeeded");
+  const saved = await fixture.snapshot();
+  assert.equal(saved.publication!.phase, "delivered");
+  assert.equal(saved.publication!.merge!.headSha, repairCommit.sha);
+  assert.equal(saved.publication!.headSha, implementationCommit.sha);
+  assert.equal(saved.publication!.title, saved.pr_title);
+  assert.equal(saved.publication!.body, saved.pr_body);
+  assert.deepEqual(fixture.publicationState.discoveries, [40_000, 80_000]);
+  assert.equal((await run()).summary.outcome, "succeeded");
+  assert.equal(requests, 1);
+  assert.equal(fixture.publicationState.creations, 1);
+  assert.equal(fixture.publicationState.pushes, 2);
+  assert.equal(fixture.repairs.tasks.length, 1);
+});
 
 await test("failed required checks receive a verified fresh repair on the same PR and remote branch", async (t) => {
   const fixture = await ciRepairRun(t, {

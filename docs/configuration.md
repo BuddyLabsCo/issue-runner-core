@@ -103,8 +103,9 @@ If all three Issues are eligible, this selects 51 and 57. Ineligible Issues do
 not consume Batch slots. A list whose Issues are all closed (`completed` or
 `not_planned`) returns `no_work` with exit zero; remaining open work reports
 `incomplete` with nonzero exit, including when none is eligible. Local
-implementation completion, including `no_change`, remains `incomplete` until
-the downstream delivery workflow exists. Invalid or empty lists fail at startup.
+implementation completion, including `no_change`, earns no delivery credit.
+A list succeeds when every selected open Issue is confirmed delivered and no open work remains outside its Batch.
+Invalid or empty lists fail at startup.
 An unreadable Issue or incomplete blocker read uses ordinary operation
 retry/pause handling before any Reservations; it cannot silently become no-work.
 
@@ -123,7 +124,8 @@ restricts selection to matching direct children; it never expands parent scope.
 Core selects ascending Issue numbers up to `maxBatchSize`, reports selected
 numbers and blocked/owned/reserved/missing work, and dispatches that Batch
 concurrently through implementation, Review/fixes, publication, and required checks, as a numbered Issue does.
-Integration and further delivery Batches remain downstream; unmerged work leaves the parent Run `incomplete`.
+Integration waits for every Batch PR to become CI-ready, then runs serially.
+Further Batch discovery and parent closure remain downstream; an open parent Run remains `incomplete`.
 
 `maxBatchSize` also bounds concurrency: a Batch of two can run two Issues at
 once, and completion order may differ from ascending selection order. No
@@ -207,7 +209,7 @@ Only the exact four-field execution schema is accepted, after independent
 Worktree, branch, base, clean-state and full commit/message checks. A `committed`
 result must also contain real changes relative to the base. Accepted facts and
 stage completion are saved before targeted tab closure. A local implementation
-is not delivered: the Run reports `incomplete` until later workflow steps exist.
+earns delivery credit only after confirmed integration and completed tracker state.
 Tab close uses ordinary operation retries/delays and Operator Pause after
 exhaustion. A close retry targets the same owned handle without repeating the
 accepted implementation or discarding its persisted completion.
@@ -303,9 +305,23 @@ With a numbered `--issue` or `--document`, the CLI accepts `--no-auto-merge`:
 issue-runner run --project my-project --env herdr --issue 50 --no-auto-merge
 ```
 
-For implemented Issue modes, a CI-ready unmerged PR retains its remote branch, original Worktree, Probe/handoff files, Reservation, and recovery evidence. The summary reports the PR URL and retained paths with outcome `incomplete` and nonzero exit. It grants no successful-delivery credit, performs no success cleanup, closes no Issue, and triggers no documentation maintenance.
+With `--no-auto-merge`, a CI-ready unmerged PR retains its remote branch, original Worktree, Probe/handoff files, Reservation, and recovery evidence. The summary reports the PR URL and retained paths with outcome `incomplete` and nonzero exit. It grants no successful-delivery credit, performs no success cleanup, closes no Issue, and triggers no documentation maintenance.
 
-Integration is not implemented in this slice, so the default and explicit `--auto-merge` also stop at this checkpoint. Standalone documentation remains unimplemented.
+### Confirmed integration and Issue delivery
+
+Auto-merge defaults on. Runner waits for every PR in the Batch to become CI-ready before integrating any PR. It integrates serially by ascending PR creation time, then PR number. A failed required check holds the Batch before integration.
+
+Runner requests squash integration against the observed HEAD with `codeHost.adminMerge` controlling the admin flag. After CI repair, it requires the latest verified and pushed repair HEAD while retaining the original publication metadata. A changed HEAD or closed, unmerged PR cannot earn delivery credit. Queue admission only starts the confirmation wait. Runner polls every 10 seconds within `timeouts.mergeQueueMinutes`; a timeout enters Operator Pause. Enter refreshes remote state and starts another configured wait window; q/EOF cancels.
+
+Explicit conflicts report `incomplete` and retain resources for downstream conflict repair. Other merge rejections preserve their original cause through ordinary operation retries and Operator Pause. A later failure stops ordered integration without rolling back earlier confirmed deliveries.
+
+After confirmed integration, `ticketClosure: runner` closes the Issue as completed and confirms its state from the tracker. A lost response is reconciled before repeating a merge or closure write. A successful write response alone does not establish delivery.
+
+With `ticketClosure: code_host`, Runner leaves closure to the host. It waits 10 seconds before observing tracker state, then another 30 seconds if the Issue remains open. If it is still open, Operator Pause allows another observation cycle. Runner does not write tracker closure under this policy.
+
+Delivery requires confirmed integration and tracker `closed/completed`. Reservation release, an unmerged PR, and `not_planned` closure earn no delivery credit. The checkpoint saves merge confirmation, completed closure, and the exact case-sensitive labels observed at confirmed delivery. Matching recovery skips completed Agent/merge work and preserves those delivery-time labels for downstream documentation maintenance.
+
+Successful numbered Issues and fully delivered Issue Lists return `succeeded` with exit zero. Cleanup, subsequent Batches, parent closure, conflict repair, and documentation maintenance remain downstream. Worktrees, handoffs, and Reservation markers remain retained in this slice. Standalone documentation remains unimplemented.
 
 ### Rejected handoffs and manual correction
 
@@ -488,6 +504,9 @@ fixed metadata, independent consumed-attempt budgets, operator generations,
 recovery, pending-push reconciliation, cancellation, and rejected checkpoint
 ownership. Real Git repairs verify separate local branches, pushes to the original
 remote branch, and rejection of empty repair commits.
+Integration Runs verify the Batch CI barrier and ordering, queued merge confirmation,
+closure policies and observation waits, lost responses, changed HEAD rejection,
+delivery-time labels, and recovery without replaying confirmed operations.
 Focused real Git Runs verify fresh bases,
 Worktrees, clean state, actual commits, rejection of empty commits, reviewer edits,
 and fixes relative to the reviewed HEAD with cumulative commit evidence.

@@ -1,7 +1,4 @@
 import assert from "node:assert/strict";
-import { watch } from "node:fs";
-import { mkdir } from "node:fs/promises";
-import path from "node:path";
 import test from "node:test";
 import { validConfig } from "../support/cli-project.ts";
 import {
@@ -21,7 +18,6 @@ for (const response of ["", "q", null] as const) {
     const answer = deferred<string | null>();
     let failed = false;
     let waiting = false;
-    let armed = false;
     let listings = 0;
     let creations = 0;
     const inspect = fixture.dependencies.gitWorkspace.inspect.bind(
@@ -44,8 +40,11 @@ for (const response of ["", "q", null] as const) {
     };
     const host = fixture.dependencies.codeHost;
     const list = host.listPullRequests.bind(host);
-    host.listPullRequests = () => {
-      if (++listings === 2) armed = true;
+    host.listPullRequests = async () => {
+      if (++listings === 2) {
+        releaseInspection.resolve();
+        await paused.promise;
+      }
       return list();
     };
     const create = host.createPullRequest.bind(host);
@@ -58,15 +57,7 @@ for (const response of ["", "q", null] as const) {
       );
       return create(input);
     };
-    const recovery = path.join(fixture.directory, "recovery");
-    await mkdir(recovery);
-    // Start the sibling pause at the final checkpoint, after the outer operation gate.
-    const watcher = watch(recovery, (event, filename) => {
-      if (armed && event === "rename" && filename?.endsWith("-52.json")) {
-        armed = false;
-        releaseInspection.resolve();
-      }
-    });
+    // Hold final reconciliation until the sibling pause actually gates mutations.
     const running = fixture.run();
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
@@ -85,11 +76,10 @@ for (const response of ["", "q", null] as const) {
       assert.equal(
         (await implementationProgress(fixture.directory, 52)).publication
           ?.phase,
-        "pending_pr",
+        "pushed",
       );
     } finally {
       clearTimeout(timeout);
-      watcher.close();
       releaseInspection.resolve();
       answer.resolve(response);
       await running;

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import type { LoadedProject } from "../config.ts";
+import { integrateImplementation } from "./integration.ts";
 import type { ImplementationProgress } from "../recovery.ts";
 import { saveProgress } from "../recovery.ts";
 import { runIssueStage, type IssueStageContext } from "../agent/stage.ts";
@@ -44,6 +45,10 @@ export async function runStandalone(input: {
   fetchBase: () => Promise<string>;
   codeHost: CodeHost;
   autoMerge: boolean;
+  deferIntegration?: (
+    pullRequest: number,
+    complete: () => Promise<RunSummary>,
+  ) => void;
 }): Promise<RunSummary> {
   const { number, loaded, tracker, summary } = input;
   const context = {
@@ -191,12 +196,6 @@ export async function runStandalone(input: {
     return { ticket };
   };
   let selected = await inspect();
-  if (selected.reason)
-    return {
-      ...summary,
-      outcome: selected.ticket.state === "closed" ? "no_work" : "incomplete",
-      reasons: [selected.reason],
-    };
   const hasRunner =
     selected.ticket.assignees?.includes(config.tracker.runnerAccount) ?? false;
   const hasLabel =
@@ -211,6 +210,65 @@ export async function runStandalone(input: {
       selected.reason = "Reservation changed before dispatch";
     return selected.reason === undefined;
   };
+  const integrate = async (
+    progress: ImplementationProgress,
+    publicationReason?: string,
+  ): Promise<RunSummary> => {
+    if (
+      publicationReason !== undefined &&
+      (!input.autoMerge || progress.publication?.phase === "checks_failed")
+    )
+      return { ...summary, reasons: [publicationReason] };
+    const complete = async (): Promise<RunSummary> => {
+      try {
+        const delivery = await integrateImplementation({
+          progress,
+          loaded,
+          context,
+          codeHost: input.codeHost,
+          tracker,
+          read,
+          persist: () => persist(progress),
+          beforeDispatch,
+          inspectTicket: inspect,
+        });
+        return {
+          ...summary,
+          outcome: delivery.outcome,
+          reasons: [delivery.reason],
+        };
+      } catch (error) {
+        if (!(error instanceof OperationStopped)) throw error;
+        return { ...summary, reasons: [selected.reason ?? error.message] };
+      }
+    };
+    if (input.deferIntegration) {
+      input.deferIntegration(
+        progress.publication!.pullRequest!.number,
+        complete,
+      );
+      return {
+        ...summary,
+        reasons: [
+          `CI-ready PR ${progress.publication!.pullRequest!.url} awaits Batch integration`,
+        ],
+      };
+    }
+    return complete();
+  };
+  if (
+    restored?.publication &&
+    ["pending_merge", "merge_requested", "merged", "delivered"].includes(
+      restored.publication.phase,
+    )
+  )
+    return integrate(restored);
+  if (selected.reason)
+    return {
+      ...summary,
+      outcome: selected.ticket.state === "closed" ? "no_work" : "incomplete",
+      reasons: [selected.reason],
+    };
   const execute = async (progress: ImplementationProgress) => {
     const stageInput: IssueStageContext = {
       loaded,
@@ -301,7 +359,7 @@ export async function runStandalone(input: {
           autoMerge: input.autoMerge,
           stageInput,
         });
-        return { ...summary, reasons: [reason] };
+        return integrate(progress, reason);
       } catch (error) {
         if (!(error instanceof OperationStopped)) throw error;
         return { ...summary, reasons: [selected.reason ?? error.message] };
@@ -317,14 +375,12 @@ export async function runStandalone(input: {
       ],
     };
   };
-  if (restored) {
-    if (!hasRunner || !hasLabel)
-      return {
-        ...summary,
-        reasons: ["Recorded Reservation changed before continuation"],
-      };
-    return execute(restored);
-  }
+  if (restored && (!hasRunner || !hasLabel))
+    return {
+      ...summary,
+      reasons: ["Recorded Reservation changed before continuation"],
+    };
+  if (restored) return execute(restored);
   if (hasRunner || hasLabel)
     return {
       ...summary,
@@ -387,12 +443,7 @@ export async function runStandalone(input: {
     },
   );
   if (selected.reason) return { ...summary, reasons: [selected.reason] };
-  selected = await inspect();
-  if (
-    selected.reason ||
-    !selected.ticket.assignees?.includes(config.tracker.runnerAccount) ||
-    !selected.ticket.labels?.includes(config.tracker.reservationLabel)
-  )
+  if (!(await beforeDispatch()))
     return {
       ...summary,
       reasons: [selected.reason ?? "Reservation changed before dispatch"],
