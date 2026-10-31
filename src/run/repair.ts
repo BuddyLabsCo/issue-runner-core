@@ -11,7 +11,7 @@ import type {
 import type { LoadedProject } from "../config.ts";
 import { conflictRepairInstructions } from "../prompts/conflict-repair.ts";
 import { ciRepairInstructions } from "../prompts/ci-repair.ts";
-import type { GitWorkspace } from "./contracts.ts";
+import type { GitWorkspace, WorkspaceEvidence } from "./contracts.ts";
 import type { ReadOperation } from "./discovery.ts";
 import { verifyWorkspace } from "./verification.ts";
 import { OperationStopped, pauseForOperator } from "./operations.ts";
@@ -285,15 +285,18 @@ export async function repairPullRequest(
         `${kind === "ci" ? ciRepairInstructions : conflictRepairInstructions}\n\nRepository: ${progress.repository}\nIssue #${progress.ticket}: ${input.ticket.title ?? ""}\n${input.ticket.body ?? ""}\nPR: ${publication.pullRequest!.url}\nWorktree: ${repair.worktree}\nDelivery branch: ${repair.branch}\nRemote branch: ${publication.branch}\nBase SHA: ${repair.base}\nTarget Branch: ${publication.targetBranch}\nFailed checks: ${JSON.stringify(repair.failedChecks)}${kind === "conflict" ? `\nTarget Branch SHA: ${repair.targetBase}\nMerge conflict: ${repair.conflict}` : ""}`,
       accept: async (text) => {
         const result = parseExecution(text);
-        const evidence = await read(
+        const { evidence, ancestry } = await read(
           `inspect_${kind}_repair`,
           `ticket:${progress.ticket}`,
-          () => git.inspect(repair),
+          async () => ({
+            evidence: await git.inspect(repair),
+            ancestry: await inspectRepairAncestry(git, repair),
+          }),
         );
         delete repair.verificationError;
         try {
           verifyWorkspace(repair, evidence, result);
-          await verifyRepairAncestry(git, repair);
+          verifyRepairAncestry(repair, ancestry);
         } catch (error) {
           repair.verificationError =
             error instanceof Error ? error.message : String(error);
@@ -314,7 +317,7 @@ export async function repairPullRequest(
   await input.persist();
   await read(`push_${kind}_repair`, `ticket:${progress.ticket}`, async () => {
     verifyWorkspace(repair, await git.inspect(repair), repair.result!);
-    await verifyRepairAncestry(git, repair);
+    verifyRepairAncestry(repair, await inspectRepairAncestry(git, repair));
     const remote = await input.remoteHead();
     if (remote === repair.pendingPush) {
       await input.confirm(repair.pendingPush);
@@ -377,18 +380,24 @@ export function pushedRepairs(
   return ordered;
 }
 
-export async function verifyRepairAncestry(
+export async function inspectRepairAncestry(
   git: GitWorkspace,
   repair: RepairProgress,
-): Promise<void> {
+): Promise<WorkspaceEvidence | undefined> {
   if (repair.targetBase !== undefined) {
-    const evidence = await git.inspect({
+    return git.inspect({
       worktree: repair.worktree,
       base: repair.targetBase,
     });
-    if (evidence.base !== repair.targetBase)
-      throw new Error(
-        "Conflict repair must include the fetched Target Branch SHA in its ancestry",
-      );
   }
+}
+
+export function verifyRepairAncestry(
+  repair: RepairProgress,
+  evidence: WorkspaceEvidence | undefined,
+): void {
+  if (repair.targetBase !== undefined && evidence?.base !== repair.targetBase)
+    throw new Error(
+      "Conflict repair must include the fetched Target Branch SHA in its ancestry",
+    );
 }

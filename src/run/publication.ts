@@ -13,6 +13,7 @@ import type { IssueStageContext } from "../agent/stage.ts";
 import {
   repairPullRequest,
   pushedRepairs,
+  inspectRepairAncestry,
   verifyRepairAncestry,
 } from "./repair.ts";
 
@@ -53,7 +54,10 @@ export async function publishImplementation(input: {
         await context.git.inspect(repair),
         repair.result!,
       );
-      await verifyRepairAncestry(context.git, repair);
+      verifyRepairAncestry(
+        repair,
+        await inspectRepairAncestry(context.git, repair),
+      );
     }
   };
   const remoteHead = () => {

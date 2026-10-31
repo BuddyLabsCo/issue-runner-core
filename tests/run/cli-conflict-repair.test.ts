@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import type { GitWorkspace } from "../../src/run/contracts.ts";
 import { executeCli } from "../../src/cli.ts";
 import { repairCommit, failedCheck } from "../support/ci-repair-run.ts";
 import { validConfig } from "../support/cli-project.ts";
@@ -423,3 +424,75 @@ await test("conflict evidence appearing during the final merge recheck repairs b
   assert.equal(fixture.conflictState.requests.length, 1);
   assert.equal(fixture.conflictState.requests[0]!.headSha, repairCommit.sha);
 });
+
+await test("transient target ancestry inspection retries without consuming another repair attempt", async (t) => {
+  const fixture = await conflictRepairRun(t);
+  const git: GitWorkspace = fixture.dependencies.gitWorkspace;
+  const inspect = git.inspect.bind(git);
+  let failed = false;
+  git.inspect = async (input) => {
+    if (
+      !failed &&
+      input?.worktree.includes("conflict-repair") &&
+      input.base === "a".repeat(40)
+    ) {
+      failed = true;
+      throw new Error("transient ancestry inspection I/O failure");
+    }
+    return inspect(input);
+  };
+  const result = await fixture.run();
+  assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
+  assert.equal(failed, true);
+  assert.equal(fixture.repairs.tasks.length, 1);
+  assert.equal(fixture.workspaces.size, 1);
+  const budget = (await fixture.snapshot()).publication!.conflictRepair!;
+  assert.equal(budget.consumed, 1);
+  assert.equal(budget.attempts.length, 1);
+  assert.equal(budget.attempts[0]!.verificationError, undefined);
+  assert.ok(fixture.state.sleeps.includes(1000));
+});
+
+for (const response of ["", "q"] as const) {
+  await test(`exhausted ancestry observation retries ${response === "" ? "resume" : "cancel"} through Operator Pause without invalidating the repair`, async (t) => {
+    const fixture = await conflictRepairRun(t);
+    const git: GitWorkspace = fixture.dependencies.gitWorkspace;
+    const inspect = git.inspect.bind(git);
+    let failures = 0;
+    let pauses = 0;
+    git.inspect = async (input) => {
+      if (
+        input.worktree.includes("conflict-repair") &&
+        input.base === "a".repeat(40) &&
+        failures < 2
+      ) {
+        failures++;
+        throw new Error("ancestry inspection I/O unavailable");
+      }
+      return inspect(input);
+    };
+    fixture.dependencies.operator.pause = async (message) => {
+      assert.match(message, /ancestry inspection I\/O unavailable/u);
+      assert.equal(
+        (await fixture.snapshot()).publication!.conflictRepair!.consumed,
+        0,
+      );
+      pauses++;
+      return response;
+    };
+    const result = await fixture.run();
+    assert.equal(
+      result.summary.outcome,
+      response === "" ? "succeeded" : "cancelled",
+      JSON.stringify(result),
+    );
+    assert.equal(failures, 2);
+    assert.equal(pauses, 1);
+    assert.equal(fixture.repairs.tasks.length, 1);
+    const budget = (await fixture.snapshot()).publication!.conflictRepair!;
+    assert.equal(budget.consumed, response === "" ? 1 : 0);
+    assert.equal(budget.attempts.length, 1);
+    assert.equal(budget.attempts[0]!.verificationError, undefined);
+    assert.equal(fixture.publicationState.pushes, response === "" ? 2 : 1);
+  });
+}
