@@ -1,27 +1,22 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import type { LoadedProject } from "../config.ts";
-import { integrateImplementation } from "./integration.ts";
-import type { ImplementationProgress } from "../recovery.ts";
-import { saveProgress } from "../recovery.ts";
+import {
+  closeDocumentationNoChange,
+  integrateImplementation,
+} from "./integration.ts";
+import { saveProgress, type ImplementationProgress } from "../recovery.ts";
 import { runIssueStage, type IssueStageContext } from "../agent/stage.ts";
 import { implementationInstructions } from "../prompts/implement.ts";
-import {
-  reviewImplementation,
-  validateReviewContext,
-  verifiedImplementation,
-} from "./review.ts";
+import { documentationInstructions } from "../prompts/documentation.ts";
+import { reviewImplementation, verifiedImplementation } from "./review.ts";
 import { verifyWorkspace } from "./verification.ts";
-import {
-  readHandoff,
-  object,
-  nonempty,
-  parseExecution,
-} from "../agent/handoff.ts";
+import { parseExecution } from "../agent/handoff.ts";
 import type { CodeHost, Ticket, Tracker } from "./contracts.ts";
 import { publishImplementation } from "./publication.ts";
-import { validateRepairContext } from "./repair.ts";
+import { restoreExecution } from "./execution-recovery.ts";
 import type { RunContext, RunSummary } from "./run.ts";
 import {
   hasOpenBlocker,
@@ -36,6 +31,7 @@ import {
 
 export async function runStandalone(input: {
   number: number;
+  documentation?: boolean;
   parentTicket?: number;
   loaded: LoadedProject;
   tracker: Tracker;
@@ -53,7 +49,9 @@ export async function runStandalone(input: {
   const { number, loaded, tracker, summary } = input;
   const context = {
     ...input.context,
-    operator: scopeOperator(input.context.operator, `Issue #${number}`),
+    operator: input.documentation
+      ? input.context.operator
+      : scopeOperator(input.context.operator, `Issue #${number}`),
   };
   const read: ReadOperation = (operation, target, action, settings) =>
     input.read(operation, target, action, {
@@ -61,6 +59,7 @@ export async function runStandalone(input: {
       ...settings,
     });
   const config = loaded.config;
+  const purpose = input.documentation ? "documentation" : "implement";
   const repository = config.repository;
   const accept = async (progress: ImplementationProgress, text: string) => {
     const result = parseExecution(text);
@@ -70,12 +69,18 @@ export async function runStandalone(input: {
       () => context.git.inspect(progress),
     );
     verifyWorkspace(progress, evidence, result);
+    if (
+      input.documentation &&
+      result.outcome === "no_change" &&
+      evidence.changed
+    )
+      throw new Error("Documentation no_change requires an unchanged Worktree");
     return result;
   };
   const progressFile = path.join(
     loaded.directory,
     "recovery",
-    `${context.inputHash}-${number}.json`,
+    `${context.inputHash}-${input.documentation ? "document-" : ""}${number}.json`,
   );
   // Cancellation must still retain known unsent work in the local checkpoint.
   const persist = (progress: ImplementationProgress) =>
@@ -84,67 +89,16 @@ export async function runStandalone(input: {
       : read("save_implementation_checkpoint", `ticket:${number}`, () =>
           saveProgress(progressFile, progress),
         );
-  const previous = await readHandoff(progressFile);
-  let restored: ImplementationProgress | undefined;
-  if (previous !== undefined) {
-    const saved = object(JSON.parse(previous.text) as unknown);
-    if (
-      saved.project !== summary.project ||
-      saved.ticket !== number ||
-      saved.repository !== repository ||
-      saved.target_branch !== summary.targetBranch ||
-      !nonempty(saved.execution_id) ||
-      !nonempty(saved.run_id) ||
-      !nonempty(saved.worktree) ||
-      !path.isAbsolute(saved.worktree) ||
-      !nonempty(saved.branch) ||
-      !nonempty(saved.base) ||
-      (saved.phase !== "implementing" && saved.result === undefined) ||
-      ![
-        "implementing",
-        "implementation_completed",
-        "reviewing",
-        "review_completed",
-        "fixing_review",
-        "fix_review_completed",
-        "repairing_ci",
-        "ci_repair_completed",
-        "repairing_conflict",
-        "conflict_repair_completed",
-        "publication_eligible",
-      ].includes(String(saved.phase))
-    )
-      throw new Error(
-        "unable to recover: incomplete or invalid implementation checkpoint",
-      );
-    const roles = object(saved.roles);
-    const implement = object(roles.implement);
-    const invocation = object(saved.invocation);
-    if (
-      !nonempty(implement.sessionid) ||
-      !nonempty(saved.pr_title) ||
-      !nonempty(saved.pr_body) ||
-      !nonempty(invocation.invocation_id) ||
-      !nonempty(invocation.path) ||
-      path.dirname(invocation.path) !==
-        path.join(loaded.directory, "handoffs") ||
-      !Number.isSafeInteger(saved.corrections) ||
-      (saved.corrections as number) < 0 ||
-      (saved.probeRetries !== undefined &&
-        (!Number.isSafeInteger(saved.probeRetries) ||
-          (saved.probeRetries as number) < 0)) ||
-      (saved.probeIds !== undefined &&
-        (!Array.isArray(saved.probeIds) || !saved.probeIds.every(nonempty))) ||
-      (saved.pendingPrompt !== undefined && !nonempty(saved.pendingPrompt)) ||
-      !Array.isArray(saved.superseded)
-    )
-      throw new Error(
-        "unable to recover: missing native implementation context",
-      );
-    restored = saved as unknown as ImplementationProgress;
-    validateReviewContext(restored, loaded);
-    validateRepairContext(restored, loaded);
-  }
+  const restored = await restoreExecution({
+    file: progressFile,
+    loaded,
+    project: summary.project,
+    number,
+    repository,
+    targetBranch: summary.targetBranch,
+    documentation: input.documentation === true,
+    runId: context.runId,
+  });
   const inspect = async (): Promise<{ ticket: Ticket; reason?: string }> => {
     if (input.parentTicket !== undefined) {
       const parent = await read(
@@ -185,7 +139,18 @@ export async function runStandalone(input: {
         throw new Error("closed Issue has no supported closure reason");
       return { ticket, reason: "Issue is already terminal" };
     }
-    if (!ticket.labels?.includes("ready-for-agent"))
+    if (input.documentation) {
+      if (
+        ticket.assignees?.length ||
+        !ticket.labels?.includes(config.maintenanceTicket.label) ||
+        ticket.labels.includes(config.tracker.reservationLabel)
+      )
+        return {
+          ticket,
+          reason:
+            "Maintenance Ticket lost its standalone markers or became externally owned",
+        };
+    } else if (!ticket.labels?.includes("ready-for-agent"))
       return { ticket, reason: "Issue is missing ready-for-agent" };
     if (
       ticket.assignees?.some(
@@ -206,6 +171,7 @@ export async function runStandalone(input: {
     selected = await inspect();
     if (
       !selected.reason &&
+      !input.documentation &&
       (!selected.ticket.assignees?.includes(config.tracker.runnerAccount) ||
         !selected.ticket.labels?.includes(config.tracker.reservationLabel))
     )
@@ -311,17 +277,25 @@ export async function runStandalone(input: {
     ].includes(restored.publication.phase)
   )
     return integrate(restored);
-  if (selected.reason)
+  if (
+    selected.reason &&
+    !(
+      input.documentation &&
+      restored?.noChangeClosure !== undefined &&
+      selected.ticket.stateReason === "completed"
+    )
+  )
     return {
       ...summary,
       outcome: selected.ticket.state === "closed" ? "no_work" : "incomplete",
       reasons: [selected.reason],
     };
-  const execute = async (progress: ImplementationProgress) => {
+  async function run(progress: ImplementationProgress): Promise<RunSummary> {
     if (progress.result) {
       if (
         [
           "implementation_completed",
+          "documentation_completed",
           "review_completed",
           "fix_review_completed",
           "publication_eligible",
@@ -340,9 +314,9 @@ export async function runStandalone(input: {
       await runIssueStage({
         ...stageInput(progress),
         stage: progress,
-        purpose: "implement",
+        purpose,
         task: async () =>
-          `${implementationInstructions}\n\n${await readFile(path.join(loaded.directory, "prompts", "implement.md"), "utf8")}\n\n` +
+          `${input.documentation ? documentationInstructions : implementationInstructions}\n\n${await readFile(path.join(loaded.directory, "prompts", `${purpose}.md`), "utf8")}\n\n` +
           `Repository: ${repository}\nIssue #${number}: ${selected.ticket.title ?? ""}\n${selected.ticket.body ?? ""}\n` +
           `Worktree: ${progress.worktree}\nDelivery branch: ${progress.branch}\nBase SHA: ${progress.base}\nTarget Branch: ${progress.target_branch}`,
         accept: (text) => accept(progress, text),
@@ -350,6 +324,7 @@ export async function runStandalone(input: {
     }
     if (
       progress.result?.outcome === "committed" &&
+      !input.documentation &&
       config.workflow.review &&
       !progress.publication
     )
@@ -366,6 +341,22 @@ export async function runStandalone(input: {
         return { ...summary, reasons: [selected.reason ?? error.message] };
       }
     }
+    if (input.documentation && progress.result?.outcome === "no_change") {
+      await closeDocumentationNoChange({
+        ...stageInput(progress),
+        tracker,
+        read,
+        inspectTicket: inspect,
+        verify: async () => {
+          await accept(progress, JSON.stringify(progress.result));
+        },
+      });
+      return {
+        ...summary,
+        outcome: "succeeded",
+        reasons: [`Completed Maintenance Ticket ${number} with no changes`],
+      };
+    }
     return {
       ...summary,
       reasons: [
@@ -375,82 +366,91 @@ export async function runStandalone(input: {
             : "Implementation stage completed; Issue delivery remains incomplete"),
       ],
     };
-  };
-  if (restored && (!hasRunner || !hasLabel))
+  }
+  if (!input.documentation && restored && (!hasRunner || !hasLabel))
     return {
       ...summary,
       reasons: ["Recorded Reservation changed before continuation"],
     };
-  if (restored) return execute(restored);
-  if (hasRunner || hasLabel)
+  if (restored && restored.phase !== "reserved") return run(restored);
+  if (!input.documentation && (hasRunner || hasLabel))
     return {
       ...summary,
       reasons: [
         `existing Reservation${hasRunner !== hasLabel ? " (partial)" : ""}; no recorded ownership for this Run`,
       ],
     };
-  // Confirm each write from current tracker state before retrying it.
-  await read(
-    "add_reservation_label",
-    `ticket:${number}`,
-    async () => {
-      selected = await inspect();
-      if (selected.reason) return;
-      if (selected.ticket.assignees?.includes(config.tracker.runnerAccount)) {
-        selected.reason = "Reservation changed before label";
-        return;
-      }
-      if (!selected.ticket.labels?.includes(config.tracker.reservationLabel))
-        await tracker.addLabel(
-          repository,
-          number,
-          config.tracker.reservationLabel,
-        );
-    },
-    {
-      reconcile: async () => {
+  if (!input.documentation) {
+    // Confirm each write from current tracker state before retrying it.
+    await read(
+      "add_reservation_label",
+      `ticket:${number}`,
+      async () => {
         selected = await inspect();
-        return selected.ticket.labels?.includes(config.tracker.reservationLabel)
-          ? { outcome: "completed", result: undefined }
-          : { outcome: "pending" };
+        if (selected.reason) return;
+        if (selected.ticket.assignees?.includes(config.tracker.runnerAccount)) {
+          selected.reason = "Reservation changed before label";
+          return;
+        }
+        if (!selected.ticket.labels?.includes(config.tracker.reservationLabel))
+          await tracker.addLabel(
+            repository,
+            number,
+            config.tracker.reservationLabel,
+          );
       },
-    },
-  );
-  if (selected.reason) return { ...summary, reasons: [selected.reason] };
-  await read(
-    "add_runner_assignee",
-    `ticket:${number}`,
-    async () => {
-      selected = await inspect();
-      if (selected.reason) return;
-      if (!selected.ticket.labels?.includes(config.tracker.reservationLabel)) {
-        selected.reason = "Reservation changed before assignment";
-        return;
-      }
-      if (!selected.ticket.assignees?.includes(config.tracker.runnerAccount))
-        await tracker.addAssignee(
-          repository,
-          number,
-          config.tracker.runnerAccount,
-        );
-    },
-    {
-      reconcile: async () => {
+      {
+        reconcile: async () => {
+          selected = await inspect();
+          return selected.ticket.labels?.includes(
+            config.tracker.reservationLabel,
+          )
+            ? { outcome: "completed", result: undefined }
+            : { outcome: "pending" };
+        },
+      },
+    );
+    if (selected.reason) return { ...summary, reasons: [selected.reason] };
+    await read(
+      "add_runner_assignee",
+      `ticket:${number}`,
+      async () => {
         selected = await inspect();
-        return selected.ticket.assignees?.includes(config.tracker.runnerAccount)
-          ? { outcome: "completed", result: undefined }
-          : { outcome: "pending" };
+        if (selected.reason) return;
+        if (
+          !selected.ticket.labels?.includes(config.tracker.reservationLabel)
+        ) {
+          selected.reason = "Reservation changed before assignment";
+          return;
+        }
+        if (!selected.ticket.assignees?.includes(config.tracker.runnerAccount))
+          await tracker.addAssignee(
+            repository,
+            number,
+            config.tracker.runnerAccount,
+          );
       },
-    },
-  );
-  if (selected.reason) return { ...summary, reasons: [selected.reason] };
+      {
+        reconcile: async () => {
+          selected = await inspect();
+          return selected.ticket.assignees?.includes(
+            config.tracker.runnerAccount,
+          )
+            ? { outcome: "completed", result: undefined }
+            : { outcome: "pending" };
+        },
+      },
+    );
+    if (selected.reason) return { ...summary, reasons: [selected.reason] };
+  }
   if (!(await beforeDispatch()))
     return {
       ...summary,
       reasons: [selected.reason ?? "Reservation changed before dispatch"],
     };
   const executionId = randomUUID();
-  const progress: ImplementationProgress = {
+  const progress: ImplementationProgress = restored ?? {
+    ...(input.documentation ? { purpose: "documentation" } : {}),
     run_id: context.runId,
     execution_id: executionId,
     project: summary.project,
@@ -471,20 +471,19 @@ export async function runStandalone(input: {
     superseded: [],
   };
   await persist(progress);
-  context.signal?.throwIfAborted();
-  await read(
-    "create_worktree",
-    progress.worktree,
-    () =>
-      context.git.createWorktree({
-        checkout: config.checkout,
-        worktree: progress.worktree,
-        branch: progress.branch,
-        base: progress.base,
-      }),
-    { retry: "manual" },
-  );
-  context.signal?.throwIfAborted();
+  if (!restored || !existsSync(progress.worktree))
+    await read(
+      "create_worktree",
+      progress.worktree,
+      () =>
+        context.git.createWorktree({
+          checkout: config.checkout,
+          worktree: progress.worktree,
+          branch: progress.branch,
+          base: progress.base,
+        }),
+      { retry: "manual" },
+    );
   verifyWorkspace(
     progress,
     await read("inspect_fresh_worktree", `ticket:${number}`, () =>
@@ -499,5 +498,5 @@ export async function runStandalone(input: {
   );
   progress.phase = "worktree_created";
   await persist(progress);
-  return execute(progress);
+  return run(progress);
 }

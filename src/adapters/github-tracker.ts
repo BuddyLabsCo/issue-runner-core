@@ -89,6 +89,71 @@ export class GitHubTracker implements Tracker {
     this.client = new GitHubClient(token, command);
   }
 
+  async listLabelsPage(repository: string, page: number) {
+    const value = JSON.parse(
+      await this.client.request([
+        "api",
+        "--method",
+        "GET",
+        `repos/${repository}/labels`,
+        "-f",
+        "per_page=100",
+        "-f",
+        `page=${page}`,
+      ]),
+    ) as unknown;
+    if (
+      !Array.isArray(value) ||
+      value.some(
+        (entry: unknown) =>
+          typeof entry !== "object" ||
+          entry === null ||
+          typeof (entry as Record<string, unknown>).name !== "string",
+      )
+    )
+      throw new Error("GitHub returned an invalid label page");
+    return {
+      labels: value.map((entry: { name: string }) => entry.name),
+      nextPage: value.length === 100 ? page + 1 : null,
+    };
+  }
+
+  async createLabel(repository: string, label: string): Promise<void> {
+    await this.client.request([
+      "api",
+      "--method",
+      "POST",
+      `repos/${repository}/labels`,
+      "-f",
+      `name=${label}`,
+    ]);
+  }
+
+  async createMaintenanceTicket(
+    repository: string,
+    title: string,
+    body: string,
+    label: string,
+  ): Promise<Ticket> {
+    return parseTicket(
+      JSON.parse(
+        await this.client.request([
+          "api",
+          "--method",
+          "POST",
+          `repos/${repository}/issues`,
+          "-f",
+          `title=${title}`,
+          "-f",
+          `body=${body}`,
+          "-f",
+          `labels[]=${label}`,
+        ]),
+      ) as unknown,
+      false,
+    );
+  }
+
   getTicket(repository: string, ticket: number): Promise<Ticket> {
     return this.getParent(repository, ticket);
   }

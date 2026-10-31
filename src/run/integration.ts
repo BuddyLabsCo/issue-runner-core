@@ -330,3 +330,53 @@ export async function integrateBatch(input: {
   }
   return results;
 }
+
+export async function closeDocumentationNoChange(input: {
+  progress: ImplementationProgress;
+  persist: () => Promise<void>;
+  verify: () => Promise<void>;
+  beforeDispatch: () => Promise<boolean>;
+  inspectTicket: () => Promise<{ ticket: Ticket; reason?: string }>;
+  tracker: Tracker;
+  read: ReadOperation;
+}): Promise<void> {
+  const { progress, persist, verify, inspectTicket, read, tracker } = input;
+  if (
+    progress.purpose !== "documentation" ||
+    progress.result?.outcome !== "no_change"
+  )
+    throw new Error("No-change closure requires verified documentation");
+  await verify();
+  progress.noChangeClosure = "pending";
+  await persist();
+  await read(
+    "close_no_change",
+    `ticket:${progress.ticket}`,
+    async () => {
+      let selected = await inspectTicket();
+      if (selected.ticket.state !== "closed") {
+        if (selected.reason || !(await input.beforeDispatch()))
+          throw new OperationStopped(
+            selected.reason ?? "Maintenance Ticket changed",
+          );
+        await verify();
+        await tracker.closeTicket(progress.repository, progress.ticket);
+        selected = await inspectTicket();
+      }
+      if (selected.ticket.state !== "closed")
+        throw new Error("Maintenance Ticket closure has not been confirmed");
+      if (selected.ticket.stateReason !== "completed")
+        throw new OperationStopped(
+          "Maintenance Ticket is not closed/completed",
+        );
+    },
+    {
+      reconcile: async () =>
+        (await inspectTicket()).ticket.stateReason === "completed"
+          ? { outcome: "completed", result: undefined }
+          : { outcome: "pending" },
+    },
+  );
+  progress.noChangeClosure = "completed";
+  await persist();
+}

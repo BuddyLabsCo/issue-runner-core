@@ -28,6 +28,11 @@ tests/
   concrete adapters.
 - `run/` owns acceptance and remote mutations; `agent/` owns conversation mechanics.
   Adapters provide operations and facts, not workflow decisions.
+- `run/documentation.ts` owns standalone Maintenance Ticket occurrences and their
+  recovery scope. It reuses `run/standalone.ts` for document execution and normal
+  publication/integration, with no business-Issue selection or ordinary Review.
+  `run/execution-recovery.ts` validates saved execution context before continuation
+  or documentation cleanup. `run/integration.ts` also owns verified no-change closure.
 - `run/review.ts` owns Review rounds, fix verification, accumulated commits, and
   findings cleanup. `agent/stage.ts` shares Probe, native role resume, handoff
   corrections, and tab lifecycle across implementation, Review, and fixes.

@@ -25,6 +25,20 @@ export function createCliDependencies(launchDirectory: string) {
     reads,
     pauses,
     tracker: {
+      async createLabel() {
+        assert.fail("unexpected maintenance label creation");
+      },
+      async listLabelsPage(): Promise<{
+        labels: string[];
+        nextPage: number | null;
+      }> {
+        return { labels: [], nextPage: null };
+      },
+      async createMaintenanceTicket(): Promise<
+        import("../../src/run/contracts.ts").Ticket
+      > {
+        assert.fail("unexpected Maintenance Ticket creation");
+      },
       async closeTicket() {
         assert.fail("unexpected Issue closure");
       },
@@ -114,6 +128,9 @@ export function createCliDependencies(launchDirectory: string) {
       },
     },
     gitWorkspace: {
+      async cleanupWorktree() {
+        assert.fail("unexpected Worktree cleanup");
+      },
       async push(_worktree: string, branch: string, headSha: string) {
         remoteBranches.set(branch, headSha);
       },

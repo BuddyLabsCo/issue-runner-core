@@ -58,6 +58,8 @@ export interface ReviewProgress extends StageProgress<ReviewResult> {
 }
 
 export interface ImplementationProgress extends StageProgress<ExecutionResult> {
+  purpose?: "documentation";
+  noChangeClosure?: "pending" | "completed";
   run_id: string;
   execution_id: string;
   project: string;
@@ -73,6 +75,8 @@ export interface ImplementationProgress extends StageProgress<ExecutionResult> {
     | "probing"
     | "implementing"
     | "implementation_completed"
+    | "documenting"
+    | "documentation_completed"
     | "reviewing"
     | "review_completed"
     | "fixing_review"
@@ -82,7 +86,9 @@ export interface ImplementationProgress extends StageProgress<ExecutionResult> {
     | "repairing_conflict"
     | "conflict_repair_completed"
     | "publication_eligible";
-  roles: Partial<Record<"implement" | "review", { sessionid: string }>>;
+  roles: Partial<
+    Record<"implement" | "review" | "documentation", { sessionid: string }>
+  >;
   pr_title?: string;
   pr_body?: string;
   reviews?: ReviewProgress[];
@@ -153,9 +159,19 @@ export interface BatchProgress {
   tickets: number[];
 }
 
+export interface MaintenanceProgress {
+  run_id: string;
+  input_hash: string;
+  repository: string;
+  target_branch: string;
+  phase: "scheduled" | "ticket_created" | "delivered" | "completed" | "skipped";
+  creationAttempted?: boolean;
+  ticket?: number;
+}
+
 export async function saveProgress(
   file: string,
-  progress: ImplementationProgress | BatchProgress,
+  progress: ImplementationProgress | BatchProgress | MaintenanceProgress,
 ): Promise<void> {
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(`${file}.tmp`, `${JSON.stringify(progress, null, 2)}\n`);
