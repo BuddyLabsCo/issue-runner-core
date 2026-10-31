@@ -226,6 +226,11 @@ export async function integrateImplementation(input: {
       throw new Error(
         "Delivery requires persisted completed tracker state and labels",
       );
+    const current = (await input.inspectTicket()).ticket;
+    if (current.state !== "closed" || current.stateReason !== "completed")
+      throw new OperationStopped(
+        "Previously delivered Issue is no longer closed/completed; retained delivery evidence",
+      );
     return {
       outcome: "succeeded",
       reason: `Issue #${ticket} delivered by confirmed squash integration ${pullRequest.url} and closed/completed tracker state`,
@@ -302,7 +307,15 @@ export async function integrateBatch(input: {
   read: ReadOperation;
 }): Promise<RunSummary[]> {
   const { batch, ready, results, repository, codeHost, read } = input;
-  if (ready.size !== batch.length) return results;
+  if (
+    batch.some(
+      (number, index) =>
+        !ready.has(number) &&
+        results[index]!.outcome !== "no_work" &&
+        results[index]!.outcome !== "succeeded",
+    )
+  )
+    return results;
   const ordered = await Promise.all(
     [...ready].map(async ([number, integration]) => {
       const observed = await read("integration_order", `ticket:${number}`, () =>

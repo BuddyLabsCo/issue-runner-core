@@ -77,13 +77,14 @@ export async function hasOpenBlocker(
 
 function parseBatch(
   text: string,
-  expected: Omit<BatchProgress, "run_id" | "tickets">,
+  expected: Omit<BatchProgress, "run_id" | "tickets" | "completed">,
   maxBatchSize: number,
 ): BatchProgress {
   const saved = object(JSON.parse(text) as unknown);
   if (
     Object.entries(expected).some(([key, value]) => saved[key] !== value) ||
     !nonempty(saved.run_id) ||
+    (saved.completed !== undefined && typeof saved.completed !== "boolean") ||
     !Array.isArray(saved.tickets) ||
     saved.tickets.length === 0 ||
     saved.tickets.length > maxBatchSize ||
@@ -105,7 +106,12 @@ export async function selectIssueBatch(input: {
   context: RunContext;
   read: ReadOperation;
   targetBranch: string;
-}): Promise<{ batch: number[]; runId: string; reasons: string[] }> {
+}): Promise<{
+  batch: number[];
+  runId: string;
+  reasons: string[];
+  complete: () => Promise<void>;
+}> {
   const { tickets, loaded, tracker, context, read } = input;
   const config = loaded.config;
   const batchFile = path.join(
@@ -181,22 +187,27 @@ export async function selectIssueBatch(input: {
     (number) => !tickets.some((child) => child.number === number),
   );
   const batch =
-    recorded?.tickets ??
+    (recorded && !recorded.completed ? recorded.tickets : undefined) ??
     [...new Set(eligible.map((ticket) => ticket.number))].slice(
       0,
       config.maxBatchSize,
     );
-  if (!recorded && batch.length > 0)
+  const progress: BatchProgress = {
+    run_id: recorded?.run_id ?? context.runId,
+    ...ownership,
+    tickets: batch,
+  };
+  if ((!recorded || recorded.completed) && batch.length > 0)
     await read("save_batch_checkpoint", batchFile, () =>
-      saveProgress(batchFile, {
-        run_id: context.runId,
-        ...ownership,
-        tickets: batch,
-      }),
+      saveProgress(batchFile, progress),
     );
   return {
     batch,
     runId: recorded?.run_id ?? context.runId,
+    complete: () =>
+      read("complete_batch_checkpoint", batchFile, () =>
+        saveProgress(batchFile, { ...progress, completed: true }),
+      ),
     reasons: [
       ...(blocked.length
         ? [`blocked Delivery Tickets: ${blocked.join(", ")}`]

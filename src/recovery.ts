@@ -157,6 +157,7 @@ export interface BatchProgress {
   repository: string;
   target_branch: string;
   tickets: number[];
+  completed?: boolean;
 }
 
 export interface MaintenanceProgress {

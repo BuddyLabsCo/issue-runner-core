@@ -5,6 +5,7 @@ import type { TestContext } from "node:test";
 import { executeCli } from "../../src/cli.ts";
 import type { CreateTabOptions } from "../../src/terminal.ts";
 import type {
+  CodeHost,
   Ticket,
   Tracker,
   WorkspaceEvidence,
@@ -135,4 +136,47 @@ export async function parentRun(
         dependencies,
       ),
   };
+}
+
+export async function parentDeliveryRun(
+  t: TestContext,
+  children: Ticket[],
+  config: NonNullable<Parameters<typeof parentRun>[2]> = validConfig,
+) {
+  const fixture = await parentRun(t, children, config);
+  const parent = child(48);
+  const closures: number[] = [];
+  const merged = new Set<number>();
+  fixture.dependencies.tracker.getParent = async () => structuredClone(parent);
+  fixture.dependencies.tracker.closeTicket = async (_repository, number) => {
+    closures.push(number);
+    const ticket =
+      number === 48
+        ? parent
+        : children.find((child) => child.number === number)!;
+    ticket.state = "closed";
+    ticket.stateReason = "completed";
+  };
+  fixture.dependencies.codeHost.getPullRequest = async (
+    _repository,
+    number,
+  ) => ({
+    headSha: (await fixture.dependencies.codeHost.listPullRequests()).find(
+      (pr) => pr.number === number,
+    )!.headSha,
+    createdAt: "2026-10-30T00:00:00Z",
+    merged: merged.has(number),
+    mergeRequested: false,
+    mergeable: "mergeable",
+    mergeFailure: null,
+  });
+  Object.assign(fixture.dependencies.codeHost, {
+    async requestSquashMerge(
+      input: Parameters<CodeHost["requestSquashMerge"]>[0],
+    ) {
+      merged.add(input.pullRequest);
+      return { outcome: "accepted" };
+    },
+  });
+  return { ...fixture, parent, children, closures, merged };
 }
