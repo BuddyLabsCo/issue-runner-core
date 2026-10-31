@@ -70,7 +70,6 @@ await test("built artifacts work in isolated consumer and npm global installatio
   npm(
     [
       "install",
-      "--offline",
       "--ignore-scripts",
       "--no-audit",
       "--no-fund",
