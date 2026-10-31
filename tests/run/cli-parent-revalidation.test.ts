@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import assert from "node:assert/strict";
 import test from "node:test";
-import { child, parentRun } from "../support/parent-run.ts";
+import { child, parentDeliveryRun, parentRun } from "../support/parent-run.ts";
 import { publish } from "../support/implementation-run.ts";
 
 await test("parent cancellation during Git setup prevents substantive Agent dispatch", async (t) => {
@@ -61,12 +61,16 @@ for (const change of [
 ] as const) {
   await test(`eligibility becoming ${change} during the Probe prevents implementation dispatch`, async (t) => {
     const ticket = child(51);
-    const fixture = await parentRun(t, [ticket]);
+    const fixture = await parentDeliveryRun(t, [ticket]);
     let changed = false;
     fixture.dependencies.tracker.getParent = async () => ({
       number: 48,
-      state: changed && change === "cancelled" ? "closed" : "open",
-      stateReason: changed && change === "cancelled" ? "not_planned" : null,
+      state:
+        changed && change === "cancelled" ? "closed" : fixture.parent.state,
+      stateReason:
+        changed && change === "cancelled"
+          ? "not_planned"
+          : fixture.parent.stateReason,
     });
     fixture.dependencies.tracker.listChildrenPage = async () => ({
       children:
@@ -96,7 +100,11 @@ for (const change of [
     const result = await fixture.run();
     assert.equal(
       result.summary.outcome,
-      change === "cancelled" ? "cancelled" : "incomplete",
+      change === "cancelled"
+        ? "cancelled"
+        : change === "closed" || change === "left_scope"
+          ? "succeeded"
+          : "incomplete",
     );
     assert.deepEqual(fixture.dispatched, []);
     assert.deepEqual(fixture.writes, ["label:51", "assignee:51"]);
@@ -133,13 +141,17 @@ for (const operation of ["addLabel", "addAssignee"] as const) {
   ] as const) {
     await test(`${operation} retry stops when eligibility becomes ${change} during backoff`, async (t) => {
       const ticket = child(51);
-      const fixture = await parentRun(t, [ticket]);
+      const fixture = await parentDeliveryRun(t, [ticket]);
       let changed = false;
       let attempts = 0;
       fixture.dependencies.tracker.getParent = async () => ({
         number: 48,
-        state: changed && change === "cancelled" ? "closed" : "open",
-        stateReason: changed && change === "cancelled" ? "not_planned" : null,
+        state:
+          changed && change === "cancelled" ? "closed" : fixture.parent.state,
+        stateReason:
+          changed && change === "cancelled"
+            ? "not_planned"
+            : fixture.parent.stateReason,
       });
       fixture.dependencies.tracker.listChildrenPage = async () => ({
         children:
@@ -171,7 +183,11 @@ for (const operation of ["addLabel", "addAssignee"] as const) {
       const result = await fixture.run();
       assert.equal(
         result.summary.outcome,
-        change === "cancelled" ? "cancelled" : "incomplete",
+        change === "cancelled"
+          ? "cancelled"
+          : change === "left_scope"
+            ? "succeeded"
+            : "incomplete",
       );
       assert.equal(attempts, 1);
       assert.deepEqual(fixture.dispatched, []);

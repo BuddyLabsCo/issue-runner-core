@@ -29,6 +29,84 @@ await test("an all-cancelled parent closes only after completed tracker state is
   assert.deepEqual(fixture.writes, []);
 });
 
+for (const recover of [false, true]) {
+  await test(`a cancelled Batch member permits its ready sibling to integrate${recover ? " after matching recovery" : ""}`, async (t) => {
+    const children = [child(51), child(52)];
+    const fixture = await parentDeliveryRun(t, children);
+    const getTicket = fixture.dependencies.tracker.getTicket.bind(
+      fixture.dependencies.tracker,
+    );
+    fixture.dependencies.tracker.getTicket = async (...args) => {
+      if (args[1] === 51) {
+        children[0]!.state = "closed";
+        children[0]!.stateReason = "not_planned";
+      }
+      return getTicket(...args);
+    };
+    let rejectMerge = recover;
+    Object.assign(fixture.dependencies.codeHost, {
+      async requestSquashMerge(
+        input: Parameters<CodeHost["requestSquashMerge"]>[0],
+      ) {
+        if (rejectMerge)
+          return {
+            outcome: "rejected",
+            error: new Error("merge temporarily rejected"),
+          };
+        fixture.merged.add(input.pullRequest);
+        return { outcome: "accepted" };
+      },
+    });
+    fixture.dependencies.operator.pause = async (message) => {
+      assert.match(message, /merge temporarily rejected/u);
+      return "q";
+    };
+    let before: Awaited<ReturnType<typeof implementationProgress>> | undefined;
+    if (recover) {
+      assert.equal((await fixture.run()).summary.outcome, "cancelled");
+      before = await implementationProgress(fixture.directory, 52);
+      assert.equal(before.publication?.phase, "pending_merge");
+      rejectMerge = false;
+    }
+    assert.equal((await fixture.run()).summary.outcome, "succeeded");
+    assert.deepEqual(fixture.dispatched, [52]);
+    assert.deepEqual(fixture.closures, [52, 48]);
+    assert.equal(fixture.merged.size, 1);
+    assert.equal(children[0]!.stateReason, "not_planned");
+    const after = await implementationProgress(fixture.directory, 52);
+    assert.equal(after.publication?.phase, "delivered");
+    if (before) {
+      assert.equal(after.execution_id, before.execution_id);
+      assert.deepEqual(after.roles, before.roles);
+      assert.deepEqual(after.invocation, before.invocation);
+    }
+  });
+}
+
+await test("a cancelled Batch member does not let an unfinished member bypass the integration barrier", async (t) => {
+  const children = [child(51), child(52), child(53)];
+  const fixture = await parentDeliveryRun(t, children);
+  const getTicket = fixture.dependencies.tracker.getTicket.bind(
+    fixture.dependencies.tracker,
+  );
+  fixture.dependencies.tracker.getTicket = async (...args) => {
+    if (args[1] === 51) {
+      children[0]!.state = "closed";
+      children[0]!.stateReason = "not_planned";
+    }
+    if (args[1] === 52) children[1]!.labels = [];
+    return getTicket(...args);
+  };
+  assert.equal((await fixture.run()).summary.outcome, "incomplete");
+  assert.deepEqual(fixture.dispatched, [53]);
+  assert.deepEqual(fixture.closures, []);
+  assert.equal(fixture.merged.size, 0);
+  assert.equal(
+    (await implementationProgress(fixture.directory, 53)).publication?.phase,
+    "checks_ready",
+  );
+});
+
 await test("each successive bounded Batch fetches the current Target Branch", async (t) => {
   const fixture = await parentDeliveryRun(
     t,
@@ -94,6 +172,24 @@ await test("a new child in the final closure scan keeps the parent open", async 
   assert.equal((await fixture.run()).summary.outcome, "incomplete");
   assert.deepEqual(fixture.closures, []);
   assert.deepEqual(fixture.dispatched, []);
+});
+
+await test("a child cancelled between scans permits parent closure in the same Run", async (t) => {
+  const children = [child(51, { labels: [] })];
+  const fixture = await parentDeliveryRun(t, children);
+  let scans = 0;
+  fixture.dependencies.tracker.listChildrenPage = async () => {
+    if (++scans === 2) {
+      children[0]!.state = "closed";
+      children[0]!.stateReason = "not_planned";
+    }
+    return { children: structuredClone(children), nextPage: null };
+  };
+  assert.equal((await fixture.run()).summary.outcome, "succeeded");
+  assert.deepEqual(fixture.closures, [48]);
+  assert.deepEqual(fixture.dispatched, []);
+  assert.deepEqual(fixture.writes, []);
+  assert.equal(children[0]!.stateReason, "not_planned");
 });
 
 await test("a lost parent closure response reconciles without repeating the write or child work", async (t) => {

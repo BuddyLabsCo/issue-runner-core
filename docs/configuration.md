@@ -125,16 +125,18 @@ Core selects ascending Issue numbers up to `maxBatchSize`, reports selected
 numbers and blocked/owned/reserved/missing work, and dispatches that Batch
 concurrently through implementation, Review/fixes, publication, and required checks, as a numbered Issue does.
 Integration waits for every Batch PR to become CI-ready, then runs serially.
+Terminal members with no PR satisfy the Batch barrier; unfinished members still
+block integration of their ready siblings.
 After a successful Batch, Core rescans parent state, all child pages, blockers,
 and ownership before selecting the next Batch. Newly eligible children can run
-in that same Run. An unfinished Batch retains its membership and reports
-`incomplete`; Core does not replace its members with other work.
+in that same Run. An unfinished Batch with open children retains its membership
+and reports `incomplete`; Core does not replace its members with other work.
 
 Open children prevent parent closure even when they are blocked, externally
 owned, unready, reserved, or excluded by `issueList`. Once all children are
 terminal, Core rescans before closing the parent as completed. All-cancelled
 children also permit closure. An initially empty parent remains `no_work`
-without closure. A scope emptied after successful delivery can close.
+without closure. A previously nonempty scope can close after its children leave.
 Parent cancellation stops subsequent dispatch and retries without changing
 children. A completed parent with open children fails rather than dispatching
 work or rewriting tracker state.

@@ -307,7 +307,15 @@ export async function integrateBatch(input: {
   read: ReadOperation;
 }): Promise<RunSummary[]> {
   const { batch, ready, results, repository, codeHost, read } = input;
-  if (ready.size !== batch.length) return results;
+  if (
+    batch.some(
+      (number, index) =>
+        !ready.has(number) &&
+        results[index]!.outcome !== "no_work" &&
+        results[index]!.outcome !== "succeeded",
+    )
+  )
+    return results;
   const ordered = await Promise.all(
     [...ready].map(async ([number, integration]) => {
       const observed = await read("integration_order", `ticket:${number}`, () =>

@@ -5,7 +5,7 @@ import path from "node:path";
 import { stringify } from "yaml";
 import test from "node:test";
 import { validConfig } from "../support/cli-project.ts";
-import { child, parentRun } from "../support/parent-run.ts";
+import { child, parentDeliveryRun, parentRun } from "../support/parent-run.ts";
 
 await test("parent dispatches the lowest eligible direct children up to the configured Batch size", async (t) => {
   const fixture = await parentRun(
@@ -304,7 +304,7 @@ for (const change of [
 ] as const) {
   await test(`parent stops dispatch and retains Reservation markers when a reserved child becomes ${change}`, async (t) => {
     const ticket = child(51);
-    const fixture = await parentRun(t, [ticket]);
+    const fixture = await parentDeliveryRun(t, [ticket]);
     const addAssignee = fixture.dependencies.tracker.addAssignee.bind(
       fixture.dependencies.tracker,
     );
@@ -328,7 +328,16 @@ for (const change of [
         nextPage: null,
       });
     const result = await fixture.run();
-    assert.equal(result.summary.outcome, "incomplete");
+    assert.equal(
+      result.summary.outcome,
+      change === "closed" || change === "left_scope"
+        ? "succeeded"
+        : "incomplete",
+    );
+    assert.deepEqual(
+      fixture.closures,
+      change === "closed" || change === "left_scope" ? [48] : [],
+    );
     assert.deepEqual(fixture.writes, ["label:51", "assignee:51"]);
     assert.deepEqual(fixture.dispatched, []);
     assert.ok(ticket.labels!.includes("sandcastle:reserved"));

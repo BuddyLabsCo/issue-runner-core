@@ -86,13 +86,13 @@ export async function runParent(
     if (parent.state === "closed")
       return { ...input.summary, outcome: "succeeded", reasons };
     if (!hadChildren) return input.runBatch(tickets);
-    if (previous && previous.outcome !== "succeeded")
-      return { ...input.summary, outcome: "incomplete", reasons };
     if (tickets.every((ticket) => ticket.state === "closed")) {
       if (await closeParent(input))
         return { ...input.summary, outcome: "succeeded", reasons };
       continue;
     }
+    if (previous && previous.outcome !== "succeeded")
+      return { ...input.summary, outcome: "incomplete", reasons };
     previous = await input.runBatch(tickets);
     reasons.push(...previous.reasons);
   }
