@@ -20,13 +20,16 @@ export interface AuditEvent {
 
 export class AuditLog {
   readonly path: string;
+  private readonly secrets: readonly string[];
 
   constructor(
     projectDirectory: string,
     timestamp: string,
     parentTicket: number,
     runId: string,
+    secrets: readonly string[] = [],
   ) {
+    this.secrets = secrets;
     const safeTimestamp = timestamp.replaceAll(":", "-");
     this.path = path.join(
       projectDirectory,
@@ -41,6 +44,13 @@ export class AuditLog {
   }
 
   async append(event: AuditEvent): Promise<void> {
-    await appendFile(this.path, `${JSON.stringify(event)}\n`);
+    const json = JSON.stringify(event, (_key, value: unknown) => {
+      if (typeof value !== "string") return value;
+      let sanitized = value;
+      for (const secret of this.secrets)
+        if (secret) sanitized = sanitized.replaceAll(secret, "[redacted]");
+      return sanitized;
+    });
+    await appendFile(this.path, `${json}\n`);
   }
 }

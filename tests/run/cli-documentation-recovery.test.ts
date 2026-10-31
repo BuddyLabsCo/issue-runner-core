@@ -15,6 +15,9 @@ const noChange = {
 
 await test("cancelled documentation cleanup retries report the retained execution resources", async (t) => {
   const fixture = await documentationRun(t);
+  const cleanup = fixture.dependencies.gitWorkspace.cleanupWorktree.bind(
+    fixture.dependencies.gitWorkspace,
+  );
   fixture.state.onTask = async (file) => {
     fixture.state.evidence.changed = false;
     await publish(file, noChange);
@@ -29,8 +32,20 @@ await test("cancelled documentation cleanup retries report the retained executio
   for (let run = 0; run < 2; run++) {
     fixture.dependencies.signal = new AbortController().signal;
     fixture.dependencies.messages.length = 0;
-    assert.equal((await fixture.run()).summary.outcome, "cancelled");
+    const result = await fixture.run();
+    assert.equal(result.summary.outcome, "cancelled");
     const saved = await fixture.snapshot();
+    assert.equal(result.summary.tickets?.length, 1);
+    const { detail, ...record } = result.summary.tickets[0]!;
+    assert.deepEqual(record, {
+      ticket: 50,
+      kind: "maintenance",
+      status: "no_change",
+      pullRequest: null,
+      pullRequestUrl: null,
+      retainedWorktrees: [saved.worktree],
+    });
+    assert.match(detail, /Completed Maintenance Ticket/u);
     const recovery = path.join(fixture.directory, "recovery");
     const executionFile = (await readdir(recovery)).find((name) =>
       name.endsWith("-document-50.json"),
@@ -54,9 +69,74 @@ await test("cancelled documentation cleanup retries report the retained executio
     assert.ok(report.includes(saved.branch));
     assert.equal(saved.noChangeClosure, "completed");
   }
+  fixture.dependencies.gitWorkspace.cleanupWorktree = cleanup;
+  fixture.dependencies.signal = new AbortController().signal;
+  fixture.dependencies.messages.length = 0;
+  const result = await fixture.run();
+  assert.equal(result.summary.outcome, "succeeded");
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.summary.tickets?.length, 1);
+  assert.equal(result.summary.tickets[0]!.status, "no_change");
+  assert.deepEqual(result.summary.tickets[0]!.retainedWorktrees, []);
+  assert.ok(
+    fixture.dependencies.messages.some((message) =>
+      message.startsWith("Issue #50 maintenance: no_change"),
+    ),
+  );
   assert.equal(fixture.state.taskCount, 1);
   assert.equal(fixture.state.probeCount, 1);
   assert.equal(fixture.maintenance.creates, 1);
+  assert.equal(fixture.integrationState.closures, 1);
+});
+
+await test("delivered documentation cleanup recovery restores its PR report without replaying delivery", async (t) => {
+  const fixture = await documentationRun(t);
+  const cleanup = fixture.dependencies.gitWorkspace.cleanupWorktree.bind(
+    fixture.dependencies.gitWorkspace,
+  );
+  fixture.dependencies.gitWorkspace.cleanupWorktree = async () => {
+    throw new Error("documentation cleanup unavailable");
+  };
+  fixture.dependencies.operator.pause = async (message) => {
+    assert.match(message, /documentation cleanup unavailable/u);
+    return "q";
+  };
+  const first = await fixture.run();
+  assert.equal(first.summary.outcome, "cancelled");
+  const saved = await fixture.snapshot();
+  assert.equal(saved.publication?.phase, "delivered");
+  assert.equal(first.summary.tickets?.[0]?.status, "completed");
+  assert.deepEqual(first.summary.tickets[0].retainedWorktrees, [
+    saved.worktree,
+  ]);
+
+  fixture.dependencies.gitWorkspace.cleanupWorktree = cleanup;
+  fixture.dependencies.signal = new AbortController().signal;
+  fixture.dependencies.messages.length = 0;
+  const result = await fixture.run();
+  assert.equal(result.summary.outcome, "succeeded");
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.summary.tickets?.length, 1);
+  const { detail, ...record } = result.summary.tickets[0]!;
+  assert.deepEqual(record, {
+    ticket: 50,
+    kind: "maintenance",
+    status: "completed",
+    pullRequest: 81,
+    pullRequestUrl: "https://github.com/owner/repo/pull/81",
+    retainedWorktrees: [],
+  });
+  assert.match(detail, /Completed Maintenance Ticket/u);
+  assert.ok(
+    fixture.dependencies.messages.some((message) =>
+      message.startsWith("Issue #50 maintenance: completed PR=#81"),
+    ),
+  );
+  assert.equal(fixture.state.taskCount, 1);
+  assert.equal(fixture.state.probeCount, 1);
+  assert.equal(fixture.maintenance.creates, 1);
+  assert.equal(fixture.publicationState.creations, 1);
+  assert.equal(fixture.integrationState.requests.length, 1);
   assert.equal(fixture.integrationState.closures, 1);
 });
 

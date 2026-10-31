@@ -43,6 +43,9 @@ tests/
 - `run/review.ts` owns Review rounds, fix verification, accumulated commits, and
   findings cleanup. `agent/stage.ts` shares Probe, native role resume, handoff
   corrections, and tab lifecycle across implementation, Review, and fixes.
+- `run/report.ts` records ordered per-Issue outcomes and PR/resource details through
+  execution and deferred integration, including retained-resource reports.
+  `run/run.ts` preserves those reports on failure or cancellation; CLI renders the results.
 - Business logic, including `run/` and `agent/`, must be OS- and coding-agent-agnostic:
   no platform or agent-brand branches, commands or imports. Keep platform details in
   adapters/plugins and agent-specific start/resume commands in configuration.

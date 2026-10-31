@@ -15,6 +15,7 @@ import type { Tracker } from "./contracts.ts";
 import type { RunSummary } from "./run.ts";
 import { restoreExecution } from "./execution-recovery.ts";
 import { cleanupExecution } from "./cleanup.ts";
+import { reportTicket } from "./report.ts";
 
 export async function runDocumentation(
   input: Omit<Parameters<typeof runStandalone>[0], "number"> & {
@@ -176,20 +177,20 @@ export async function runDocumentation(
         { retry: "manual" },
       );
     }
-    const result =
-      maintenance.phase === "delivered"
-        ? {
-            ...summary,
-            outcome: "succeeded" as const,
-            reasons: [`Completed Maintenance Ticket ${maintenance.ticket}`],
-          }
-        : await runStandalone({
-            ...input,
-            context,
-            read,
-            number: maintenance.ticket!,
-            documentation: true,
-          });
+    const recoveredDelivery = maintenance.phase === "delivered";
+    const result = recoveredDelivery
+      ? {
+          ...summary,
+          outcome: "succeeded" as const,
+          reasons: [`Completed Maintenance Ticket ${maintenance.ticket}`],
+        }
+      : await runStandalone({
+          ...input,
+          context,
+          read,
+          number: maintenance.ticket!,
+          documentation: true,
+        });
     if (result.outcome !== "succeeded")
       return {
         ...result,
@@ -216,6 +217,11 @@ export async function runDocumentation(
     if (!progress)
       throw new Error("Missing owned documentation execution for cleanup");
     context.retained?.set(executionFile, progress);
+    if (recoveredDelivery)
+      await reportTicket(
+        { ...input, context, number: maintenance.ticket!, documentation: true },
+        () => Promise.resolve(result),
+      );
     await cleanupExecution({
       progress,
       loaded,

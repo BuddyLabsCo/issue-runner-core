@@ -19,6 +19,7 @@ import { publishImplementation } from "./publication.ts";
 import { restoreExecution } from "./execution-recovery.ts";
 import { cleanupExecution, executionTerminal } from "./cleanup.ts";
 import type { RunContext, RunSummary } from "./run.ts";
+import { reportTicket } from "./report.ts";
 import {
   hasOpenBlocker,
   readChildren,
@@ -48,6 +49,12 @@ export async function runStandalone(input: {
     complete: () => Promise<RunSummary>,
   ) => void;
 }): Promise<RunSummary> {
+  return reportTicket(input, executeStandalone);
+}
+
+async function executeStandalone(
+  input: Parameters<typeof runStandalone>[0],
+): Promise<RunSummary> {
   const { number, loaded, tracker, summary } = input;
   const context = {
     ...input.context,
