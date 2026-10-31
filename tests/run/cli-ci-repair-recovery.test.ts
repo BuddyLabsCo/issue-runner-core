@@ -1,10 +1,11 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import assert from "node:assert/strict";
-import { access, readFile, readdir, writeFile } from "node:fs/promises";
+import { access, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { executeCli } from "../../src/cli.ts";
 import { ciRepairRun, repairCommit } from "../support/ci-repair-run.ts";
+import { conflictRepairRun } from "../support/conflict-repair-run.ts";
 import { validConfig } from "../support/cli-project.ts";
 import {
   deferred,
@@ -12,6 +13,49 @@ import {
   publish,
 } from "../support/implementation-run.ts";
 import { child, parentRun } from "../support/parent-run.ts";
+
+for (const kind of ["ci", "conflict"] as const) {
+  await test(`missing active ${kind} repair Worktree fails recovery before native dispatch`, async (t) => {
+    const fixture = await (kind === "ci" ? ciRepairRun : conflictRepairRun)(t);
+    fixture.repairs.onTask = async () => {
+      fixture.controller.abort();
+    };
+    assert.equal((await fixture.run()).summary.outcome, "cancelled");
+    const saved = await fixture.snapshot();
+    const attempt =
+      saved.publication![
+        kind === "ci" ? "ciRepair" : "conflictRepair"
+      ]!.attempts.at(-1)!;
+    assert.equal(attempt.worktreeCreated, true);
+    assert.ok(attempt.invocation);
+    assert.equal(attempt.result, undefined);
+    await rm(attempt.worktree, { recursive: true });
+    await access(saved.worktree);
+    const submissions = fixture.state.submissions.length;
+    const pushes = fixture.publicationState.pushes;
+    const workspaces = fixture.workspaces.size;
+    let opens = 0;
+    fixture.dependencies.terminalPlugin.createTab = async () => {
+      opens++;
+      throw new Error("Missing repair context must not open a Runner Tab");
+    };
+    fixture.dependencies.signal = new AbortController().signal;
+    const result = await fixture.run();
+    assert.equal(result.summary.outcome, "failed");
+    assert.match(
+      result.summary.reasons.join(" "),
+      /unable to recover: original (CI|Conflict) repair Worktree is missing/u,
+    );
+    assert.equal(opens, 0);
+    assert.equal(fixture.state.submissions.length, submissions);
+    assert.equal(fixture.publicationState.pushes, pushes);
+    assert.equal(fixture.workspaces.size, workspaces);
+    assert.deepEqual(await fixture.snapshot(), saved);
+    await access(saved.worktree);
+    await access(attempt.probe!.path);
+    await assert.rejects(access(attempt.worktree));
+  });
+}
 
 await test(
   "skipping exhausted CI repair retains the Issue resources and lets sibling work continue",
