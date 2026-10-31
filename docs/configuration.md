@@ -603,8 +603,10 @@ An explicit restart creates a new execution, branch, Worktree, conversations,
 Probe/handoff assignments, and Probe-generated PR metadata. Execution correction
 and repair counts start fresh. Other Issues keep their progress and counts.
 Runner archives the failed checkpoint as `<checkpoint>.<id>.retained` before
-starting replacement work. Old Worktrees, branches, handoff files, and native
-histories remain under the failed-resource retention policy. Existing remote PRs
+starting replacement work. It keeps the active failed checkpoint until replacement
+progress is saved, so matching reruns can recover after cancellation during startup.
+Old Worktrees, branches, handoff files, and native histories remain under the
+failed-resource retention policy. Existing remote PRs
 still require normal publication ownership checks; restart does not authorize
 overwriting them. Standalone documentation restarts at its document entry point
 through its existing whole-occurrence interaction.

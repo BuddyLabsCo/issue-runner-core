@@ -250,3 +250,63 @@ for (const stop of ["EOF", "cancellation"] as const) {
     await access(saved.worktree);
   });
 }
+
+for (const interruptedAt of ["inspection", "base fetch"] as const) {
+  await test(`cancellation during replacement ${interruptedAt} preserves matching-input recovery`, async (t) => {
+    const fixture = await implementationRun(t);
+    fixture.state.onTask = async () => fixture.controller.abort();
+    assert.equal((await fixture.run()).summary.outcome, "cancelled");
+    const saved = await fixture.snapshot();
+    const file = path.join(
+      fixture.directory,
+      "recovery",
+      `${saved.input_hash}-50.json`,
+    );
+    await publish(file, { ...saved, roles: {} });
+    const failed = await readFile(file, "utf8");
+    const controller = new AbortController();
+    fixture.dependencies.signal = controller.signal;
+    let restarting = false;
+    fixture.dependencies.operator.pause = async (message) => {
+      assert.equal(
+        message,
+        "Enter to restart the entire Issue #50, or q to exit Runner.",
+      );
+      restarting = true;
+      return "";
+    };
+    const inspect = fixture.dependencies.tracker.getTicket.bind(
+      fixture.dependencies.tracker,
+    );
+    fixture.dependencies.tracker.getTicket = async () => {
+      if (restarting && interruptedAt === "inspection") controller.abort();
+      return inspect();
+    };
+    const fetch = fixture.dependencies.gitWorkspace.fetchTargetBranch.bind(
+      fixture.dependencies.gitWorkspace,
+    );
+    fixture.dependencies.gitWorkspace.fetchTargetBranch = async () => {
+      if (interruptedAt === "base fetch") controller.abort();
+      return fetch();
+    };
+    assert.equal((await fixture.run()).summary.outcome, "cancelled");
+    assert.equal(await readFile(file, "utf8"), failed);
+    await access(saved.worktree);
+    assert.equal(fixture.state.taskCount, 1);
+    fixture.dependencies.signal = new AbortController().signal;
+    fixture.dependencies.tracker.getTicket = inspect;
+    fixture.dependencies.gitWorkspace.fetchTargetBranch = fetch;
+    fixture.state.onTask = async (output) => {
+      fixture.state.evidence.commits = committed().commits;
+      await publish(output, committed());
+    };
+    const result = await fixture.run();
+    assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
+    assert.equal(fixture.state.taskCount, 2);
+    assert.notEqual(
+      (await fixture.snapshot()).execution_id,
+      saved.execution_id,
+    );
+    assert.deepEqual(fixture.state.cleanup, []);
+  });
+}

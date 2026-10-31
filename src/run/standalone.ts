@@ -108,6 +108,7 @@ async function executeStandalone(
     runId: context.runId,
     inputHash: context.inputHash,
     runArguments: context.runArguments,
+    restarting,
   });
   if (restored) context.retained?.set(progressFile, restored);
   const inspect = async (): Promise<{ ticket: Ticket; reason?: string }> => {

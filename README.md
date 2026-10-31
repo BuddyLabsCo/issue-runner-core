@@ -178,14 +178,22 @@ in the original Worktree with recreated per-call Git configuration. Runner submi
 the saved role's exact resume command with Enter, waits 10 seconds, then sends only
 `continue` with the configured Agent chord. It preserves the invocation, active
 handoff path, uncommitted work, metadata, and correction budget without another
-Probe or task prompt. A missing original Worktree fails with `unable to recover`
-before native dispatch; Runner does not create a replacement. Before rerunning, manually close
-leftover tabs and stop their Agent sessions, retaining native history and working
-resources. Runner does not adopt live tabs. Incomplete earlier startup checkpoints
-are retained and reported as unrecoverable; whole-Issue restart interaction and
-broader workflow recovery remain downstream. Changed input ignores old snapshots
-and never adopts unrelated Reservations. Local completion retains owned files
-and Worktrees for later workflow steps.
+Probe or task prompt.
+
+If required original context cannot be recovered, including a missing original
+Worktree, Runner prints exactly `unable to recover`. Enter restarts the entire
+affected Issue from implementation. `q` or EOF exits Runner. Restart creates a
+fresh execution, Worktree, branch,
+conversations, Probe/handoff assignments, and PR metadata, with reset retry counts.
+Other Issues keep their progress and counts. Failed resources remain retained,
+including an archived checkpoint; the active checkpoint remains available until
+replacement progress is saved. There is no retry-recovery choice.
+
+Before rerunning, manually close leftover tabs and stop their Agent sessions,
+retaining native history and working resources. Runner does not adopt live tabs.
+Incomplete earlier startup checkpoints use the same restart-or-exit interaction.
+Changed input ignores old snapshots and never adopts unrelated Reservations.
+Local completion retains owned files and Worktrees for later workflow steps.
 
 Failed, cancelled, interrupted, skipped, and unmerged executions retain their original working changes and diagnostic files. `Retained` reports list each execution's recorded branches and existing resource paths, including failed repair attempts and maintenance checkpoints. Abrupt process loss can prevent the final report; Recovery Snapshots remain the durable evidence. Changed Run inputs never authorize deletion or adoption of unrelated Reservations. See [retained execution resources](docs/configuration.md#retained-execution-resources).
 

@@ -1,6 +1,6 @@
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { rename } from "node:fs/promises";
+import { copyFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import type { LoadedProject } from "../config.ts";
 import type { ImplementationProgress } from "../recovery.ts";
@@ -62,10 +62,11 @@ export function recoverIssue(
           `${context.inputHash}-${number}.json`,
         );
         const archive = `${file}.${randomUUID()}.retained`;
+        // Keep recovery ownership until the replacement saves its first checkpoint.
         await attempt.read(
           "retain_unrecoverable_issue",
           `ticket:${number}`,
-          () => rename(file, archive),
+          () => copyFile(file, archive),
         );
         context.retained?.set(archive, context.retained.get(file));
         attempt = {
@@ -112,7 +113,9 @@ export async function restoreExecution(input: {
   runId: string;
   inputHash: string;
   runArguments: readonly string[];
+  restarting?: boolean;
 }): Promise<ImplementationProgress | undefined> {
+  if (input.restarting) return;
   const {
     file,
     loaded,
