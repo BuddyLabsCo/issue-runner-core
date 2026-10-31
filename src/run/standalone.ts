@@ -25,7 +25,7 @@ import {
   readChildren,
   type ReadOperation,
 } from "./discovery.ts";
-import { OperatorCancelled } from "./operations.ts";
+import { OperatorCancelled, scopeOperator } from "./operations.ts";
 
 export async function runStandalone(input: {
   number: number;
@@ -37,7 +37,16 @@ export async function runStandalone(input: {
   read: ReadOperation;
   fetchBase: () => Promise<string>;
 }): Promise<RunSummary> {
-  const { number, loaded, tracker, context, read, summary } = input;
+  const { number, loaded, tracker, summary } = input;
+  const context = {
+    ...input.context,
+    operator: scopeOperator(input.context.operator, `Issue #${number}`),
+  };
+  const read: ReadOperation = (operation, target, action, settings) =>
+    input.read(operation, target, action, {
+      operator: context.operator,
+      ...settings,
+    });
   const config = loaded.config;
   const repository = config.repository;
   const accept = async (progress: ImplementationProgress, text: string) => {
@@ -206,7 +215,23 @@ export async function runStandalone(input: {
         ),
       withEnvironment: (action) =>
         context.git.withAgentEnvironment(loaded.directory, action),
-      terminal: context.terminal,
+      terminal: {
+        createTab: (options) =>
+          read(
+            "create_tab",
+            options.label,
+            () => context.terminal.createTab(options),
+            { retry: "manual" },
+          ),
+        submitText: (tab, text, chord) =>
+          read(
+            "submit_text",
+            `ticket:${number}:${progress.phase}`,
+            () => context.terminal.submitText(tab, text, chord),
+            { retry: "never" },
+          ),
+        closeTab: (tab) => context.terminal.closeTab(tab),
+      },
       clock: context.clock,
       operator: context.operator,
       ...(context.signal ? { signal: context.signal } : {}),
@@ -277,35 +302,59 @@ export async function runStandalone(input: {
       ],
     };
   // Confirm each write from current tracker state before retrying it.
-  await read("add_reservation_label", `ticket:${number}`, async () => {
-    selected = await inspect();
-    if (selected.reason) return;
-    if (selected.ticket.assignees?.includes(config.tracker.runnerAccount)) {
-      selected.reason = "Reservation changed before label";
-      return;
-    }
-    if (!selected.ticket.labels?.includes(config.tracker.reservationLabel))
-      await tracker.addLabel(
-        repository,
-        number,
-        config.tracker.reservationLabel,
-      );
-  });
+  await read(
+    "add_reservation_label",
+    `ticket:${number}`,
+    async () => {
+      selected = await inspect();
+      if (selected.reason) return;
+      if (selected.ticket.assignees?.includes(config.tracker.runnerAccount)) {
+        selected.reason = "Reservation changed before label";
+        return;
+      }
+      if (!selected.ticket.labels?.includes(config.tracker.reservationLabel))
+        await tracker.addLabel(
+          repository,
+          number,
+          config.tracker.reservationLabel,
+        );
+    },
+    {
+      reconcile: async () => {
+        selected = await inspect();
+        return selected.ticket.labels?.includes(config.tracker.reservationLabel)
+          ? { outcome: "completed", result: undefined }
+          : { outcome: "pending" };
+      },
+    },
+  );
   if (selected.reason) return { ...summary, reasons: [selected.reason] };
-  await read("add_runner_assignee", `ticket:${number}`, async () => {
-    selected = await inspect();
-    if (selected.reason) return;
-    if (!selected.ticket.labels?.includes(config.tracker.reservationLabel)) {
-      selected.reason = "Reservation changed before assignment";
-      return;
-    }
-    if (!selected.ticket.assignees?.includes(config.tracker.runnerAccount))
-      await tracker.addAssignee(
-        repository,
-        number,
-        config.tracker.runnerAccount,
-      );
-  });
+  await read(
+    "add_runner_assignee",
+    `ticket:${number}`,
+    async () => {
+      selected = await inspect();
+      if (selected.reason) return;
+      if (!selected.ticket.labels?.includes(config.tracker.reservationLabel)) {
+        selected.reason = "Reservation changed before assignment";
+        return;
+      }
+      if (!selected.ticket.assignees?.includes(config.tracker.runnerAccount))
+        await tracker.addAssignee(
+          repository,
+          number,
+          config.tracker.runnerAccount,
+        );
+    },
+    {
+      reconcile: async () => {
+        selected = await inspect();
+        return selected.ticket.assignees?.includes(config.tracker.runnerAccount)
+          ? { outcome: "completed", result: undefined }
+          : { outcome: "pending" };
+      },
+    },
+  );
   if (selected.reason) return { ...summary, reasons: [selected.reason] };
   selected = await inspect();
   if (
@@ -340,12 +389,18 @@ export async function runStandalone(input: {
   };
   await persist(progress);
   context.signal?.throwIfAborted();
-  await context.git.createWorktree({
-    checkout: config.checkout,
-    worktree: progress.worktree,
-    branch: progress.branch,
-    base: progress.base,
-  });
+  await read(
+    "create_worktree",
+    progress.worktree,
+    () =>
+      context.git.createWorktree({
+        checkout: config.checkout,
+        worktree: progress.worktree,
+        branch: progress.branch,
+        base: progress.base,
+      }),
+    { retry: "manual" },
+  );
   context.signal?.throwIfAborted();
   verifyWorkspace(
     progress,

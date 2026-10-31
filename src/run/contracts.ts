@@ -79,6 +79,8 @@ export interface Clock {
 }
 
 export interface OperatorIO {
+  skipScope?: string;
+  intervene?(): () => void;
   write(message: string): void;
   // Close active input when the supplied Run signal is cancelled.
   pause(message: string, signal?: AbortSignal): Promise<string | null>;
