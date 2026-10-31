@@ -13,6 +13,15 @@ import { OperatorCancelled, TicketSkipped } from "../run/operations.ts";
 import type { TabHandle, TerminalPlugin } from "../terminal.ts";
 import { NativeConversations } from "./conversation.ts";
 import { nonempty, object, readHandoff } from "./handoff.ts";
+import {
+  probeInstructions,
+  probeMetadataInstructions,
+  probeReviewInstructions,
+  probeRepairInstructions,
+  probeCorrectionInstructions,
+  handoffInvocationInstructions,
+  handoffCorrectionInstructions,
+} from "../prompts/session.ts";
 
 export interface IssueStageContext {
   loaded: LoadedProject;
@@ -178,16 +187,34 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
         ticket: progress.ticket,
         role: repairRole ?? role,
       };
-      const prompt = (error?: string) =>
-        `Session Probe\n${JSON.stringify(probeAssignment)}\n\n` +
-        (error ? `Correct the previous Probe: ${error}\n` : "") +
-        `Determine the actual native conversation sessionid from your native CLI context. Never use a generated ID, tab ID, or latest-session alias. ` +
-        (generatesMetadata
-          ? `Inspect the repository's AGENTS.md, contribution instructions and PR conventions. Generate complete pr_title and pr_body for ${progress.repository}#${progress.ticket}.\nIssue: ${input.ticket.title ?? ""}\n${input.ticket.body ?? ""}\n`
-          : purpose === "review"
-            ? "Establish only your independent reviewer identity. Do not review or modify the implementation yet.\n"
-            : "Establish only your native repair identity. Do not begin the task yet.\n") +
-        `Write exactly the assignment fields above plus ${generatesMetadata ? "sessionid, pr_title, pr_body" : "sessionid"} as JSON to ${probeAssignment.path}.tmp, close it, and atomically rename it to ${probeAssignment.path}. Do not begin the task yet.`;
+      const prompt = (error?: string) => {
+        const values = {
+          identity: generatesMetadata
+            ? probeMetadataInstructions.replace(
+                "{{issue}}",
+                () => `${progress.repository}#${progress.ticket}`,
+              ) +
+              `\nIssue: ${input.ticket.title ?? ""}\n${input.ticket.body ?? ""}`
+            : purpose === "review"
+              ? probeReviewInstructions
+              : probeRepairInstructions,
+          fields: generatesMetadata
+            ? "sessionid, pr_title, pr_body"
+            : "sessionid",
+          path: probeAssignment.path,
+        };
+        return (
+          `Session Probe\n${JSON.stringify(probeAssignment)}\n\n` +
+          (error
+            ? probeCorrectionInstructions.replace("{{reason}}", () => error) +
+              "\n"
+            : "") +
+          probeInstructions.replace(
+            /\{\{(identity|fields|path)\}\}/gu,
+            (_, key: keyof typeof values) => values[key],
+          )
+        );
+      };
       if (
         (purpose !== "documentation" && !repairRole) ||
         !(await readHandoff(stage.probe!.path))
@@ -291,7 +318,9 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
       stage.pendingPrompt =
         `${heading} assignment\n${JSON.stringify({ execution_id: progress.execution_id, ...stage.invocation })}\n\n${await input.task()}\n\n` +
         `Fixed PR title: ${progress.pr_title}\nFixed PR body:\n${progress.pr_body}\n\n` +
-        `Explicitly invoke the installed issue-runner-handoff skill with this sole absolute output-path argument: ${JSON.stringify(stage.invocation.path)}`;
+        handoffInvocationInstructions.replace("{{path}}", () =>
+          JSON.stringify(stage.invocation!.path),
+        );
     }
     progress.phase = phase;
     await persist();
@@ -352,7 +381,15 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
               invocation_id: randomUUID(),
               path: assignment(purpose),
             };
-            stage.pendingPrompt = `Correct the ${name} handoff: ${reason}\nExplicitly invoke issue-runner-handoff with the sole absolute output-path argument: ${JSON.stringify(stage.invocation.path)}`;
+            const values = {
+              name,
+              reason,
+              path: JSON.stringify(stage.invocation.path),
+            };
+            stage.pendingPrompt = handoffCorrectionInstructions.replace(
+              /\{\{(name|reason|path)\}\}/gu,
+              (_, key: keyof typeof values) => values[key],
+            );
             stage.correctionNotBefore =
               clock.now().getTime() +
               1000 *

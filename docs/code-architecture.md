@@ -13,7 +13,8 @@ src/
 |                          # Herdr transport belongs in the plugin repository.
 |-- recovery.ts            # Atomic snapshots and input hash; workflow owners restore progress.
 |-- audit.ts               # Workflow event recording.
-`-- prompts/               # Built-in purpose instructions and explicit handoff invocation.
+`-- prompts/               # Load built-in Markdown assets for workflow and session owners.
+prompts/                   # Built-in stage, Probe and handoff instruction bodies.
 templates/                 # User-editable config/prompt defaults for init.
 skills/issue-runner-handoff/ # Handoff protocol; task instructions belong in prompts/.
 tests/

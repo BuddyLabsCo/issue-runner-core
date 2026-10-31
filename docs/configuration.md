@@ -222,6 +222,13 @@ before task submission, without another startup delay. The built-in instructions
 and Project implementation prompt explicitly invoke the installed handoff skill.
 The temporary Git configuration is removed when the call finishes.
 
+Built-in instructions live in the package's `prompts/*.md` assets, covering
+implementation, Review, Review fixes, documentation, repairs, Probe and handoff
+corrections. TypeScript loads them relative to the installed package, inserts
+runtime values, and assembles each submission. These assets are separate from
+the three user-editable Project prompts; `init` still copies those from
+`templates/prompts/`. There are no additional Project prompt settings.
+
 Invalid Probe output uses `operationRetry` and `operationRetryDelay`, separately
 from execution-result corrections. Each Probe retry saves its consumed count and
 a fresh correlation/path before submission; missing output never spends this
@@ -810,8 +817,11 @@ No public testing entry, filesystem port, or scheduler is added.
 
 Run `npm run test:package` to check built Core and private fake-plugin tarballs
 installed together in a custom npm global prefix. A separate Launch Directory
-exercises npm's installed executable, init templates, bundled purpose prompts,
-public JavaScript/types, and the exact manually installable handoff asset.
+exercises npm's installed executable, init templates, every built-in Markdown
+prompt, public JavaScript/types, and the exact manually installable handoff asset.
+Installed CLI checks cover prompt assembly, separate startup/Probe/task/correction
+submissions, waits, and continuation. Removing the installed prompt assets must
+fail rather than load them from the checkout.
 See [package verification](terminal-contract.md#verification-limits-and-global-installation)
 for setup and evidence limits.
 
