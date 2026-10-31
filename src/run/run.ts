@@ -9,9 +9,18 @@ import type {
 } from "./contracts.ts";
 import type { TerminalPlugin } from "../terminal.ts";
 import type { AuditLog } from "../audit.ts";
-import { externalRead, serializeOperator } from "./operations.ts";
+import {
+  boundedOperation,
+  externalRead,
+  serializeOperator,
+  TicketSkipped,
+} from "./operations.ts";
 import { runStandalone } from "./standalone.ts";
-import { readChildren, selectIssueBatch } from "./discovery.ts";
+import {
+  readChildren,
+  selectIssueBatch,
+  type ReadOperation,
+} from "./discovery.ts";
 
 export interface RunContext {
   audit: AuditLog;
@@ -53,15 +62,6 @@ export async function runProject(
     ? AbortSignal.any([context.signal, controller.signal])
     : controller.signal;
   const operator = serializeOperator(context.operator, controller, signal);
-  const dispatch = <T>(action: () => Promise<T>) =>
-    operator.advance(async () => {
-      try {
-        return await action();
-      } catch (error) {
-        controller.abort(error);
-        throw error;
-      }
-    });
   const { git, terminal } = context;
   context = {
     ...context,
@@ -77,19 +77,36 @@ export async function runProject(
         operator.advance(() => git.withAgentEnvironment(directory, action)),
     },
     terminal: {
-      createTab: (options) => dispatch(() => terminal.createTab(options)),
+      createTab: (options) =>
+        operator.advance(() =>
+          boundedOperation(
+            () => terminal.createTab(options),
+            `terminal createTab ${options.label}`,
+            signal,
+          ),
+        ),
       submitText: (tab, text, chord) =>
-        dispatch(() => terminal.submitText(tab, text, chord)),
-      closeTab: (tab) => operator.advance(() => terminal.closeTab(tab)),
+        operator.advance(() =>
+          boundedOperation(
+            () => terminal.submitText(tab, text, chord),
+            "terminal submitText; delivery is uncertain",
+            signal,
+          ),
+        ),
+      closeTab: (tab) =>
+        operator.advance(() =>
+          boundedOperation(
+            () => terminal.closeTab(tab),
+            "terminal closeTab; cleanup is unresolved",
+            signal,
+          ),
+        ),
     },
   };
-  const read = <T>(
-    operation: string,
-    target: string,
-    action: () => Promise<T>,
-  ) =>
+  const read: ReadOperation = (operation, target, action, settings) =>
     externalRead({
       ...context,
+      ...settings,
       action: () => operator.advance(action),
       retryPolicy: loaded.config,
       event: (attempt) => ({
@@ -122,8 +139,17 @@ export async function runProject(
     (base ??= read("fetch_target_branch", targetBranch, () =>
       context.git.fetchTargetBranch(loaded.config.checkout, targetBranch),
     ));
+  const attemptIssue = async (input: Parameters<typeof runStandalone>[0]) => {
+    try {
+      return await runStandalone(input);
+    } catch (error) {
+      if (error instanceof TicketSkipped)
+        return { ...summary, reasons: [error.message] };
+      throw error;
+    }
+  };
   if (options.selector === "issue" && options.issueTicket !== undefined)
-    return runStandalone({
+    return attemptIssue({
       number: options.issueTicket,
       loaded,
       tracker,
@@ -191,7 +217,7 @@ export async function runProject(
   const attempts = selection.batch.map(async (number) => {
     try {
       signal.throwIfAborted();
-      return await runStandalone({
+      return await attemptIssue({
         number,
         ...(options.selector === "parent"
           ? { parentTicket: summary.parentTicket }

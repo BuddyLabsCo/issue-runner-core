@@ -3,12 +3,14 @@ import type { LoadedProject } from "../config.ts";
 import { nonempty, object, readHandoff } from "../agent/handoff.ts";
 import { saveProgress, type BatchProgress } from "../recovery.ts";
 import type { ChildPage, Ticket, Tracker } from "./contracts.ts";
+import type { OperationOptions } from "./operations.ts";
 import type { RunContext } from "./run.ts";
 
 export type ReadOperation = <T>(
   operation: string,
   target: string,
   action: () => Promise<T>,
+  options?: OperationOptions<T>,
 ) => Promise<T>;
 
 export async function readChildren(
