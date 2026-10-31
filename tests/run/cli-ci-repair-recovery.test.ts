@@ -1,10 +1,136 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import assert from "node:assert/strict";
-import { readFile, readdir, writeFile } from "node:fs/promises";
+import { access, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
+import { executeCli } from "../../src/cli.ts";
 import { ciRepairRun, repairCommit } from "../support/ci-repair-run.ts";
-import { publish } from "../support/implementation-run.ts";
+import { validConfig } from "../support/cli-project.ts";
+import {
+  deferred,
+  implementationProgress,
+  publish,
+} from "../support/implementation-run.ts";
+import { child, parentRun } from "../support/parent-run.ts";
+
+await test(
+  "skipping exhausted CI repair retains the Issue resources and lets sibling work continue",
+  { timeout: 10_000 },
+  async (t) => {
+    const children = [child(51), child(52)];
+    const fixture = await parentRun(t, children, {
+      ...validConfig,
+      maxBatchSize: 2,
+    });
+    const releaseSibling = deferred<void>();
+    t.after(() => releaseSibling.resolve());
+    const tabs = new Map<object, number>();
+    const open = fixture.dependencies.terminalPlugin.createTab.bind(
+      fixture.dependencies.terminalPlugin,
+    );
+    fixture.dependencies.terminalPlugin.createTab = async (options) => {
+      const tab = await open(options);
+      tabs.set(tab, Number(/ticket-(\d+)/u.exec(options.cwd)![1]));
+      return tab;
+    };
+    const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+      fixture.dependencies.terminalPlugin,
+    );
+    fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+      if (text.startsWith("Session Probe\n")) {
+        const assignment = JSON.parse(text.split("\n")[1]!) as {
+          path: string;
+          role: string;
+        };
+        if (assignment.role === "ciRepair") {
+          await publish(assignment.path, {
+            ...assignment,
+            sessionid: "ci-repair-session",
+          });
+          return;
+        }
+      }
+      if (text.startsWith("CI repair assignment\n")) {
+        const assignment = JSON.parse(text.split("\n")[1]!) as { path: string };
+        await publish(assignment.path, {
+          outcome: "no_change",
+          summary: "No repair",
+          commits: [],
+          findings_file: null,
+        });
+        return;
+      }
+      if (
+        text.startsWith("Implementation assignment\n") &&
+        tabs.get(tab) === 52
+      )
+        await releaseSibling.promise;
+      await submit(tab, text);
+    };
+    let pauses = 0;
+    fixture.dependencies.operator.pause = async (message) => {
+      assert.match(message, /CI repair failed after two attempts/u);
+      if (++pauses === 1) {
+        assert.equal(fixture.dispatched.includes(52), false);
+        releaseSibling.resolve();
+        return "s";
+      }
+      return "q";
+    };
+    const issueByPr = new Map<number, number>();
+    const host = fixture.dependencies.codeHost;
+    const result = await executeCli(
+      ["run", "--project", "demo", "--env", "fake", "--parent", "48"],
+      {
+        ...fixture.dependencies,
+        codeHost: {
+          ...host,
+          async createPullRequest(input) {
+            const pr = await host.createPullRequest(input);
+            issueByPr.set(
+              pr.number,
+              Number(/ticket-(\d+)$/u.exec(input.branch)![1]),
+            );
+            return pr;
+          },
+          async getRequiredChecks(_repository, pr) {
+            return issueByPr.get(pr) === 51
+              ? [
+                  {
+                    name: "build",
+                    state: "FAILURE",
+                    link: "https://checks/build/51",
+                    bucket: "fail",
+                  },
+                ]
+              : [];
+          },
+        },
+      },
+    );
+    assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
+    assert.equal(pauses, 1);
+    assert.match(result.summary.reasons.join(" "), /skipped Issue #51/u);
+    assert.match(result.summary.reasons.join(" "), /Issue #52: CI-ready/u);
+    assert.deepEqual(fixture.dispatched.sort(), [51, 52]);
+    const saved = await implementationProgress(fixture.directory, 51);
+    assert.equal(saved.publication!.ciRepair!.consumed, 2);
+    assert.equal(saved.publication!.ciRepair!.attempts.length, 2);
+    assert.equal(saved.publication!.ciRepair!.generation, 0);
+    for (const workspace of [saved, ...saved.publication!.ciRepair!.attempts]) {
+      await access(workspace.worktree);
+      await access(workspace.probe!.path);
+      await access(workspace.invocation!.path);
+    }
+    assert.equal(children[0]!.state, "open");
+    assert.ok(
+      children[0]!.labels!.includes(validConfig.tracker.reservationLabel),
+    );
+    assert.ok(
+      children[0]!.assignees!.includes(validConfig.tracker.runnerAccount),
+    );
+  },
+);
 
 await test("blocked repair output is corrected in the same native stage rather than revived as a blocked result", async (t) => {
   const fixture = await ciRepairRun(t);

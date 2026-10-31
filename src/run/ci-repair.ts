@@ -159,6 +159,7 @@ export async function repairRequiredChecks(
         input.operator,
         "CI repair failed after two attempts. Resolve checks, then retry.",
         input.signal,
+        true,
       );
       budget.retryAuthorized = true;
       publication.discoveryNotBefore = input.clock.now().getTime() + 30_000;
