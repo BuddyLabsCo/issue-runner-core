@@ -225,13 +225,20 @@ await test("required-check timeout uses configured minutes and operator retry wi
 });
 
 for (const bucket of ["fail", "cancel"] as const) {
-  await test(`${bucket} checks retain their evidence without claiming readiness or successful delivery`, async (t) => {
+  await test(`${bucket} checks retain their evidence when cancellation stops repair startup`, async (t) => {
     const fixture = await publicationRun(t);
     fixture.publicationState.checks = [
       { name: "test", state: "FAILURE", link: "", bucket },
     ];
+    const open = fixture.dependencies.terminalPlugin.createTab.bind(
+      fixture.dependencies.terminalPlugin,
+    );
+    fixture.dependencies.terminalPlugin.createTab = async (options) => {
+      if (options.label.includes("ci_repair")) fixture.controller.abort();
+      return open(options);
+    };
     const result = await fixture.run();
-    assert.equal(result.summary.outcome, "incomplete");
+    assert.equal(result.summary.outcome, "cancelled");
     assert.doesNotMatch(result.summary.reasons.join(" "), /CI-ready/u);
     const saved = await fixture.snapshot();
     assert.equal(saved.publication?.phase, "checks_failed");

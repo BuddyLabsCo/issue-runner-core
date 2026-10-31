@@ -93,13 +93,26 @@ await test("Batch integration waits for every PR, then squashes by creation time
     );
 });
 
-await test("one failed required check holds the entire Batch before integration", async (t) => {
+await test("one failed required check holds the entire Batch while CI repair is pending", async (t) => {
   const fixture = await batchRun(t);
   fixture.state.onChecks = async (number) =>
     number === 82
       ? [{ name: "test", state: "FAILURE", link: "", bucket: "fail" }]
       : [];
-  assert.equal((await fixture.run(["--issue"])).summary.outcome, "incomplete");
+  let repairStarted = false;
+  const create = fixture.dependencies.terminalPlugin.createTab.bind(
+    fixture.dependencies.terminalPlugin,
+  );
+  fixture.dependencies.terminalPlugin.createTab = async (options) => {
+    const tab = await create(options);
+    if (options.label.endsWith(" ci_repair")) {
+      repairStarted = true;
+      fixture.controller.abort();
+    }
+    return tab;
+  };
+  assert.equal((await fixture.run(["--issue"])).summary.outcome, "cancelled");
+  assert.equal(repairStarted, true);
   assert.deepEqual(fixture.requests, []);
   assert.equal(
     fixture.children.every((ticket) => ticket.state === "open"),

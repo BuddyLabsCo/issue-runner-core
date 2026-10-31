@@ -166,7 +166,11 @@ export async function implementationRun(
         state.events.push("fetch");
         return "a".repeat(40);
       },
-      async createWorktree(input: { worktree: string; branch: string }) {
+      async createWorktree(input: {
+        worktree: string;
+        branch: string;
+        base: string;
+      }) {
         state.events.push("worktree");
         state.evidence.worktree = input.worktree;
         state.evidence.branch = input.branch;

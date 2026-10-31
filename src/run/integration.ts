@@ -1,4 +1,4 @@
-import { verifiedPublication } from "./publication.ts";
+import { publishedHead, verifiedPublication } from "./publication.ts";
 import type { LoadedProject } from "../config.ts";
 import type { ImplementationProgress } from "../recovery.ts";
 import type { CodeHost, Ticket, Tracker } from "./contracts.ts";
@@ -34,6 +34,7 @@ export async function integrateImplementation(input: {
     ].includes(publication.phase)
   )
     throw new Error("Integration requires a recorded CI-ready Pull Request");
+  const head = publishedHead(publication);
   const { repository, ticket } = progress;
   const pullRequest = publication.pullRequest;
   const target = `ticket:${ticket}`;
@@ -43,7 +44,7 @@ export async function integrateImplementation(input: {
         repository,
         pullRequest.number,
       );
-      if (state.headSha !== publication.headSha)
+      if (state.headSha !== head)
         throw new Error(
           "Pull Request head changed before integration confirmation",
         );
@@ -147,10 +148,7 @@ export async function integrateImplementation(input: {
       }
     }
   }
-  if (
-    !publication.merge?.merged ||
-    publication.merge.headSha !== publication.headSha
-  )
+  if (!publication.merge?.merged || publication.merge.headSha !== head)
     throw new Error("Delivery requires persisted merge confirmation");
   if (publication.phase === "delivered") {
     if (

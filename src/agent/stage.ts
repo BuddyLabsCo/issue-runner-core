@@ -30,29 +30,49 @@ export interface IssueStageContext {
   signal?: AbortSignal;
 }
 
+const stageDetails = {
+  implement: {
+    name: "implementation",
+    heading: "Implementation",
+    phase: "implementing",
+    completed: "implementation_completed",
+  },
+  review: {
+    name: "Review",
+    heading: "Review",
+    phase: "reviewing",
+    completed: "review_completed",
+  },
+  fix_review: {
+    name: "Review fix",
+    heading: "Fix",
+    phase: "fixing_review",
+    completed: "fix_review_completed",
+  },
+  ci_repair: {
+    name: "CI repair",
+    heading: "CI repair",
+    phase: "repairing_ci",
+    completed: "ci_repair_completed",
+  },
+} as const;
+
 export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
   input: IssueStageContext & {
     stage: StageProgress<R>;
-    purpose: "implement" | "review" | "fix_review";
+    purpose: "implement" | "review" | "fix_review" | "ci_repair";
+    worktree?: string;
     task: () => string | Promise<string>;
     accept: (text: string) => Promise<R>;
   },
 ): Promise<void> {
   const { loaded, progress, stage, purpose, signal, clock, operator } = input;
   const role = purpose === "review" ? "review" : "implement";
-  const name =
-    purpose === "implement"
-      ? "implementation"
-      : purpose === "review"
-        ? "Review"
-        : "Review fix";
-  const heading =
-    purpose === "implement"
-      ? "Implementation"
-      : purpose === "review"
-        ? "Review"
-        : "Fix";
-  const profile = loaded.config.agents[role]!;
+  const { name, heading, phase, completed } = stageDetails[purpose];
+  const profile =
+    loaded.config.agents[purpose === "ci_repair" ? "ciRepair" : role]!;
+  const sessionid = () =>
+    purpose === "ci_repair" ? stage.sessionid : progress.roles[role]?.sessionid;
   const conversations = new NativeConversations(input.terminal, clock, signal);
   const persist = input.persist;
   const assignment = (phase: string) =>
@@ -63,7 +83,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
     );
   const show = (file: string) =>
     operator.write(
-      `Issue #${progress.ticket} ${purpose} sessionid=${progress.roles[role]?.sessionid ?? "pending"} handoff=${file}`,
+      `Issue #${progress.ticket} ${purpose} sessionid=${sessionid() ?? "pending"} handoff=${file}`,
     );
   const sleep = async (ms: number) => {
     signal?.throwIfAborted();
@@ -72,7 +92,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
   };
   await mkdir(path.join(loaded.directory, "handoffs"), { recursive: true });
   await input.withEnvironment(async (env) => {
-    if (!progress.roles[role]) {
+    if (!sessionid()) {
       stage.probe ??= {
         probe_id: randomUUID(),
         path: assignment(`${purpose}-probe`),
@@ -90,12 +110,12 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
     const open = async () =>
       (tab ??= await conversations.open(
         {
-          cwd: progress.worktree,
+          cwd: input.worktree ?? progress.worktree,
           env,
           label: `Issue #${progress.ticket} ${purpose}`,
         },
         profile,
-        progress.roles[role]?.sessionid,
+        sessionid(),
       ));
     const submitWork = async (text: string) => {
       const tab = await open();
@@ -118,7 +138,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
       await conversations.submit(tab, text, profile.submitKey);
       return true;
     };
-    if (!progress.roles[role]) {
+    if (!sessionid()) {
       const tab = await open();
       let probeAssignment = {
         ...stage.probe!,
@@ -127,16 +147,18 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
         project: progress.project,
         repository: progress.repository,
         ticket: progress.ticket,
-        role,
+        role: purpose === "ci_repair" ? "ciRepair" : role,
       };
       const prompt = (error?: string) =>
         `Session Probe\n${JSON.stringify(probeAssignment)}\n\n` +
         (error ? `Correct the previous Probe: ${error}\n` : "") +
         `Determine the actual native conversation sessionid from your native CLI context. Never use a generated ID, tab ID, or latest-session alias. ` +
-        (role === "implement"
+        (purpose === "implement"
           ? `Inspect the repository's AGENTS.md, contribution instructions and PR conventions. Generate complete pr_title and pr_body for ${progress.repository}#${progress.ticket}.\nIssue: ${input.ticket.title ?? ""}\n${input.ticket.body ?? ""}\n`
-          : "Establish only your independent reviewer identity. Do not review or modify the implementation yet.\n") +
-        `Write exactly the assignment fields above plus ${role === "implement" ? "sessionid, pr_title, pr_body" : "sessionid"} as JSON to ${probeAssignment.path}.tmp, close it, and atomically rename it to ${probeAssignment.path}. Do not begin the task yet.`;
+          : purpose === "review"
+            ? "Establish only your independent reviewer identity. Do not review or modify the implementation yet.\n"
+            : "Establish only your native repair identity. Do not begin the task yet.\n") +
+        `Write exactly the assignment fields above plus ${purpose === "implement" ? "sessionid, pr_title, pr_body" : "sessionid"} as JSON to ${probeAssignment.path}.tmp, close it, and atomically rename it to ${probeAssignment.path}. Do not begin the task yet.`;
       await conversations.submit(tab, prompt(), profile.submitKey);
       let previous = "";
       for (;;) {
@@ -153,9 +175,9 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
             if (
               Object.keys(probe).length !==
                 Object.keys(probeAssignment).length +
-                  (role === "implement" ? 3 : 1) ||
+                  (purpose === "implement" ? 3 : 1) ||
               !nonempty(probe.sessionid) ||
-              (role === "implement" &&
+              (purpose === "implement" &&
                 (!nonempty(probe.pr_title) || !nonempty(probe.pr_body))) ||
               [
                 ...(progress.probeIds ?? []),
@@ -167,12 +189,13 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
               ].includes(probe.sessionid)
             )
               throw new Error(
-                role === "implement"
+                purpose === "implement"
                   ? "Probe requires actual native identity and complete PR metadata"
-                  : "Probe requires actual native reviewer identity",
+                  : "Probe requires actual native session identity",
               );
-            progress.roles[role] = { sessionid: probe.sessionid };
-            if (role === "implement") {
+            if (purpose === "ci_repair") stage.sessionid = probe.sessionid;
+            else progress.roles[role] = { sessionid: probe.sessionid };
+            if (purpose === "implement") {
               progress.pr_title = probe.pr_title as string;
               progress.pr_body = probe.pr_body as string;
             }
@@ -232,12 +255,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
         `Fixed PR title: ${progress.pr_title}\nFixed PR body:\n${progress.pr_body}\n\n` +
         `Explicitly invoke the installed issue-runner-handoff skill with this sole absolute output-path argument: ${JSON.stringify(stage.invocation.path)}`;
     }
-    progress.phase =
-      purpose === "implement"
-        ? "implementing"
-        : purpose === "review"
-          ? "reviewing"
-          : "fixing_review";
+    progress.phase = phase;
     await persist();
     show(stage.invocation.path);
     let previous = "";
@@ -303,12 +321,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
         }
         stage.result = result;
         delete stage.pendingPrompt;
-        progress.phase =
-          purpose === "implement"
-            ? "implementation_completed"
-            : purpose === "review"
-              ? "review_completed"
-              : "fix_review_completed";
+        progress.phase = completed;
         await persist();
         signal?.throwIfAborted();
         if (tab) {

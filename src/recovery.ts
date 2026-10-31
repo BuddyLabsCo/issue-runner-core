@@ -38,6 +38,7 @@ export interface ReviewResult {
 }
 
 export interface StageProgress<R> {
+  sessionid?: string;
   probe?: { probe_id: string; path: string };
   invocation?: Invocation;
   pendingPrompt?: string;
@@ -76,6 +77,8 @@ export interface ImplementationProgress extends StageProgress<ExecutionResult> {
     | "review_completed"
     | "fixing_review"
     | "fix_review_completed"
+    | "repairing_ci"
+    | "ci_repair_completed"
     | "publication_eligible";
   roles: Partial<Record<"implement" | "review", { sessionid: string }>>;
   pr_title?: string;
@@ -111,6 +114,26 @@ export interface PublicationProgress {
   merge?: PullRequestState;
   closure?: { state: "closed"; stateReason: "completed" };
   deliveryLabels?: string[];
+  ciRepair?: {
+    consumed: number;
+    generation: number;
+    retryAuthorized?: boolean;
+    attempts: CiRepairProgress[];
+  };
+}
+
+export interface CiRepairProgress extends StageProgress<ExecutionResult> {
+  attempt_id: string;
+  generation: number;
+  worktree: string;
+  branch: string;
+  base: string;
+  failedChecks: RequiredCheck[];
+  worktreeCreated?: boolean;
+  counted?: boolean;
+  verificationError?: string;
+  pendingPush?: string;
+  pushed?: boolean;
 }
 
 export interface BatchProgress {

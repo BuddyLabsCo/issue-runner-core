@@ -21,6 +21,7 @@ import {
 } from "../agent/handoff.ts";
 import type { CodeHost, Ticket, Tracker } from "./contracts.ts";
 import { publishImplementation } from "./publication.ts";
+import { validateCiRepairContext } from "./ci-repair.ts";
 import type { RunContext, RunSummary } from "./run.ts";
 import {
   hasOpenBlocker,
@@ -106,6 +107,8 @@ export async function runStandalone(input: {
         "review_completed",
         "fixing_review",
         "fix_review_completed",
+        "repairing_ci",
+        "ci_repair_completed",
         "publication_eligible",
       ].includes(String(saved.phase))
     )
@@ -138,6 +141,7 @@ export async function runStandalone(input: {
       );
     restored = saved as unknown as ImplementationProgress;
     validateReviewContext(restored, loaded);
+    validateCiRepairContext(restored, loaded);
   }
   const inspect = async (): Promise<{ ticket: Ticket; reason?: string }> => {
     if (input.parentTicket !== undefined) {
@@ -331,7 +335,11 @@ export async function runStandalone(input: {
         accept: (text) => accept(progress, text),
       });
     }
-    if (progress.result?.outcome === "committed" && config.workflow.review)
+    if (
+      progress.result?.outcome === "committed" &&
+      config.workflow.review &&
+      !progress.publication
+    )
       await reviewImplementation({
         ...stageInput,
         ticket: selected.ticket,
@@ -349,6 +357,7 @@ export async function runStandalone(input: {
           persist: () => persist(progress),
           beforeDispatch,
           autoMerge: input.autoMerge,
+          stageInput,
         });
         return integrate(progress, reason);
       } catch (error) {
@@ -366,14 +375,12 @@ export async function runStandalone(input: {
       ],
     };
   };
-  if (restored) {
-    if (!hasRunner || !hasLabel)
-      return {
-        ...summary,
-        reasons: ["Recorded Reservation changed before continuation"],
-      };
-    return execute(restored);
-  }
+  if (restored && (!hasRunner || !hasLabel))
+    return {
+      ...summary,
+      reasons: ["Recorded Reservation changed before continuation"],
+    };
+  if (restored) return execute(restored);
   if (hasRunner || hasLabel)
     return {
       ...summary,
@@ -436,12 +443,7 @@ export async function runStandalone(input: {
     },
   );
   if (selected.reason) return { ...summary, reasons: [selected.reason] };
-  selected = await inspect();
-  if (
-    selected.reason ||
-    !selected.ticket.assignees?.includes(config.tracker.runnerAccount) ||
-    !selected.ticket.labels?.includes(config.tracker.reservationLabel)
-  )
+  if (!(await beforeDispatch()))
     return {
       ...summary,
       reasons: [selected.reason ?? "Reservation changed before dispatch"],

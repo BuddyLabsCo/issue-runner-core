@@ -12,7 +12,10 @@ import {
 } from "./implementation-run.ts";
 import { validConfig } from "./cli-project.ts";
 
-export async function publicationRun(t: TestContext, config = validConfig) {
+export async function publicationRun(
+  t: TestContext,
+  config: Parameters<typeof implementationRun>[1] = validConfig,
+) {
   const fixture = await implementationRun(t, config);
   let now = 0;
   const state = {
@@ -40,8 +43,12 @@ export async function publicationRun(t: TestContext, config = validConfig) {
   };
   fixture.dependencies.gitWorkspace.push = async (_worktree, branch, head) => {
     const saved = await fixture.snapshot();
-    assert.equal(saved.publication?.phase, "pending_push");
-    assert.equal(saved.publication.headSha, head);
+    const repair = saved.publication?.ciRepair?.attempts.at(-1);
+    if (repair) assert.equal(repair.pendingPush, head);
+    else {
+      assert.equal(saved.publication?.phase, "pending_push");
+      assert.equal(saved.publication.headSha, head);
+    }
     state.pushes++;
     await state.onPush(branch, head);
   };
