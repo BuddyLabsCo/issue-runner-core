@@ -203,11 +203,19 @@ export async function implementationRun(
   };
 }
 
-export function committed() {
+export function committed(ticket = 50) {
   return {
     outcome: "committed",
     summary: "Implemented and verified.",
-    commits: [implementationCommit],
+    commits: [
+      {
+        ...implementationCommit,
+        sha:
+          ticket === 50
+            ? implementationCommit.sha
+            : ticket.toString(16).padStart(40, "b"),
+      },
+    ],
     findings_file: null,
   };
 }

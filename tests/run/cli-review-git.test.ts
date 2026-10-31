@@ -46,6 +46,16 @@ await test("real Git rejects reviewer edits, verifies a final-round fix against 
   await git(root, "clone", origin, checkout);
   const fixture = await reviewRun(t, 1, { checkout });
   fixture.dependencies.codeHost.resolveTargetBranch = async () => "main";
+  fixture.dependencies.codeHost.getRemoteBranchHead = async (
+    _repository,
+    branch,
+  ) =>
+    (await git(
+      origin,
+      "for-each-ref",
+      "--format=%(objectname)",
+      `refs/heads/${branch}`,
+    )) || null;
   let implementationHead = "";
   fixture.state.onTask = async (file) => {
     const saved = await fixture.snapshot();
@@ -104,7 +114,7 @@ await test("real Git rejects reviewer edits, verifies a final-round fix against 
     ...fixture.dependencies,
     gitWorkspace: new LocalGitWorkspace("unused-test-token"),
   });
-  assert.match(result.summary.reasons.join(" "), /eligible for publication/u);
+  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
   const saved = await fixture.snapshot();
   assert.equal(saved.phase, "publication_eligible");
   const log = await git(

@@ -70,10 +70,13 @@ for (const scenario of [
     };
     const result = await fixture.run();
     assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
-    assert.match(result.summary.reasons.join(" "), /eligible for publication/u);
+    assert.match(result.summary.reasons.join(" "), /CI-ready/u);
     assert.equal(fixture.reviewState.reviews.length, 1);
     assert.equal(fixture.state.closedTabs.length, 2);
-    assert.deepEqual(fixture.state.sleeps, [10_000, 10_000, 2000]);
+    assert.deepEqual(
+      fixture.state.sleeps.filter((ms) => ms !== 30_000),
+      [10_000, 10_000, 2000],
+    );
     const prompts = fixture.state.submissions.filter(
       (item) =>
         item.text.startsWith("Review assignment") ||
@@ -113,13 +116,16 @@ for (const scenario of [
       await publish(String(assignment.path), invalid);
     };
     const result = await fixture.run();
-    assert.match(result.summary.reasons.join(" "), /eligible for publication/u);
+    assert.match(result.summary.reasons.join(" "), /CI-ready/u);
     assert.equal(reviewProbes, 2);
     assert.equal(fixture.reviewState.reviews.length, 1);
     const round = (await fixture.snapshot()).reviews![0]!;
     assert.equal(round.probeRetries, 1);
     assert.equal(round.corrections, 0);
-    assert.deepEqual(fixture.state.sleeps, [10_000, 10_000, 1000]);
+    assert.deepEqual(
+      fixture.state.sleeps.filter((ms) => ms !== 30_000),
+      [10_000, 10_000, 1000],
+    );
   });
 }
 
@@ -148,10 +154,13 @@ await test("no_change cannot satisfy findings; the correction remains in the fix
     });
   };
   const result = await fixture.run();
-  assert.match(result.summary.reasons.join(" "), /eligible for publication/u);
+  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
   assert.equal(fixture.reviewState.reviews.length, 1);
   assert.equal(fixture.reviewState.fixes.length, 1);
-  assert.deepEqual(fixture.state.sleeps, [10_000, 10_000, 10_000, 2000]);
+  assert.deepEqual(
+    fixture.state.sleeps.filter((ms) => ms !== 30_000),
+    [10_000, 10_000, 10_000, 2000],
+  );
   const prompts = fixture.state.submissions.filter(
     (item) =>
       item.text.startsWith("Fix assignment") ||
@@ -198,7 +207,7 @@ for (const scenario of [
       });
     };
     const result = await fixture.run();
-    assert.match(result.summary.reasons.join(" "), /eligible for publication/u);
+    assert.match(result.summary.reasons.join(" "), /CI-ready/u);
     assert.equal((await fixture.snapshot()).reviews![0]!.fix!.corrections, 1);
   });
 }

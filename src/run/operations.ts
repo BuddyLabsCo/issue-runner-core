@@ -2,6 +2,7 @@ import type { AuditEvent, AuditLog } from "../audit.ts";
 import type { Clock, OperatorIO, RetryPolicy } from "./contracts.ts";
 
 export class OperatorCancelled extends Error {}
+export class OperationStopped extends Error {}
 export class TicketSkipped extends Error {}
 
 export interface OperationOptions<T> {
@@ -156,7 +157,7 @@ export async function supervisedAuditWrite(
   }
 }
 
-async function pauseForOperator(
+export async function pauseForOperator(
   operator: OperatorIO,
   reason: string,
   signal?: AbortSignal,
@@ -220,7 +221,11 @@ async function attemptOperation<T>(
       "failed",
       error instanceof Error ? error.message : String(error),
     );
-    if (error instanceof OperatorCancelled || error instanceof TicketSkipped)
+    if (
+      error instanceof OperatorCancelled ||
+      error instanceof OperationStopped ||
+      error instanceof TicketSkipped
+    )
       throw error;
     const state = await operation.reconcile?.();
     if (state?.outcome !== "completed") {

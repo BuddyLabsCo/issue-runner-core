@@ -11,11 +11,7 @@ import type {
 } from "../../src/run/contracts.ts";
 import { createProject, validConfig } from "./cli-project.ts";
 import { createCliDependencies } from "./cli-dependencies.ts";
-import {
-  committed,
-  implementationCommit,
-  publish,
-} from "./implementation-run.ts";
+import { committed, publish } from "./implementation-run.ts";
 
 export function child(number: number, extra: Partial<Ticket> = {}): Ticket {
   return {
@@ -115,9 +111,11 @@ export async function parentRun(
           };
           const evidence = tabs.get(tab)!;
           evidence.changed = true;
-          evidence.commits = [implementationCommit];
-          dispatched.push(Number(/ticket-(\d+)$/u.exec(evidence.worktree)![1]));
-          await publish(assignment.path, committed());
+          const number = Number(/ticket-(\d+)$/u.exec(evidence.worktree)![1]);
+          const result = committed(number);
+          evidence.commits = result.commits;
+          dispatched.push(number);
+          await publish(assignment.path, result);
         }
       },
       async closeTab(tab: object) {

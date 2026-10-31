@@ -206,6 +206,7 @@ for (const response of ["", "q"] as const) {
       return inspect(input);
     };
     fixture.dependencies.clock.sleep = async (ms) => {
+      if (ms === 30_000) return;
       assert.equal(ms, 10_000);
       starting.resolve();
       await paused.promise;

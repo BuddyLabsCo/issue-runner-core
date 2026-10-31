@@ -116,7 +116,10 @@ await test("a transient close failure retries the same owned handle after the op
   assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
   assert.equal(attempts, 2);
   assert.equal(fixture.state.closedTabs[0], fixture.state.closedTabs[1]);
-  assert.deepEqual(fixture.state.sleeps, [10_000, 1_000]);
+  assert.deepEqual(
+    fixture.state.sleeps.filter((ms) => ms !== 30_000),
+    [10_000, 1_000],
+  );
   assert.equal(fixture.state.taskCount, 1);
   assert.equal((await fixture.snapshot()).phase, "implementation_completed");
 });

@@ -29,7 +29,10 @@ await test("a final published before observation wins over temporary and unrelat
   assert.equal(saved.phase, "implementation_completed");
   assert.equal(saved.result?.summary, "Assigned final.");
   assert.equal(saved.corrections, 0);
-  assert.deepEqual(fixture.state.sleeps, [10_000]);
+  assert.deepEqual(
+    fixture.state.sleeps.filter((ms) => ms !== 30_000),
+    [10_000],
+  );
   assert.equal(fixture.state.closedTabs.length, 1);
 });
 
@@ -181,7 +184,7 @@ await test("overwrites during validation and after acceptance cannot change the 
   let validations = 0;
   fixture.dependencies.gitWorkspace.inspect = async () => {
     const evidence = await inspect();
-    if (fixture.state.taskCount > 0) {
+    if (fixture.state.taskCount > 0 && fixture.state.closedTabs.length === 0) {
       validations += 1;
       await publish(fixture.state.expectedPath, {
         outcome: "no_change",
@@ -202,7 +205,10 @@ await test("overwrites during validation and after acceptance cannot change the 
   assert.equal(accepted.phase, "implementation_completed");
   assert.equal(validations, 1);
   assert.equal(fixture.state.closedTabs.length, 1);
-  assert.deepEqual(fixture.state.sleeps, [10_000]);
+  assert.deepEqual(
+    fixture.state.sleeps.filter((ms) => ms !== 30_000),
+    [10_000],
+  );
   assert.equal(await readFile(fixture.state.expectedPath, "utf8"), "{");
   assert.deepEqual(
     (await readdir(path.join(fixture.directory, "handoffs"))).sort(),
@@ -215,7 +221,10 @@ await test("overwrites during validation and after acceptance cannot change the 
   assert.deepEqual((await fixture.snapshot()).result, committed());
   assert.equal(fixture.state.taskCount, 1);
   assert.equal(fixture.state.closedTabs.length, 1);
-  assert.deepEqual(fixture.state.sleeps, [10_000]);
+  assert.deepEqual(
+    fixture.state.sleeps.filter((ms) => ms !== 30_000),
+    [10_000],
+  );
 });
 
 await test("concurrent executions with the same timestamp cannot consume each other's submissions", async (t) => {

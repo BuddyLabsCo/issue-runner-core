@@ -56,7 +56,7 @@ await test("an interrupted fix retains findings and uncommitted work and resumes
     ...fixture.dependencies,
     signal: new AbortController().signal,
   });
-  assert.match(result.summary.reasons.join(" "), /eligible for publication/u);
+  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
   assert.deepEqual(
     fixture.state.submissions.slice(before).map((item) => item.text),
     ['any-cli --resume "native/$&/$`/$\'/session"', "continue"],
@@ -92,7 +92,7 @@ await test("an interrupted later Review resumes the original reviewer with its p
     ...fixture.dependencies,
     signal: new AbortController().signal,
   });
-  assert.match(result.summary.reasons.join(" "), /eligible for publication/u);
+  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
   assert.deepEqual(
     fixture.state.submissions.slice(before).map((item) => item.text),
     ['review-cli resume "review-native/$&"', "continue"],
@@ -139,7 +139,7 @@ for (const stage of ["review", "fix"] as const) {
         },
       },
     });
-    assert.match(result.summary.reasons.join(" "), /eligible for publication/u);
+    assert.match(result.summary.reasons.join(" "), /CI-ready/u);
     assert.equal(fixture.state.submissions.length, before);
     assert.equal((await fixture.snapshot()).phase, "publication_eligible");
   });
@@ -148,15 +148,9 @@ for (const stage of ["review", "fix"] as const) {
 await test("a completed Review/fix checkpoint revalidates all accumulated commits without redispatch", async (t) => {
   const fixture = await reviewRun(t, 1);
   fixture.reviewState.onReview = findings;
-  assert.match(
-    (await fixture.run()).summary.reasons.join(" "),
-    /eligible for publication/u,
-  );
+  assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/u);
   const before = fixture.state.submissions.length;
-  assert.match(
-    (await fixture.run()).summary.reasons.join(" "),
-    /eligible for publication/u,
-  );
+  assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/u);
   assert.equal(fixture.state.submissions.length, before);
 });
 
@@ -192,10 +186,7 @@ for (const mismatch of ["dirty", "wrong branch"] as const) {
     fixture.state.evidence.clean = true;
     fixture.state.evidence.branch = saved.branch;
     const recovered = await resume();
-    assert.match(
-      recovered.summary.reasons.join(" "),
-      /eligible for publication/u,
-    );
+    assert.match(recovered.summary.reasons.join(" "), /CI-ready/u);
     assert.equal((await fixture.snapshot()).phase, "publication_eligible");
     assert.equal(fixture.state.submissions.length, before);
     assert.deepEqual((await fixture.snapshot()).reviews, saved.reviews);
@@ -262,6 +253,7 @@ await test("Review correction exhaustion survives restart and accepts manual ove
   assert.equal(round.superseded.length, 1);
   const before = fixture.state.submissions.length;
   fixture.state.onSleep = async (ms) => {
+    if (ms === 30_000) return;
     assert.equal(ms, 250);
     await publish(round.invocation!.path, passed());
   };
@@ -275,7 +267,7 @@ await test("Review correction exhaustion survives restart and accepts manual ove
       },
     },
   });
-  assert.match(result.summary.reasons.join(" "), /eligible for publication/u);
+  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
   assert.equal(fixture.state.submissions.length, before);
   assert.equal((await fixture.snapshot()).reviews![0]!.corrections, 1);
 });
@@ -296,7 +288,7 @@ await test("a withheld Review assignment retains its invocation and resumes only
   const before = fixture.state.submissions.length;
   fixture.state.ticket.labels!.push("ready-for-agent");
   const result = await fixture.run();
-  assert.match(result.summary.reasons.join(" "), /eligible for publication/u);
+  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
   assert.deepEqual(
     fixture.state.submissions.slice(before).map((item) => item.text),
     ['review-cli resume "review-native/$&"', pending],
@@ -349,6 +341,6 @@ await test("failed findings cleanup retains the completed checkpoint and retries
   await rmdir(saved.reviews![0]!.findings);
   const before = fixture.state.submissions.length;
   const result = await fixture.run();
-  assert.match(result.summary.reasons.join(" "), /eligible for publication/u);
+  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
   assert.equal(fixture.state.submissions.length, before);
 });

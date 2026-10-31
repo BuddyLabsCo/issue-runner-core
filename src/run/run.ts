@@ -62,12 +62,25 @@ export async function runProject(
     ? AbortSignal.any([context.signal, controller.signal])
     : controller.signal;
   const operator = serializeOperator(context.operator, controller, signal);
+  const host = codeHost;
+  codeHost = {
+    resolveTargetBranch: (repository) => host.resolveTargetBranch(repository),
+    getRemoteBranchHead: (repository, branch) =>
+      host.getRemoteBranchHead(repository, branch),
+    listPullRequests: (repository) => host.listPullRequests(repository),
+    getRequiredChecks: (repository, pullRequest) =>
+      host.getRequiredChecks(repository, pullRequest),
+    createPullRequest: (input) =>
+      operator.advance(() => host.createPullRequest(input)),
+  };
   const { git, terminal } = context;
   context = {
     ...context,
     signal,
     operator,
     git: {
+      push: (worktree, branch, headSha) =>
+        operator.advance(() => git.push(worktree, branch, headSha)),
       fetchTargetBranch: (checkout, branch) =>
         git.fetchTargetBranch(checkout, branch),
       inspect: (input) => git.inspect(input),
@@ -157,6 +170,8 @@ export async function runProject(
       summary,
       read,
       fetchBase,
+      codeHost,
+      autoMerge: options.autoMerge,
     });
   if (options.selector === "document") {
     return {
@@ -228,6 +243,8 @@ export async function runProject(
         summary,
         read,
         fetchBase,
+        codeHost,
+        autoMerge: options.autoMerge,
       });
     } catch (error) {
       controller.abort(error);

@@ -35,7 +35,7 @@ async function git(cwd: string, ...args: string[]) {
   return stdout.trim();
 }
 
-for (const scenario of ["changed", "empty"] as const) {
+for (const scenario of ["changed", "empty", "remote-advance"] as const) {
   await test(`a real Git ${scenario} commit is independently checked through a complete Run`, async (t) => {
     const root = await mkdtemp(path.join(tmpdir(), "core-git "));
     t.after(() => rm(root, { recursive: true, force: true }));
@@ -54,9 +54,37 @@ for (const scenario of ["changed", "empty"] as const) {
       agentRetry: 0,
     });
     fixture.dependencies.codeHost.resolveTargetBranch = async () => "main";
+    let observations = 0;
+    let advancedHead = "";
+    fixture.dependencies.codeHost.getRemoteBranchHead = async (
+      _repository,
+      branch,
+    ) => {
+      const observed =
+        (await git(
+          origin,
+          "for-each-ref",
+          "--format=%(objectname)",
+          `refs/heads/${branch}`,
+        )) || null;
+      if (scenario === "remote-advance" && ++observations === 2) {
+        // Advance after the observation, before Core's real non-forced push.
+        await git(origin, "switch", "-c", branch);
+        await writeFile(path.join(origin, "someone-else.txt"), "remote work\n");
+        await git(origin, "add", ".");
+        await git(origin, "commit", "-m", "Someone else's work");
+        advancedHead = await git(origin, "rev-parse", "HEAD");
+      }
+      return observed;
+    };
+    if (scenario === "remote-advance")
+      fixture.dependencies.operator.pause = async (message) => {
+        assert.match(message, /advanced or disappeared/u);
+        return "q";
+      };
     fixture.state.onTask = async (file) => {
       const progress = await fixture.snapshot();
-      if (scenario === "changed") {
+      if (scenario !== "empty") {
         await writeFile(
           path.join(progress.worktree, "feature.txt"),
           "implementation\n",
@@ -98,10 +126,19 @@ for (const scenario of ["changed", "empty"] as const) {
     );
     assert.equal(
       progress.phase,
-      scenario === "changed" ? "implementation_completed" : "implementing",
+      scenario !== "empty" ? "implementation_completed" : "implementing",
     );
     assert.equal(await git(checkout, "branch", "--show-current"), "main");
     assert.equal(await git(checkout, "rev-parse", "HEAD"), base);
+    if (scenario !== "empty") {
+      assert.equal(
+        await git(origin, "rev-parse", `refs/heads/${progress.branch}`),
+        scenario === "remote-advance"
+          ? advancedHead
+          : progress.result!.commits[0]!.sha,
+      );
+      assert.equal(await git(origin, "rev-parse", "refs/heads/main"), base);
+    }
   });
 }
 
@@ -126,6 +163,16 @@ await test("a concurrent Batch uses a fresh fetched base and isolated real Git W
     maxBatchSize: 2,
   });
   fixture.dependencies.codeHost.resolveTargetBranch = async () => "main";
+  fixture.dependencies.codeHost.getRemoteBranchHead = async (
+    _repository,
+    branch,
+  ) =>
+    (await git(
+      origin,
+      "for-each-ref",
+      "--format=%(objectname)",
+      `refs/heads/${branch}`,
+    )) || null;
   const tabs = new Map<object, CreateTabOptions>();
   const closed = new Set<object>();
   const configs: string[] = [];

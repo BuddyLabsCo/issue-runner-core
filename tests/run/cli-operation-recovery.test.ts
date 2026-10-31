@@ -225,7 +225,7 @@ for (const operation of ["addLabel", "addAssignee"] as const) {
     assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
     assert.equal(mutations, 1);
     assert.deepEqual(fixture.dependencies.pauses, []);
-    assert.deepEqual(fixture.state.sleeps, [10_000]);
+    assert.deepEqual(fixture.state.sleeps, [10_000, 30_000]);
     assert.equal(fixture.state.taskCount, 1);
   });
 }
