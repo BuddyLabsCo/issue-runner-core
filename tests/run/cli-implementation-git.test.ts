@@ -179,6 +179,99 @@ for (const scenario of [
             message.includes(progress.worktree),
         ),
       );
+      const before = fixture.state.submissions.length;
+      const controller = new AbortController();
+      const terminal = fixture.dependencies.terminalPlugin;
+      fixture.state.onSleep = async (ms) => {
+        if (ms === 250) controller.abort();
+      };
+      const resumed = await executeCli(implementationCommand, {
+        ...fixture.dependencies,
+        signal: controller.signal,
+        gitWorkspace: new LocalGitWorkspace("unused-local-test-token"),
+        terminalPlugin: {
+          ...terminal,
+          async createTab(options) {
+            assert.equal(options.cwd, progress.worktree);
+            assert.match(
+              await git(options.cwd, "status", "--porcelain"),
+              /M {2}README\.md\n\?\? untracked\.txt/u,
+            );
+            return terminal.createTab(options);
+          },
+        },
+      });
+      assert.equal(resumed.summary.outcome, "cancelled");
+      assert.deepEqual(
+        fixture.state.submissions.slice(before).map(({ text }) => text),
+        ['any-cli --resume "native/$&/$`/$\'/session"', "continue"],
+      );
+      assert.equal(
+        await git(progress.worktree, "diff", "--cached", "--name-only"),
+        "README.md",
+      );
+      assert.equal(
+        await readFile(path.join(progress.worktree, "untracked.txt"), "utf8"),
+        "unfinished work\n",
+      );
+      assert.deepEqual(
+        (await fixture.snapshot()).invocation,
+        progress.invocation,
+      );
+
+      // The stopped native conversation finishes in its original working context.
+      await git(progress.worktree, "add", ".");
+      await git(
+        progress.worktree,
+        "commit",
+        "-m",
+        "feat: finish retained work",
+      );
+      const handoff = {
+        outcome: "committed",
+        summary: "Finished preserved local work while Runner was stopped.",
+        commits: [
+          {
+            sha: await git(progress.worktree, "rev-parse", "HEAD"),
+            message: "feat: finish retained work",
+          },
+        ],
+        findings_file: null,
+      };
+      await publish(progress.invocation!.path, handoff);
+      const recovered = await executeCli(implementationCommand, {
+        ...fixture.dependencies,
+        signal: new AbortController().signal,
+        gitWorkspace: new LocalGitWorkspace("unused-local-test-token"),
+        terminalPlugin: {
+          async createTab() {
+            assert.fail("a valid result produced while stopped needs no tab");
+          },
+          async submitText() {
+            assert.fail("the completed assignment must not be replayed");
+          },
+          async closeTab() {
+            assert.fail("old opaque handles do not survive restart");
+          },
+        },
+      });
+      assert.match(recovered.summary.reasons.join(" "), /CI-ready/u);
+      const completed = await fixture.snapshot();
+      assert.deepEqual(completed.result, handoff);
+      assert.equal(completed.execution_id, progress.execution_id);
+      assert.equal(completed.worktree, progress.worktree);
+      assert.equal(completed.pr_title, progress.pr_title);
+      assert.equal(completed.pr_body, progress.pr_body);
+      assert.deepEqual(completed.invocation, progress.invocation);
+      assert.deepEqual(completed.roles, progress.roles);
+      assert.equal(fixture.state.taskCount, 1);
+      assert.equal(fixture.state.probeCount, 1);
+      assert.equal(await git(progress.worktree, "status", "--porcelain"), "");
+      assert.equal(
+        await git(origin, "rev-parse", `refs/heads/${progress.branch}`),
+        handoff.commits[0]!.sha,
+      );
+      assert.equal(await git(origin, "rev-parse", "refs/heads/main"), base);
     }
     if (scenario !== "empty" && scenario !== "dirty-cancel") {
       assert.equal(
