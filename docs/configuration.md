@@ -309,11 +309,13 @@ With `--no-auto-merge`, a CI-ready unmerged PR retains its remote branch, origin
 
 ### Confirmed integration and Issue delivery
 
-Auto-merge defaults on. Runner waits for every PR in the Batch to become CI-ready before integrating any PR. It integrates serially by ascending PR creation time, then PR number. A failed required check holds the Batch before integration.
+Auto-merge defaults on. Runner waits for every PR in the Batch to become CI-ready before integrating any PR. Earlier implementation completion or passing checks cannot bypass this barrier. Once the Batch is ready, Runner integrates serially by ascending PR creation time, then PR number, regardless of Issue selection or implementation completion order.
 
 Runner requests squash integration against the observed HEAD with `codeHost.adminMerge` controlling the admin flag. After CI or conflict repair, it requires the latest verified and pushed repair HEAD while retaining the original publication metadata. A changed HEAD or closed, unmerged PR cannot earn delivery credit. Queue admission only starts the confirmation wait. Runner polls every 10 seconds within `timeouts.mergeQueueMinutes`; a timeout enters Operator Pause. Enter refreshes remote state and starts another configured wait window; q/EOF cancels.
 
-Explicit conflict evidence starts repair using `agents.conflictRepair`: either the host reports `conflicting`, or the squash request returns an explicit conflict. Unknown mergeability and generic rejections do not start repair. Other rejections preserve their original cause through ordinary operation retries and Operator Pause. A later failure stops ordered integration without rolling back earlier confirmed deliveries.
+Runner confirms each merge and completed Issue closure before starting the next PR's integration. A later failure stops ordered integration without rolling back earlier confirmed deliveries; their saved merge and closure evidence remains intact. Runner does not update or repush every remaining branch merely because the Target Branch advanced.
+
+Explicit conflict evidence starts repair using `agents.conflictRepair`: either the host reports `conflicting`, or the squash request returns an explicit conflict. Unknown mergeability and generic rejections do not start repair. Other rejections preserve their original cause through ordinary operation retries and Operator Pause.
 
 Each conflict attempt starts a fresh native conversation in a separate repair Worktree and local branch from the latest verified PR head. Runner fetches the current Target Branch SHA and supplies it with the conflict, Issue, PR URL, Git context, and fixed PR metadata. The Agent merges that SHA locally and resolves conflicts. Runner verifies the original-head ancestry, fetched-target ancestry, branch, base, cleanliness, actual changes, and exact commit claims before pushing to the original remote branch. It never force-pushes, recreates the PR, or enters ordinary Review.
 
@@ -513,7 +515,7 @@ remote branch, and rejection of empty repair commits. Conflict-repair Runs cover
 explicit evidence, queued conflicts, independent budgets and authorized generations,
 conflict-to-CI handoff, recovery, and lost push responses. Real Git conflict repairs
 merge an advanced target and reject repairs missing its ancestry.
-Integration Runs verify the Batch CI barrier and ordering, queued merge confirmation,
+Integration Runs control implementation completion and check readiness for parent and Issue List Batches, verify creation-time/PR-number ordering and serial merge confirmation, and retain exact partial delivery checkpoints after a later rejection or conflict. They also cover queued merge confirmation,
 closure policies and observation waits, lost responses, changed HEAD rejection,
 delivery-time labels, and recovery without replaying confirmed operations.
 Focused real Git Runs verify fresh bases,
