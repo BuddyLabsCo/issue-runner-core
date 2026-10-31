@@ -396,11 +396,17 @@ await test("recovery rejects corrupted conflict ownership, target ancestry conte
     else delete attempt[field];
     await writeFile(file, JSON.stringify(saved));
     fixture.dependencies.signal = new AbortController().signal;
+    fixture.dependencies.operator.pause = async (message) => {
+      assert.equal(
+        message,
+        "Enter to restart the entire Issue #50, or q to exit Runner.",
+      );
+      return "q";
+    };
     const result = await fixture.run();
-    assert.equal(result.summary.outcome, "failed", field);
-    assert.match(
-      result.summary.reasons.join(" "),
-      /unable to recover.*conflict repair/u,
+    assert.equal(result.summary.outcome, "cancelled", field);
+    assert.ok(
+      fixture.dependencies.messages.includes("unable to recover"),
       field,
     );
   }

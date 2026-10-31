@@ -222,12 +222,19 @@ for (const missing of [
     const [file] = await readdir(recovery);
     await writeFile(path.join(recovery, file!), JSON.stringify(saved));
     const before = fixture.state.submissions.length;
+    fixture.dependencies.operator.pause = async (message) => {
+      assert.equal(
+        message,
+        "Enter to restart the entire Issue #50, or q to exit Runner.",
+      );
+      return "q";
+    };
     const result = await executeCli(implementationCommand, {
       ...fixture.dependencies,
       signal: new AbortController().signal,
     });
-    assert.equal(result.summary.outcome, "failed");
-    assert.match(result.summary.reasons.join(" "), /unable to recover/u);
+    assert.equal(result.summary.outcome, "cancelled");
+    assert.ok(fixture.dependencies.messages.includes("unable to recover"));
     assert.equal(fixture.state.submissions.length, before);
   });
 }

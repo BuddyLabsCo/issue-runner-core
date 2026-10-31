@@ -59,9 +59,16 @@ await test("an execution checkpoint from another input scope cannot resume or ov
   ]) {
     const text = JSON.stringify({ ...saved, ...patch });
     await writeFile(file, text);
+    fixture.dependencies.operator.pause = async (message) => {
+      assert.equal(
+        message,
+        "Enter to restart the entire Issue #50, or q to exit Runner.",
+      );
+      return "q";
+    };
     const result = await fixture.run();
-    assert.equal(result.summary.outcome, "failed", JSON.stringify(result));
-    assert.match(result.summary.reasons.join("; "), /unable to recover/u);
+    assert.equal(result.summary.outcome, "cancelled", JSON.stringify(result));
+    assert.ok(fixture.dependencies.messages.includes("unable to recover"));
     assert.equal(await readFile(file, "utf8"), text);
     assert.equal(fixture.state.submissions.length, submissions);
     assert.deepEqual(fixture.state.cleanup, []);

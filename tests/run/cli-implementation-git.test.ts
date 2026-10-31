@@ -40,6 +40,7 @@ for (const scenario of [
   "empty",
   "remote-advance",
   "dirty-cancel",
+  "restart",
 ] as const) {
   await test(`a real Git ${scenario} execution is independently checked through a complete Run`, async (t) => {
     const root = await mkdtemp(path.join(tmpdir(), "core-git "));
@@ -89,7 +90,7 @@ for (const scenario of [
       };
     fixture.state.onTask = async (file) => {
       const progress = await fixture.snapshot();
-      if (scenario === "dirty-cancel") {
+      if (scenario === "dirty-cancel" || scenario === "restart") {
         await writeFile(
           path.join(progress.worktree, "README.md"),
           "uncommitted edit\n",
@@ -145,7 +146,9 @@ for (const scenario of [
     );
     assert.equal(
       progress.phase,
-      scenario === "empty" || scenario === "dirty-cancel"
+      scenario === "empty" ||
+        scenario === "dirty-cancel" ||
+        scenario === "restart"
         ? "implementing"
         : "implementation_completed",
     );
@@ -159,6 +162,57 @@ for (const scenario of [
       await git(checkout, "rev-parse", `refs/heads/${progress.branch}`),
       await git(progress.worktree, "rev-parse", "HEAD"),
     );
+    if (scenario === "restart") {
+      const oldStatus = await git(progress.worktree, "status", "--porcelain");
+      const checkpoint = path.join(
+        fixture.directory,
+        "recovery",
+        `${progress.input_hash}-50.json`,
+      );
+      await publish(checkpoint, { ...progress, roles: {} });
+      const controller = new AbortController();
+      fixture.dependencies.operator.pause = async (message) => {
+        assert.equal(
+          message,
+          "Enter to restart the entire Issue #50, or q to exit Runner.",
+        );
+        return "";
+      };
+      fixture.state.onTask = async () => {
+        const fresh = await fixture.snapshot();
+        assert.equal(await git(fresh.worktree, "status", "--porcelain"), "");
+        controller.abort();
+      };
+      const restarted = await executeCli(implementationCommand, {
+        ...fixture.dependencies,
+        signal: controller.signal,
+        gitWorkspace: new LocalGitWorkspace("unused-local-test-token"),
+      });
+      assert.equal(
+        restarted.summary.outcome,
+        "cancelled",
+        JSON.stringify(restarted),
+      );
+      const fresh = await fixture.snapshot();
+      assert.notEqual(fresh.worktree, progress.worktree);
+      assert.notEqual(fresh.branch, progress.branch);
+      assert.equal(
+        await git(progress.worktree, "status", "--porcelain"),
+        oldStatus,
+      );
+      for (const branch of [progress.branch, fresh.branch])
+        assert.equal(
+          await git(checkout, "rev-parse", `refs/heads/${branch}`),
+          base,
+        );
+      assert.equal(
+        await readFile(path.join(progress.worktree, "untracked.txt"), "utf8"),
+        "unfinished work\n",
+      );
+      assert.equal(fixture.state.probeCount, 2);
+      assert.equal(fixture.state.taskCount, 2);
+      return;
+    }
     if (scenario === "dirty-cancel") {
       assert.match(
         await git(progress.worktree, "status", "--porcelain"),
