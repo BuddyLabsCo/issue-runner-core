@@ -119,6 +119,7 @@ export async function runBatch(
     outcome:
       (selection.batch.length === 0 && tickets.length === 0) ||
       (options.selector === "issue" &&
+        delivered.length === 0 &&
         tickets.every((ticket) => ticket.state === "closed"))
         ? "no_work"
         : (options.selector === "parent" &&
