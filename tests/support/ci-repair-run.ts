@@ -21,6 +21,7 @@ export const failedCheck = {
 export async function ciRepairRun(
   t: TestContext,
   config: Parameters<typeof publicationRun>[1] = validConfig,
+  kind: "ci" | "conflict" = "ci",
 ) {
   const fixture = await publicationRun(t, config);
   const workspaces = new Map<string, WorkspaceEvidence>();
@@ -39,10 +40,20 @@ export async function ciRepairRun(
       });
     },
   };
+  const other = {
+    ...repairs,
+    tasks: [] as string[],
+    probes: [] as string[],
+    continuations: [] as string[],
+  };
+  const scripts = {
+    ci: kind === "ci" ? repairs : other,
+    conflict: kind === "conflict" ? repairs : other,
+  };
   const git = fixture.dependencies.gitWorkspace;
   const create = git.createWorktree.bind(git);
   git.createWorktree = async (input) => {
-    if (!input.branch.includes("ci-repair")) return create(input);
+    if (!/-(ci|conflict)-repair-/u.test(input.branch)) return create(input);
     await mkdir(input.worktree, { recursive: true });
     workspaces.set(input.worktree, {
       ...input,
@@ -70,25 +81,35 @@ export async function ciRepairRun(
   terminal.submitText = async (tab, text, chord) => {
     const evidence = workspaces.get(tabs.get(tab)!);
     if (!evidence) return submit(tab, text, chord);
+    const kind = evidence.branch.includes("conflict-repair")
+      ? "conflict"
+      : "ci";
+    const repairs = scripts[kind];
     fixture.state.submissions.push({ tab, text, ...(chord ? { chord } : {}) });
     if (text.startsWith("Session Probe\n")) {
       repairs.probes.push(text);
       const assignment = JSON.parse(text.split("\n")[1]!) as { path: string };
       await publish(assignment.path, {
         ...assignment,
-        sessionid: `ci-session-${repairs.probes.length}`,
+        sessionid: `${kind}-session-${repairs.probes.length}`,
       });
-    } else if (text.startsWith("CI repair assignment\n")) {
+    } else if (
+      text.startsWith(
+        `${kind === "ci" ? "CI" : "Conflict"} repair assignment\n`,
+      )
+    ) {
       repairs.tasks.push(text);
       const assignment = JSON.parse(text.split("\n")[1]!) as { path: string };
       await repairs.onTask(assignment.path, evidence);
     } else if (
       text === "continue" ||
-      text.startsWith("Correct the CI repair handoff:")
+      text.startsWith(
+        `Correct the ${kind === "ci" ? "CI" : "Conflict"} repair handoff:`,
+      )
     ) {
-      const attempt = (
-        await fixture.snapshot()
-      ).publication!.ciRepair!.attempts.at(-1)!;
+      const attempt = (await fixture.snapshot()).publication![
+        kind === "ci" ? "ciRepair" : "conflictRepair"
+      ]!.attempts.at(-1)!;
       repairs.continuations.push(text);
       await repairs.onTask(attempt.invocation!.path, evidence);
     }
@@ -102,5 +123,5 @@ export async function ciRepairRun(
   };
   fixture.publicationState.onChecks = async () =>
     fixture.publicationState.pushes === 1 ? [failedCheck] : [];
-  return { ...fixture, repairs, workspaces };
+  return { ...fixture, repairs, scripts, workspaces };
 }

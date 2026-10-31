@@ -44,6 +44,8 @@ export function validateReviewContext(
         "implementation_completed",
         "repairing_ci",
         "ci_repair_completed",
+        "repairing_conflict",
+        "conflict_repair_completed",
       ].includes(progress.phase)
     )
       throw invalid();

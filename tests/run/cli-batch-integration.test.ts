@@ -11,6 +11,7 @@ import { validConfig } from "../support/cli-project.ts";
 import {
   deferred,
   implementationProgress,
+  publish,
 } from "../support/implementation-run.ts";
 
 async function batchRun(t: TestContext) {
@@ -277,6 +278,32 @@ await test("one failed required check holds the entire Batch while CI repair is 
 for (const failure of ["rejected", "conflict"] as const) {
   await test(`a later ${failure} merge retains earlier confirmed delivery without rollback or overtaking`, async (t) => {
     const fixture = await batchRun(t);
+    let repairAttempts = 0;
+    const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+      fixture.dependencies.terminalPlugin,
+    );
+    fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+      if (text.startsWith("Session Probe\n")) {
+        const assignment = JSON.parse(text.split("\n")[1]!) as {
+          path: string;
+          role: string;
+        };
+        if (assignment.role !== "conflictRepair") return submit(tab, text);
+        await publish(assignment.path, {
+          ...assignment,
+          sessionid: `conflict-session-${repairAttempts}`,
+        });
+      } else if (text.startsWith("Conflict repair assignment\n")) {
+        const assignment = JSON.parse(text.split("\n")[1]!) as { path: string };
+        repairAttempts++;
+        await publish(assignment.path, {
+          outcome: "no_change",
+          summary: "Conflict remains unresolved",
+          commits: [],
+          findings_file: null,
+        });
+      } else await submit(tab, text);
+    };
     let deliveredBeforeFailure:
       Awaited<ReturnType<typeof implementationProgress>> | undefined;
     fixture.state.onMerge = async (number) => {
@@ -296,13 +323,16 @@ for (const failure of ["rejected", "conflict"] as const) {
       return { outcome: "accepted" };
     };
     fixture.dependencies.operator.pause = async (message) => {
-      assert.match(message, /merge forbidden/u);
+      assert.match(
+        message,
+        failure === "rejected"
+          ? /merge forbidden/u
+          : /Conflict repair failed after two attempts/u,
+      );
       return "q";
     };
-    assert.equal(
-      (await fixture.run(["--issue"])).summary.outcome,
-      failure === "rejected" ? "cancelled" : "incomplete",
-    );
+    assert.equal((await fixture.run(["--issue"])).summary.outcome, "cancelled");
+    assert.equal(repairAttempts, failure === "conflict" ? 2 : 0);
     assert.deepEqual(
       fixture.requests,
       failure === "rejected" ? [82, 83, 83] : [82, 83],
@@ -321,7 +351,9 @@ for (const failure of ["rejected", "conflict"] as const) {
         delivered
           ? "delivered"
           : publication.pullRequest!.number === 83
-            ? "pending_merge"
+            ? failure === "conflict"
+              ? "conflict_repair"
+              : "pending_merge"
             : "checks_ready",
       );
       const ticket = fixture.children.find(

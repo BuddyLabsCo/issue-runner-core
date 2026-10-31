@@ -10,7 +10,7 @@ import {
 } from "../support/ci-repair-run.ts";
 import { validConfig } from "../support/cli-project.ts";
 import {
-  implementationCommand,
+  deliveryCommand as implementationCommand,
   implementationCommit,
   publish,
 } from "../support/implementation-run.ts";

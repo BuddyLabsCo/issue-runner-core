@@ -5,7 +5,7 @@ import { readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { executeCli } from "../../src/cli.ts";
 import {
-  implementationCommand,
+  deliveryCommand as implementationCommand,
   implementationCommit,
 } from "../support/implementation-run.ts";
 import { publicationRun } from "../support/publication-run.ts";

@@ -43,7 +43,10 @@ export async function publicationRun(
   };
   fixture.dependencies.gitWorkspace.push = async (_worktree, branch, head) => {
     const saved = await fixture.snapshot();
-    const repair = saved.publication?.ciRepair?.attempts.at(-1);
+    const repair = [
+      ...(saved.publication?.ciRepair?.attempts ?? []),
+      ...(saved.publication?.conflictRepair?.attempts ?? []),
+    ].find((attempt) => attempt.pendingPush === head);
     if (repair) assert.equal(repair.pendingPush, head);
     else {
       assert.equal(saved.publication?.phase, "pending_push");

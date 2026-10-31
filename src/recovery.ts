@@ -79,6 +79,8 @@ export interface ImplementationProgress extends StageProgress<ExecutionResult> {
     | "fix_review_completed"
     | "repairing_ci"
     | "ci_repair_completed"
+    | "repairing_conflict"
+    | "conflict_repair_completed"
     | "publication_eligible";
   roles: Partial<Record<"implement" | "review", { sessionid: string }>>;
   pr_title?: string;
@@ -95,6 +97,7 @@ export interface PublicationProgress {
     | "pr_created"
     | "checks_ready"
     | "checks_failed"
+    | "conflict_repair"
     | "pending_merge"
     | "merge_requested"
     | "merged"
@@ -114,21 +117,27 @@ export interface PublicationProgress {
   merge?: PullRequestState;
   closure?: { state: "closed"; stateReason: "completed" };
   deliveryLabels?: string[];
-  ciRepair?: {
-    consumed: number;
-    generation: number;
-    retryAuthorized?: boolean;
-    attempts: CiRepairProgress[];
-  };
+  conflict?: string;
+  ciRepair?: RepairBudget;
+  conflictRepair?: RepairBudget;
 }
 
-export interface CiRepairProgress extends StageProgress<ExecutionResult> {
+export interface RepairBudget {
+  consumed: number;
+  generation: number;
+  retryAuthorized?: boolean;
+  attempts: RepairProgress[];
+}
+
+export interface RepairProgress extends StageProgress<ExecutionResult> {
   attempt_id: string;
   generation: number;
   worktree: string;
   branch: string;
   base: string;
   failedChecks: RequiredCheck[];
+  targetBase?: string;
+  conflict?: string;
   worktreeCreated?: boolean;
   counted?: boolean;
   verificationError?: string;
