@@ -216,10 +216,7 @@ export async function runDocumentation(
       ...(progress.publication?.ciRepair?.attempts ?? []),
       ...(progress.publication?.conflictRepair?.attempts ?? []),
     ];
-    for (const resource of [
-      progress,
-      ...repairs.filter((repair) => repair.pushed),
-    ]) {
+    for (const resource of [progress, ...repairs]) {
       const ownedRoot = path.join(loaded.directory, "worktrees");
       if (
         !path.isAbsolute(resource.worktree) ||
@@ -235,10 +232,7 @@ export async function runDocumentation(
         }),
       );
     }
-    for (const stage of [
-      progress,
-      ...repairs.filter((repair) => repair.pushed),
-    ]) {
+    for (const stage of [progress, ...repairs]) {
       const paths = [
         stage.probe?.path,
         stage.invocation?.path,

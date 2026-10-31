@@ -13,6 +13,7 @@ import {
   documentationRun,
 } from "../support/documentation-run.ts";
 import { publish } from "../support/implementation-run.ts";
+import { failedCheck } from "../support/ci-repair-run.ts";
 
 const execute = promisify(execFile);
 async function git(cwd: string, ...args: string[]) {
@@ -34,6 +35,7 @@ async function git(cwd: string, ...args: string[]) {
 
 for (const scenario of [
   "committed",
+  "repaired",
   "no_change",
   "ownership_changed",
 ] as const) {
@@ -70,14 +72,19 @@ for (const scenario of [
         "--format=%(objectname)",
         `refs/heads/${branch}`,
       );
-      if (head) fixture.publicationState.branches.set(branch, head);
+      if (head) {
+        fixture.publicationState.branches.set(branch, head);
+        for (const pr of fixture.publicationState.pullRequests)
+          if (pr.branch === branch) pr.headSha = head;
+        fixture.integrationState.pullRequest.headSha = head;
+      }
       return head || null;
     };
     fixture.state.onTask = async (file) => {
       const progress = await fixture.snapshot();
       assert.equal(await git(progress.worktree, "rev-parse", "HEAD"), base);
       const commits = [];
-      if (scenario === "committed") {
+      if (scenario === "committed" || scenario === "repaired") {
         await writeFile(
           path.join(progress.worktree, "README.md"),
           "maintained\n",
@@ -103,6 +110,49 @@ for (const scenario of [
         findings_file: null,
       });
     };
+    if (scenario === "repaired") {
+      let repairs = 0;
+      fixture.publicationState.onChecks = async () =>
+        repairs < 2 ? [failedCheck] : [];
+      const terminal = fixture.dependencies.terminalPlugin;
+      const submit = terminal.submitText.bind(terminal);
+      terminal.submitText = async (tab, text, chord) => {
+        if (text.startsWith("Session Probe\n")) {
+          const assignment = JSON.parse(text.split("\n")[1]!) as {
+            role: string;
+            path: string;
+          };
+          if (assignment.role === "ciRepair") {
+            await publish(assignment.path, {
+              ...assignment,
+              sessionid: `native-repair-${repairs}`,
+            });
+            return;
+          }
+        }
+        if (!text.startsWith("CI repair assignment\n"))
+          return submit(tab, text, chord);
+        const progress = await fixture.snapshot();
+        const repair = progress.publication!.ciRepair!.attempts.at(-1)!;
+        const commits = [];
+        if (++repairs === 2) {
+          await writeFile(path.join(repair.worktree, "README.md"), "fixed\n");
+          await git(repair.worktree, "add", ".");
+          const message = "docs: fix required checks";
+          await git(repair.worktree, "commit", "-m", message);
+          commits.push({
+            sha: await git(repair.worktree, "rev-parse", "HEAD"),
+            message,
+          });
+        }
+        await publish(repair.invocation!.path, {
+          outcome: commits.length ? "committed" : "no_change",
+          summary: "Documentation repair checked",
+          commits,
+          findings_file: null,
+        });
+      };
+    }
     if (scenario === "ownership_changed") {
       fixture.integrationState.onClose = async () => {
         fixture.state.ticket.state = "closed";
@@ -158,6 +208,32 @@ for (const scenario of [
       "",
     );
     await assert.rejects(access(progress.invocation!.path), { code: "ENOENT" });
-    assert.equal(fixture.state.closedTabs.length, 1);
+    if (scenario === "repaired") {
+      const attempts = progress.publication!.ciRepair!.attempts;
+      assert.equal(attempts.length, 2);
+      assert.equal(attempts[0]!.result?.outcome, "no_change");
+      assert.equal(attempts[0]!.pushed, undefined);
+      assert.equal(attempts[1]!.pushed, true);
+      for (const repair of attempts) {
+        await assert.rejects(access(repair.worktree), { code: "ENOENT" });
+        assert.equal(
+          await git(
+            checkout,
+            "for-each-ref",
+            "--format=%(refname)",
+            `refs/heads/${repair.branch}`,
+          ),
+          "",
+        );
+        for (const file of [repair.probe!.path, repair.invocation!.path]) {
+          await assert.rejects(access(file), { code: "ENOENT" });
+          await assert.rejects(access(`${file}.tmp`), { code: "ENOENT" });
+        }
+      }
+    }
+    assert.equal(
+      fixture.state.closedTabs.length,
+      scenario === "repaired" ? 3 : 1,
+    );
   });
 }
