@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { GitWorkspace, CommitEvidence } from "../run/contracts.ts";
 import { formatToolError } from "./process-errors.ts";
@@ -142,23 +142,41 @@ export class LocalGitWorkspace implements GitWorkspace {
     const entries = (
       await this.command(checkout, ["worktree", "list", "--porcelain", "-z"])
     ).split("\0\0");
-    const owned = entries.find((entry) =>
-      entry
-        .split("\0")
-        .some(
-          (field) =>
-            field.startsWith("worktree ") &&
-            path.resolve(field.slice(9)) === path.resolve(worktree),
-        ),
-    );
-    if (owned) {
-      if (!owned.split("\0").includes(`branch refs/heads/${branch}`))
+    const requested = await this.resolvePath(worktree);
+    for (const entry of entries) {
+      const fields = entry.split("\0");
+      const listed = fields.find((field) => field.startsWith("worktree "));
+      if (!listed || (await this.resolvePath(listed.slice(9))) !== requested)
+        continue;
+      if (!fields.includes(`branch refs/heads/${branch}`))
         throw new Error(
           "Cleanup Worktree ownership changed; retaining resources",
         );
-      await this.command(checkout, ["worktree", "remove", "--", worktree]);
+      await this.command(checkout, [
+        "worktree",
+        "remove",
+        "--",
+        listed.slice(9),
+      ]);
+      break;
     }
     if (head) await this.command(checkout, ["branch", "-D", "--", branch]);
+  }
+
+  private async resolvePath(directory: string): Promise<string> {
+    try {
+      return await realpath(directory);
+    } catch (error) {
+      const absolute = path.resolve(directory);
+      const parent = path.dirname(absolute);
+      if (
+        (error as NodeJS.ErrnoException).code !== "ENOENT" ||
+        parent === absolute
+      )
+        throw error;
+      // Cleanup recovery may find missing descendants below an existing alias.
+      return path.join(await this.resolvePath(parent), path.basename(absolute));
+    }
   }
 
   async inspect({ worktree, base }: { worktree: string; base: string }) {
@@ -194,8 +212,15 @@ export class LocalGitWorkspace implements GitWorkspace {
                 message: line.slice(separator + 1),
               };
             });
+    const [requested, observed] = await Promise.all([
+      this.resolvePath(worktree),
+      this.resolvePath(actualPath.trim()),
+    ]);
     return {
-      worktree: path.resolve(actualPath.trim()),
+      // Preserve the saved spelling only after verifying the physical Git root.
+      worktree: path.resolve(
+        requested === observed ? worktree : actualPath.trim(),
+      ),
       branch: branch.trim(),
       base: actualBase.trim(),
       commits,
