@@ -155,7 +155,7 @@ export async function repairPullRequest(
     kind: "ci" | "conflict";
     git: GitWorkspace;
     read: ReadOperation;
-    confirm: (head?: string) => Promise<void>;
+    confirm: (head?: string) => Promise<unknown>;
     remoteHead: () => Promise<string | null>;
   },
 ): Promise<void> {

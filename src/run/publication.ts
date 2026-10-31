@@ -39,8 +39,8 @@ export async function publishImplementation(input: {
     throw new Error(
       "Publication requires verified commits and accepted Probe metadata",
     );
-  const verify = async () => {
-    if (!(await beforeDispatch()))
+  const verify = async (requireEligibility = true) => {
+    if (requireEligibility && !(await beforeDispatch()))
       throw new OperationStopped(
         "Issue eligibility changed before publication",
       );
@@ -84,8 +84,11 @@ export async function publishImplementation(input: {
     await persist();
   }
   const publication = verifiedPublication(progress);
+  const completed =
+    input.stageInput.ticket.state === "closed" &&
+    input.stageInput.ticket.stateReason === "completed";
 
-  if (!publication.ciRepair && !publication.conflictRepair)
+  if (!completed && !publication.ciRepair && !publication.conflictRepair)
     await read("push_verified_branch", target, async () => {
       await verify();
       const remote = await remoteHead();
@@ -98,7 +101,7 @@ export async function publishImplementation(input: {
       if ((await remoteHead()) !== head)
         throw new Error("Push has not been confirmed at the intended head");
     });
-  if (publication.phase === "pending_push") {
+  if (!completed && publication.phase === "pending_push") {
     publication.phase = "pushed";
     await persist();
   }
@@ -107,35 +110,47 @@ export async function publishImplementation(input: {
     expectedHead = publishedHead(publication),
   ): Promise<PullRequestRecord | undefined> => {
     context.signal?.throwIfAborted();
-    const candidates = await codeHost.listPullRequests(repository);
-    const related = candidates.filter(
-      (candidate) =>
-        candidate.branch === publication.branch ||
-        (candidate.targetBranch === publication.targetBranch &&
-          candidate.headSha === expectedHead),
+    return matchPublication(
+      publication,
+      await codeHost.listPullRequests(repository),
+      expectedHead,
     );
-    if (related.length === 0) {
-      if (publication.pullRequest)
-        throw new Error("Recorded Pull Request is missing");
-      return undefined;
-    }
-    const candidate = related[0]!;
-    if (
-      related.length !== 1 ||
-      candidate.branch !== publication.branch ||
-      candidate.targetBranch !== publication.targetBranch ||
-      candidate.headSha !== expectedHead ||
-      candidate.state !== "open" ||
-      candidate.draft === true ||
-      (publication.pullRequest &&
-        (candidate.number !== publication.pullRequest.number ||
-          candidate.url !== publication.pullRequest.url))
-    )
-      throw new Error(
-        "Pull Request identity or head mismatch, or multiple matching Pull Requests",
-      );
-    return candidate;
   };
+  if (completed) {
+    const recovered = await read(
+      "reconcile_completed_publication",
+      target,
+      async () => {
+        await verify(false);
+        const candidate = await matchingPullRequest();
+        if (candidate?.state !== "merged") return;
+        const merge = await codeHost.getPullRequest(
+          repository,
+          candidate.number,
+        );
+        if (!merge.merged || merge.headSha !== publishedHead(publication))
+          throw new Error(
+            "Pull Request merge does not match the recorded publication head",
+          );
+        const remote = await remoteHead();
+        if (remote !== null && remote !== publishedHead(publication))
+          throw new Error("Remote publication branch advanced after merge");
+        return { candidate, merge };
+      },
+    );
+    if (!recovered)
+      throw new OperationStopped(
+        "Completed Issue has no exact merged Pull Request; retained publication evidence",
+      );
+    publication.pullRequest = {
+      number: recovered.candidate.number,
+      url: recovered.candidate.url,
+    };
+    publication.merge = recovered.merge;
+    publication.phase = "merged";
+    await persist();
+    return `Merged PR ${recovered.candidate.url} awaits completed tracker confirmation`;
+  }
   const pullRequest =
     publication.pullRequest ??
     (await read("publish_pull_request", target, async () => {
@@ -182,8 +197,9 @@ export async function publishImplementation(input: {
       await verify();
       if ((await remoteHead()) !== expectedHead)
         throw new Error("Remote branch advanced during required checks");
-      if (!(await matchingPullRequest(expectedHead)))
-        throw new Error("Published Pull Request is missing");
+      const candidate = await matchingPullRequest(expectedHead);
+      if (!candidate) throw new Error("Published Pull Request is missing");
+      return candidate;
     });
   if (publication.phase === "conflict_repair") {
     do {
@@ -222,7 +238,12 @@ export async function publishImplementation(input: {
     pending.result?.outcome !== "no_change"
   )
     await repair();
-  while (publication.phase !== "checks_ready") {
+  for (;;) {
+    if ((await confirm()).state === "merged") {
+      publication.phase = "checks_ready";
+      await persist();
+    }
+    if (publication.phase === "checks_ready") break;
     const wait =
       (publication.discoveryNotBefore ?? 0) - context.clock.now().getTime();
     if (wait > 0) {
@@ -273,8 +294,41 @@ export async function publishImplementation(input: {
       }
     }
   }
-  await confirm();
   return `CI-ready PR ${pullRequest.url} retained with branch ${progress.branch}, Worktree ${progress.worktree}, handoffs and progress evidence${publication.ciRepair ? `; repair Worktrees: ${publication.ciRepair.attempts.map(({ worktree }) => worktree).join(", ")}` : ""}${input.autoMerge ? "; ready for integration" : "; auto-merge disabled"}`;
+}
+
+function matchPublication(
+  publication: PublicationProgress,
+  candidates: PullRequestRecord[],
+  expectedHead: string,
+): PullRequestRecord | undefined {
+  const related = candidates.filter(
+    (candidate) =>
+      candidate.branch === publication.branch ||
+      (candidate.targetBranch === publication.targetBranch &&
+        candidate.headSha === expectedHead),
+  );
+  if (related.length === 0) {
+    if (publication.pullRequest)
+      throw new Error("Recorded Pull Request is missing");
+    return undefined;
+  }
+  const candidate = related[0]!;
+  if (
+    related.length !== 1 ||
+    candidate.branch !== publication.branch ||
+    candidate.targetBranch !== publication.targetBranch ||
+    candidate.headSha !== expectedHead ||
+    (candidate.state !== "open" && candidate.state !== "merged") ||
+    candidate.draft === true ||
+    (publication.pullRequest &&
+      (candidate.number !== publication.pullRequest.number ||
+        candidate.url !== publication.pullRequest.url))
+  )
+    throw new Error(
+      "Pull Request identity or head mismatch, or multiple matching Pull Requests",
+    );
+  return candidate;
 }
 
 export function verifiedPublication(progress: ImplementationProgress) {

@@ -179,9 +179,14 @@ async function executeStandalone(
     return { ticket };
   };
   let selected = await inspect();
+  const completed =
+    restored?.publication !== undefined &&
+    selected.ticket.state === "closed" &&
+    selected.ticket.stateReason === "completed";
   const hasRunner = selected.ticket.assignees?.includes(runnerAccount) ?? false;
   const hasLabel = selected.ticket.labels?.includes(reservationLabel) ?? false;
-  const ownsReservation = restarting && hasRunner && hasLabel;
+  const reserved = hasRunner && hasLabel;
+  const ownsReservation = restarting && reserved;
   const beforeDispatch = async () => {
     selected = await inspect();
     if (
@@ -231,6 +236,7 @@ async function executeStandalone(
   ): Promise<RunSummary> => {
     if (
       publicationReason !== undefined &&
+      progress.publication?.phase !== "merged" &&
       (!input.autoMerge || progress.publication?.phase === "checks_failed")
     )
       return { ...summary, reasons: [publicationReason] };
@@ -290,6 +296,7 @@ async function executeStandalone(
     return integrate(restored);
   if (
     selected.reason &&
+    !completed &&
     !(
       input.documentation &&
       restored?.noChangeClosure !== undefined &&
@@ -333,18 +340,16 @@ async function executeStandalone(
         accept: (text) => accept(progress, text),
       });
     }
-    if (
-      progress.result?.outcome === "committed" &&
-      !input.documentation &&
-      config.workflow.review &&
-      !progress.publication
-    )
+    const committed = progress.result?.outcome === "committed";
+    const needsReview =
+      !input.documentation && config.workflow.review && !progress.publication;
+    if (committed && needsReview)
       await reviewImplementation({
         ...stageInput(progress),
         git: context.git,
         read,
       });
-    if (!selected.reason && progress.result?.outcome === "committed") {
+    if ((!selected.reason || completed) && committed) {
       try {
         return integrate(progress, await publish(progress));
       } catch (error) {
@@ -379,7 +384,7 @@ async function executeStandalone(
       ],
     };
   }
-  if (!input.documentation && restored && (!hasRunner || !hasLabel))
+  if (!input.documentation && restored && !completed && !reserved)
     return {
       ...summary,
       reasons: ["Recorded Reservation changed before continuation"],
