@@ -38,7 +38,14 @@ export function validateReviewContext(
   const invalid = () =>
     new Error("unable to recover: incomplete or invalid Review/fix context");
   if (progress.reviews === undefined) {
-    if (!["implementing", "implementation_completed"].includes(progress.phase))
+    if (
+      ![
+        "implementing",
+        "implementation_completed",
+        "repairing_ci",
+        "ci_repair_completed",
+      ].includes(progress.phase)
+    )
       throw invalid();
     return;
   }

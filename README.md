@@ -27,9 +27,13 @@ implementation conversation for every findings round. Later Reviews resume the
 original reviewer. The final allowed findings round also receives a verified fix.
 Runner pushes the verified HEAD and creates a non-draft PR using the fixed Probe
 title and body. It waits 30 seconds before discovering required checks.
+Failed required checks start a fresh CI-repair conversation and Worktree, verify
+the repair, and push to the same remote branch and PR. Two consumed CI attempts
+require operator authorization before another generation. Repair progress and
+pending pushes survive matching-input recovery.
 With `--no-auto-merge`, CI-ready PRs, branches, Worktrees, handoffs, and progress
 evidence remain available. Unmerged work reports `incomplete` without successful
-delivery credit or success cleanup. Integration and CI repair remain downstream;
+delivery credit or success cleanup. Integration remains downstream;
 `--auto-merge` currently stops at the same CI-ready checkpoint. Initial
 `no_change` skips Review and publication and also reports `incomplete`.
 Parent Runs select eligible direct children across all child/blocker pages,

@@ -289,7 +289,13 @@ An uncertain creation with no exact match requires explicit operator authorizati
 
 Runner waits 30 seconds before required-check discovery. Empty checks or checks with no pending, failed, or cancelled entries establish readiness, preserving the source treatment of skipped checks. Pending checks are polled every 10 seconds, bounded by `timeouts.requiredChecksMinutes`. A timeout enters Operator Pause; Enter starts another configured wait window and q/EOF cancels.
 
-Failed or cancelled checks retain their evidence and report `incomplete`; CI repair remains downstream. Eligibility changes stop the affected Issue, and cancellation prevents new publication/check operations.
+Failed or cancelled required checks start CI repair using `agents.ciRepair`. Each attempt uses a fresh native conversation and a separate repair Worktree and local branch based on the recorded PR head. Its assignment includes the Issue, PR URL, failed check names/states/links, Git context, and original fixed PR metadata. The original PR and remote branch remain unchanged in identity. Repair Probes establish only native session identity; they never regenerate publication metadata. Each start or exact resume waits 10 seconds, and each completed stage closes its own Runner Tab.
+
+Runner verifies the repair Worktree, local branch, base, cleanliness, actual changes, and exact commit claims before pushing the verified HEAD to the original remote branch. It never force-pushes. Lost push responses reconcile against persisted pending-push evidence; unexpected remote advancement or PR identity changes require ordinary operation recovery. Each repair push restarts the 30-second discovery delay and required-check timeout window. CI repair does not enter ordinary Review.
+
+The CI budget allows two consumed attempts per generation, independently of operation retries, handoff corrections, and conflict repair. A valid `no_change` or failed Git verification consumes an attempt without a push. Invalid handoff schemas stay in the same stage under the ordinary correction/manual-output policy; `blocked` is invalid. After two consumed attempts, Runner pauses. Enter authorizes another check observation after 30 seconds. Passing checks need no further repair; continued failure starts a new two-attempt generation. `q` or EOF cancels, and Issue-scoped pauses also support skip.
+
+Snapshots retain each attempt's identity, generation, native session, repair Worktree/branch/base, Probe/handoff assignments, correction counts, result, verification failure, consumed count, and pending or confirmed push. Recovery verifies retained evidence without restarting implementation or Review. Existing repair output is processed before opening a tab; missing attempted output resumes the exact repair session and sends only `continue`. Exhausted budgets remain exhausted across restart. Unmerged and failed resources, including repair Worktrees, remain available for inspection. Eligibility changes stop the affected Issue, and cancellation prevents new repair, publication, or check operations.
 
 With a numbered `--issue` or `--document`, the CLI accepts `--no-auto-merge`:
 
@@ -477,6 +483,11 @@ strict findings validation, correction budgets, and retained Review/fix progress
 Publication Runs cover fixed metadata, exact PR identity, lost push/create responses,
 remote advancement, 30-second discovery, pending/passing/failed checks, timeouts,
 retention, cancellation, and the GitHub adapter through scripted command I/O.
+CI-repair Runs cover fresh conversations and Worktrees, failed-check context,
+fixed metadata, independent consumed-attempt budgets, operator generations,
+recovery, pending-push reconciliation, cancellation, and rejected checkpoint
+ownership. Real Git repairs verify separate local branches, pushes to the original
+remote branch, and rejection of empty repair commits.
 Focused real Git Runs verify fresh bases,
 Worktrees, clean state, actual commits, rejection of empty commits, reviewer edits,
 and fixes relative to the reviewed HEAD with cumulative commit evidence.

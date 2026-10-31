@@ -6,6 +6,8 @@ import type { RunContext } from "./run.ts";
 import { verifiedImplementation } from "./review.ts";
 import { verifyWorkspace } from "./verification.ts";
 import { OperationStopped, pauseForOperator } from "./operations.ts";
+import type { IssueStageContext } from "../agent/stage.ts";
+import { repairRequiredChecks } from "./ci-repair.ts";
 
 // Publication policy follows the source workflow at 0adf499bf69217b56256ca2affb1c0dca0894110.
 export async function publishImplementation(input: {
@@ -17,6 +19,7 @@ export async function publishImplementation(input: {
   persist: () => Promise<void>;
   beforeDispatch: () => Promise<boolean>;
   autoMerge: boolean;
+  stageInput: IssueStageContext;
 }): Promise<string> {
   const { progress, loaded, context, codeHost, read, persist, beforeDispatch } =
     input;
@@ -34,6 +37,15 @@ export async function publishImplementation(input: {
         "Issue eligibility changed before publication",
       );
     verifyWorkspace(progress, await context.git.inspect(progress), result);
+    const repair = progress.publication?.ciRepair?.attempts
+      .filter((attempt) => attempt.pushed)
+      .at(-1);
+    if (repair)
+      verifyWorkspace(
+        repair,
+        await context.git.inspect(repair),
+        repair.result!,
+      );
   };
   const remoteHead = () => {
     context.signal?.throwIfAborted();
@@ -59,6 +71,11 @@ export async function publishImplementation(input: {
     await persist();
   }
   const publication = progress.publication;
+  const publishedHead = () =>
+    publication.ciRepair?.attempts
+      .filter((attempt) => attempt.pushed)
+      .at(-1)
+      ?.result?.commits.at(-1)?.sha ?? head;
   if (
     publication.branch !== progress.branch ||
     publication.targetBranch !== progress.target_branch ||
@@ -79,33 +96,34 @@ export async function publishImplementation(input: {
       "Publication evidence does not match the verified execution",
     );
 
-  await read("push_verified_branch", target, async () => {
-    await verify();
-    const remote = await remoteHead();
-    if (remote === head) return;
-    if (remote !== null || publication.phase !== "pending_push")
-      throw new Error(
-        "Remote publication branch advanced or disappeared; resolve remote state before retrying",
-      );
-    await context.git.push(progress.worktree, progress.branch, head);
-    if ((await remoteHead()) !== head)
-      throw new Error("Push has not been confirmed at the intended head");
-  });
+  if (!publication.ciRepair)
+    await read("push_verified_branch", target, async () => {
+      await verify();
+      const remote = await remoteHead();
+      if (remote === head) return;
+      if (remote !== null || publication.phase !== "pending_push")
+        throw new Error(
+          "Remote publication branch advanced or disappeared; resolve remote state before retrying",
+        );
+      await context.git.push(progress.worktree, progress.branch, head);
+      if ((await remoteHead()) !== head)
+        throw new Error("Push has not been confirmed at the intended head");
+    });
   if (publication.phase === "pending_push") {
     publication.phase = "pushed";
     await persist();
   }
 
-  const matchingPullRequest = async (): Promise<
-    PullRequestRecord | undefined
-  > => {
+  const matchingPullRequest = async (
+    expectedHead = publishedHead(),
+  ): Promise<PullRequestRecord | undefined> => {
     context.signal?.throwIfAborted();
     const candidates = await codeHost.listPullRequests(repository);
     const related = candidates.filter(
       (candidate) =>
         candidate.branch === publication.branch ||
         (candidate.targetBranch === publication.targetBranch &&
-          candidate.headSha === head),
+          candidate.headSha === expectedHead),
     );
     if (related.length === 0) {
       if (publication.pullRequest)
@@ -117,7 +135,7 @@ export async function publishImplementation(input: {
       related.length !== 1 ||
       candidate.branch !== publication.branch ||
       candidate.targetBranch !== publication.targetBranch ||
-      candidate.headSha !== head ||
+      candidate.headSha !== expectedHead ||
       candidate.state !== "open" ||
       candidate.draft === true ||
       (publication.pullRequest &&
@@ -129,52 +147,78 @@ export async function publishImplementation(input: {
       );
     return candidate;
   };
-  const pullRequest = await read("publish_pull_request", target, async () => {
-    await verify();
-    if ((await remoteHead()) !== head)
-      throw new Error("Remote branch changed before Pull Request publication");
-    const existing = await matchingPullRequest();
-    if (existing) return { number: existing.number, url: existing.url };
-    // A lost response can only be retried after reconciliation and explicit operator input.
-    if (publication.creationAttempted)
-      await pauseForOperator(
-        context.operator,
-        "Pull Request creation outcome is uncertain and no exact match exists. Confirm remote state before retrying creation.",
-        context.signal,
-      );
-    await verify();
-    if ((await remoteHead()) !== head)
-      throw new Error("Remote branch changed before Pull Request creation");
-    // Recheck after any operator wait; a delayed creation may now be visible.
-    const delayed = await matchingPullRequest();
-    if (delayed) return { number: delayed.number, url: delayed.url };
-    publication.phase = "pending_pr";
-    publication.creationAttempted = true;
-    await persist();
-    context.signal?.throwIfAborted();
-    return codeHost.createPullRequest({
-      repository,
-      targetBranch: publication.targetBranch,
-      branch: publication.branch,
-      title: publication.title,
-      body: publication.body,
-    });
-  });
+  const pullRequest =
+    publication.pullRequest ??
+    (await read("publish_pull_request", target, async () => {
+      await verify();
+      if ((await remoteHead()) !== head)
+        throw new Error(
+          "Remote branch changed before Pull Request publication",
+        );
+      const existing = await matchingPullRequest();
+      if (existing) return { number: existing.number, url: existing.url };
+      // A lost response can only be retried after reconciliation and explicit operator input.
+      if (publication.creationAttempted)
+        await pauseForOperator(
+          context.operator,
+          "Pull Request creation outcome is uncertain and no exact match exists. Confirm remote state before retrying creation.",
+          context.signal,
+        );
+      await verify();
+      if ((await remoteHead()) !== head)
+        throw new Error("Remote branch changed before Pull Request creation");
+      // Recheck after any operator wait; a delayed creation may now be visible.
+      const delayed = await matchingPullRequest();
+      if (delayed) return { number: delayed.number, url: delayed.url };
+      publication.phase = "pending_pr";
+      publication.creationAttempted = true;
+      await persist();
+      context.signal?.throwIfAborted();
+      return codeHost.createPullRequest({
+        repository,
+        targetBranch: publication.targetBranch,
+        branch: publication.branch,
+        title: publication.title,
+        body: publication.body,
+      });
+    }));
   if (!publication.pullRequest) {
     publication.pullRequest = pullRequest;
     publication.phase = "pr_created";
     publication.discoveryNotBefore = context.clock.now().getTime() + 30_000;
     await persist();
   }
-  const confirm = () =>
+  const confirm = (expectedHead = publishedHead()) =>
     read("confirm_publication", target, async () => {
       await verify();
-      if ((await remoteHead()) !== head)
+      if ((await remoteHead()) !== expectedHead)
         throw new Error("Remote branch advanced during required checks");
-      if (!(await matchingPullRequest()))
+      if (!(await matchingPullRequest(expectedHead)))
         throw new Error("Published Pull Request is missing");
     });
-  if (publication.phase !== "checks_ready") {
+  const repair = async () => {
+    do {
+      await repairRequiredChecks({
+        ...input.stageInput,
+        git: context.git,
+        read,
+        confirm,
+        remoteHead,
+      });
+    } while (
+      publication.phase === "checks_failed" &&
+      !publication.ciRepair?.retryAuthorized
+    );
+  };
+  const pending = publication.ciRepair?.attempts.at(-1);
+  if (
+    pending &&
+    !pending.pushed &&
+    !pending.verificationError &&
+    pending.result?.outcome !== "no_change"
+  )
+    await repair();
+  while (publication.phase !== "checks_ready") {
     const wait =
       (publication.discoveryNotBefore ?? 0) - context.clock.now().getTime();
     if (wait > 0) {
@@ -197,7 +241,8 @@ export async function publishImplementation(input: {
       ) {
         publication.phase = "checks_failed";
         await persist();
-        return `PR ${pullRequest.url} has failed required checks; resources retained; CI repair remains downstream`;
+        await repair();
+        break;
       }
       if (!checks.some(({ bucket }) => bucket === "pending")) {
         publication.phase = "checks_ready";
@@ -225,5 +270,5 @@ export async function publishImplementation(input: {
     }
   }
   await confirm();
-  return `CI-ready PR ${pullRequest.url} retained with branch ${progress.branch}, Worktree ${progress.worktree}, handoffs and progress evidence${input.autoMerge ? "; integration remains downstream" : "; auto-merge disabled"}`;
+  return `CI-ready PR ${pullRequest.url} retained with branch ${progress.branch}, Worktree ${progress.worktree}, handoffs and progress evidence${publication.ciRepair ? `; repair Worktrees: ${publication.ciRepair.attempts.map(({ worktree }) => worktree).join(", ")}` : ""}${input.autoMerge ? "; integration remains downstream" : "; auto-merge disabled"}`;
 }

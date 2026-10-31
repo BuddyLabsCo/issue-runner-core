@@ -20,6 +20,7 @@ import {
 } from "../agent/handoff.ts";
 import type { CodeHost, Ticket, Tracker } from "./contracts.ts";
 import { publishImplementation } from "./publication.ts";
+import { validateCiRepairContext } from "./ci-repair.ts";
 import type { RunContext, RunSummary } from "./run.ts";
 import {
   hasOpenBlocker,
@@ -101,6 +102,8 @@ export async function runStandalone(input: {
         "review_completed",
         "fixing_review",
         "fix_review_completed",
+        "repairing_ci",
+        "ci_repair_completed",
         "publication_eligible",
       ].includes(String(saved.phase))
     )
@@ -133,6 +136,7 @@ export async function runStandalone(input: {
       );
     restored = saved as unknown as ImplementationProgress;
     validateReviewContext(restored, loaded);
+    validateCiRepairContext(restored, loaded);
   }
   const inspect = async (): Promise<{ ticket: Ticket; reason?: string }> => {
     if (input.parentTicket !== undefined) {
@@ -273,7 +277,11 @@ export async function runStandalone(input: {
         accept: (text) => accept(progress, text),
       });
     }
-    if (progress.result?.outcome === "committed" && config.workflow.review)
+    if (
+      progress.result?.outcome === "committed" &&
+      config.workflow.review &&
+      !progress.publication
+    )
       await reviewImplementation({
         ...stageInput,
         ticket: selected.ticket,
@@ -291,6 +299,7 @@ export async function runStandalone(input: {
           persist: () => persist(progress),
           beforeDispatch,
           autoMerge: input.autoMerge,
+          stageInput,
         });
         return { ...summary, reasons: [reason] };
       } catch (error) {
