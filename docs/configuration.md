@@ -555,11 +555,20 @@ Core processes a valid expected result before sending a pending prompt. Once a
 dispatch attempt begins, the checkpoint no longer classifies the prompt as known
 unsent; a rejected eligibility check restores that evidence. If an attempted
 assignment has no expected result, recovery sends only `continue` after the resume
-wait. Checkpoints without pending-prompt evidence retain this continuation-only
+wait. Runner opens a fresh Runner Tab in the original Worktree, recreates its
+per-call Git configuration, submits the exact saved role's resume command with
+Enter, waits 10 seconds, then submits the literal `continue` with that Agent's
+configured `submitKey`. It sends no task, path reminder, context message, or new
+Probe. The invocation, active output path, fixed PR metadata, and consumed
+correction count remain unchanged, including an exhausted correction budget.
+Staged, unstaged, and untracked work remain in the original Worktree.
+Checkpoints without pending-prompt evidence retain this continuation-only
 behavior. Uncertain transport and abrupt process loss around dispatch retain
 the existing continuation-only recovery behavior. Completed stages are verified without
 redispatch. Earlier incomplete startup snapshots fail visibly and remain
-retained; broader recovery/restart policy belongs to downstream slices.
+retained. A missing original Worktree fails with `unable to recover` before
+native dispatch; Runner creates no replacement Worktree or conversation.
+Broader recovery/restart policy belongs to downstream slices.
 
 Before recovery, manually close leftover Agent tabs and stop their sessions
 while retaining native histories and original resources. Core neither enforces

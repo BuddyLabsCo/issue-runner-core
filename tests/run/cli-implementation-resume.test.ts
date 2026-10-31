@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { executeCli } from "../../src/cli.ts";
@@ -12,6 +12,42 @@ import {
   publish,
 } from "../support/implementation-run.ts";
 import { validConfig } from "../support/cli-project.ts";
+
+await test("missing original Worktree fails recovery before opening a tab or creating replacement work", async (t) => {
+  const fixture = await implementationRun(t);
+  fixture.state.onTask = async () => {
+    fixture.controller.abort();
+  };
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  const saved = await fixture.snapshot();
+  await rm(saved.worktree, { recursive: true });
+  const before = fixture.state.submissions.length;
+  const worktrees = fixture.state.events.filter(
+    (event) => event === "worktree",
+  ).length;
+  const result = await executeCli(implementationCommand, {
+    ...fixture.dependencies,
+    signal: new AbortController().signal,
+    terminalPlugin: {
+      ...fixture.dependencies.terminalPlugin,
+      async createTab() {
+        assert.fail("missing original context must not open a Runner Tab");
+      },
+    },
+  });
+  assert.equal(result.summary.outcome, "failed");
+  assert.match(
+    result.summary.reasons.join(" "),
+    /unable to recover: original Worktree is missing/u,
+  );
+  assert.equal(fixture.state.submissions.length, before);
+  assert.equal(
+    fixture.state.events.filter((event) => event === "worktree").length,
+    worktrees,
+  );
+  assert.deepEqual(await fixture.snapshot(), saved);
+  await assert.rejects(access(saved.worktree));
+});
 
 await test("a retained implementation resumes only its saved role with literal all-occurrence session substitution", async (t) => {
   const fixture = await implementationRun(t, {
@@ -47,13 +83,30 @@ await test("a retained implementation resumes only its saved role with literal a
   });
   const controller = new AbortController();
   const before = fixture.state.submissions.length;
+  const sequence: string[] = [];
   fixture.state.onSleep = async (ms) => {
+    if (ms === 10_000) sequence.push("wait 10 seconds");
     if (ms === 250) await publish(saved.invocation!.path, committed());
   };
   fixture.state.evidence.commits = committed().commits;
   const result = await executeCli(implementationCommand, {
     ...fixture.dependencies,
     signal: controller.signal,
+    terminalPlugin: {
+      ...fixture.dependencies.terminalPlugin,
+      async createTab(options) {
+        assert.equal(options.cwd, saved.worktree);
+        const tab =
+          await fixture.dependencies.terminalPlugin.createTab(options);
+        assert.ok(fixture.state.submissions.every((item) => item.tab !== tab));
+        sequence.push("fresh Runner Tab");
+        return tab;
+      },
+      async submitText(tab, text, chord) {
+        sequence.push(text === "continue" ? "continue" : "resume");
+        await fixture.dependencies.terminalPlugin.submitText(tab, text, chord);
+      },
+    },
   });
   assert.equal(result.summary.outcome, "incomplete");
   const resumed = fixture.state.submissions.slice(before);
@@ -66,14 +119,94 @@ await test("a retained implementation resumes only its saved role with literal a
     resumed.slice(1).map((submission) => submission.text),
     ["continue"],
   );
+  assert.equal(resumed[1]?.chord, "Shift+Enter");
+  assert.deepEqual(sequence, [
+    "fresh Runner Tab",
+    "resume",
+    "wait 10 seconds",
+    "continue",
+  ]);
   assert.equal(fixture.state.probeCount, 1);
   assert.equal(fixture.state.taskCount, 1);
-  assert.equal((await fixture.snapshot()).execution_id, saved.execution_id);
-  assert.equal(
-    (await fixture.snapshot()).invocation?.path,
-    saved.invocation?.path,
+  const recovered = await fixture.snapshot();
+  for (const key of [
+    "execution_id",
+    "invocation",
+    "worktree",
+    "branch",
+    "base",
+    "roles",
+    "pr_title",
+    "pr_body",
+    "corrections",
+    "superseded",
+  ] as const)
+    assert.deepEqual(recovered[key], saved[key]);
+});
+
+await test("missing output resumes with continue even after correction capacity is exhausted", async (t) => {
+  const fixture = await implementationRun(t, { ...validConfig, agentRetry: 1 });
+  fixture.state.onTask = async (file) => {
+    await publish(file, {});
+  };
+  fixture.state.onCorrection = async () => {
+    fixture.controller.abort();
+  };
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  const saved = await fixture.snapshot();
+  assert.equal(saved.corrections, 1);
+  assert.equal(saved.pendingPrompt, undefined);
+  const before = fixture.state.submissions.length;
+  const controller = new AbortController();
+  fixture.state.onSleep = async (ms) => {
+    if (ms === 250) controller.abort();
+  };
+  const result = await executeCli(implementationCommand, {
+    ...fixture.dependencies,
+    signal: controller.signal,
+  });
+  assert.equal(result.summary.outcome, "cancelled");
+  assert.deepEqual(
+    fixture.state.submissions
+      .slice(before)
+      .map(({ text, chord }) => ({ text, chord })),
+    [
+      { text: 'any-cli --resume "native/$&/$`/$\'/session"', chord: "Enter" },
+      { text: "continue", chord: "Shift+Enter" },
+    ],
   );
-  assert.equal((await fixture.snapshot()).pr_body, saved.pr_body);
+  assert.deepEqual(await fixture.snapshot(), saved);
+});
+
+await test("cancellation during recovered startup prevents the delayed continue", async (t) => {
+  const fixture = await implementationRun(t);
+  fixture.state.onTask = async () => {
+    fixture.controller.abort();
+  };
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  const saved = await fixture.snapshot();
+  const controller = new AbortController();
+  fixture.state.onSleep = async (ms) => {
+    assert.equal(ms, 10_000);
+    controller.abort();
+  };
+  const before = fixture.state.submissions.length;
+  assert.equal(
+    (
+      await executeCli(implementationCommand, {
+        ...fixture.dependencies,
+        signal: controller.signal,
+      })
+    ).summary.outcome,
+    "cancelled",
+  );
+  assert.deepEqual(
+    fixture.state.submissions.slice(before).map(({ text }) => text),
+    ['any-cli --resume "native/$&/$`/$\'/session"'],
+  );
+  assert.deepEqual(await fixture.snapshot(), saved);
+  for (const file of fixture.state.gitConfigs)
+    await assert.rejects(access(file));
 });
 
 await test("a durably completed implementation is verified without dispatching another native stage", async (t) => {

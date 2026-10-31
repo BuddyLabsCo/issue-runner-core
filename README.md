@@ -173,8 +173,13 @@ through the loop and are deleted after the complete Review/fix loop; Probe and
 handoff files remain until successful Issue cleanup.
 A known unsent assignment or correction remains pending when eligibility stops
 dispatch and is submitted when eligibility returns, retaining its path and consumed
-retry count. Missing output from an attempted assignment resumes with only
-`continue`. Before rerunning, manually close
+retry count. Missing output from an attempted assignment opens a fresh Runner Tab
+in the original Worktree with recreated per-call Git configuration. Runner submits
+the saved role's exact resume command with Enter, waits 10 seconds, then sends only
+`continue` with the configured Agent chord. It preserves the invocation, active
+handoff path, uncommitted work, metadata, and correction budget without another
+Probe or task prompt. A missing original Worktree fails with `unable to recover`
+before native dispatch; Runner does not create a replacement. Before rerunning, manually close
 leftover tabs and stop their Agent sessions, retaining native history and working
 resources. Runner does not adopt live tabs. Incomplete earlier startup checkpoints
 are retained and reported as unrecoverable; whole-Issue restart interaction and
