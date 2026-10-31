@@ -309,11 +309,11 @@ With `--no-auto-merge`, a CI-ready unmerged PR retains its remote branch, origin
 
 ### Confirmed integration and Issue delivery
 
-Auto-merge defaults on. Runner waits for every PR in the Batch to become CI-ready before integrating any PR. It integrates serially by ascending PR creation time, then PR number. A failed required check holds the Batch before integration.
+Auto-merge defaults on. Runner waits for every PR in the Batch to become CI-ready before integrating any PR. Earlier implementation completion or passing checks cannot bypass this barrier. Once the Batch is ready, Runner integrates serially by ascending PR creation time, then PR number, regardless of Issue selection or implementation completion order.
 
 Runner requests squash integration against the observed HEAD with `codeHost.adminMerge` controlling the admin flag. After CI repair, it requires the latest verified and pushed repair HEAD while retaining the original publication metadata. A changed HEAD or closed, unmerged PR cannot earn delivery credit. Queue admission only starts the confirmation wait. Runner polls every 10 seconds within `timeouts.mergeQueueMinutes`; a timeout enters Operator Pause. Enter refreshes remote state and starts another configured wait window; q/EOF cancels.
 
-Explicit conflicts report `incomplete` and retain resources for downstream conflict repair. Other merge rejections preserve their original cause through ordinary operation retries and Operator Pause. A later failure stops ordered integration without rolling back earlier confirmed deliveries.
+Runner confirms each merge and completed Issue closure before starting the next PR's integration. Explicit conflicts report `incomplete` and retain resources for downstream conflict repair. Other merge rejections preserve their original cause through ordinary operation retries and Operator Pause. A later failure stops ordered integration without rolling back earlier confirmed deliveries; their saved merge and closure evidence remains intact. Runner does not update or repush every remaining branch merely because the Target Branch advanced.
 
 After confirmed integration, `ticketClosure: runner` closes the Issue as completed and confirms its state from the tracker. A lost response is reconciled before repeating a merge or closure write. A successful write response alone does not establish delivery.
 
@@ -504,7 +504,7 @@ fixed metadata, independent consumed-attempt budgets, operator generations,
 recovery, pending-push reconciliation, cancellation, and rejected checkpoint
 ownership. Real Git repairs verify separate local branches, pushes to the original
 remote branch, and rejection of empty repair commits.
-Integration Runs verify the Batch CI barrier and ordering, queued merge confirmation,
+Integration Runs control implementation completion and check readiness for parent and Issue List Batches, verify creation-time/PR-number ordering and serial merge confirmation, and retain exact partial delivery checkpoints after a later rejection or conflict. They also cover queued merge confirmation,
 closure policies and observation waits, lost responses, changed HEAD rejection,
 delivery-time labels, and recovery without replaying confirmed operations.
 Focused real Git Runs verify fresh bases,
