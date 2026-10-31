@@ -225,7 +225,9 @@ export async function publishImplementation(input: {
       publication.conflictRepair?.attempts.at(-1)?.pendingPush;
     // Let the repair checkpoint a push already confirmed at its recorded head.
     await confirm(
-      pendingPush && (await remoteHead()) === pendingPush
+      pendingPush &&
+        (await read("read_pending_repair_head", target, remoteHead)) ===
+          pendingPush
         ? pendingPush
         : undefined,
     );
