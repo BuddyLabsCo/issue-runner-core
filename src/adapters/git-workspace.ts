@@ -1,9 +1,19 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { GitWorkspace, CommitEvidence } from "../run/contracts.ts";
 import { formatToolError } from "./process-errors.ts";
+
+async function resolveWorktreePath(directory: string): Promise<string> {
+  try {
+    return await realpath(directory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT")
+      return path.resolve(directory);
+    throw error;
+  }
+}
 
 // Extracted from sandcastle-runner at 0adf499bf69217b56256ca2affb1c0dca0894110.
 export class LocalGitWorkspace implements GitWorkspace {
@@ -142,15 +152,20 @@ export class LocalGitWorkspace implements GitWorkspace {
     const entries = (
       await this.command(checkout, ["worktree", "list", "--porcelain", "-z"])
     ).split("\0\0");
-    const owned = entries.find((entry) =>
-      entry
+    const expectedPath = await resolveWorktreePath(worktree);
+    let owned: string | undefined;
+    for (const entry of entries) {
+      const field = entry
         .split("\0")
-        .some(
-          (field) =>
-            field.startsWith("worktree ") &&
-            path.resolve(field.slice(9)) === path.resolve(worktree),
-        ),
-    );
+        .find((field) => field.startsWith("worktree "));
+      if (
+        field &&
+        (await resolveWorktreePath(field.slice(9))) === expectedPath
+      ) {
+        owned = entry;
+        break;
+      }
+    }
     if (owned) {
       if (!owned.split("\0").includes(`branch refs/heads/${branch}`))
         throw new Error(
@@ -194,8 +209,14 @@ export class LocalGitWorkspace implements GitWorkspace {
                 message: line.slice(separator + 1),
               };
             });
+    const actualWorktree = await resolveWorktreePath(actualPath.trim());
+    const expectedWorktree = await resolveWorktreePath(worktree);
     return {
-      worktree: path.resolve(actualPath.trim()),
+      // Preserve the requested spelling only after proving filesystem identity.
+      worktree:
+        actualWorktree === expectedWorktree
+          ? path.resolve(worktree)
+          : actualWorktree,
       branch: branch.trim(),
       base: actualBase.trim(),
       commits,

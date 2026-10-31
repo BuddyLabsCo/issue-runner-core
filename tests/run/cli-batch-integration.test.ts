@@ -1,6 +1,10 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import test, { type TestContext } from "node:test";
+import { setTimeout } from "node:timers/promises";
+import type { ImplementationProgress } from "../../src/recovery.ts";
 import type {
   CodeHost,
   MergeRequestResult,
@@ -73,12 +77,44 @@ async function batchRun(t: TestContext) {
   return { ...fixture, children, ready, merged, requests, state };
 }
 
-for (const selector of ["parent", "issue"] as const) {
+for (const [selector, checkpointDelay] of [
+  ["parent", 0],
+  ["issue", 0],
+  ["parent", 3200],
+  ["issue", 3200],
+] as const) {
   await test(
-    `${selector} holds the CI barrier across out-of-order implementation completion and confirms each merge before starting the next`,
+    `${selector} holds the CI barrier across out-of-order implementation completion and confirms each merge before starting the next (checkpoint delay ${checkpointDelay} ms)`,
     { timeout: 10_000 },
     async (t) => {
       const fixture = await batchRun(t);
+      const checkpointReady = deferred<void>();
+      let checkpointObserved = false;
+      const rename = fs.promises.rename;
+      const checkpointRename = t.mock.method(
+        fs.promises,
+        "rename",
+        async (...args: Parameters<typeof rename>) => {
+          if (!checkpointObserved && String(args[1]).endsWith("-52.json")) {
+            const progress = JSON.parse(
+              await fs.promises.readFile(args[0], "utf8"),
+            ) as ImplementationProgress;
+            if (progress.publication?.phase === "checks_ready") {
+              checkpointObserved = true;
+              await setTimeout(checkpointDelay);
+              await rename(...args);
+              checkpointReady.resolve();
+              return;
+            }
+          }
+          await rename(...args);
+        },
+      );
+      syncBuiltinESMExports();
+      t.after(() => {
+        checkpointRename.mock.restore();
+        syncBuiltinESMExports();
+      });
       const tasks = new Map(
         [51, 52, 53].map((number) => [number, deferred<void>()]),
       );
@@ -181,14 +217,12 @@ for (const selector of ["parent", "issue"] as const) {
         assert.deepEqual([...fixture.ready], [81]);
         assert.deepEqual(fixture.requests, []);
         checks.get(83)!.resolve();
-        const deadline = Date.now() + 3_000;
-        while (
+        await Promise.race([checkpointReady.promise, running]);
+        assert.equal(
           (await implementationProgress(fixture.directory, 52)).publication
-            ?.phase !== "checks_ready"
-        ) {
-          assert.ok(Date.now() < deadline, "PR 83 must become CI-ready first");
-          await new Promise<void>((resolve) => setImmediate(resolve));
-        }
+            ?.phase,
+          "checks_ready",
+        );
         assert.deepEqual([...fixture.ready], [81, 83]);
         assert.deepEqual(fixture.requests, []);
         checks.get(82)!.resolve();
