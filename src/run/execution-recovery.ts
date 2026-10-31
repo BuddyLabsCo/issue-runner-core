@@ -221,7 +221,7 @@ function validateRetryProgress(
       if (
         stage.corrections > loaded.config.agentRetry ||
         (stage.correctionNotBefore !== undefined &&
-          (!Number.isSafeInteger(stage.correctionNotBefore) ||
+          (!Number.isFinite(stage.correctionNotBefore) ||
             stage.correctionNotBefore < 0 ||
             !stage.pendingPrompt ||
             stage.corrections === 0)) ||
@@ -241,7 +241,7 @@ function validateRetryProgress(
         (retry.consumed as number) > loaded.config.operationRetry + 1 ||
         typeof retry.error !== "string" ||
         (retry.notBefore !== undefined &&
-          (!Number.isSafeInteger(retry.notBefore) ||
+          (!Number.isFinite(retry.notBefore) ||
             (retry.notBefore as number) < 0 ||
             (retry.consumed as number) > loaded.config.operationRetry))
       )

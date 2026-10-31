@@ -13,6 +13,51 @@ import {
 } from "../support/implementation-run.ts";
 import { passed, reviewRun } from "../support/review-run.ts";
 
+for (const recover of [false, true]) {
+  await test(`a result arriving during correction backoff is validated before dispatch${recover ? " after matching recovery" : ""}`, async (t) => {
+    const fixture = await implementationRun(t);
+    fixture.state.onTask = async (file) => {
+      fixture.state.evidence.commits = committed().commits;
+      await publish(file, {});
+    };
+    fixture.state.onCorrection = async () => {
+      assert.fail(
+        "a valid active result must be accepted before correction dispatch",
+      );
+    };
+    if (recover) {
+      fixture.state.onSleep = async (ms) => {
+        if (ms === 2_000) fixture.controller.abort();
+      };
+      assert.equal((await fixture.run()).summary.outcome, "cancelled");
+    }
+    let active: Awaited<ReturnType<typeof fixture.snapshot>>["invocation"];
+    fixture.state.onSleep = async (ms) => {
+      if (ms !== 2_000) return;
+      active = (await fixture.snapshot()).invocation!;
+      await publish(active.path, committed());
+    };
+    const before = fixture.state.submissions.length;
+    const result = await executeCli(implementationCommand, {
+      ...fixture.dependencies,
+      signal: new AbortController().signal,
+    });
+    assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+    assert.ok(active);
+    assert.equal(
+      fixture.state.submissions.filter(({ text }) =>
+        text.startsWith("Correct the"),
+      ).length,
+      0,
+    );
+    if (recover) assert.equal(fixture.state.submissions.length, before);
+    const saved = await fixture.snapshot();
+    assert.deepEqual(saved.invocation, active);
+    assert.deepEqual(saved.result, committed());
+    assert.equal(saved.corrections, 1);
+  });
+}
+
 await test("matching rerun waits only the remaining correction delay and keeps the allocated correction", async (t) => {
   const fixture = await implementationRun(t, {
     ...validConfig,
@@ -157,6 +202,63 @@ await test("operation retries keep their remaining delay and exhausted pause acr
   assert.equal(fixture.state.submissions.length, before);
 });
 
+for (const category of ["correction", "operation"] as const) {
+  await test(`matching rerun restores a fractional ${category} delay`, async (t) => {
+    const fixture = await implementationRun(t, {
+      ...validConfig,
+      agentRetryDelay: [0.0001],
+      operationRetryDelay: [0.0001],
+    });
+    if (category === "correction") {
+      fixture.state.onTask = async (file) => {
+        fixture.state.evidence.commits = committed().commits;
+        await publish(file, {});
+      };
+    } else {
+      const inspect = fixture.dependencies.gitWorkspace.inspect.bind(
+        fixture.dependencies.gitWorkspace,
+      );
+      let failed = false;
+      fixture.dependencies.gitWorkspace.inspect = async (input) => {
+        if (fixture.state.taskCount && !failed) {
+          failed = true;
+          throw new Error("inspection unavailable");
+        }
+        return inspect(input);
+      };
+    }
+    fixture.state.onSleep = async (ms) => {
+      if (ms < 1) fixture.controller.abort();
+    };
+    assert.equal((await fixture.run()).summary.outcome, "cancelled");
+    const saved = await fixture.snapshot();
+    const deadline =
+      category === "correction"
+        ? saved.correctionNotBefore
+        : Object.values(saved.operations!).find(
+            (operation) => operation.notBefore !== undefined,
+          )!.notBefore;
+    assert.ok(Number.isFinite(deadline));
+    assert.equal(Number.isInteger(deadline), false);
+    let fractionalWait = false;
+    fixture.state.onSleep = async (ms) => {
+      if (ms < 1) {
+        assert.ok(ms > 0);
+        fractionalWait = true;
+      }
+    };
+    const result = await executeCli(implementationCommand, {
+      ...fixture.dependencies,
+      signal: new AbortController().signal,
+    });
+    assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+    assert.ok(fractionalWait);
+    const recovered = await fixture.snapshot();
+    assert.deepEqual(recovered.invocation, saved.invocation);
+    assert.equal(recovered.corrections, category === "correction" ? 1 : 0);
+  });
+}
+
 await test("exhausted recovery displays the same manual path before continue and ignores superseded results", async (t) => {
   const fixture = await implementationRun(t, { ...validConfig, agentRetry: 1 });
   fixture.state.onTask = async (file) => {
@@ -214,35 +316,37 @@ await test("exhausted recovery displays the same manual path before continue and
   assert.deepEqual(recovered.result, committed());
 });
 
-await test("cancellation inside an operation retry cannot reclaim that attempt on rerun", async (t) => {
-  const fixture = await implementationRun(t, {
-    ...validConfig,
-    operationRetry: 1,
+for (const interruptedAttempt of [1, 2]) {
+  await test(`cancellation inside operation attempt ${interruptedAttempt} cannot reclaim that attempt on rerun`, async (t) => {
+    const fixture = await implementationRun(t, {
+      ...validConfig,
+      operationRetry: 1,
+    });
+    const inspect = fixture.dependencies.gitWorkspace.inspect.bind(
+      fixture.dependencies.gitWorkspace,
+    );
+    let attempts = 0;
+    fixture.dependencies.gitWorkspace.inspect = async (input) => {
+      if (!fixture.state.taskCount) return inspect(input);
+      attempts += 1;
+      if (attempts === interruptedAttempt) fixture.controller.abort();
+      throw new Error("inspection interrupted");
+    };
+    assert.equal((await fixture.run()).summary.outcome, "cancelled");
+    assert.equal(attempts, interruptedAttempt);
+    fixture.dependencies.operator.pause = async (message) => {
+      assert.match(message, /Operation failed:/u);
+      return "q";
+    };
+    const resumed = await executeCli(implementationCommand, {
+      ...fixture.dependencies,
+      signal: new AbortController().signal,
+    });
+    assert.equal(resumed.summary.outcome, "cancelled");
+    assert.equal(attempts, 2);
+    assert.equal((await fixture.snapshot()).corrections, 0);
   });
-  const inspect = fixture.dependencies.gitWorkspace.inspect.bind(
-    fixture.dependencies.gitWorkspace,
-  );
-  let attempts = 0;
-  fixture.dependencies.gitWorkspace.inspect = async (input) => {
-    if (!fixture.state.taskCount) return inspect(input);
-    attempts += 1;
-    if (attempts === 2) fixture.controller.abort();
-    throw new Error("inspection interrupted");
-  };
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  assert.equal(attempts, 2);
-  fixture.dependencies.operator.pause = async (message) => {
-    assert.match(message, /inspection interrupted/u);
-    return "q";
-  };
-  const resumed = await executeCli(implementationCommand, {
-    ...fixture.dependencies,
-    signal: new AbortController().signal,
-  });
-  assert.equal(resumed.summary.outcome, "cancelled");
-  assert.equal(attempts, 2);
-  assert.equal((await fixture.snapshot()).corrections, 0);
-});
+}
 
 for (const invalid of [
   { correctionNotBefore: -1 },

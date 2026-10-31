@@ -289,7 +289,7 @@ export async function externalRead<T>(
     if (progress.consumed > retries) {
       await pauseForOperator(
         operator,
-        `Operation failed: ${progress.error}`,
+        `Operation failed: ${progress.error || "previous attempt did not complete"}`,
         signal,
         true,
       );
@@ -305,7 +305,8 @@ export async function externalRead<T>(
       delete progress.notBefore;
     }
     const attempt = progress.consumed + 1;
-    if (progress.consumed) {
+    // Manual creation first reconciles any retained resource on recovery.
+    if (operation.retry !== "manual") {
       progress.consumed = attempt;
       await persist(progress);
     }

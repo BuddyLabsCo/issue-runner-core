@@ -313,6 +313,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
           if (remaining > 0) await sleep(remaining);
           delete stage.correctionNotBefore;
           await persist();
+          continue;
         }
         if (!(await submitWork(stage.pendingPrompt))) return;
         resumeIfMissing = false;

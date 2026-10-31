@@ -45,6 +45,10 @@ await test("restart reprocesses a verified handoff when completion persistence f
   assert.equal(validations, 1);
   assert.equal(fixture.state.closedTabs.length, 0);
   await rm(obstruction, { recursive: true });
+  fixture.dependencies.operator.pause = async (message) => {
+    assert.match(message, /previous attempt did not complete/u);
+    return "";
+  };
   fixture.dependencies.gitWorkspace.inspect = async (input) => {
     const evidence = await inspect(input);
     if (!(await fixture.snapshot()).result) validations += 1;
