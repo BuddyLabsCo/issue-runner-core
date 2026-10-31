@@ -188,7 +188,17 @@ Failed, cancelled, interrupted, skipped, and unmerged executions retain their or
 
 Run `npm ci`, then `npm run verify` for formatting, lint, type checks and tests.
 Use `npm run format` to apply code formatting and `npm run check` for static checks
-only. CI runs the build and verification on Ubuntu and Windows.
+only. Both CI jobs run the build and full verification on Ubuntu and Windows
+with Node 22.18.0 and npm 11.6.2. Verification includes unit/static-rule tests,
+composed application workflows, focused real Git checks, and isolated global
+package installations. A failed check or package test fails its job; the other
+platform continues. Each job retains `verification.log` for seven days, including
+on verification failure.
+
+Workflow tests use private fake terminals, temporary directories with absolute
+platform paths, and controlled workflow clocks. CI uploads only verification
+output, excluding credential files, Run snapshots, and native conversation histories.
+These jobs do not establish tested macOS operation or real Core/Herdr acceptance.
 
 ESLint limits code files to 500 lines, excluding blank lines and comments.
 Business modules reject concrete adapter/known Agent SDK imports, direct platform
@@ -206,5 +216,5 @@ node --test tests/issue-runner-handoff.test.mjs
 Run `npm ci` and then `npm test` for all repository tests. The asset check
 compares the skill's SHA-256 against the exact accepted Markdown, normalizing
 only CRLF to LF for cross-platform checkouts. It requires no Agent account,
-model call, or Herdr installation. Packaged-installation verification and real
-Agent execution remain separate acceptance work.
+model call, or Herdr installation. `npm test` also checks packaged installations;
+real Agent execution remains separate acceptance work.

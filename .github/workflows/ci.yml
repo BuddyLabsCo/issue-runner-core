@@ -24,4 +24,16 @@ jobs:
       - run: npm install --global npm@11.6.2
       - run: npm ci
       - run: npm run build
-      - run: npm run verify
+      - name: Verify static checks, workflows, real Git, and installed packages
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run verify 2>&1 | tee verification.log
+      - name: Retain verification evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: core-verification-${{ matrix.os }}
+          path: verification.log
+          if-no-files-found: ignore
+          retention-days: 7
