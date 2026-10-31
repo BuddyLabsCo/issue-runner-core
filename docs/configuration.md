@@ -595,6 +595,20 @@ if their handoff files later change or disappear; changed Git evidence can still
 prevent advancement. Runner never reopens or closes an old opaque tab handle.
 Earlier incomplete startup snapshots fail visibly and remain retained.
 
+Review recovery keeps the original implementation and reviewer conversations
+separate. A missing Review handoff resumes the reviewer; a missing fix handoff
+resumes the implementation conversation. Both use the original Worktree, fixed
+PR metadata, and active invocation. Recovery retains the round, Review base/HEAD,
+assigned findings, accumulated commits, and consumed correction budget.
+
+Completed Reviews and fixes use their saved results without repeating Agent work.
+A findings Review still requires a committed fix, including the final allowed
+round. Restarting cannot add a Review round or let `no_change` satisfy findings.
+Keep the assigned findings report until fixes finish; Runner removes Review
+reports after the Review/fix workflow completes. A missing or empty required
+report offers the recovery-failure choice below. Restarting that Issue leaves
+other Issues' progress intact.
+
 If required original context cannot be restored, Runner prints exactly
 `unable to recover`. This includes missing original Worktrees, missing native role
 references, rejected native resume submissions, and invalid execution, Review/fix,

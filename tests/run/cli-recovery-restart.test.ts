@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { child, parentRun } from "../support/parent-run.ts";
 import { conflictRepairRun } from "../support/conflict-repair-run.ts";
+import { passed } from "../support/review-run.ts";
 import { validConfig } from "../support/cli-project.ts";
 import { stringify } from "yaml";
 import { executeCli } from "../../src/cli.ts";
@@ -187,52 +188,97 @@ await test("a missing retained conflict repair Worktree offers exit even during 
   assert.equal(fixture.state.taskCount, 1);
 });
 
-await test("restarting one Issue preserves another Issue's completed progress and consumed counts", async (t) => {
-  const fixture = await parentRun(t, [child(51), child(52)], {
-    ...validConfig,
-    issueList: [51, 52],
-  });
-  const run = () => fixture.run(["--issue"]);
-  const result = await run();
-  assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
-  const old = await implementationProgress(fixture.directory, 51);
-  const other = await implementationProgress(fixture.directory, 52);
-  other.corrections = 2;
-  other.probeRetries = 1;
-  const recovery = path.join(fixture.directory, "recovery");
-  await publish(path.join(recovery, `${old.input_hash}-51.json`), {
-    ...old,
-    roles: {},
-  });
-  await publish(path.join(recovery, `${other.input_hash}-52.json`), other);
-  fixture.dependencies.operator.pause = async (message) => {
-    if (message.startsWith("Operation failed:")) return "s";
-    assert.equal(
-      message,
-      "Enter to restart the entire Issue #51, or q to exit Runner.",
+for (const missing of [
+  "implementation identity",
+  "reviewer identity",
+  "findings",
+] as const) {
+  await test(`restarting an Issue with missing ${missing} preserves another Issue's completed progress and consumed counts`, async (t) => {
+    const fixture = await parentRun(t, [child(51), child(52)], {
+      ...validConfig,
+      issueList: [51, 52],
+      workflow: { review: missing !== "implementation identity" },
+    });
+    const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+      fixture.dependencies.terminalPlugin,
     );
-    return "";
-  };
-  const restarted = await run();
-  assert.equal(
-    restarted.summary.outcome,
-    "incomplete",
-    JSON.stringify(restarted),
-  );
-  assert.deepEqual(await implementationProgress(fixture.directory, 52), other);
-  const current = await implementationProgress(fixture.directory, 51);
-  assert.notEqual(current.execution_id, old.execution_id);
-  assert.equal(current.corrections, 0);
-  assert.deepEqual([...fixture.dispatched].sort(), [51, 51, 52]);
-  // Subsequent matching recovery restores both executions without a new restart.
-  assert.equal((await run()).summary.outcome, "incomplete");
-  assert.equal(
-    (await implementationProgress(fixture.directory, 51)).execution_id,
-    current.execution_id,
-  );
-  assert.deepEqual(await implementationProgress(fixture.directory, 52), other);
-  assert.deepEqual([...fixture.dispatched].sort(), [51, 51, 52]);
-});
+    fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+      if (
+        text.startsWith("Session Probe\n") &&
+        text.includes('"role":"review"')
+      ) {
+        const assignment = JSON.parse(text.split("\n")[1]!) as {
+          ticket: number;
+          path: string;
+        };
+        await publish(assignment.path, {
+          ...assignment,
+          sessionid: `review-${assignment.ticket}`,
+        });
+      } else if (text.startsWith("Review assignment\n")) {
+        const assignment = JSON.parse(text.split("\n")[1]!) as { path: string };
+        await publish(assignment.path, passed());
+      } else await submit(tab, text);
+    };
+    const run = () => fixture.run(["--issue"]);
+    const result = await run();
+    assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
+    const old = await implementationProgress(fixture.directory, 51);
+    const other = await implementationProgress(fixture.directory, 52);
+    other.corrections = 2;
+    other.probeRetries = 1;
+    const recovery = path.join(fixture.directory, "recovery");
+    if (missing === "implementation identity") delete old.roles.implement;
+    if (missing === "reviewer identity") delete old.roles.review;
+    if (missing === "findings") {
+      // Model a completed findings Review whose required report was lost before fixes.
+      const round = old.reviews![0]!;
+      round.result = {
+        ...passed(),
+        outcome: "findings",
+        commits: [],
+        findings_file: round.findings,
+      };
+      old.phase = "review_completed";
+      delete old.publication;
+    }
+    await publish(path.join(recovery, `${old.input_hash}-51.json`), old);
+    await publish(path.join(recovery, `${other.input_hash}-52.json`), other);
+    fixture.dependencies.operator.pause = async (message) => {
+      if (message.startsWith("Operation failed:")) return "s";
+      assert.equal(
+        message,
+        "Enter to restart the entire Issue #51, or q to exit Runner.",
+      );
+      return "";
+    };
+    const restarted = await run();
+    assert.equal(
+      restarted.summary.outcome,
+      "incomplete",
+      JSON.stringify(restarted),
+    );
+    assert.deepEqual(
+      await implementationProgress(fixture.directory, 52),
+      other,
+    );
+    const current = await implementationProgress(fixture.directory, 51);
+    assert.notEqual(current.execution_id, old.execution_id);
+    assert.equal(current.corrections, 0);
+    assert.deepEqual([...fixture.dispatched].sort(), [51, 51, 52]);
+    // Subsequent matching recovery restores both executions without a new restart.
+    assert.equal((await run()).summary.outcome, "incomplete");
+    assert.equal(
+      (await implementationProgress(fixture.directory, 51)).execution_id,
+      current.execution_id,
+    );
+    assert.deepEqual(
+      await implementationProgress(fixture.directory, 52),
+      other,
+    );
+    assert.deepEqual([...fixture.dispatched].sort(), [51, 51, 52]);
+  });
+}
 
 for (const stop of ["EOF", "cancellation"] as const) {
   await test(`${stop} at the recovery choice retains the failed execution without restarting`, async (t) => {

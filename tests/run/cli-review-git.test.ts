@@ -1,7 +1,14 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdtemp,
+  mkdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -32,7 +39,7 @@ async function git(cwd: string, ...args: string[]) {
   return stdout.trim();
 }
 
-await test("real Git rejects reviewer edits, verifies a final-round fix against reviewed HEAD, and retains both verified commits", async (t) => {
+await test("real Git rejects reviewer edits and recovers a final-round fix with its staged work and accumulated commits", async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "core-review-git "));
   t.after(() => rm(root, { recursive: true, force: true }));
   const origin = path.join(root, "origin");
@@ -97,6 +104,38 @@ await test("real Git rejects reviewer edits, verifies a final-round fix against 
       "implemented and fixed\n",
     );
     await git(saved.worktree, "add", ".");
+    assert.equal(round.head, implementationHead);
+    fixture.controller.abort();
+  };
+  const dependencies = {
+    ...fixture.dependencies,
+    gitWorkspace: new LocalGitWorkspace("unused-test-token"),
+  };
+  assert.equal(
+    (await executeCli(implementationCommand, dependencies)).summary.outcome,
+    "cancelled",
+  );
+  const interrupted = await fixture.snapshot();
+  const round = interrupted.reviews![0]!;
+  assert.equal(interrupted.phase, "fixing_review");
+  assert.equal(
+    await git(interrupted.worktree, "status", "--porcelain"),
+    "M  feature.txt",
+  );
+  await access(round.findings);
+  const before = fixture.state.submissions.length;
+  const submit = dependencies.terminalPlugin.submitText.bind(
+    dependencies.terminalPlugin,
+  );
+  dependencies.terminalPlugin.submitText = async (tab, text, chord) => {
+    await submit(tab, text, chord);
+    if (text !== "continue") return;
+    const saved = await fixture.snapshot();
+    assert.equal(saved.worktree, interrupted.worktree);
+    assert.equal(
+      await readFile(path.join(saved.worktree, "feature.txt"), "utf8"),
+      "implemented and fixed\n",
+    );
     await git(saved.worktree, "commit", "-m", "fix: address findings");
     await publish(round.fix!.invocation!.path, {
       outcome: "committed",
@@ -111,11 +150,20 @@ await test("real Git rejects reviewer edits, verifies a final-round fix against 
     });
   };
   const result = await executeCli(implementationCommand, {
-    ...fixture.dependencies,
-    gitWorkspace: new LocalGitWorkspace("unused-test-token"),
+    ...dependencies,
+    signal: new AbortController().signal,
   });
   assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+  assert.deepEqual(
+    fixture.state.submissions.slice(before).map(({ text }) => text),
+    ['any-cli --resume "native/$&/$`/$\'/session"', "continue"],
+  );
   const saved = await fixture.snapshot();
+  assert.equal(saved.execution_id, interrupted.execution_id);
+  assert.deepEqual(saved.roles, interrupted.roles);
+  assert.equal(saved.pr_title, interrupted.pr_title);
+  assert.equal(saved.pr_body, interrupted.pr_body);
+  assert.deepEqual(saved.reviews![0]!.fix!.invocation, round.fix!.invocation);
   assert.equal(saved.phase, "publication_eligible");
   const log = await git(
     saved.worktree,
@@ -129,4 +177,7 @@ await test("real Git rejects reviewer edits, verifies a final-round fix against 
   assert.equal(await git(checkout, "rev-parse", "HEAD"), base);
   assert.equal(await git(checkout, "branch", "--show-current"), "main");
   assert.equal(fixture.state.closedTabs.length, 3);
+  assert.equal(fixture.reviewState.reviews.length, 1);
+  assert.equal(fixture.reviewState.fixes.length, 1);
+  await assert.rejects(access(round.findings));
 });
