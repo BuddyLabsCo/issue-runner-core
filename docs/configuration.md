@@ -311,9 +311,15 @@ With `--no-auto-merge`, a CI-ready unmerged PR retains its remote branch, origin
 
 Auto-merge defaults on. Runner waits for every PR in the Batch to become CI-ready before integrating any PR. It integrates serially by ascending PR creation time, then PR number. A failed required check holds the Batch before integration.
 
-Runner requests squash integration against the observed HEAD with `codeHost.adminMerge` controlling the admin flag. After CI repair, it requires the latest verified and pushed repair HEAD while retaining the original publication metadata. A changed HEAD or closed, unmerged PR cannot earn delivery credit. Queue admission only starts the confirmation wait. Runner polls every 10 seconds within `timeouts.mergeQueueMinutes`; a timeout enters Operator Pause. Enter refreshes remote state and starts another configured wait window; q/EOF cancels.
+Runner requests squash integration against the observed HEAD with `codeHost.adminMerge` controlling the admin flag. After CI or conflict repair, it requires the latest verified and pushed repair HEAD while retaining the original publication metadata. A changed HEAD or closed, unmerged PR cannot earn delivery credit. Queue admission only starts the confirmation wait. Runner polls every 10 seconds within `timeouts.mergeQueueMinutes`; a timeout enters Operator Pause. Enter refreshes remote state and starts another configured wait window; q/EOF cancels.
 
-Explicit conflicts report `incomplete` and retain resources for downstream conflict repair. Other merge rejections preserve their original cause through ordinary operation retries and Operator Pause. A later failure stops ordered integration without rolling back earlier confirmed deliveries.
+Explicit conflict evidence starts repair using `agents.conflictRepair`: either the host reports `conflicting`, or the squash request returns an explicit conflict. Unknown mergeability and generic rejections do not start repair. Other rejections preserve their original cause through ordinary operation retries and Operator Pause. A later failure stops ordered integration without rolling back earlier confirmed deliveries.
+
+Each conflict attempt starts a fresh native conversation in a separate repair Worktree and local branch from the latest verified PR head. Runner fetches the current Target Branch SHA and supplies it with the conflict, Issue, PR URL, Git context, and fixed PR metadata. The Agent merges that SHA locally and resolves conflicts. Runner verifies the original-head ancestry, fetched-target ancestry, branch, base, cleanliness, actual changes, and exact commit claims before pushing to the original remote branch. It never force-pushes, recreates the PR, or enters ordinary Review.
+
+A conflict push restarts the normal 30-second check-discovery delay and configured check timeout. Failed checks use the separate CI budget. The conflict budget permits two consumed attempts per generation; `no_change` and failed Git verification consume an attempt without a push. Invalid handoffs use the same stage's correction policy. After exhaustion, Enter authorizes refreshed merge-state observation. Continued explicit conflict starts a new generation; unknown mergeability is polled within `timeouts.mergeQueueMinutes`. A resolved conflict refreshes required checks before integration, without consuming another conflict attempt. `q` or EOF cancels; Issue-scoped pauses also support skip.
+
+Snapshots retain conflict evidence, target SHA, attempt identities, native sessions, Worktrees, results, push evidence, consumed counts, and authorized generations. Recovery processes existing output before opening a tab, or resumes the exact repair conversation with only `continue` when output is absent. It preserves exhaustion, fixed PR metadata, and the original remote identity. Cancellation stops further dispatch and remote operations; unfinished resources remain available for recovery.
 
 After confirmed integration, `ticketClosure: runner` closes the Issue as completed and confirms its state from the tracker. A lost response is reconciled before repeating a merge or closure write. A successful write response alone does not establish delivery.
 
@@ -321,7 +327,7 @@ With `ticketClosure: code_host`, Runner leaves closure to the host. It waits 10 
 
 Delivery requires confirmed integration and tracker `closed/completed`. Reservation release, an unmerged PR, and `not_planned` closure earn no delivery credit. The checkpoint saves merge confirmation, completed closure, and the exact case-sensitive labels observed at confirmed delivery. Matching recovery skips completed Agent/merge work and preserves those delivery-time labels for downstream documentation maintenance.
 
-Successful numbered Issues and fully delivered Issue Lists return `succeeded` with exit zero. Cleanup, subsequent Batches, parent closure, conflict repair, and documentation maintenance remain downstream. Worktrees, handoffs, and Reservation markers remain retained in this slice. Standalone documentation remains unimplemented.
+Successful numbered Issues and fully delivered Issue Lists return `succeeded` with exit zero. Cleanup, subsequent Batches, parent closure, and documentation maintenance remain downstream. Worktrees, handoffs, and Reservation markers remain retained in this slice. Standalone documentation remains unimplemented.
 
 ### Rejected handoffs and manual correction
 
@@ -503,7 +509,10 @@ CI-repair Runs cover fresh conversations and Worktrees, failed-check context,
 fixed metadata, independent consumed-attempt budgets, operator generations,
 recovery, pending-push reconciliation, cancellation, and rejected checkpoint
 ownership. Real Git repairs verify separate local branches, pushes to the original
-remote branch, and rejection of empty repair commits.
+remote branch, and rejection of empty repair commits. Conflict-repair Runs cover
+explicit evidence, queued conflicts, independent budgets and authorized generations,
+conflict-to-CI handoff, recovery, and lost push responses. Real Git conflict repairs
+merge an advanced target and reject repairs missing its ancestry.
 Integration Runs verify the Batch CI barrier and ordering, queued merge confirmation,
 closure policies and observation waits, lost responses, changed HEAD rejection,
 delivery-time labels, and recovery without replaying confirmed operations.

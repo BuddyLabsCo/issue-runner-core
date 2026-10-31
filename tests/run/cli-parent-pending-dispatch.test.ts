@@ -85,7 +85,10 @@ await test("a withheld correction retains its prompt, path and spent budget unti
     }
   };
   fixture.dependencies.clock.sleep = async (ms) => {
-    assert.equal(ms === 10_000 || ms === 2000 || ms === 30_000, true);
+    assert.equal(
+      ms === 10_000 || ms === 1000 || ms === 2000 || ms === 30_000,
+      true,
+    );
     if (ms === 2000) ticket.labels = ["sandcastle:reserved"];
   };
   assert.equal((await fixture.run()).summary.outcome, "incomplete");
@@ -95,7 +98,8 @@ await test("a withheld correction retains its prompt, path and spent budget unti
   assert.match(before.pendingPrompt!, /^Correct the implementation handoff:/u);
   const resumedAt = submitted.length;
   ticket.labels!.push("ready-for-agent");
-  assert.equal((await fixture.run()).summary.outcome, "incomplete");
+  const result = await fixture.run();
+  assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
   const resumed = submitted.slice(resumedAt);
   assert.equal(resumed[0], 'any-cli --resume "native-51"');
   assert.match(resumed[1]!, /^Correct the implementation handoff:/u);

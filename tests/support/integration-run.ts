@@ -7,7 +7,7 @@ import type {
   PullRequestState,
 } from "../../src/run/contracts.ts";
 import {
-  implementationCommand,
+  deliveryCommand as implementationCommand,
   implementationCommit,
 } from "./implementation-run.ts";
 import { publicationRun } from "./publication-run.ts";

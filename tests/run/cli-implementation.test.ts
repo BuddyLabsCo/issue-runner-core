@@ -8,7 +8,16 @@ import { executeCli } from "../../src/cli.ts";
 import { createProject, validConfig } from "../support/cli-project.ts";
 import { createCliDependencies } from "../support/cli-dependencies.ts";
 
-const command = ["run", "--project", "demo", "--env", "fake", "--issue", "50"];
+const command = [
+  "run",
+  "--project",
+  "demo",
+  "--env",
+  "fake",
+  "--issue",
+  "50",
+  "--no-auto-merge",
+];
 const commit = { sha: "b".repeat(40), message: "feat: implement the Issue" };
 
 await test("one standalone implementation persists verified completion before closing its tab, without delivering the Issue", async (t) => {

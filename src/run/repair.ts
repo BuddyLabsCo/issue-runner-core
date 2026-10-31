@@ -3,22 +3,31 @@ import { lstat } from "node:fs/promises";
 import path from "node:path";
 import { runIssueStage, type IssueStageContext } from "../agent/stage.ts";
 import { nonempty, object, parseExecution } from "../agent/handoff.ts";
-import type { CiRepairProgress, ImplementationProgress } from "../recovery.ts";
+import type {
+  RepairProgress,
+  ImplementationProgress,
+  PublicationProgress,
+} from "../recovery.ts";
 import type { LoadedProject } from "../config.ts";
+import { conflictRepairInstructions } from "../prompts/conflict-repair.ts";
 import { ciRepairInstructions } from "../prompts/ci-repair.ts";
 import type { GitWorkspace } from "./contracts.ts";
 import type { ReadOperation } from "./discovery.ts";
 import { verifyWorkspace } from "./verification.ts";
 import { OperationStopped, pauseForOperator } from "./operations.ts";
 
-export function validateCiRepairContext(
+function validateRepairBudget(
   progress: ImplementationProgress,
   loaded: LoadedProject,
+  kind: "ci" | "conflict",
 ): void {
-  const budget = progress.publication?.ciRepair;
+  const budget =
+    progress.publication?.[kind === "ci" ? "ciRepair" : "conflictRepair"];
   if (budget === undefined) return;
   const invalid = () =>
-    new Error("unable to recover: incomplete or invalid CI repair context");
+    new Error(
+      `unable to recover: incomplete or invalid ${kind === "ci" ? "CI" : "conflict"} repair context`,
+    );
   object(budget);
   if (
     !Number.isSafeInteger(budget.consumed) ||
@@ -38,17 +47,26 @@ export function validateCiRepairContext(
     path.isAbsolute(value) &&
     path.dirname(value) === handoffs;
   const ids = new Set<string>();
-  let base = progress.publication.headSha;
+  const bases = new Set([
+    progress.publication.headSha,
+    ...pushedRepairs(progress.publication).map(
+      (item) => item.result!.commits.at(-1)!.sha,
+    ),
+  ]);
   for (const [index, attempt] of budget.attempts.entries()) {
     object(attempt);
-    const suffix = `ticket-${progress.ticket}-ci-repair-${attempt.attempt_id}`;
+    const suffix = `ticket-${progress.ticket}-${kind}-repair-${attempt.attempt_id}`;
     if (
       !nonempty(attempt.attempt_id) ||
       ids.has(attempt.attempt_id) ||
       attempt.worktree !==
         path.join(loaded.directory, "worktrees", progress.run_id, suffix) ||
       attempt.branch !== `sandcastle/run-${progress.run_id}/${suffix}` ||
-      attempt.base !== base ||
+      !bases.has(attempt.base) ||
+      (kind === "conflict" &&
+        (!nonempty(attempt.targetBase) || !nonempty(attempt.conflict))) ||
+      (kind === "ci" &&
+        (attempt.targetBase !== undefined || attempt.conflict !== undefined)) ||
       !Array.isArray(attempt.failedChecks) ||
       attempt.failedChecks.some(
         (check) =>
@@ -109,8 +127,8 @@ export function validateCiRepairContext(
       )
         throw invalid();
     }
-    if (attempt.pushed) base = attempt.result!.commits.at(-1)!.sha;
-    else if (
+    if (
+      !attempt.pushed &&
       index < budget.attempts.length - 1 &&
       !attempt.verificationError &&
       attempt.result?.outcome !== "no_change"
@@ -126,21 +144,24 @@ export function validateCiRepairContext(
     throw invalid();
 }
 
-export async function repairRequiredChecks(
+export async function repairPullRequest(
   input: IssueStageContext & {
+    kind: "ci" | "conflict";
     git: GitWorkspace;
     read: ReadOperation;
     confirm: (head?: string) => Promise<void>;
     remoteHead: () => Promise<string | null>;
   },
 ): Promise<void> {
-  const { progress, read, git } = input;
+  const { progress, read, git, kind } = input;
+  const name = kind === "ci" ? "CI" : "Conflict";
   const publication = progress.publication!;
-  const budget = (publication.ciRepair ??= {
-    consumed: 0,
-    generation: 0,
-    attempts: [],
-  });
+  const budget = (publication[kind === "ci" ? "ciRepair" : "conflictRepair"] ??=
+    {
+      consumed: 0,
+      generation: 0,
+      attempts: [],
+    });
   if (budget.retryAuthorized) {
     budget.consumed = 0;
     budget.generation++;
@@ -157,12 +178,14 @@ export async function repairRequiredChecks(
     if (budget.consumed >= 2) {
       await pauseForOperator(
         input.operator,
-        "CI repair failed after two attempts. Resolve checks, then retry.",
+        `${name} repair failed after two attempts. Resolve ${kind === "ci" ? "checks" : "the conflict"}, then retry.`,
         input.signal,
         true,
       );
       budget.retryAuthorized = true;
-      publication.discoveryNotBefore = input.clock.now().getTime() + 30_000;
+      if (kind === "ci")
+        publication.discoveryNotBefore = input.clock.now().getTime() + 30_000;
+      else publication.phase = "pending_merge";
       delete publication.checksDeadline;
       await input.persist();
       return;
@@ -176,18 +199,30 @@ export async function repairRequiredChecks(
         input.loaded.directory,
         "worktrees",
         progress.run_id,
-        `ticket-${progress.ticket}-ci-repair-${id}`,
+        `ticket-${progress.ticket}-${kind}-repair-${id}`,
       ),
-      branch: `sandcastle/run-${progress.run_id}/ticket-${progress.ticket}-ci-repair-${id}`,
+      branch: `sandcastle/run-${progress.run_id}/ticket-${progress.ticket}-${kind}-repair-${id}`,
       base:
-        budget.attempts
-          .filter((item) => item.pushed)
-          .at(-1)
-          ?.result?.commits.at(-1)?.sha ?? publication.headSha,
+        pushedRepairs(publication).at(-1)?.result?.commits.at(-1)?.sha ??
+        publication.headSha,
+      ...(kind === "conflict"
+        ? {
+            targetBase: await read(
+              "fetch_conflict_target",
+              `ticket:${progress.ticket}`,
+              () =>
+                git.fetchTargetBranch(
+                  input.loaded.config.checkout,
+                  publication.targetBranch,
+                ),
+            ),
+            conflict: publication.conflict!,
+          }
+        : {}),
       corrections: 0,
       superseded: [],
       failedChecks: structuredClone(
-        publication.checks!.filter(
+        (publication.checks ?? []).filter(
           ({ bucket }) => bucket === "fail" || bucket === "cancel",
         ),
       ),
@@ -195,11 +230,11 @@ export async function repairRequiredChecks(
     budget.attempts.push(attempt);
     await input.persist();
   }
-  const repair: CiRepairProgress = attempt;
+  const repair: RepairProgress = attempt;
   if (!repair.worktreeCreated) {
     await input.confirm();
     await read(
-      "create_ci_repair_worktree",
+      `create_${kind}_repair_worktree`,
       `ticket:${progress.ticket}`,
       async () => {
         let exists = false;
@@ -244,25 +279,26 @@ export async function repairRequiredChecks(
       ...input,
       persist,
       stage: repair,
-      purpose: "ci_repair",
+      purpose: kind === "ci" ? "ci_repair" : "conflict_repair",
       worktree: repair.worktree,
       task: () =>
-        `${ciRepairInstructions}\n\nRepository: ${progress.repository}\nIssue #${progress.ticket}: ${input.ticket.title ?? ""}\n${input.ticket.body ?? ""}\nPR: ${publication.pullRequest!.url}\nWorktree: ${repair.worktree}\nDelivery branch: ${repair.branch}\nRemote branch: ${publication.branch}\nBase SHA: ${repair.base}\nTarget Branch: ${publication.targetBranch}\nFailed checks: ${JSON.stringify(repair.failedChecks)}`,
+        `${kind === "ci" ? ciRepairInstructions : conflictRepairInstructions}\n\nRepository: ${progress.repository}\nIssue #${progress.ticket}: ${input.ticket.title ?? ""}\n${input.ticket.body ?? ""}\nPR: ${publication.pullRequest!.url}\nWorktree: ${repair.worktree}\nDelivery branch: ${repair.branch}\nRemote branch: ${publication.branch}\nBase SHA: ${repair.base}\nTarget Branch: ${publication.targetBranch}\nFailed checks: ${JSON.stringify(repair.failedChecks)}${kind === "conflict" ? `\nTarget Branch SHA: ${repair.targetBase}\nMerge conflict: ${repair.conflict}` : ""}`,
       accept: async (text) => {
         const result = parseExecution(text);
         const evidence = await read(
-          "inspect_ci_repair",
+          `inspect_${kind}_repair`,
           `ticket:${progress.ticket}`,
           () => git.inspect(repair),
         );
         delete repair.verificationError;
         try {
           verifyWorkspace(repair, evidence, result);
+          await verifyRepairAncestry(git, repair);
         } catch (error) {
           repair.verificationError =
             error instanceof Error ? error.message : String(error);
           input.operator.write(
-            `CI repair verification failed: ${repair.verificationError}; attempt consumed.`,
+            `${name} repair verification failed: ${repair.verificationError}; attempt consumed.`,
           );
         }
         return result;
@@ -270,14 +306,15 @@ export async function repairRequiredChecks(
     });
   if (!repair.result)
     throw new OperationStopped(
-      "Issue eligibility changed before CI repair dispatch",
+      `Issue eligibility changed before ${name} repair dispatch`,
     );
   await persist();
   if (repair.verificationError || repair.result.outcome === "no_change") return;
   repair.pendingPush = repair.result.commits.at(-1)!.sha;
   await input.persist();
-  await read("push_ci_repair", `ticket:${progress.ticket}`, async () => {
+  await read(`push_${kind}_repair`, `ticket:${progress.ticket}`, async () => {
     verifyWorkspace(repair, await git.inspect(repair), repair.result!);
+    await verifyRepairAncestry(git, repair);
     const remote = await input.remoteHead();
     if (remote === repair.pendingPush) {
       await input.confirm(repair.pendingPush);
@@ -297,7 +334,61 @@ export async function repairRequiredChecks(
   repair.pushed = true;
   delete repair.pendingPush;
   publication.phase = "pr_created";
+  delete publication.conflict;
+  delete publication.mergeDeadline;
   publication.discoveryNotBefore = input.clock.now().getTime() + 30_000;
   delete publication.checksDeadline;
   await input.persist();
+}
+
+export function validateRepairContext(
+  progress: ImplementationProgress,
+  loaded: LoadedProject,
+): void {
+  const publication = progress.publication;
+  if (
+    (publication?.conflict !== undefined && !nonempty(publication.conflict)) ||
+    (publication?.phase === "conflict_repair" &&
+      !nonempty(publication.conflict))
+  )
+    throw new Error("unable to recover: missing explicit conflict evidence");
+  validateRepairBudget(progress, loaded, "ci");
+  validateRepairBudget(progress, loaded, "conflict");
+}
+
+export function pushedRepairs(
+  publication: PublicationProgress,
+): RepairProgress[] {
+  const remaining = [
+    ...(publication.ciRepair?.attempts ?? []),
+    ...(publication.conflictRepair?.attempts ?? []),
+  ].filter((attempt) => attempt.pushed);
+  const ordered: RepairProgress[] = [];
+  let head = publication.headSha;
+  while (remaining.length) {
+    const matches = remaining.filter((attempt) => attempt.base === head);
+    if (matches.length !== 1)
+      throw new Error("unable to recover: invalid repair ancestry chain");
+    const attempt = matches[0]!;
+    head = parseExecution(JSON.stringify(attempt.result)).commits.at(-1)!.sha;
+    ordered.push(attempt);
+    remaining.splice(remaining.indexOf(attempt), 1);
+  }
+  return ordered;
+}
+
+export async function verifyRepairAncestry(
+  git: GitWorkspace,
+  repair: RepairProgress,
+): Promise<void> {
+  if (repair.targetBase !== undefined) {
+    const evidence = await git.inspect({
+      worktree: repair.worktree,
+      base: repair.targetBase,
+    });
+    if (evidence.base !== repair.targetBase)
+      throw new Error(
+        "Conflict repair must include the fetched Target Branch SHA in its ancestry",
+      );
+  }
 }

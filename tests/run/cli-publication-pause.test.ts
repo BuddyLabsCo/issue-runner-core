@@ -31,7 +31,9 @@ for (const response of ["", "q", null] as const) {
       }
       return inspect(input);
     };
-    fixture.dependencies.operator.pause = async () => {
+    fixture.dependencies.operator.pause = async (message) => {
+      if (message.includes("Integration is not scripted in this fixture"))
+        return "s";
       waiting = true;
       paused.resolve();
       const result = await answer.promise;
