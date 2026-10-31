@@ -151,6 +151,11 @@ conversations remain interactive. Cancellation or a fatal Issue error interrupts
 active operator input and stops sibling dispatch and automatic follow-ups;
 unfinished work and checkpoints remain available for recovery.
 
+Issue-scoped operation failures offer `s` to skip that Issue and retain its
+Reservation, Worktree, and handoff evidence. Other Batch members can continue.
+Run-level failures, including shared Target Branch discovery/fetch, do not offer
+Issue skip. Audit recovery never offers skip or acceptance of a logging gap.
+
 Reservations remain best effort: the configured label is added before the
 runner assignee, with full eligibility and ownership revalidation inside every
 write attempt, including retries after failed requests or backoff. Core
@@ -407,7 +412,8 @@ Unknown or obsolete fields are rejected at every Runner-owned object.
 - `operationRetry` and `agentRetry` are nonnegative safe integers counting
   additional attempts. Both delay schedules are nonempty positive finite
   seconds; the last delay repeats. Exhausted operation reads retain non-Agent
-  Operator Pause: Enter retries, q/EOF cancels. Audit failures retry only the
+  Operator Pause: Enter retries, q/EOF cancels; Issue-scoped failures also allow
+  `s` to skip that Issue. Audit failures retry only the
   log action, never the completed external operation.
 - `ticketClosure` is `runner` or `code_host`. Neither authorizes closing the
   empty parent.
@@ -415,6 +421,45 @@ Unknown or obsolete fields are rejected at every Runner-owned object.
 All configuration, credential, prompt, selection, and plugin validation occurs
 before delivery side effects. Help/version/init need neither credentials nor
 a plugin. Cancellation prevents new reads and retry follow-ups.
+
+## Non-Agent recovery
+
+Automatic retries apply only to operations that can safely repeat. Each retry
+cycle allows the initial attempt plus `operationRetry` additional attempts.
+`operationRetryDelay` uses seconds and repeats its final delay when needed.
+Enter authorizes another cycle after exhaustion; unsupported input does not
+authorize any action. Manual retries do not consume the automatic budget.
+
+| Operation | Recovery policy |
+| --- | --- |
+| API/Git observations, Target Branch fetch, local checkpoints | Bounded automatic retries, then Operator Pause |
+| Reservation label/assignee writes | Revalidate current eligibility and ownership before each attempt; confirm state immediately after failure before retrying |
+| Worktree or Runner Tab creation | Pause after the first failure; only Enter authorizes another resource-creation attempt |
+| Command, Probe, task, correction, or continuation transport | Report failure without replaying input, redirecting its target, or opening an uncertain-delivery interaction |
+| Owned tab close | Retry the same handle automatically, then pause; retain accepted stage completion and report rejected/unresolved cleanup |
+| Audit creation or append | Pause and retry only the same log action; never replay a completed business effect |
+
+Creation failures may leave partial resources or resources whose identifiers were
+not returned. Inspect those resources before authorizing another attempt.
+Reservation reconciliation avoids repeating an already observed mutation even
+when `operationRetry` is zero. Changed eligibility still prevents later writes
+and Agent dispatch.
+
+API and Git commands have 60-second I/O bounds. Core also bounds each terminal
+plugin call to 60 seconds and stops waiting immediately on Run cancellation.
+Timing out cannot cancel the underlying plugin operation or prove that it had no
+effect. A rejected or unresolved close remains incomplete cleanup; Core neither
+waits for process settlement nor redirects the close to another tab.
+Successful input transport ends the I/O bound. Native approvals, questions, and
+missing Probe/result files remain in the native conversation or handoff watcher;
+they do not become non-Agent Operator Pauses.
+
+Audit records identify the operation, target, attempt, and failure without logging
+prompt bodies or serializing tab handles. Audit recovery gates new operations
+until the log action succeeds. Enter retries logging; `q`/EOF cancels. Neither `s`
+nor claimed success can bypass logging. Completed Reservation writes, resource
+creation, prompt transport, and close operations are not replayed because their
+result append failed.
 
 ## Verification limits
 
@@ -446,6 +491,11 @@ Both selectors cover bounded concurrency with explicitly reversed completion,
 isolated contexts and targeted closes, retained Batch membership, and sibling
 cancellation. Real Git checks run concurrent Issues from a freshly advanced
 Target Branch with separate per-call Git configurations.
+Controlled Runs also cover seconds-based backoff/final-delay reuse, immediate
+lost-response reconciliation with zero retries, Issue skip, manual creation
+recovery, terminal I/O bounds/cancellation, and audit failures after completed
+mutations and transport. They use real audit-file failures and controlled timers;
+no Herdr installation, Agent account, or model call is required.
 No public testing entry, filesystem port, or scheduler is added.
 
 Installed-package cases also relocate the global prefix and invoke Core through

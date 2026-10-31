@@ -9,7 +9,7 @@ import type {
   StageProgress,
 } from "../recovery.ts";
 import type { Clock, OperatorIO, Ticket } from "../run/contracts.ts";
-import { OperatorCancelled } from "../run/operations.ts";
+import { OperatorCancelled, TicketSkipped } from "../run/operations.ts";
 import type { TabHandle, TerminalPlugin } from "../terminal.ts";
 import { NativeConversations } from "./conversation.ts";
 import { nonempty, object, readHandoff } from "./handoff.ts";
@@ -264,7 +264,11 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
           signal?.throwIfAborted();
         } catch (error) {
           signal?.throwIfAborted();
-          if (error instanceof OperatorCancelled) throw error;
+          if (
+            error instanceof OperatorCancelled ||
+            error instanceof TicketSkipped
+          )
+            throw error;
           const reason = error instanceof Error ? error.message : String(error);
           operator.write(`Invalid ${name} handoff: ${reason}`);
           // Missing output never spends this budget or generates reminders.

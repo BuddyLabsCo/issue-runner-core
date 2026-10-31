@@ -41,6 +41,12 @@ independently of parent discovery, using the same eligibility checks and
 publication and CI checkpoint. Standalone documentation remains unimplemented.
 No npm package has been published.
 
+Non-Agent failures retain bounded safe retries and Operator Pause. Enter retries;
+`q` or EOF cancels. Issue-scoped pauses also allow `s` to skip that Issue while
+retaining its resources. Resource creation requires an explicit retry; uncertain
+prompt delivery stops without replay. Audit recovery retries only logging.
+See [non-Agent recovery](docs/configuration.md#non-agent-recovery) for the operation policies.
+
 See [terminal contract development](docs/terminal-contract.md) for the public
 API, build/test commands, tarball identity, and independent plugin consumption.
 The accepted [Core specification](https://github.com/BuddyLabsCo/issue-runner-core/issues/45)
