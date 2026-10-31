@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { lstat } from "node:fs/promises";
 import path from "node:path";
 import { runIssueStage, type IssueStageContext } from "../agent/stage.ts";
@@ -266,7 +267,10 @@ export async function repairPullRequest(
     );
     repair.worktreeCreated = true;
     await input.persist();
-  }
+  } else if (!existsSync(repair.worktree))
+    throw new Error(
+      `unable to recover: original ${name} repair Worktree is missing`,
+    );
   const persist = async () => {
     if (repair.result && !repair.counted) {
       budget.consumed++;

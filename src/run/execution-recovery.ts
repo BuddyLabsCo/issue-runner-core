@@ -147,16 +147,16 @@ export async function restoreExecution(input: {
           throw new Error(
             "unable to recover: missing native documentation identity; retain the Worktree and complete the assigned Probe before recovery",
           );
-        if (
-          restored.phase !== "reserved" &&
-          restored.noChangeClosure !== "completed" &&
-          restored.publication?.phase !== "delivered" &&
-          !existsSync(restored.worktree)
-        )
-          throw new Error(
-            "unable to recover: original documentation Worktree is missing",
-          );
       }
+      if (
+        restored.phase !== "reserved" &&
+        restored.noChangeClosure !== "completed" &&
+        restored.publication?.phase !== "delivered" &&
+        !existsSync(restored.worktree)
+      )
+        throw new Error(
+          `unable to recover: original ${documentation ? "documentation " : ""}Worktree is missing`,
+        );
       if (!documentation) validateReviewContext(restored, loaded);
       validateRepairContext(restored, loaded);
       return restored;

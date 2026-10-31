@@ -179,44 +179,73 @@ for (const scenario of [
             message.includes(progress.worktree),
         ),
       );
-      const before = fixture.state.submissions.length;
+      const oldConfig = fixture.state.gitConfigs[0]!;
+      await assert.rejects(readFile(oldConfig), { code: "ENOENT" });
       const controller = new AbortController();
+      const submissions: { text: string; chord?: string }[] = [];
+      const configs: string[] = [];
       const terminal = fixture.dependencies.terminalPlugin;
+      const onSleep = fixture.state.onSleep;
       fixture.state.onSleep = async (ms) => {
-        if (ms === 250) controller.abort();
+        assert.equal(ms, 10_000);
+        assert.equal(submissions.length, 1);
       };
       const resumed = await executeCli(implementationCommand, {
         ...fixture.dependencies,
         signal: controller.signal,
         gitWorkspace: new LocalGitWorkspace("unused-local-test-token"),
         terminalPlugin: {
-          ...terminal,
           async createTab(options) {
             assert.equal(options.cwd, progress.worktree);
+            const config = options.env.GIT_CONFIG_GLOBAL!;
+            assert.notEqual(config, oldConfig);
+            configs.push(config);
+            const { stdout } = await execute(
+              "git",
+              ["config", "--global", "--get", "user.name"],
+              {
+                cwd: options.cwd,
+                env: { ...process.env, ...options.env },
+                encoding: "utf8",
+              },
+            );
+            assert.equal(stdout.trim(), "Issue Runner");
             assert.match(
               await git(options.cwd, "status", "--porcelain"),
               /M {2}README\.md\n\?\? untracked\.txt/u,
             );
+            assert.equal(
+              await readFile(path.join(options.cwd, "README.md"), "utf8"),
+              "uncommitted edit\n",
+            );
+            assert.equal(
+              await readFile(path.join(options.cwd, "untracked.txt"), "utf8"),
+              "unfinished work\n",
+            );
             return terminal.createTab(options);
+          },
+          async submitText(_tab, text, chord) {
+            submissions.push({ text, ...(chord ? { chord } : {}) });
+            if (text === "continue") controller.abort();
+          },
+          async closeTab() {
+            assert.fail("interrupted work retains its Runner Tab");
           },
         },
       });
       assert.equal(resumed.summary.outcome, "cancelled");
-      assert.deepEqual(
-        fixture.state.submissions.slice(before).map(({ text }) => text),
-        ['any-cli --resume "native/$&/$`/$\'/session"', "continue"],
-      );
+      assert.deepEqual(submissions, [
+        { text: 'any-cli --resume "native/$&/$`/$\'/session"', chord: "Enter" },
+        { text: "continue", chord: "Shift+Enter" },
+      ]);
+      assert.deepEqual(await fixture.snapshot(), progress);
+      assert.equal(configs.length, 1);
+      await assert.rejects(readFile(configs[0]!), { code: "ENOENT" });
+      assert.equal(await git(progress.worktree, "rev-parse", "HEAD"), base);
+      fixture.state.onSleep = onSleep;
       assert.equal(
         await git(progress.worktree, "diff", "--cached", "--name-only"),
         "README.md",
-      );
-      assert.equal(
-        await readFile(path.join(progress.worktree, "untracked.txt"), "utf8"),
-        "unfinished work\n",
-      );
-      assert.deepEqual(
-        (await fixture.snapshot()).invocation,
-        progress.invocation,
       );
 
       // The stopped native conversation finishes in its original working context.
