@@ -61,6 +61,101 @@ for (const kind of ["ci", "conflict"] as const) {
   });
 }
 
+await test("restarting an unrecoverable repair replaces the whole Issue and retains its old repair resources", async (t) => {
+  const fixture = await ciRepairRun(t);
+  fixture.repairs.onTask = async () => fixture.controller.abort();
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  const before = await fixture.snapshot();
+  const repair = before.publication!.ciRepair!.attempts[0]!;
+  const recovery = path.join(fixture.directory, "recovery");
+  const file = path.join(recovery, `${before.input_hash}-50.json`);
+  await publish(file, {
+    ...before,
+    publication: {
+      ...before.publication,
+      ciRepair: {
+        ...before.publication!.ciRepair,
+        attempts: [{ ...repair, sessionid: undefined }],
+      },
+    },
+  });
+  const retained = await readFile(file, "utf8");
+  const controller = new AbortController();
+  fixture.dependencies.signal = controller.signal;
+  fixture.dependencies.operator.pause = async (message) => {
+    assert.equal(
+      message,
+      "Enter to restart the entire Issue #50, or q to exit Runner.",
+    );
+    return "";
+  };
+  const create = fixture.dependencies.gitWorkspace.createWorktree.bind(
+    fixture.dependencies.gitWorkspace,
+  );
+  fixture.dependencies.gitWorkspace.createWorktree = async (input) => {
+    await create(input);
+    fixture.state.evidence.commits = [];
+  };
+  fixture.state.onTask = async () => controller.abort();
+  const restarted = await fixture.run();
+  assert.equal(
+    restarted.summary.outcome,
+    "cancelled",
+    JSON.stringify(restarted),
+  );
+  const after = await fixture.snapshot();
+  assert.notEqual(after.execution_id, before.execution_id);
+  assert.notEqual(after.worktree, before.worktree);
+  assert.notEqual(after.branch, before.branch);
+  assert.notDeepEqual(after.probe, before.probe);
+  assert.notDeepEqual(after.invocation, before.invocation);
+  assert.equal(after.publication, undefined);
+  assert.equal(after.corrections, 0);
+  assert.equal(fixture.state.taskCount, 2);
+  assert.equal(fixture.repairs.tasks.length, 1);
+  assert.equal(fixture.publicationState.creations, 1);
+  assert.equal(fixture.publicationState.pushes, 1);
+  for (const stage of [before, repair]) {
+    await access(stage.worktree);
+    await access(stage.probe!.path);
+  }
+  const archive = (await readdir(recovery)).find((name) =>
+    name.endsWith(".retained"),
+  )!;
+  assert.equal(await readFile(path.join(recovery, archive), "utf8"), retained);
+});
+
+for (const kind of ["ci", "conflict"] as const) {
+  await test(`completed ${kind} repair rechecks Git evidence before its recovered pending push`, async (t) => {
+    const fixture = await (kind === "ci" ? ciRepairRun : conflictRepairRun)(t);
+    fixture.state.onClose = async () => {
+      if (fixture.state.closedTabs.length === 2) fixture.controller.abort();
+    };
+    assert.equal((await fixture.run()).summary.outcome, "cancelled");
+    const key = kind === "ci" ? "ciRepair" : "conflictRepair";
+    const before = await fixture.snapshot();
+    const repair = before.publication![key]!.attempts[0]!;
+    assert.equal(repair.counted, true);
+    fixture.workspaces.get(repair.worktree)!.clean = false;
+    fixture.dependencies.signal = new AbortController().signal;
+    fixture.dependencies.operator.pause = async (message) => {
+      assert.match(message, /clean/u);
+      return "q";
+    };
+    const submissions = fixture.state.submissions.length;
+    assert.equal((await fixture.run()).summary.outcome, "cancelled");
+    const after = await fixture.snapshot();
+    assert.equal(after.publication![key]!.consumed, 1);
+    assert.equal(
+      after.publication![key]!.attempts[0]!.pendingPush,
+      repairCommit.sha,
+    );
+    assert.equal(after.publication![key]!.attempts[0]!.pushed, undefined);
+    assert.equal(fixture.publicationState.pushes, 1);
+    assert.equal(fixture.state.submissions.length, submissions);
+  });
+}
+
 await test(
   "skipping exhausted CI repair retains the Issue resources and lets sibling work continue",
   { timeout: 10_000 },

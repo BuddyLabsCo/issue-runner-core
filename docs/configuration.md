@@ -347,6 +347,10 @@ A conflict push restarts the normal 30-second check-discovery delay and configur
 
 Snapshots retain conflict evidence, target SHA, attempt identities, native sessions, Worktrees, results, push evidence, consumed counts, and authorized generations. Recovery processes existing output before opening a tab, or resumes the exact repair conversation with only `continue` when output is absent. It preserves exhaustion, fixed PR metadata, and the original remote identity. Cancellation stops further dispatch and remote operations; unfinished resources remain available for recovery.
 
+For either repair category, interruption during the Session Probe can leave its identity file written before the snapshot records the session. Recovery validates that retained Probe and resumes its exact conversation for the repair assignment. It does not start another repair conversation or regenerate PR metadata. If the Probe is missing or invalid and no native identity was saved, Runner offers whole-Issue restart or exit. Retain the original repair Worktree and native history until recovery completes.
+
+Completed repairs skip Agent work on restart, but Runner rechecks Git evidence before pushing or reconciling a pending push. Only the exact recorded remote HEAD confirms a completed push; unrelated remote changes cannot authorize replacement. CI and conflict consumed counts and generations remain separate across tab replacement and Runner restart. Authorizing another CI generation leaves the conflict budget unchanged, and vice versa.
+
 After confirmed integration, `ticketClosure: runner` closes the Issue as completed and confirms its state from the tracker. A lost response is reconciled before repeating a merge or closure write. A successful write response alone does not establish delivery.
 
 With `ticketClosure: code_host`, Runner leaves closure to the host. It waits 10 seconds before observing tracker state, then another 30 seconds if the Issue remains open. If it is still open, Operator Pause allows another observation cycle. Runner does not write tracker closure under this policy.
