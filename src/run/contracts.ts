@@ -17,6 +17,7 @@ export interface ChildPage {
 }
 
 export interface Tracker {
+  closeTicket(repository: string, ticket: number): Promise<void>;
   getTicket(repository: string, ticket: number): Promise<Ticket>;
   listBlockersPage(
     repository: string,
@@ -38,6 +39,16 @@ export interface Tracker {
 }
 
 export interface CodeHost {
+  getPullRequest(
+    repository: string,
+    pullRequest: number,
+  ): Promise<PullRequestState>;
+  requestSquashMerge(input: {
+    repository: string;
+    pullRequest: number;
+    headSha: string;
+    admin: boolean;
+  }): Promise<MergeRequestResult>;
   resolveTargetBranch(repository: string): Promise<string>;
   getRemoteBranchHead(
     repository: string,
@@ -56,6 +67,19 @@ export interface CodeHost {
     pullRequest: number,
   ): Promise<RequiredCheck[]>;
 }
+
+export interface PullRequestState {
+  headSha: string;
+  createdAt: string;
+  merged: boolean;
+  mergeRequested: boolean;
+  mergeable: "mergeable" | "conflicting" | "unknown";
+  mergeFailure: string | null;
+}
+
+export type MergeRequestResult =
+  | { outcome: "accepted" }
+  | { outcome: "conflict" | "rejected"; error: unknown };
 
 export interface PullRequestIdentity {
   number: number;

@@ -58,26 +58,7 @@ export async function publishImplementation(input: {
     };
     await persist();
   }
-  const publication = progress.publication;
-  if (
-    publication.branch !== progress.branch ||
-    publication.targetBranch !== progress.target_branch ||
-    publication.headSha !== head ||
-    publication.title !== progress.pr_title ||
-    publication.body !== progress.pr_body ||
-    JSON.stringify(publication.commits) !== JSON.stringify(result.commits) ||
-    ![
-      "pending_push",
-      "pushed",
-      "pending_pr",
-      "pr_created",
-      "checks_ready",
-      "checks_failed",
-    ].includes(publication.phase)
-  )
-    throw new Error(
-      "Publication evidence does not match the verified execution",
-    );
+  const publication = verifiedPublication(progress);
 
   await read("push_verified_branch", target, async () => {
     await verify();
@@ -225,5 +206,38 @@ export async function publishImplementation(input: {
     }
   }
   await confirm();
-  return `CI-ready PR ${pullRequest.url} retained with branch ${progress.branch}, Worktree ${progress.worktree}, handoffs and progress evidence${input.autoMerge ? "; integration remains downstream" : "; auto-merge disabled"}`;
+  return `CI-ready PR ${pullRequest.url} retained with branch ${progress.branch}, Worktree ${progress.worktree}, handoffs and progress evidence${input.autoMerge ? "; ready for integration" : "; auto-merge disabled"}`;
+}
+
+export function verifiedPublication(progress: ImplementationProgress) {
+  const publication = progress.publication;
+  const result = verifiedImplementation(progress);
+  const head = result.commits.at(-1)?.sha;
+  if (
+    !publication ||
+    !head ||
+    publication.branch !== progress.branch ||
+    publication.targetBranch !== progress.target_branch ||
+    publication.headSha !== head ||
+    publication.title !== progress.pr_title ||
+    publication.body !== progress.pr_body ||
+    JSON.stringify(publication.commits) !== JSON.stringify(result.commits) ||
+    ![
+      "pending_push",
+      "pushed",
+      "pending_pr",
+      "pr_created",
+      "checks_ready",
+      "checks_failed",
+      "pending_merge",
+      "merge_requested",
+      "merged",
+      "delivered",
+    ].includes(publication.phase)
+  )
+    throw new Error(
+      "Publication evidence does not match the verified execution",
+    );
+
+  return publication;
 }
