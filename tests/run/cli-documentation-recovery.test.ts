@@ -13,6 +13,53 @@ const noChange = {
   findings_file: null,
 };
 
+await test("cancelled documentation cleanup retries report the retained execution resources", async (t) => {
+  const fixture = await documentationRun(t);
+  fixture.state.onTask = async (file) => {
+    fixture.state.evidence.changed = false;
+    await publish(file, noChange);
+  };
+  fixture.dependencies.gitWorkspace.cleanupWorktree = async () => {
+    throw new Error("documentation cleanup unavailable");
+  };
+  fixture.dependencies.operator.pause = async (message) => {
+    assert.match(message, /documentation cleanup unavailable/u);
+    return "q";
+  };
+  for (let run = 0; run < 2; run++) {
+    fixture.dependencies.signal = new AbortController().signal;
+    fixture.dependencies.messages.length = 0;
+    assert.equal((await fixture.run()).summary.outcome, "cancelled");
+    const saved = await fixture.snapshot();
+    const recovery = path.join(fixture.directory, "recovery");
+    const executionFile = (await readdir(recovery)).find((name) =>
+      name.endsWith("-document-50.json"),
+    )!;
+    const report = fixture.dependencies.messages
+      .filter((message) => message.startsWith("Retained "))
+      .join("\n");
+    for (const file of [
+      path.join(recovery, executionFile),
+      saved.worktree,
+      saved.probe!.path,
+      saved.invocation!.path,
+    ]) {
+      await access(file);
+      assert.ok(
+        report.includes(file),
+        `Run ${run + 1} omitted retained path: ${file}`,
+      );
+    }
+    assert.ok(report.includes(saved.execution_id));
+    assert.ok(report.includes(saved.branch));
+    assert.equal(saved.noChangeClosure, "completed");
+  }
+  assert.equal(fixture.state.taskCount, 1);
+  assert.equal(fixture.state.probeCount, 1);
+  assert.equal(fixture.maintenance.creates, 1);
+  assert.equal(fixture.integrationState.closures, 1);
+});
+
 await test("documentation closure with a lost response is reconciled without duplicate writes", async (t) => {
   const fixture = await documentationRun(t);
   fixture.state.onTask = async (file) => {

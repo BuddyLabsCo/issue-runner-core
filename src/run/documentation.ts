@@ -202,6 +202,7 @@ export async function runDocumentation(
       "recovery",
       `${context.inputHash}-document-${maintenance.ticket}.json`,
     );
+    context.retained?.set(executionFile, undefined);
     const progress = await restoreExecution({
       file: executionFile,
       loaded,
@@ -214,6 +215,7 @@ export async function runDocumentation(
     });
     if (!progress)
       throw new Error("Missing owned documentation execution for cleanup");
+    context.retained?.set(executionFile, progress);
     if (
       progress.noChangeClosure !== "completed" &&
       (!progress.publication ||
