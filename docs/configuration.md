@@ -639,6 +639,16 @@ result append failed.
 
 ## Verification limits
 
+Run the composed five-Issue scenarios without Herdr or Agent credentials:
+
+```sh
+node --test tests/run/full-contract.test.ts tests/run/full-contract-failure.test.ts
+```
+
+The scenarios use `maxBatchSize: 3`, enabled Review, and `docMaintainTriggerLabel: Docs`. The first and fourth Issues carry `Docs`; the fifth depends on all four earlier Issues. This produces Batches of three, one, and one, with committed documentation maintenance between Batches. Scripted external dependencies and a private fake terminal drive `executeCli` through the real conversation coordinator and correlated temporary files.
+
+The success case holds the first Batch's CI barrier while implementations finish out of order. It checks original-role Review/fix resumption, ordered integration and closure, maintenance barriers, snapshots, owned cleanup, reports, and exit status. Failure cases cover Reservation retries, manual correction after automatic exhaustion, and cancellation followed by matching-input recovery with only `continue` for the missing handoff. Independent CI/conflict repair budgets and incompatible failure combinations remain in focused tests. These checks do not establish live Agent acceptance, native history restoration, or Herdr transport behavior.
+
 Private scripted tests enter through `executeCli` with real temporary config,
 prompts, and audit files. An empty Run never needs a conversation coordinator;
 the fake terminal records forbidden terminal operations. Tests cover
