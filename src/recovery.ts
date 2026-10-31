@@ -158,6 +158,7 @@ export interface BatchProgress {
   target_branch: string;
   tickets: number[];
   completed?: boolean;
+  documentation?: string;
 }
 
 export interface MaintenanceProgress {
@@ -168,6 +169,7 @@ export interface MaintenanceProgress {
   phase: "scheduled" | "ticket_created" | "delivered" | "completed" | "skipped";
   creationAttempted?: boolean;
   ticket?: number;
+  batch?: string;
 }
 
 export async function saveProgress(

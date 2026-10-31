@@ -15,7 +15,7 @@ import {
   serializeOperator,
   TicketSkipped,
 } from "./operations.ts";
-import { integrateBatch } from "./integration.ts";
+import { runBatch } from "./batch.ts";
 import { runStandalone } from "./standalone.ts";
 import { runParent } from "./parent.ts";
 import { runDocumentation } from "./documentation.ts";
@@ -166,7 +166,12 @@ export async function runProject(
       throw error;
     }
   };
-  if (options.selector === "issue" && options.issueTicket !== undefined)
+  const trigger = loaded.config.workflow.docMaintainTriggerLabel;
+  if (
+    options.selector === "issue" &&
+    options.issueTicket !== undefined &&
+    !trigger
+  )
     return attemptIssue({
       number: options.issueTicket,
       loaded,
@@ -178,129 +183,59 @@ export async function runProject(
       codeHost,
       autoMerge: options.autoMerge,
     });
-  if (options.selector === "document") {
-    return runDocumentation({
+  let maintenancePending = false;
+  const document = async (batch?: string, runId = context.runId) => {
+    base = undefined;
+    maintenancePending = Boolean(batch);
+    const result = await runDocumentation({
       loaded,
       tracker,
       codeHost,
-      context,
+      context: { ...context, runId },
       summary,
       read,
       fetchBase,
       autoMerge: options.autoMerge,
+      ...(batch ? { batch } : {}),
     });
-  }
-  const runBatch = async (tickets: Ticket[]): Promise<RunSummary> => {
-    base = undefined;
-    const selection = await selectIssueBatch({
+    maintenancePending &&= result.outcome !== "succeeded";
+    return result;
+  };
+  if (options.selector === "document") return document();
+  const selectBatch = (tickets: Ticket[]) =>
+    selectIssueBatch({
       tickets,
       loaded,
       tracker,
       context,
       read,
       targetBranch,
+      ...(options.issueTicket !== undefined
+        ? { issueTicket: options.issueTicket }
+        : {}),
     });
-    const reasons = [...selection.reasons];
-    const integrations = new Map<
-      number,
-      { pullRequest: number; complete: () => Promise<RunSummary> }
-    >();
-    let delivered: number[] = [];
-    let resolved: boolean;
-    const attempts = selection.batch.map(async (number) => {
-      try {
-        signal.throwIfAborted();
-        return await attemptIssue({
-          number,
-          ...(options.selector === "parent"
-            ? { parentTicket: summary.parentTicket }
-            : {}),
-          loaded,
-          tracker,
-          context: { ...context, runId: selection.runId },
-          summary,
-          read,
-          fetchBase,
-          codeHost,
-          autoMerge: options.autoMerge,
-          deferIntegration: (pullRequest, complete) => {
-            integrations.set(number, { pullRequest, complete });
-          },
-        });
-      } catch (error) {
-        controller.abort(error);
-        throw error;
-      }
-    });
-    try {
-      const results = await integrateBatch({
-        batch: selection.batch,
-        ready: integrations,
-        results: await Promise.all(attempts),
-        repository: loaded.config.repository,
-        codeHost,
-        read,
-      });
-      resolved = results.every(
-        (result) =>
-          result.outcome === "succeeded" || result.outcome === "no_work",
-      );
-      if (
-        selection.batch.length > 0 &&
-        resolved &&
-        options.selector === "parent"
-      )
-        await selection.complete();
-      delivered = selection.batch.filter(
-        (_number, index) => results[index]!.outcome === "succeeded",
-      );
-      for (const [index, result] of results.entries())
-        reasons.push(
-          ...result.reasons.map(
-            (reason) => `Issue #${selection.batch[index]!}: ${reason}`,
-          ),
-        );
-    } catch (error) {
-      await Promise.allSettled(attempts);
-      throw error;
-    }
-    return {
-      ...summary,
-      outcome:
-        (selection.batch.length === 0 && tickets.length === 0) ||
-        (options.selector === "issue" &&
-          tickets.every((ticket) => ticket.state === "closed"))
-          ? "no_work"
-          : (options.selector === "parent" &&
-                selection.batch.length > 0 &&
-                resolved) ||
-              (options.selector === "issue" &&
-                tickets.every(
-                  (ticket) =>
-                    ticket.state === "closed" ||
-                    delivered.includes(ticket.number),
-                ))
-            ? "succeeded"
-            : "incomplete",
-      reasons: [
-        ...(selection.batch.length
-          ? [`selected Delivery Tickets: ${selection.batch.join(", ")}`]
-          : []),
-        ...reasons,
-      ],
-    };
-  };
-  if (options.selector === "parent")
-    return runParent({
-      repository: loaded.config.repository,
-      parentTicket: summary.parentTicket,
+  const batch = (
+    tickets: Ticket[],
+    selection?: Awaited<ReturnType<typeof selectBatch>>,
+  ) => {
+    base = undefined;
+    return runBatch({
+      tickets,
+      ...(selection ? { selection } : {}),
+      loaded,
       tracker,
+      context,
       read,
       summary,
-      runBatch,
+      codeHost,
+      fetchBase,
+      autoMerge: options.autoMerge,
+      options,
+      controller,
+      document,
     });
-  const tickets: Ticket[] = [];
-  for (const number of loaded.config.issueList) {
+  };
+  const readTicket = async (number: number) => {
     const ticket = await read("read_issue", `ticket:${number}`, () =>
       tracker.getTicket(loaded.config.repository, number),
     );
@@ -310,7 +245,48 @@ export async function runProject(
         ticket.repository !== loaded.config.repository)
     )
       throw new Error("Unexpected Issue ownership");
-    tickets.push(ticket);
+    return ticket;
+  };
+  const recoveredReasons: string[] = [];
+  if (trigger) {
+    const pending = await selectBatch([]);
+    if (pending.batch.length > 0) {
+      const result = await batch(
+        pending.documentation
+          ? []
+          : await Promise.all(pending.batch.map(readTicket)),
+        pending,
+      );
+      if (result.outcome !== "succeeded" || options.issueTicket !== undefined)
+        return result;
+      recoveredReasons.push(...result.reasons);
+    }
   }
-  return runBatch(tickets);
+  if (options.selector === "parent") {
+    const result = await runParent({
+      repository: loaded.config.repository,
+      parentTicket: summary.parentTicket,
+      tracker,
+      read,
+      summary,
+      runBatch: batch,
+      maintenancePending: () => maintenancePending,
+    });
+    return { ...result, reasons: [...recoveredReasons, ...result.reasons] };
+  }
+  const tickets: Ticket[] = [];
+  for (const number of options.issueTicket !== undefined
+    ? [options.issueTicket]
+    : loaded.config.issueList) {
+    tickets.push(await readTicket(number));
+  }
+  const result = await batch(tickets);
+  return {
+    ...result,
+    outcome:
+      recoveredReasons.length > 0 && result.outcome === "no_work"
+        ? "succeeded"
+        : result.outcome,
+    reasons: [...recoveredReasons, ...result.reasons],
+  };
 }

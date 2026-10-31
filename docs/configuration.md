@@ -353,7 +353,24 @@ With `ticketClosure: code_host`, Runner leaves closure to the host. It waits 10 
 
 Delivery requires confirmed integration and tracker `closed/completed`. Reservation release, an unmerged PR, and `not_planned` closure earn no delivery credit. The checkpoint saves merge confirmation, completed closure, and the exact case-sensitive labels observed at confirmed delivery. Matching recovery skips completed Agent/merge work and preserves those delivery-time labels for downstream documentation maintenance.
 
-Successful numbered Issues and fully delivered Issue Lists return `succeeded` with exit zero. Parent Runs continue through subsequent Batches and confirm parent closure when all children are terminal. Ordinary Issue cleanup and automatic documentation maintenance remain downstream. Ordinary Issue Worktrees, handoffs, and Reservation markers remain retained in this slice.
+Successful numbered Issues and fully delivered Issue Lists return `succeeded` with exit zero after any triggered maintenance succeeds. Parent Runs continue through subsequent Batches and confirm parent closure when all children are terminal. Ordinary Issue Worktrees, handoffs, and Reservation markers remain retained in this slice.
+
+### Automatic documentation after a Batch
+
+Set `workflow.docMaintainTriggerLabel` to enable documentation after successful delivery:
+
+```yaml
+workflow:
+  docMaintainTriggerLabel: Docs
+```
+
+Runner compares this trimmed setting exactly and case-sensitively with labels captured at confirmed successful delivery. `Docs` matches `Docs`, but not `docs`, `Docs-extra`, or ` Docs `. Later label edits do not change the saved delivery evidence. Empty or omitted settings disable automatic maintenance.
+
+One matching successful Batch creates one maintenance occurrence, even when several delivered Issues match. Numbered Issues and Issue Lists use the same trigger. Cancelled Issues, ordinary implementation `no_change`, and unmerged work earn no delivery credit. A partially delivered Batch must finish before maintenance starts.
+
+Automatic maintenance uses the [document workflow](#standalone-documentation), including its configuration requirements, normal publication and repair paths, and independently verified no-change completion. It fetches the current Target Branch after business delivery and runs without ordinary Review. Pending or unsuccessful maintenance blocks subsequent Batch discovery and parent closure; it retains its owned artifacts for recovery.
+
+The Batch checkpoint records its maintenance association before document work starts. The occurrence has its own `recovery/<input-hash>-document-batch-<occurrence>.json` checkpoint and Maintenance Ticket execution. Matching inputs resume that occurrence before parent discovery, even when all business children are already closed. Completed maintenance satisfies its original barrier without creating another occurrence. Changed arguments or configuration start a new Run without adopting the old occurrence or deleting its artifacts.
 
 ### Standalone documentation
 

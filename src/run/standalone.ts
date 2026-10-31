@@ -41,6 +41,7 @@ export async function runStandalone(input: {
   fetchBase: () => Promise<string>;
   codeHost: CodeHost;
   autoMerge: boolean;
+  onDelivery?: (labels: string[]) => void;
   deferIntegration?: (
     pullRequest: number,
     complete: () => Promise<RunSummary>,
@@ -242,6 +243,8 @@ export async function runStandalone(input: {
           inspectTicket: inspect,
           continuePublication: () => publish(progress),
         });
+        if (delivery.outcome === "succeeded")
+          input.onDelivery?.(progress.publication!.deliveryLabels!);
         return {
           ...summary,
           outcome: delivery.outcome,
@@ -381,6 +384,7 @@ export async function runStandalone(input: {
       ],
     };
   if (!input.documentation) {
+    const { runnerAccount } = config.tracker;
     // Confirm each write from current tracker state before retrying it.
     await read(
       "add_reservation_label",
@@ -388,7 +392,7 @@ export async function runStandalone(input: {
       async () => {
         selected = await inspect();
         if (selected.reason) return;
-        if (selected.ticket.assignees?.includes(config.tracker.runnerAccount)) {
+        if (selected.ticket.assignees?.includes(runnerAccount)) {
           selected.reason = "Reservation changed before label";
           return;
         }
@@ -423,19 +427,13 @@ export async function runStandalone(input: {
           selected.reason = "Reservation changed before assignment";
           return;
         }
-        if (!selected.ticket.assignees?.includes(config.tracker.runnerAccount))
-          await tracker.addAssignee(
-            repository,
-            number,
-            config.tracker.runnerAccount,
-          );
+        if (!selected.ticket.assignees?.includes(runnerAccount))
+          await tracker.addAssignee(repository, number, runnerAccount);
       },
       {
         reconcile: async () => {
           selected = await inspect();
-          return selected.ticket.assignees?.includes(
-            config.tracker.runnerAccount,
-          )
+          return selected.ticket.assignees?.includes(runnerAccount)
             ? { outcome: "completed", result: undefined }
             : { outcome: "pending" };
         },

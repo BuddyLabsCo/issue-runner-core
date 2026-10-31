@@ -17,7 +17,9 @@ import { restoreExecution } from "./execution-recovery.ts";
 import { publishedHead, verifiedPublication } from "./publication.ts";
 
 export async function runDocumentation(
-  input: Omit<Parameters<typeof runStandalone>[0], "number">,
+  input: Omit<Parameters<typeof runStandalone>[0], "number"> & {
+    batch?: string;
+  },
 ): Promise<RunSummary> {
   const { loaded, tracker, summary } = input;
   const context = {
@@ -35,7 +37,7 @@ export async function runDocumentation(
   const file = path.join(
     loaded.directory,
     "recovery",
-    `${context.inputHash}-document.json`,
+    `${context.inputHash}-document${input.batch ? `-batch-${input.batch}` : ""}.json`,
   );
   const previous = await readHandoff(file);
   let maintenance: MaintenanceProgress = {
@@ -44,6 +46,7 @@ export async function runDocumentation(
     repository: loaded.config.repository,
     target_branch: summary.targetBranch,
     phase: "scheduled",
+    ...(input.batch ? { batch: input.batch } : {}),
   };
   const persist = () =>
     context.signal?.aborted
@@ -66,6 +69,7 @@ export async function runDocumentation(
         saved.input_hash !== context.inputHash ||
         saved.repository !== maintenance.repository ||
         saved.target_branch !== maintenance.target_branch ||
+        saved.batch !== input.batch ||
         !nonempty(saved.run_id) ||
         ![
           "scheduled",
@@ -86,7 +90,16 @@ export async function runDocumentation(
         throw new Error(
           "unable to recover: invalid documentation maintenance checkpoint",
         );
-      if (saved.phase !== "completed" && saved.phase !== "skipped")
+      if (saved.phase === "completed" && input.batch)
+        return {
+          ...summary,
+          outcome: "succeeded",
+          reasons: [`Completed Maintenance Ticket ${String(saved.ticket)}`],
+        };
+      if (
+        saved.phase !== "completed" &&
+        (saved.phase !== "skipped" || input.batch)
+      )
         maintenance = saved as unknown as MaintenanceProgress;
     }
     context.runId = maintenance.run_id;

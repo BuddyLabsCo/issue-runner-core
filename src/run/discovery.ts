@@ -1,4 +1,5 @@
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import type { LoadedProject } from "../config.ts";
 import { nonempty, object, readHandoff } from "../agent/handoff.ts";
 import { saveProgress, type BatchProgress } from "../recovery.ts";
@@ -77,7 +78,7 @@ export async function hasOpenBlocker(
 
 function parseBatch(
   text: string,
-  expected: Omit<BatchProgress, "run_id" | "tickets" | "completed">,
+  expected: Pick<BatchProgress, "input_hash" | "repository" | "target_branch">,
   maxBatchSize: number,
 ): BatchProgress {
   const saved = object(JSON.parse(text) as unknown);
@@ -85,6 +86,9 @@ function parseBatch(
     Object.entries(expected).some(([key, value]) => saved[key] !== value) ||
     !nonempty(saved.run_id) ||
     (saved.completed !== undefined && typeof saved.completed !== "boolean") ||
+    (saved.documentation !== undefined &&
+      (typeof saved.documentation !== "string" ||
+        !/^[0-9a-f-]{36}$/u.test(saved.documentation))) ||
     !Array.isArray(saved.tickets) ||
     saved.tickets.length === 0 ||
     saved.tickets.length > maxBatchSize ||
@@ -106,10 +110,13 @@ export async function selectIssueBatch(input: {
   context: RunContext;
   read: ReadOperation;
   targetBranch: string;
+  issueTicket?: number;
 }): Promise<{
   batch: number[];
   runId: string;
   reasons: string[];
+  documentation?: string;
+  scheduleDocumentation: () => Promise<string>;
   complete: () => Promise<void>;
 }> {
   const { tickets, loaded, tracker, context, read } = input;
@@ -166,6 +173,7 @@ export async function selectIssueBatch(input: {
       isBlocked ||
       !child.labels?.includes("ready-for-agent") ||
       (config.issueList.length > 0 &&
+        input.issueTicket === undefined &&
         !config.issueList.includes(child.number)) ||
       hasRunner !== hasLabel
     )
@@ -196,6 +204,9 @@ export async function selectIssueBatch(input: {
     run_id: recorded?.run_id ?? context.runId,
     ...ownership,
     tickets: batch,
+    ...(recorded && !recorded.completed && recorded.documentation
+      ? { documentation: recorded.documentation }
+      : {}),
   };
   if ((!recorded || recorded.completed) && batch.length > 0)
     await read("save_batch_checkpoint", batchFile, () =>
@@ -204,6 +215,16 @@ export async function selectIssueBatch(input: {
   return {
     batch,
     runId: recorded?.run_id ?? context.runId,
+    ...(progress.documentation
+      ? { documentation: progress.documentation }
+      : {}),
+    scheduleDocumentation: async () => {
+      progress.documentation ??= randomUUID();
+      await read("schedule_batch_documentation", batchFile, () =>
+        saveProgress(batchFile, progress),
+      );
+      return progress.documentation;
+    },
     complete: () =>
       read("complete_batch_checkpoint", batchFile, () =>
         saveProgress(batchFile, { ...progress, completed: true }),
