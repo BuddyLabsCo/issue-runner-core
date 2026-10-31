@@ -276,14 +276,23 @@ export async function repairPullRequest(
     throw new Error(
       `unable to recover: original ${name} repair Worktree is missing`,
     );
-  if (
-    repair.probe &&
-    !repair.sessionid &&
-    !(await readHandoff(repair.probe.path))
-  )
-    throw new Error(
-      `unable to recover: missing native ${name} repair identity`,
-    );
+  if (repair.probe && !repair.sessionid) {
+    let probe;
+    try {
+      probe = await readHandoff(repair.probe.path);
+    } catch (cause) {
+      throw new Error(
+        `unable to recover: invalid native ${name} repair Probe`,
+        {
+          cause,
+        },
+      );
+    }
+    if (!probe)
+      throw new Error(
+        `unable to recover: missing native ${name} repair identity`,
+      );
+  }
   const persist = async () => {
     if (repair.result && !repair.counted) {
       budget.consumed++;

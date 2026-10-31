@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import assert from "node:assert/strict";
-import { access, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, rm, writeFile } from "node:fs/promises";
 import test from "node:test";
 import { ciRepairRun } from "../support/ci-repair-run.ts";
 import { conflictRepairRun } from "../support/conflict-repair-run.ts";
@@ -49,7 +49,7 @@ for (const kind of ["ci", "conflict"] as const) {
     assert.equal(fixture.publicationState.creations, 1);
   });
 
-  for (const probe of ["missing", "invalid"] as const) {
+  for (const probe of ["missing", "invalid", "directory"] as const) {
     await test(`${probe} interrupted ${kind} repair identity offers whole-Issue restart or exit`, async (t) => {
       const fixture = await (kind === "ci" ? ciRepairRun : conflictRepairRun)(
         t,
@@ -74,7 +74,10 @@ for (const kind of ["ci", "conflict"] as const) {
       const key = kind === "ci" ? "ciRepair" : "conflictRepair";
       const pending = before.publication![key]!.attempts[0]!;
       if (probe === "missing") await rm(pending.probe!.path);
-      else await writeFile(pending.probe!.path, "{}");
+      else if (probe === "directory") {
+        await rm(pending.probe!.path);
+        await mkdir(pending.probe!.path);
+      } else await writeFile(pending.probe!.path, "{}");
       fixture.dependencies.signal = new AbortController().signal;
       fixture.dependencies.terminalPlugin.submitText = submit;
       fixture.dependencies.operator.pause = async (message) => {
@@ -93,6 +96,9 @@ for (const kind of ["ci", "conflict"] as const) {
       assert.equal(fixture.publicationState.pushes, 1);
       await access(pending.worktree);
       await access(before.worktree);
+      await access(before.probe!.path);
+      if (probe === "directory")
+        assert.deepEqual(await fixture.snapshot(), before);
     });
   }
 }
