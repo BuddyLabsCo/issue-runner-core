@@ -160,7 +160,6 @@ export async function testGlobalPluginLoading(
       "--global",
       "--prefix",
       prefix,
-      "--offline",
       "--ignore-scripts",
       "--no-audit",
       "--no-fund",
