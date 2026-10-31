@@ -185,6 +185,7 @@ for (const scenario of [
       const submissions: { text: string; chord?: string }[] = [];
       const configs: string[] = [];
       const terminal = fixture.dependencies.terminalPlugin;
+      const onSleep = fixture.state.onSleep;
       fixture.state.onSleep = async (ms) => {
         assert.equal(ms, 10_000);
         assert.equal(submissions.length, 1);
@@ -241,6 +242,65 @@ for (const scenario of [
       assert.equal(configs.length, 1);
       await assert.rejects(readFile(configs[0]!), { code: "ENOENT" });
       assert.equal(await git(progress.worktree, "rev-parse", "HEAD"), base);
+      fixture.state.onSleep = onSleep;
+      assert.equal(
+        await git(progress.worktree, "diff", "--cached", "--name-only"),
+        "README.md",
+      );
+
+      // The stopped native conversation finishes in its original working context.
+      await git(progress.worktree, "add", ".");
+      await git(
+        progress.worktree,
+        "commit",
+        "-m",
+        "feat: finish retained work",
+      );
+      const handoff = {
+        outcome: "committed",
+        summary: "Finished preserved local work while Runner was stopped.",
+        commits: [
+          {
+            sha: await git(progress.worktree, "rev-parse", "HEAD"),
+            message: "feat: finish retained work",
+          },
+        ],
+        findings_file: null,
+      };
+      await publish(progress.invocation!.path, handoff);
+      const recovered = await executeCli(implementationCommand, {
+        ...fixture.dependencies,
+        signal: new AbortController().signal,
+        gitWorkspace: new LocalGitWorkspace("unused-local-test-token"),
+        terminalPlugin: {
+          async createTab() {
+            assert.fail("a valid result produced while stopped needs no tab");
+          },
+          async submitText() {
+            assert.fail("the completed assignment must not be replayed");
+          },
+          async closeTab() {
+            assert.fail("old opaque handles do not survive restart");
+          },
+        },
+      });
+      assert.match(recovered.summary.reasons.join(" "), /CI-ready/u);
+      const completed = await fixture.snapshot();
+      assert.deepEqual(completed.result, handoff);
+      assert.equal(completed.execution_id, progress.execution_id);
+      assert.equal(completed.worktree, progress.worktree);
+      assert.equal(completed.pr_title, progress.pr_title);
+      assert.equal(completed.pr_body, progress.pr_body);
+      assert.deepEqual(completed.invocation, progress.invocation);
+      assert.deepEqual(completed.roles, progress.roles);
+      assert.equal(fixture.state.taskCount, 1);
+      assert.equal(fixture.state.probeCount, 1);
+      assert.equal(await git(progress.worktree, "status", "--porcelain"), "");
+      assert.equal(
+        await git(origin, "rev-parse", `refs/heads/${progress.branch}`),
+        handoff.commits[0]!.sha,
+      );
+      assert.equal(await git(origin, "rev-parse", "refs/heads/main"), base);
     }
     if (scenario !== "empty" && scenario !== "dirty-cancel") {
       assert.equal(

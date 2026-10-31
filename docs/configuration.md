@@ -564,10 +564,30 @@ correction count remain unchanged, including an exhausted correction budget.
 Staged, unstaged, and untracked work remain in the original Worktree.
 Checkpoints without pending-prompt evidence retain this continuation-only
 behavior. Uncertain transport and abrupt process loss around dispatch retain
-the existing continuation-only recovery behavior. Completed stages are verified without
-redispatch. Earlier incomplete startup snapshots fail visibly and remain
-retained. A missing original Worktree fails with `unable to recover` before
-native dispatch; Runner creates no replacement Worktree or conversation.
+the existing continuation-only recovery behavior.
+
+Recovery checks only the active invocation's assigned final path. Files at
+superseded paths, unrelated files, and `.tmp` siblings cannot complete that stage.
+Implementation, Review, fixes, repairs, and documentation retain their normal
+purpose-specific validation and independent Git checks during recovery:
+
+| Saved stage and observed output | Recovery behavior |
+| --- | --- |
+| Unfinished stage, valid expected final | Verify and persist completion before advancing; no Agent tab is needed for that stage. |
+| Unfinished stage, invalid expected final | Keep the stage incomplete and use its remaining correction budget, or wait for manual correction when exhausted. |
+| Unfinished stage, only a superseded final or active `.tmp` | Treat the expected final as absent; retain the active invocation and path. |
+| Crash after validation but before completion persistence | Re-read the expected final and repeat normal verification. |
+| Crash after completion persistence | Skip the completed Agent stage and continue the next recorded workflow step, rechecking required Git evidence. |
+
+Recovery preserves fixed PR metadata and original working resources, including
+staged edits and untracked files. Restart alone never creates a replacement
+assignment or regenerates metadata. Completed stages use saved result facts even
+if their handoff files later change or disappear; changed Git evidence can still
+prevent advancement. Runner never reopens or closes an old opaque tab handle.
+Earlier incomplete startup snapshots fail visibly and remain retained.
+
+A missing original Worktree fails with `unable to recover` before native dispatch;
+Runner creates no replacement Worktree or conversation.
 Broader recovery/restart policy belongs to downstream slices.
 
 Before recovery, manually close leftover Agent tabs and stop their sessions
