@@ -9,6 +9,8 @@ import type {
 } from "./contracts.ts";
 import type { TerminalPlugin } from "../terminal.ts";
 import type { AuditLog } from "../audit.ts";
+import { existsSync } from "node:fs";
+import type { ImplementationProgress } from "../recovery.ts";
 import {
   boundedOperation,
   cancellableSleep,
@@ -31,6 +33,7 @@ export interface RunContext {
   git: GitWorkspace;
   terminal: TerminalPlugin;
   signal?: AbortSignal;
+  retained?: Map<string, ImplementationProgress | undefined>;
 }
 
 export interface RunSummary {
@@ -51,6 +54,59 @@ export interface RunOptions {
 }
 
 export async function runProject(
+  options: RunOptions,
+  loaded: LoadedProject,
+  tracker: Tracker,
+  codeHost: CodeHost,
+  context: RunContext,
+): Promise<RunSummary> {
+  const retained = new Map<string, ImplementationProgress | undefined>();
+  let summary: RunSummary | undefined;
+  try {
+    return (summary = await executeProject(options, loaded, tracker, codeHost, {
+      ...context,
+      retained,
+    }));
+  } finally {
+    for (const [snapshot, progress] of retained) {
+      const repairs = [
+        ...(progress?.publication?.ciRepair?.attempts ?? []),
+        ...(progress?.publication?.conflictRepair?.attempts ?? []),
+      ];
+      const resources = progress ? [progress, ...repairs] : [];
+      const stages = [
+        ...resources,
+        ...(progress?.reviews ?? []).flatMap((round) => [round, round.fix]),
+      ];
+      const paths = [
+        snapshot,
+        `${snapshot}.tmp`,
+        ...resources.map((resource) => resource.worktree),
+        ...stages.flatMap((stage) =>
+          [
+            stage?.probe?.path,
+            stage?.invocation?.path,
+            ...(stage?.superseded ?? []),
+          ]
+            .filter((file) => file !== undefined)
+            .flatMap((file) => [file, `${file}.tmp`]),
+        ),
+        ...(progress?.reviews ?? []).flatMap((round) => [
+          round.findings,
+          `${round.findings}.tmp`,
+        ]),
+      ].filter(existsSync);
+      if (paths.length === 0) continue;
+      const report = progress
+        ? `Retained Issue #${progress.ticket} execution=${progress.execution_id}; recorded branches: ${resources.map((resource) => resource.branch).join(", ")}; resources: ${paths.join(", ")}`
+        : `Retained recovery evidence: ${paths.join(", ")}`;
+      if (summary) summary.reasons.push(report);
+      else context.operator.write(report);
+    }
+  }
+}
+
+async function executeProject(
   options: RunOptions,
   loaded: LoadedProject,
   tracker: Tracker,

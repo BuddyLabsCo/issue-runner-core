@@ -35,8 +35,13 @@ async function git(cwd: string, ...args: string[]) {
   return stdout.trim();
 }
 
-for (const scenario of ["changed", "empty", "remote-advance"] as const) {
-  await test(`a real Git ${scenario} commit is independently checked through a complete Run`, async (t) => {
+for (const scenario of [
+  "changed",
+  "empty",
+  "remote-advance",
+  "dirty-cancel",
+] as const) {
+  await test(`a real Git ${scenario} execution is independently checked through a complete Run`, async (t) => {
     const root = await mkdtemp(path.join(tmpdir(), "core-git "));
     t.after(() => rm(root, { recursive: true, force: true }));
     const origin = path.join(root, "origin");
@@ -84,6 +89,20 @@ for (const scenario of ["changed", "empty", "remote-advance"] as const) {
       };
     fixture.state.onTask = async (file) => {
       const progress = await fixture.snapshot();
+      if (scenario === "dirty-cancel") {
+        await writeFile(
+          path.join(progress.worktree, "README.md"),
+          "uncommitted edit\n",
+        );
+        await git(progress.worktree, "add", "README.md");
+        await writeFile(
+          path.join(progress.worktree, "untracked.txt"),
+          "unfinished work\n",
+        );
+        await writeFile(`${file}.tmp`, "partial handoff");
+        fixture.controller.abort();
+        return;
+      }
       if (scenario !== "empty") {
         await writeFile(
           path.join(progress.worktree, "feature.txt"),
@@ -126,11 +145,42 @@ for (const scenario of ["changed", "empty", "remote-advance"] as const) {
     );
     assert.equal(
       progress.phase,
-      scenario !== "empty" ? "implementation_completed" : "implementing",
+      scenario === "empty" || scenario === "dirty-cancel"
+        ? "implementing"
+        : "implementation_completed",
     );
     assert.equal(await git(checkout, "branch", "--show-current"), "main");
     assert.equal(await git(checkout, "rev-parse", "HEAD"), base);
-    if (scenario !== "empty") {
+    assert.equal(
+      await git(progress.worktree, "branch", "--show-current"),
+      progress.branch,
+    );
+    assert.equal(
+      await git(checkout, "rev-parse", `refs/heads/${progress.branch}`),
+      await git(progress.worktree, "rev-parse", "HEAD"),
+    );
+    if (scenario === "dirty-cancel") {
+      assert.match(
+        await git(progress.worktree, "status", "--porcelain"),
+        /M {2}README\.md\n\?\? untracked\.txt/u,
+      );
+      assert.equal(
+        await readFile(path.join(progress.worktree, "README.md"), "utf8"),
+        "uncommitted edit\n",
+      );
+      assert.equal(
+        await readFile(path.join(progress.worktree, "untracked.txt"), "utf8"),
+        "unfinished work\n",
+      );
+      assert.ok(
+        fixture.dependencies.messages.some(
+          (message) =>
+            message.startsWith("Retained ") &&
+            message.includes(progress.worktree),
+        ),
+      );
+    }
+    if (scenario !== "empty" && scenario !== "dirty-cancel") {
       assert.equal(
         await git(origin, "rev-parse", `refs/heads/${progress.branch}`),
         scenario === "remote-advance"

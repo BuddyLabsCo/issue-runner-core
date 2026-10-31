@@ -91,6 +91,7 @@ export async function runStandalone(input: {
       : read("save_implementation_checkpoint", `ticket:${number}`, () =>
           saveProgress(progressFile, progress),
         );
+  if (existsSync(progressFile)) context.retained?.set(progressFile, undefined);
   const restored = await restoreExecution({
     file: progressFile,
     loaded,
@@ -101,6 +102,7 @@ export async function runStandalone(input: {
     documentation: input.documentation === true,
     runId: context.runId,
   });
+  if (restored) context.retained?.set(progressFile, restored);
   const inspect = async (): Promise<{ ticket: Ticket; reason?: string }> => {
     if (input.parentTicket !== undefined) {
       const parent = await read(
@@ -386,7 +388,7 @@ export async function runStandalone(input: {
       ],
     };
   if (!input.documentation) {
-    const { runnerAccount } = config.tracker;
+    const { runnerAccount, reservationLabel } = config.tracker;
     // Confirm each write from current tracker state before retrying it.
     await read(
       "add_reservation_label",
@@ -398,19 +400,13 @@ export async function runStandalone(input: {
           selected.reason = "Reservation changed before label";
           return;
         }
-        if (!selected.ticket.labels?.includes(config.tracker.reservationLabel))
-          await tracker.addLabel(
-            repository,
-            number,
-            config.tracker.reservationLabel,
-          );
+        if (!selected.ticket.labels?.includes(reservationLabel))
+          await tracker.addLabel(repository, number, reservationLabel);
       },
       {
         reconcile: async () => {
           selected = await inspect();
-          return selected.ticket.labels?.includes(
-            config.tracker.reservationLabel,
-          )
+          return selected.ticket.labels?.includes(reservationLabel)
             ? { outcome: "completed", result: undefined }
             : { outcome: "pending" };
         },
@@ -423,9 +419,7 @@ export async function runStandalone(input: {
       async () => {
         selected = await inspect();
         if (selected.reason) return;
-        if (
-          !selected.ticket.labels?.includes(config.tracker.reservationLabel)
-        ) {
+        if (!selected.ticket.labels?.includes(reservationLabel)) {
           selected.reason = "Reservation changed before assignment";
           return;
         }
@@ -470,6 +464,7 @@ export async function runStandalone(input: {
     corrections: 0,
     superseded: [],
   };
+  context.retained?.set(progressFile, progress);
   await persist(progress);
   if (!restored || !existsSync(progress.worktree))
     await read(

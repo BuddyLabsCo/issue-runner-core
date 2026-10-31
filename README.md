@@ -182,6 +182,8 @@ broader workflow recovery remain downstream. Changed input ignores old snapshots
 and never adopts unrelated Reservations. Local completion retains owned files
 and Worktrees for later workflow steps.
 
+Failed, cancelled, interrupted, skipped, and unmerged executions retain their original working changes and diagnostic files. `Retained` reports list each execution's recorded branches and existing resource paths, including failed repair attempts and maintenance checkpoints. Abrupt process loss can prevent the final report; Recovery Snapshots remain the durable evidence. Changed Run inputs never authorize deletion or adoption of unrelated Reservations. See [retained execution resources](docs/configuration.md#retained-execution-resources).
+
 ## Development checks
 
 Run `npm ci`, then `npm run verify` for formatting, lint, type checks and tests.
