@@ -16,7 +16,11 @@ import { verifyWorkspace } from "./verification.ts";
 import { parseExecution } from "../agent/handoff.ts";
 import type { CodeHost, Ticket, Tracker } from "./contracts.ts";
 import { publishImplementation } from "./publication.ts";
-import { recoverIssue, restoreExecution } from "./execution-recovery.ts";
+import {
+  recoverIssue,
+  recoveringRead,
+  restoreExecution,
+} from "./execution-recovery.ts";
 import { cleanupExecution, executionTerminal } from "./cleanup.ts";
 import type { RunContext, RunSummary } from "./run.ts";
 import { reportTicket } from "./report.ts";
@@ -60,12 +64,15 @@ async function executeStandalone(
       ? input.context.operator
       : scopeOperator(input.context.operator, `Issue #${number}`),
   };
-  const read: ReadOperation = (operation, target, action, settings) =>
-    input.read(operation, target, action, {
-      operator: context.operator,
-      ...settings,
-    });
-  const config = loaded.config;
+  let execution: ImplementationProgress | undefined;
+  const read = recoveringRead({
+    read: input.read,
+    current: () => execution,
+    persist: (progress) => persist(progress),
+    operator: context.operator,
+  });
+  const { config, directory: root } = loaded;
+  const { runnerAccount, reservationLabel } = config.tracker;
   const purpose = input.documentation ? "documentation" : "implement";
   const repository = config.repository;
   const accept = async (progress: ImplementationProgress, text: string) => {
@@ -85,7 +92,7 @@ async function executeStandalone(
     return result;
   };
   const progressFile = path.join(
-    loaded.directory,
+    root,
     "recovery",
     `${context.inputHash}-${input.documentation ? "document-" : ""}${number}.json`,
   );
@@ -110,6 +117,7 @@ async function executeStandalone(
     runArguments: context.runArguments,
     restarting,
   });
+  execution = restored;
   if (restored) context.retained?.set(progressFile, restored);
   const inspect = async (): Promise<{ ticket: Ticket; reason?: string }> => {
     if (input.parentTicket !== undefined) {
@@ -155,7 +163,7 @@ async function executeStandalone(
       if (
         ticket.assignees?.length ||
         !ticket.labels?.includes(config.maintenanceTicket.label) ||
-        ticket.labels.includes(config.tracker.reservationLabel)
+        ticket.labels.includes(reservationLabel)
       )
         return {
           ticket,
@@ -164,29 +172,23 @@ async function executeStandalone(
         };
     } else if (!ticket.labels?.includes("ready-for-agent"))
       return { ticket, reason: "Issue is missing ready-for-agent" };
-    if (
-      ticket.assignees?.some(
-        (account) => account !== config.tracker.runnerAccount,
-      )
-    )
+    if (ticket.assignees?.some((account) => account !== runnerAccount))
       return { ticket, reason: "Issue is externally owned" };
     if (await hasOpenBlocker(repository, number, tracker, read))
       return { ticket, reason: "Issue is blocked" };
     return { ticket };
   };
   let selected = await inspect();
-  const hasRunner =
-    selected.ticket.assignees?.includes(config.tracker.runnerAccount) ?? false;
-  const hasLabel =
-    selected.ticket.labels?.includes(config.tracker.reservationLabel) ?? false;
+  const hasRunner = selected.ticket.assignees?.includes(runnerAccount) ?? false;
+  const hasLabel = selected.ticket.labels?.includes(reservationLabel) ?? false;
   const ownsReservation = restarting && hasRunner && hasLabel;
   const beforeDispatch = async () => {
     selected = await inspect();
     if (
       !selected.reason &&
       !input.documentation &&
-      (!selected.ticket.assignees?.includes(config.tracker.runnerAccount) ||
-        !selected.ticket.labels?.includes(config.tracker.reservationLabel))
+      (!selected.ticket.assignees?.includes(runnerAccount) ||
+        !selected.ticket.labels?.includes(reservationLabel))
     )
       selected.reason = "Reservation changed before dispatch";
     return selected.reason === undefined;
@@ -204,8 +206,7 @@ async function executeStandalone(
         `ticket:${number}`,
         close,
       ),
-    withEnvironment: (action) =>
-      context.git.withAgentEnvironment(loaded.directory, action),
+    withEnvironment: (action) => context.git.withAgentEnvironment(root, action),
     terminal: (tabs ??= executionTerminal({
       terminal: context.terminal,
       progress,
@@ -254,9 +255,8 @@ async function executeStandalone(
               read,
               persist: () => persist(progress),
             });
-        }
-        if (delivery.outcome === "succeeded")
           input.onDelivery?.(progress.publication!.deliveryLabels!);
+        }
         return {
           ...summary,
           outcome: delivery.outcome,
@@ -327,7 +327,7 @@ async function executeStandalone(
         stage: progress,
         purpose,
         task: async () =>
-          `${input.documentation ? documentationInstructions : implementationInstructions}\n\n${await readFile(path.join(loaded.directory, "prompts", `${purpose}.md`), "utf8")}\n\n` +
+          `${input.documentation ? documentationInstructions : implementationInstructions}\n\n${await readFile(path.join(root, "prompts", `${purpose}.md`), "utf8")}\n\n` +
           `Repository: ${repository}\nIssue #${number}: ${selected.ticket.title ?? ""}\n${selected.ticket.body ?? ""}\n` +
           `Worktree: ${progress.worktree}\nDelivery branch: ${progress.branch}\nBase SHA: ${progress.base}\nTarget Branch: ${progress.target_branch}`,
         accept: (text) => accept(progress, text),
@@ -393,7 +393,6 @@ async function executeStandalone(
       ],
     };
   if (!input.documentation && !ownsReservation) {
-    const { runnerAccount, reservationLabel } = config.tracker;
     // Confirm each write from current tracker state before retrying it.
     await read(
       "add_reservation_label",
@@ -448,7 +447,7 @@ async function executeStandalone(
       reasons: [selected.reason ?? "Reservation changed before dispatch"],
     };
   const executionId = randomUUID();
-  const progress: ImplementationProgress = restored ?? {
+  const progress: ImplementationProgress = (execution = restored ?? {
     ...(input.documentation ? { purpose: "documentation" } : {}),
     run_id: context.runId,
     run_arguments: context.runArguments,
@@ -458,19 +457,14 @@ async function executeStandalone(
     repository,
     ticket: number,
     target_branch: summary.targetBranch,
-    worktree: path.join(
-      loaded.directory,
-      "worktrees",
-      executionId,
-      `ticket-${number}`,
-    ),
+    worktree: path.join(root, "worktrees", executionId, `ticket-${number}`),
     branch: `issue-runner/${context.runId}/ticket-${number}`,
     base: await input.fetchBase(),
     phase: "reserved",
     roles: {},
     corrections: 0,
     superseded: [],
-  };
+  });
   context.retained?.set(progressFile, progress);
   await persist(progress);
   if (!restored || !existsSync(progress.worktree))

@@ -13,6 +13,7 @@ import {
 import type { Tracker } from "./contracts.ts";
 import type { RunSummary } from "./run.ts";
 import {
+  recoveringRead,
   restartUnrecoverable,
   restoreExecution,
 } from "./execution-recovery.ts";
@@ -229,19 +230,25 @@ export async function runDocumentation(
         { ...input, context, number: maintenance.ticket!, documentation: true },
         () => Promise.resolve(result),
       );
+    const persistExecution = () =>
+      context.signal?.aborted
+        ? saveProgress(executionFile, progress)
+        : read(
+            "save_implementation_checkpoint",
+            `ticket:${maintenance.ticket}`,
+            () => saveProgress(executionFile, progress),
+          );
     await cleanupExecution({
       progress,
       loaded,
       git: context.git,
-      read,
-      persist: () =>
-        context.signal?.aborted
-          ? saveProgress(executionFile, progress)
-          : read(
-              "save_implementation_checkpoint",
-              `ticket:${maintenance.ticket}`,
-              () => saveProgress(executionFile, progress),
-            ),
+      read: recoveringRead({
+        read,
+        current: () => progress,
+        persist: persistExecution,
+        operator: context.operator,
+      }),
+      persist: persistExecution,
     });
     maintenance.phase = "completed";
     await persist();

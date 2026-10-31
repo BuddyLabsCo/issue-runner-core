@@ -207,6 +207,10 @@ for (const scenario of [
     assert.equal(await git(checkout, "branch", "--show-current"), "main");
     assert.equal(await git(checkout, "rev-parse", "HEAD"), base);
     assert.equal(await git(checkout, "status", "--porcelain"), "");
+    fixture.dependencies.operator.pause = async (message) => {
+      assert.match(message, /ownership changed|used by worktree|checked out/u);
+      return "";
+    };
     if (scenario === "ownership_changed") {
       assert.equal(
         await readFile(path.join(progress.worktree, "unrelated.txt"), "utf8"),

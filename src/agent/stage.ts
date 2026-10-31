@@ -296,11 +296,25 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
     progress.phase = phase;
     await persist();
     show(stage.invocation.path);
+    const manualCorrection = () => {
+      operator.write(
+        "Automatic correction budget exhausted. Correct the work and manually invoke issue-runner-handoff at the current handoff path; Runner will keep watching it.",
+      );
+      show(stage.invocation!.path);
+    };
+    if (stage.correctionExhausted) manualCorrection();
     let previous = "";
     for (;;) {
       signal?.throwIfAborted();
       const observed = await readHandoff(stage.invocation.path);
       if (observed === undefined && stage.pendingPrompt !== undefined) {
+        if (stage.correctionNotBefore !== undefined) {
+          const remaining = stage.correctionNotBefore - clock.now().getTime();
+          if (remaining > 0) await sleep(remaining);
+          delete stage.correctionNotBefore;
+          await persist();
+          continue;
+        }
         if (!(await submitWork(stage.pendingPrompt))) return;
         resumeIfMissing = false;
         continue;
@@ -328,7 +342,10 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
           const reason = error instanceof Error ? error.message : String(error);
           operator.write(`Invalid ${name} handoff: ${reason}`);
           // Missing output never spends this budget or generates reminders.
-          if (stage.corrections < loaded.config.agentRetry) {
+          if (
+            !stage.correctionExhausted &&
+            stage.corrections < loaded.config.agentRetry
+          ) {
             stage.superseded.push(stage.invocation.path);
             stage.corrections += 1;
             stage.invocation = {
@@ -336,29 +353,31 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
               path: assignment(purpose),
             };
             stage.pendingPrompt = `Correct the ${name} handoff: ${reason}\nExplicitly invoke issue-runner-handoff with the sole absolute output-path argument: ${JSON.stringify(stage.invocation.path)}`;
-            await persist();
-            show(stage.invocation.path);
-            await sleep(
+            stage.correctionNotBefore =
+              clock.now().getTime() +
               1000 *
                 loaded.config.agentRetryDelay[
                   Math.min(
                     stage.corrections - 1,
                     loaded.config.agentRetryDelay.length - 1,
                   )
-                ]!,
-            );
+                ]!;
+            await persist();
+            show(stage.invocation.path);
             previous = "";
             continue;
           }
-          operator.write(
-            "Automatic correction budget exhausted. Correct the work and manually invoke issue-runner-handoff at the current handoff path; Runner will keep watching it.",
-          );
-          show(stage.invocation.path);
+          stage.correctionExhausted = true;
+          delete stage.pendingPrompt;
+          delete stage.correctionNotBefore;
+          await persist();
+          manualCorrection();
           await sleep(250);
           continue;
         }
         stage.result = result;
         delete stage.pendingPrompt;
+        delete stage.correctionNotBefore;
         progress.phase = completed;
         await persist();
         signal?.throwIfAborted();

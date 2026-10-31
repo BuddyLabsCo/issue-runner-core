@@ -128,6 +128,10 @@ for (const document of [false, true]) {
     fixture.dependencies.gitWorkspace.cleanupWorktree = async () => {
       assert.fail("completed Worktree removal must not repeat");
     };
+    fixture.dependencies.operator.pause = async (message) => {
+      assert.match(message, /directory/u);
+      return "";
+    };
     assert.equal((await fixture.run()).summary.outcome, "succeeded");
     for (const file of saved.cleanup.files) await access(file);
     await assert.rejects(access(`${saved.invocation!.path}.tmp`), {

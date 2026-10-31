@@ -22,7 +22,9 @@ await test("cancelled documentation cleanup retries report the retained executio
     fixture.state.evidence.changed = false;
     await publish(file, noChange);
   };
+  let attempts = 0;
   fixture.dependencies.gitWorkspace.cleanupWorktree = async () => {
+    attempts += 1;
     throw new Error("documentation cleanup unavailable");
   };
   fixture.dependencies.operator.pause = async (message) => {
@@ -34,6 +36,7 @@ await test("cancelled documentation cleanup retries report the retained executio
     fixture.dependencies.messages.length = 0;
     const result = await fixture.run();
     assert.equal(result.summary.outcome, "cancelled");
+    assert.equal(attempts, 2);
     const saved = await fixture.snapshot();
     assert.equal(result.summary.tickets?.length, 1);
     const { detail, ...record } = result.summary.tickets[0]!;
@@ -70,6 +73,10 @@ await test("cancelled documentation cleanup retries report the retained executio
     assert.equal(saved.noChangeClosure, "completed");
   }
   fixture.dependencies.gitWorkspace.cleanupWorktree = cleanup;
+  fixture.dependencies.operator.pause = async (message) => {
+    assert.match(message, /documentation cleanup unavailable/u);
+    return "";
+  };
   fixture.dependencies.signal = new AbortController().signal;
   fixture.dependencies.messages.length = 0;
   const result = await fixture.run();
@@ -111,6 +118,10 @@ await test("delivered documentation cleanup recovery restores its PR report with
   ]);
 
   fixture.dependencies.gitWorkspace.cleanupWorktree = cleanup;
+  fixture.dependencies.operator.pause = async (message) => {
+    assert.match(message, /documentation cleanup unavailable/u);
+    return "";
+  };
   fixture.dependencies.signal = new AbortController().signal;
   fixture.dependencies.messages.length = 0;
   const result = await fixture.run();

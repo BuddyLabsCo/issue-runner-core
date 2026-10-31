@@ -8,6 +8,7 @@ import { nonempty, object, readHandoff } from "../agent/handoff.ts";
 import { validateReviewContext } from "./review.ts";
 import { validateRepairContext } from "./repair.ts";
 import type { OperatorIO } from "./contracts.ts";
+import type { ReadOperation } from "./discovery.ts";
 import type { runStandalone } from "./standalone.ts";
 import type { RunSummary } from "./run.ts";
 import { OperatorCancelled } from "./operations.ts";
@@ -100,6 +101,32 @@ export async function restartUnrecoverable(
     if (response === "") return;
     operator.write("Unsupported input.");
   }
+}
+
+export function recoveringRead(input: {
+  read: ReadOperation;
+  current: () => ImplementationProgress | undefined;
+  persist: (progress: ImplementationProgress) => Promise<void>;
+  operator: OperatorIO;
+}): ReadOperation {
+  return (operation, target, action, settings) => {
+    const progress = input.current();
+    return input.read(operation, target, action, {
+      operator: input.operator,
+      ...(progress &&
+      operation !== "save_implementation_checkpoint" &&
+      settings?.retry !== "never"
+        ? {
+            recovery: {
+              states: (progress.operations ??= {}),
+              key: JSON.stringify([operation, target]),
+              persist: () => input.persist(progress),
+            },
+          }
+        : {}),
+      ...settings,
+    });
+  };
 }
 
 export async function restoreExecution(input: {
@@ -257,6 +284,7 @@ export async function restoreExecution(input: {
         );
       if (!documentation) validateReviewContext(restored, loaded);
       validateRepairContext(restored, loaded);
+      validateRetryProgress(restored, loaded);
       return restored;
     }
   } catch (error) {
@@ -266,5 +294,56 @@ export async function restoreExecution(input: {
       `unable to recover: invalid ${documentation ? "documentation" : "implementation"} execution context`,
       { cause: error },
     );
+  }
+}
+
+function validateRetryProgress(
+  progress: ImplementationProgress,
+  loaded: LoadedProject,
+): void {
+  try {
+    const stages = [
+      progress,
+      ...(progress.reviews ?? []).flatMap((round) => [
+        round,
+        ...(round.fix ? [round.fix] : []),
+      ]),
+      ...(progress.publication?.ciRepair?.attempts ?? []),
+      ...(progress.publication?.conflictRepair?.attempts ?? []),
+    ];
+    for (const stage of stages) {
+      if (
+        stage.corrections > loaded.config.agentRetry ||
+        (stage.correctionNotBefore !== undefined &&
+          (!Number.isFinite(stage.correctionNotBefore) ||
+            stage.correctionNotBefore < 0 ||
+            !stage.pendingPrompt ||
+            stage.corrections === 0)) ||
+        (stage.correctionExhausted !== undefined &&
+          (stage.correctionExhausted !== true ||
+            stage.corrections !== loaded.config.agentRetry ||
+            stage.pendingPrompt !== undefined ||
+            stage.correctionNotBefore !== undefined))
+      )
+        throw new Error("invalid correction budget or delay");
+    }
+    for (const value of Object.values(object(progress.operations ?? {}))) {
+      const retry = object(value);
+      if (
+        !Number.isSafeInteger(retry.consumed) ||
+        (retry.consumed as number) < 1 ||
+        (retry.consumed as number) > loaded.config.operationRetry + 1 ||
+        typeof retry.error !== "string" ||
+        (retry.notBefore !== undefined &&
+          (!Number.isFinite(retry.notBefore) ||
+            (retry.notBefore as number) < 0 ||
+            (retry.consumed as number) > loaded.config.operationRetry))
+      )
+        throw new Error("invalid operation budget or delay");
+    }
+  } catch (error) {
+    throw new Error("unable to recover: invalid retry progress", {
+      cause: error,
+    });
   }
 }

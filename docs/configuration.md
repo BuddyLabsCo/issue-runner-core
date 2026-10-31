@@ -487,6 +487,11 @@ during a delay prevents submission and retains the consumed count. Missing
 output, including a temporary sibling without its final file, spends no
 correction budget and causes no automatic prompt.
 
+Matching reruns restore a pending correction's deadline before sending it.
+Time while Runner is stopped counts toward the delay; only the remaining time
+is waited. The allocated correction keeps its invocation, path, and consumed
+count. An existing final file is validated before sending any follow-up.
+
 After exhaustion (immediately when `agentRetry: 0`), Core displays diagnostics,
 the native session identity, and the current path. It keeps the stage and tab
 available and stops automatic correction prompts. Fix the reported problem in
@@ -494,7 +499,11 @@ that native conversation, including the actual Git state when needed, then
 explicitly invoke `issue-runner-handoff` with the displayed path to replace its
 file. Further invalid writes leave the budget exhausted; a later valid write is
 independently verified and can complete the stage. Restarting with matching
-inputs retains the consumed budget and active path.
+inputs retains the consumed budget, exhausted status, and active path. Runner
+displays the manual-correction instructions again before any continuation.
+A missing final file resumes the saved conversation with only `continue`;
+this spends no correction and keeps the manual path. Superseded results remain
+ineligible even when valid.
 
 Run startup displays `sessionid=n/a` for workflow work without an Agent conversation.
 Each Agent stage identifies its Issue and purpose, with `sessionid=pending` before its Probe.
@@ -669,6 +678,17 @@ cycle allows the initial attempt plus `operationRetry` additional attempts.
 `operationRetryDelay` uses seconds and repeats its final delay when needed.
 Enter authorizes another cycle after exhaustion; unsupported input does not
 authorize any action. Manual retries do not consume the automatic budget.
+
+Within a saved Issue or documentation execution, failed operations retain their
+consumed attempts, last error, and retry deadline in the Recovery Snapshot.
+Runner saves each automatic retry before starting it; cancellation inside that
+operation still consumes the attempt.
+Matching reruns wait only the remaining delay and use only the remaining
+attempts for that operation and target. Exhausted operations return to Operator
+Pause before another attempt, including after cancellation with `q`.
+Successful operations clear their retry state. Snapshot-write failures retain
+the existing checkpoint retry policy; an unavailable snapshot cannot save its
+own failed writes.
 
 | Operation | Recovery policy |
 | --- | --- |

@@ -67,6 +67,10 @@ for (const recover of [false, true]) {
       before = await implementationProgress(fixture.directory, 52);
       assert.equal(before.publication?.phase, "pending_merge");
       rejectMerge = false;
+      fixture.dependencies.operator.pause = async (message) => {
+        assert.match(message, /merge temporarily rejected/u);
+        return "";
+      };
     }
     assert.equal((await fixture.run()).summary.outcome, "succeeded");
     assert.deepEqual(fixture.dispatched, [52]);
@@ -278,6 +282,10 @@ await test("matching recovery continues a partially integrated Batch without rep
   assert.equal(merged.length, 1);
   rejectSecond = false;
   requests.length = 0;
+  fixture.dependencies.operator.pause = async (message) => {
+    assert.match(message, /second merge rejected/u);
+    return "";
+  };
   assert.equal((await fixture.run()).summary.outcome, "succeeded");
   assert.deepEqual([...fixture.dispatched].sort(), [51, 52, 53]);
   assert.ok(!requests.includes(merged[0]!));

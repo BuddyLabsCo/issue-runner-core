@@ -27,7 +27,21 @@ await test("explicit whole-Issue restart retains failed resources and resets onl
   const file = path.join(recovery, `${saved.input_hash}-50.json`);
   // A missing required native role is an established recovery failure.
   await publish(saved.invocation!.path, {});
-  const failed = { ...saved, roles: {} };
+  const failed = {
+    ...saved,
+    roles: {},
+    corrections: validConfig.agentRetry,
+    correctionExhausted: true,
+    pendingPrompt: undefined,
+    correctionNotBefore: undefined,
+    operations: {
+      ...saved.operations,
+      exhausted: {
+        consumed: validConfig.operationRetry + 1,
+        error: "unavailable",
+      },
+    },
+  };
   await publish(file, failed);
   const retainedText = await readFile(file, "utf8");
   fixture.dependencies.signal = new AbortController().signal;
@@ -52,6 +66,9 @@ await test("explicit whole-Issue restart retains failed resources and resets onl
     const fresh = await fixture.snapshot();
     assert.equal(fresh.publication, undefined);
     assert.equal(fresh.reviews, undefined);
+    assert.equal(fresh.operations?.exhausted, undefined);
+    assert.equal(fresh.correctionNotBefore, undefined);
+    assert.equal(fresh.correctionExhausted, undefined);
     fixture.state.evidence.commits = committed().commits;
     await publish(output, committed());
   };
