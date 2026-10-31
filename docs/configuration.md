@@ -10,8 +10,9 @@ import source Sandcastle/provider execution or transcript/session-pause code.
 
 ## Installation and Project selection
 
-Use Node.js 22.18 or later within 22.x and npm 11.x. Build with `npm ci` and
-`npm run build`; `npm pack` also builds. Install Core and the selected terminal
+Use Node.js 22.18.0 or later and npm 11 or later, including subsequent major versions.
+Build with `npm ci` and `npm run build`; `npm pack` also builds.
+Install Core and the selected terminal
 plugin globally in the same active npm installation environment/prefix,
 including a custom prefix. The artifact includes CLI code, terminal JS/types,
 init templates, and the handoff skill for manual installation.
