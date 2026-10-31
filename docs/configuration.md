@@ -438,6 +438,14 @@ restarts an Issue or grants another correction budget. To continue, stop leftove
 Agent sessions and explicitly rerun with the same arguments and `config.yaml`.
 Recovery uses the saved progress where the original context remains available.
 
+### Retained execution resources
+
+Failed, cancelled, skipped, interrupted, and CI-ready unmerged executions retain their original working context. This includes owned Worktrees and recorded branches, uncommitted changes, Probe/handoff files and their temporary or superseded files, and necessary Review findings. Failed and replaced repair attempts retain their own resources alongside the original execution. Findings are removed after the complete Review/fix loop as described above.
+
+At Run exit, `Retained` reports identify executions, recorded branches, and resource paths that still exist. Reports cover only executions created or restored by that Run, including documentation and repairs. Recovery Snapshots preserve fixed PR metadata, native role references, assigned paths, accepted results, and consumed budgets. Maintenance checkpoints and archived occurrences remain available. If Runner terminates abruptly, a final report may be absent; inspect the Project's `recovery/` snapshots and original resource paths.
+
+Changed arguments or configuration ignore old progress without authorizing its deletion or adopting an unrelated Reservation. Runner adds no retention expiry, periodic pruning, or native-history deletion. Per-call temporary Git configuration is removed when each call unwinds, including failure and cancellation; abrupt process termination can prevent that cleanup. Later stages recreate their temporary configuration.
+
 ### Rejected handoffs and manual correction
 
 Invalid JSON, wrong fields or outcomes, invalid execution findings, and false

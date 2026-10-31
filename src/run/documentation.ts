@@ -39,6 +39,7 @@ export async function runDocumentation(
     "recovery",
     `${context.inputHash}-document${input.batch ? `-batch-${input.batch}` : ""}.json`,
   );
+  context.retained?.set(file, undefined);
   const previous = await readHandoff(file);
   let maintenance: MaintenanceProgress = {
     run_id: context.runId,
@@ -281,9 +282,11 @@ export async function runDocumentation(
         if (response === "") break;
         context.operator.write("Unsupported input.");
       }
+      const archive = `${file}.${randomUUID()}.retained`;
       await read("retain_unrecoverable_documentation", "document", () =>
-        rename(file, `${file}.${randomUUID()}.retained`),
+        rename(file, archive),
       );
+      context.retained?.set(archive, undefined);
       return runDocumentation({
         ...input,
         context: { ...input.context, runId: randomUUID() },

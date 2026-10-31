@@ -90,6 +90,7 @@ export async function runStandalone(input: {
       : read("save_implementation_checkpoint", `ticket:${number}`, () =>
           saveProgress(progressFile, progress),
         );
+  if (existsSync(progressFile)) context.retained?.set(progressFile, undefined);
   const restored = await restoreExecution({
     file: progressFile,
     loaded,
@@ -100,6 +101,7 @@ export async function runStandalone(input: {
     documentation: input.documentation === true,
     runId: context.runId,
   });
+  if (restored) context.retained?.set(progressFile, restored);
   const inspect = async (): Promise<{ ticket: Ticket; reason?: string }> => {
     if (input.parentTicket !== undefined) {
       const parent = await read(
@@ -468,6 +470,7 @@ export async function runStandalone(input: {
     corrections: 0,
     superseded: [],
   };
+  context.retained?.set(progressFile, progress);
   await persist(progress);
   if (!restored || !existsSync(progress.worktree))
     await read(
