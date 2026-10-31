@@ -23,13 +23,13 @@ When it says "fetch the relevant ticket", read the GitHub issue.
 
 ### Case and fixture setup
 
-Create one `e2e-test` acceptance issue per test case per platform in this
+Create one `e2e-epic` acceptance issue per test case per platform in this
 repository. Maintain separate Windows and Linux sets, with platform names in
 the titles, such as `[E2E][Windows] --parent normal workflow`. Each issue states
 its prerequisites, configuration, steps, expected results, and required evidence.
 
 Create fixture issues as native sub-issues of the acceptance issue and label
-them `e2e-test` too. Fixtures describe small executable requirements, such as
+them `e2e-test`. Fixtures describe small executable requirements, such as
 editing documentation text; the acceptance issue describes how to run the test.
 Use separate fixtures for each platform's case so their PRs and issue state are
 independent.
