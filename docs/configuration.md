@@ -386,6 +386,8 @@ Automatic maintenance uses the [document workflow](#standalone-documentation), i
 
 The Batch checkpoint records its maintenance association before document work starts. The occurrence has its own `recovery/<input-hash>-document-batch-<occurrence>.json` checkpoint and Maintenance Ticket execution. Matching inputs resume that occurrence before parent discovery, even when all business children are already closed. Completed maintenance satisfies its original barrier without creating another occurrence. Changed arguments or configuration start a new Run without adopting the old occurrence or deleting its artifacts.
 
+Recovery also checks that the occurrence belongs to the Batch's saved Run, including when maintenance is already completed. A mismatched occurrence cannot satisfy the discovery or closure barrier. An explicit restart creates a new Maintenance Ticket and document execution while keeping the original Batch association. If that replacement is interrupted, matching recovery continues it before business discovery.
+
 ### Standalone documentation
 
 Run documentation maintenance without selecting a business Issue:
@@ -417,12 +419,16 @@ under `ticketClosure: code_host` or `--no-auto-merge`.
 Recovery stores the maintenance occurrence in `recovery/<input-hash>-document.json`
 and its execution in `recovery/<input-hash>-document-<ticket>.json`. Matching interrupted
 Runs reuse the original ticket, native conversation, paths, PR metadata, and consumed
-budgets. Existing output is verified before opening a tab; missing output resumes the
-saved documentation conversation and sends only `continue`. Close leftover Agent
+budgets. Completed document stages skip Agent work. Existing output is verified before
+opening a tab; missing output resumes the saved documentation conversation, waits
+10 seconds, and sends only `continue`. Exhausted corrections remain exhausted;
+superseded handoffs cannot replace the current assignment. Close leftover Agent
 tabs and stop their execution before recovery, retaining native history and Worktrees.
 Runner does not adopt live tabs. If the original context cannot be recovered, Runner
 prints `unable to recover` and offers an entire documentation-occurrence restart or exit.
 Restart retains the old resources and starts at documentation with a new ticket and execution.
+
+Recovery preserves uncommitted work in the original Worktree. Each Agent call recreates temporary Git configuration from the matching Run configuration and removes it afterward. Old temporary configuration files are not recovery inputs.
 
 Changed arguments or configuration start a separate occurrence and retain the old
 one. After a completed Run, the next `--document` invocation starts a new occurrence.
