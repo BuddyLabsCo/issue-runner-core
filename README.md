@@ -96,8 +96,8 @@ Core supplies the executable and shared behavior. The separately installed
 [issue-runner-herdr](https://github.com/BuddyLabsCo/issue-runner-herdr) package
 supplies generic Herdr terminal operations. Core has no built-in list of
 supported environment names or Agent brands. Install both in the same active
-npm global environment/prefix. The initial baseline is Node.js 22.18 or later
-within 22.x and npm 11.x. Project configuration stays in the selected
+npm global environment/prefix. Use Node.js 22.18.0 or later and npm 11 or later,
+including subsequent major versions. Project configuration stays in the selected
 Project's `config.yaml`.
 
 See [configuration and startup](docs/configuration.md) for supported options,

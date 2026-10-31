@@ -97,8 +97,8 @@ await test("built artifacts work in isolated consumer and npm global installatio
   assert.deepEqual(manifest.bin, { "issue-runner": "dist/cli.js" });
   assert.ok("engines" in manifest);
   assert.deepEqual(manifest.engines, {
-    node: ">=22.18.0 <23",
-    npm: ">=11 <12",
+    node: ">=22.18.0",
+    npm: ">=11",
   });
 
   const output = execFileSync(
