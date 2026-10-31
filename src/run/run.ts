@@ -11,6 +11,7 @@ import type { TerminalPlugin } from "../terminal.ts";
 import type { AuditLog } from "../audit.ts";
 import {
   boundedOperation,
+  cancellableSleep,
   externalRead,
   serializeOperator,
   TicketSkipped,
@@ -76,11 +77,15 @@ export async function runProject(
     requestSquashMerge: (input) =>
       operator.advance(() => host.requestSquashMerge(input)),
   };
-  const { git, terminal } = context;
+  const { clock, git, terminal } = context;
   context = {
     ...context,
     signal,
     operator,
+    clock: {
+      now: () => clock.now(),
+      sleep: (ms) => cancellableSleep(clock, ms, signal),
+    },
     git: {
       cleanupWorktree: (input) =>
         operator.advance(() => git.cleanupWorktree(input)),

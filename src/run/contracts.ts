@@ -153,7 +153,7 @@ export interface WorkspaceEvidence {
 
 export interface Clock {
   now(): Date;
-  sleep(milliseconds: number): Promise<void>;
+  sleep(milliseconds: number, signal?: AbortSignal): Promise<void>;
 }
 
 export interface OperatorIO {

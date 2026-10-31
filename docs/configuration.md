@@ -422,6 +422,22 @@ before removal and retains resources if ownership changed. Cleanup can resume af
 partial completion. Failed, cancelled, unfinished, skipped, and unmerged work retains
 its resources; native histories and unrelated tabs remain untouched.
 
+### Cancellation and explicit reruns
+
+Press Ctrl+C to cancel Runner, or enter `q`/EOF at a non-Agent Operator Pause.
+Cancellation interrupts startup waits, polling, and retry delays, including waits
+in sibling Batch executions. Runner stops subsequent dispatch, terminal input,
+and resource creation, reports `cancelled`, and exits nonzero.
+Input already queued in a terminal can still execute; cancellation does not undo
+that input or establish that Agent processes have stopped.
+
+Runner retains unfinished Worktrees, Probe/handoff files, and Recovery Snapshots.
+Snapshots preserve accepted stage completion and consumed retry counts, including
+corrections allocated before a cancelled delay. Cancellation never automatically
+restarts an Issue or grants another correction budget. To continue, stop leftover
+Agent sessions and explicitly rerun with the same arguments and `config.yaml`.
+Recovery uses the saved progress where the original context remains available.
+
 ### Rejected handoffs and manual correction
 
 Invalid JSON, wrong fields or outcomes, invalid execution findings, and false

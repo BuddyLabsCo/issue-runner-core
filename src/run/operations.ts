@@ -5,6 +5,28 @@ export class OperatorCancelled extends Error {}
 export class OperationStopped extends Error {}
 export class TicketSkipped extends Error {}
 
+export async function cancellableSleep(
+  clock: Clock,
+  milliseconds: number,
+  signal: AbortSignal,
+): Promise<void> {
+  signal.throwIfAborted();
+  let abort!: () => void;
+  const cancelled = new Promise<never>((_resolve, reject) => {
+    abort = () => {
+      const reason: unknown = signal.reason;
+      reject(reason instanceof Error ? reason : new Error(String(reason)));
+    };
+    signal.addEventListener("abort", abort, { once: true });
+  });
+  try {
+    await Promise.race([clock.sleep(milliseconds, signal), cancelled]);
+    signal.throwIfAborted();
+  } finally {
+    signal.removeEventListener("abort", abort);
+  }
+}
+
 export interface OperationOptions<T> {
   operator?: OperatorIO;
   retry?: "automatic" | "manual" | "never";

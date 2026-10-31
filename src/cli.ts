@@ -264,12 +264,8 @@ export async function executeRun(
     dependencies.signal?.throwIfAborted();
     const clock = dependencies.clock ?? {
       now: () => new Date(),
-      sleep: (ms: number) =>
-        delay(
-          ms,
-          undefined,
-          dependencies.signal ? { signal: dependencies.signal } : {},
-        ),
+      sleep: (ms: number, signal = dependencies.signal) =>
+        delay(ms, undefined, signal ? { signal } : {}),
     };
     const timestamp = clock.now().toISOString();
     const runId = randomUUID();
