@@ -330,8 +330,8 @@ await test("option ordering and configured Target Branch do not change the empty
   assert.match(result.summary.reasons.join(" "), /2, 7/);
 });
 
-await test("ineligible Issue scopes and pending documentation validate configuration and report incomplete without dispatch", async (t) => {
-  const { root, directory } = await createProject(t, {
+await test("ineligible Issue scopes do not dispatch and documentation requires configuration", async (t) => {
+  const { root } = await createProject(t, {
     ...validConfig,
     issueList: [9, 2],
   });
@@ -360,21 +360,5 @@ await test("ineligible Issue scopes and pending documentation validate configura
   assert.equal(
     (await executeCli(document, createCliDependencies(root))).summary.outcome,
     "failed",
-  );
-  await writeFile(
-    path.join(directory, "config.yaml"),
-    stringify({
-      ...validConfig,
-      agents: { ...validConfig.agents, documentation: agent },
-      maintenanceTicket: {
-        title: "Docs",
-        body: "Update",
-        label: "doc-maintain",
-      },
-    }),
-  );
-  assert.equal(
-    (await executeCli(document, createCliDependencies(root))).summary.outcome,
-    "incomplete",
   );
 });

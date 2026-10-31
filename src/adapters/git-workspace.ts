@@ -122,6 +122,45 @@ export class LocalGitWorkspace implements GitWorkspace {
     );
   }
 
+  async cleanupWorktree(input: {
+    checkout: string;
+    worktree: string;
+    branch: string;
+    headSha: string;
+  }): Promise<void> {
+    const { checkout, worktree, branch, headSha } = input;
+    await this.command(checkout, ["check-ref-format", `refs/heads/${branch}`]);
+    const head = (
+      await this.command(checkout, [
+        "for-each-ref",
+        "--format=%(objectname)",
+        `refs/heads/${branch}`,
+      ])
+    ).trim();
+    if (head && head !== headSha)
+      throw new Error("Cleanup branch head changed; retaining resources");
+    const entries = (
+      await this.command(checkout, ["worktree", "list", "--porcelain", "-z"])
+    ).split("\0\0");
+    const owned = entries.find((entry) =>
+      entry
+        .split("\0")
+        .some(
+          (field) =>
+            field.startsWith("worktree ") &&
+            path.resolve(field.slice(9)) === path.resolve(worktree),
+        ),
+    );
+    if (owned) {
+      if (!owned.split("\0").includes(`branch refs/heads/${branch}`))
+        throw new Error(
+          "Cleanup Worktree ownership changed; retaining resources",
+        );
+      await this.command(checkout, ["worktree", "remove", "--", worktree]);
+    }
+    if (head) await this.command(checkout, ["branch", "-D", "--", branch]);
+  }
+
   async inspect({ worktree, base }: { worktree: string; base: string }) {
     const [actualPath, branch, actualBase, log, status, diff] =
       await Promise.all([

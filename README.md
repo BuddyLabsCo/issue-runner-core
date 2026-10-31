@@ -36,7 +36,7 @@ evidence remain available. Unmerged work reports `incomplete` without successful
 delivery credit or success cleanup. Auto-merge requests squash integration against
 the observed HEAD and confirms both merge completion and tracker `closed/completed`
 before granting delivery credit. Checkpoints retain those facts and exact delivery-time labels.
-Conflict repair and success cleanup remain downstream. Initial
+Success cleanup for ordinary Issues remains downstream. Initial
 `no_change` skips Review and publication and also reports `incomplete`.
 Parent Runs select eligible direct children across all child/blocker pages,
 respect Issue List filtering and Reservation ownership, and execute successive
@@ -51,7 +51,13 @@ Parent cancellation stops dispatch without rewriting children, and completed
 child evidence survives interrupted parent closure.
 A value-less `--issue` selects the configured Issue List
 independently of parent discovery, using the same eligibility checks and
-publication, CI barrier, and integration workflow. Standalone documentation remains unimplemented.
+publication, CI barrier, and integration workflow. `--document` creates a standalone
+Maintenance Ticket and uses the documentation Agent without business-Issue selection
+or ordinary Review. Changed documentation follows normal publication and integration;
+independently verified `no_change` closes the Maintenance Ticket without a PR.
+Matching interrupted documentation Runs recover their own execution and maintenance
+state. Successful documentation removes owned Worktrees, local branches, and handoff
+files; unfinished and `--no-auto-merge` work remains available.
 No npm package has been published.
 
 Non-Agent failures retain bounded safe retries and Operator Pause. Enter retries;

@@ -18,6 +18,7 @@ import {
 import { integrateBatch } from "./integration.ts";
 import { runStandalone } from "./standalone.ts";
 import { runParent } from "./parent.ts";
+import { runDocumentation } from "./documentation.ts";
 import { selectIssueBatch, type ReadOperation } from "./discovery.ts";
 
 export interface RunContext {
@@ -81,6 +82,8 @@ export async function runProject(
     signal,
     operator,
     git: {
+      cleanupWorktree: (input) =>
+        operator.advance(() => git.cleanupWorktree(input)),
       push: (worktree, branch, headSha) =>
         operator.advance(() => git.push(worktree, branch, headSha)),
       fetchTargetBranch: (checkout, branch) =>
@@ -176,10 +179,16 @@ export async function runProject(
       autoMerge: options.autoMerge,
     });
   if (options.selector === "document") {
-    return {
-      ...summary,
-      reasons: [`${options.selector} delivery is not implemented yet`],
-    };
+    return runDocumentation({
+      loaded,
+      tracker,
+      codeHost,
+      context,
+      summary,
+      read,
+      fetchBase,
+      autoMerge: options.autoMerge,
+    });
   }
   const runBatch = async (tickets: Ticket[]): Promise<RunSummary> => {
     base = undefined;

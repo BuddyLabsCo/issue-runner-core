@@ -110,7 +110,7 @@ export async function implementationRun(
       /* Controlled by the scenario. */
     },
   };
-  const snapshot = () => implementationProgress(directory, 50);
+  const snapshot = () => implementationProgress(directory, state.ticket.number);
   const terminal: TerminalPlugin = {
     async createTab(options) {
       state.events.push("open");

@@ -78,8 +78,8 @@ Parent Runs resolve
 all child pages, and return `no_work` without closing an initially empty open
 parent. A configured Issue List does not make an empty parent nonempty; missing
 numbers appear in the summary. Cancelled parents return `cancelled` without
-rewriting children. Standalone documentation remains unimplemented and reports
-`incomplete` without delivery mutations.
+rewriting children. Standalone documentation runs independently of business-Issue
+selection; see [standalone documentation](#standalone-documentation).
 
 A value-less `--issue` reads exactly the configured nonempty `issueList`,
 independently of parent discovery. It does not read a parent or expand the list
@@ -353,7 +353,57 @@ With `ticketClosure: code_host`, Runner leaves closure to the host. It waits 10 
 
 Delivery requires confirmed integration and tracker `closed/completed`. Reservation release, an unmerged PR, and `not_planned` closure earn no delivery credit. The checkpoint saves merge confirmation, completed closure, and the exact case-sensitive labels observed at confirmed delivery. Matching recovery skips completed Agent/merge work and preserves those delivery-time labels for downstream documentation maintenance.
 
-Successful numbered Issues and fully delivered Issue Lists return `succeeded` with exit zero. Cleanup, subsequent Batches, parent closure, and documentation maintenance remain downstream. Worktrees, handoffs, and Reservation markers remain retained in this slice. Standalone documentation remains unimplemented.
+Successful numbered Issues and fully delivered Issue Lists return `succeeded` with exit zero. Parent Runs continue through subsequent Batches and confirm parent closure when all children are terminal. Ordinary Issue cleanup and automatic documentation maintenance remain downstream. Ordinary Issue Worktrees, handoffs, and Reservation markers remain retained in this slice.
+
+### Standalone documentation
+
+Run documentation maintenance without selecting a business Issue:
+
+```sh
+issue-runner run --project demo --env herdr --document
+```
+
+Supply `agents.documentation`, a nonempty `prompts/documentation.md`, and the
+`maintenanceTicket.title`, `body`, and `label` settings. The delivery trigger label
+is optional for `--document`; no delivery or matching business-Issue label is required.
+The current startup rules still require the implementation profile and prompt.
+
+Runner ensures the maintenance label exists and creates an ordinary, unassigned
+Maintenance Ticket. It uses a separate documentation execution, Worktree, Session
+Probe, native conversation, fixed PR metadata, and handoff assignments. It does not
+read a parent, select from `issueList`, reserve a business Issue, or run ordinary Review.
+New assignees, missing maintenance markers, Reservation markers, or open blockers
+stop advancement and retain the occurrence's resources.
+
+Committed documentation uses the normal Git verification, publication, required-check,
+CI/conflict repair, integration, and tracker-closure paths. `--no-auto-merge` retains
+the CI-ready PR and its working resources, reports `incomplete`, and leaves the ticket open.
+Runner independently verifies a `no_change` result against the assigned branch and
+base, a clean Worktree, no commits, and no actual changes. It closes and confirms the
+Maintenance Ticket as `closed/completed` without pushing or creating a PR, including
+under `ticketClosure: code_host` or `--no-auto-merge`.
+
+Recovery stores the maintenance occurrence in `recovery/<input-hash>-document.json`
+and its execution in `recovery/<input-hash>-document-<ticket>.json`. Matching interrupted
+Runs reuse the original ticket, native conversation, paths, PR metadata, and consumed
+budgets. Existing output is verified before opening a tab; missing output resumes the
+saved documentation conversation and sends only `continue`. Close leftover Agent
+tabs and stop their execution before recovery, retaining native history and Worktrees.
+Runner does not adopt live tabs. If the original context cannot be recovered, Runner
+prints `unable to recover` and offers an entire documentation-occurrence restart or exit.
+Restart retains the old resources and starts at documentation with a new ticket and execution.
+
+Changed arguments or configuration start a separate occurrence and retain the old
+one. After a completed Run, the next `--document` invocation starts a new occurrence.
+An uncertain ticket-creation response stops automatic creation; inspect remote state
+before explicitly authorizing another creation. Runner never adopts an unrelated
+old Maintenance Ticket by its title or label.
+
+After confirmed delivery or verified no-change closure, Runner removes the owned
+Worktree/local branch and Probe/handoff files. It verifies ownership and branch HEAD
+before removal and retains resources if ownership changed. Cleanup can resume after
+partial completion. Failed, cancelled, unfinished, skipped, and unmerged work retains
+its resources; native histories and unrelated tabs remain untouched.
 
 ### Rejected handoffs and manual correction
 

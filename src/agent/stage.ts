@@ -31,6 +31,12 @@ export interface IssueStageContext {
 }
 
 const stageDetails = {
+  documentation: {
+    name: "documentation",
+    heading: "Documentation",
+    phase: "documenting",
+    completed: "documentation_completed",
+  },
   implement: {
     name: "implementation",
     heading: "Implementation",
@@ -67,14 +73,26 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
   input: IssueStageContext & {
     stage: StageProgress<R>;
     purpose:
-      "implement" | "review" | "fix_review" | "ci_repair" | "conflict_repair";
+      | "implement"
+      | "documentation"
+      | "review"
+      | "fix_review"
+      | "ci_repair"
+      | "conflict_repair";
     worktree?: string;
     task: () => string | Promise<string>;
     accept: (text: string) => Promise<R>;
   },
 ): Promise<void> {
   const { loaded, progress, stage, purpose, signal, clock, operator } = input;
-  const role = purpose === "review" ? "review" : "implement";
+  const role =
+    purpose === "review"
+      ? "review"
+      : purpose === "documentation"
+        ? "documentation"
+        : "implement";
+  const generatesMetadata =
+    purpose === "implement" || purpose === "documentation";
   const { name, heading, phase, completed } = stageDetails[purpose];
   const repairRole =
     purpose === "ci_repair"
@@ -113,7 +131,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
       if (!probeIds.includes(stage.probe.probe_id))
         probeIds.push(stage.probe.probe_id);
       stage.probeRetries ??= 0;
-      if (purpose === "implement") progress.phase = "probing";
+      if (generatesMetadata) progress.phase = "probing";
     }
     await persist();
     if (stage.invocation || stage.probe)
@@ -151,7 +169,6 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
       return true;
     };
     if (!sessionid()) {
-      const tab = await open();
       let probeAssignment = {
         ...stage.probe!,
         run_id: progress.run_id,
@@ -165,13 +182,17 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
         `Session Probe\n${JSON.stringify(probeAssignment)}\n\n` +
         (error ? `Correct the previous Probe: ${error}\n` : "") +
         `Determine the actual native conversation sessionid from your native CLI context. Never use a generated ID, tab ID, or latest-session alias. ` +
-        (purpose === "implement"
+        (generatesMetadata
           ? `Inspect the repository's AGENTS.md, contribution instructions and PR conventions. Generate complete pr_title and pr_body for ${progress.repository}#${progress.ticket}.\nIssue: ${input.ticket.title ?? ""}\n${input.ticket.body ?? ""}\n`
           : purpose === "review"
             ? "Establish only your independent reviewer identity. Do not review or modify the implementation yet.\n"
             : "Establish only your native repair identity. Do not begin the task yet.\n") +
-        `Write exactly the assignment fields above plus ${purpose === "implement" ? "sessionid, pr_title, pr_body" : "sessionid"} as JSON to ${probeAssignment.path}.tmp, close it, and atomically rename it to ${probeAssignment.path}. Do not begin the task yet.`;
-      await conversations.submit(tab, prompt(), profile.submitKey);
+        `Write exactly the assignment fields above plus ${generatesMetadata ? "sessionid, pr_title, pr_body" : "sessionid"} as JSON to ${probeAssignment.path}.tmp, close it, and atomically rename it to ${probeAssignment.path}. Do not begin the task yet.`;
+      if (
+        purpose !== "documentation" ||
+        !(await readHandoff(stage.probe!.path))
+      )
+        await conversations.submit(await open(), prompt(), profile.submitKey);
       let previous = "";
       for (;;) {
         signal?.throwIfAborted();
@@ -187,9 +208,9 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
             if (
               Object.keys(probe).length !==
                 Object.keys(probeAssignment).length +
-                  (purpose === "implement" ? 3 : 1) ||
+                  (generatesMetadata ? 3 : 1) ||
               !nonempty(probe.sessionid) ||
-              (purpose === "implement" &&
+              (generatesMetadata &&
                 (!nonempty(probe.pr_title) || !nonempty(probe.pr_body))) ||
               [
                 ...(progress.probeIds ?? []),
@@ -201,13 +222,13 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
               ].includes(probe.sessionid)
             )
               throw new Error(
-                purpose === "implement"
+                generatesMetadata
                   ? "Probe requires actual native identity and complete PR metadata"
                   : "Probe requires actual native session identity",
               );
             if (repairRole) stage.sessionid = probe.sessionid;
             else progress.roles[role] = { sessionid: probe.sessionid };
-            if (purpose === "implement") {
+            if (generatesMetadata) {
               progress.pr_title = probe.pr_title as string;
               progress.pr_body = probe.pr_body as string;
             }
@@ -215,6 +236,11 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
           } catch (error) {
             const reason =
               error instanceof Error ? error.message : String(error);
+            if (purpose === "documentation" && !tab)
+              throw new Error(
+                `unable to recover: invalid native documentation Probe: ${reason}`,
+                { cause: error },
+              );
             operator.write(
               `Invalid Probe: ${reason}. Correct the displayed Probe file in the native conversation.`,
             );
@@ -240,7 +266,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
                   ]!,
               );
               await conversations.submit(
-                tab,
+                await open(),
                 prompt(reason),
                 profile.submitKey,
               );
