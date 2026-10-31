@@ -6,7 +6,8 @@ import { executeCli } from "../../src/cli.ts";
 import { implementationCommand } from "../support/implementation-run.ts";
 import { publicationRun } from "../support/publication-run.ts";
 
-await test("publication uses paginated same-repository PR evidence, non-draft creation and exact multiline metadata through the GitHub adapter", async (t) => {
+await test("publication reconciles canonical repository casing with lowercase configuration and exact multiline metadata", async (t) => {
+  const canonicalRepository = "Owner/Repo";
   const fixture = await publicationRun(t);
   const commands: string[][] = [];
   let created = false;
@@ -30,14 +31,14 @@ await test("publication uses paginated same-repository PR evidence, non-draft cr
       assert.ok(args.includes("--slurp"));
       const record = {
         number: 81,
-        html_url: "https://github.com/owner/repo/pull/81",
+        html_url: `https://github.com/${canonicalRepository}/pull/81`,
         state: "open",
         merged_at: null,
         draft: false,
         head: {
           ref: saved.branch,
           sha: saved.publication?.headSha,
-          repo: { full_name: "owner/repo" },
+          repo: { full_name: canonicalRepository },
         },
         base: { ref: "default-branch" },
       };
@@ -61,7 +62,7 @@ await test("publication uses paginated same-repository PR evidence, non-draft cr
         "Implement the Issue.\n\nCloses #50",
       );
       created = true;
-      return "https://github.com/owner/repo/pull/81\n";
+      return `https://github.com/${canonicalRepository}/pull/81\n`;
     }
     if (args[1] === "checks") {
       assert.ok(args.includes("--required"));
@@ -83,5 +84,9 @@ await test("publication uses paginated same-repository PR evidence, non-draft cr
     JSON.stringify(result),
   );
   assert.equal(commands.filter((args) => args[1] === "create").length, 1);
+  assert.equal(
+    (await fixture.snapshot()).publication?.pullRequest?.url,
+    `https://github.com/${canonicalRepository}/pull/81`,
+  );
   await assert.rejects(readFile(bodyFile), { code: "ENOENT" });
 });

@@ -53,6 +53,17 @@ export async function runProject(
     ? AbortSignal.any([context.signal, controller.signal])
     : controller.signal;
   const operator = serializeOperator(context.operator, controller, signal);
+  const host = codeHost;
+  codeHost = {
+    resolveTargetBranch: (repository) => host.resolveTargetBranch(repository),
+    getRemoteBranchHead: (repository, branch) =>
+      host.getRemoteBranchHead(repository, branch),
+    listPullRequests: (repository) => host.listPullRequests(repository),
+    getRequiredChecks: (repository, pullRequest) =>
+      host.getRequiredChecks(repository, pullRequest),
+    createPullRequest: (input) =>
+      operator.advance(() => host.createPullRequest(input)),
+  };
   const dispatch = <T>(action: () => Promise<T>) =>
     operator.advance(async () => {
       try {

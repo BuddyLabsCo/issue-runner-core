@@ -69,7 +69,10 @@ export class GitHubCodeHost implements CodeHost {
       throw new Error("GitHub returned invalid Pull Request pages");
     return (pages.flat() as unknown[])
       .map(parsePullRequest)
-      .filter(({ headRepository }) => headRepository === repository)
+      .filter(
+        ({ headRepository }) =>
+          headRepository.toLowerCase() === repository.toLowerCase(),
+      )
       .map(({ record }) => record);
   }
 
@@ -97,7 +100,7 @@ export class GitHubCodeHost implements CodeHost {
       const prefix = `https://github.com/${input.repository}/pull/`;
       const number = Number(url.slice(prefix.length));
       if (
-        !url.startsWith(prefix) ||
+        !url.toLowerCase().startsWith(prefix.toLowerCase()) ||
         !Number.isSafeInteger(number) ||
         number <= 0
       )
