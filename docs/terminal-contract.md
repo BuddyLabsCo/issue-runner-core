@@ -129,12 +129,21 @@ failure. Core neither initializes unrelated plugins nor installs a replacement.
 
 ## Verification limits and global installation
 
-`npm test` packs Core, installs that artifact into a separate temporary consumer
-directory (including a space in its path), imports the runtime entry, checks
-the package's file/export surface, and compiles a type-only plugin consumer
-against the installed declarations. It also installs the artifact into an
-isolated global prefix and checks the CLI, init assets, selected sibling loading,
-and plugin failures. These checks require no Herdr, Agent account, or model call.
+Run `npm run test:package` for the package checks; `npm test` includes them too.
+These checks build and pack Core, then install its tarball into a temporary
+consumer directory to verify the public JavaScript entry and declarations.
+They also pack a private fake plugin and install both tarballs into the same
+isolated custom npm global prefix. From a separate Launch Directory, they
+invoke npm's installed `issue-runner` executable for help, version, and init.
+They verify all generated templates, installed purpose prompts, public types
+from the global plugin directory, and the exact manually installable
+`skills/issue-runner-handoff/SKILL.md` asset.
+
+The loader checks await selected-plugin initialization and reject local,
+other-prefix, linked-entry, PATH, NODE_PATH, and cache decoys. Temporary paths
+include spaces and are removed after the checks, including on failure.
+Installs use local tarballs and npm's offline dependency cache populated by
+`npm ci`; they require no registry publication, Herdr, Agent account, or model call.
 
 Product execution requires Core and its selected plugin installed globally
 in the same active npm environment/prefix, including custom prefixes:
@@ -145,10 +154,9 @@ issue-runner run --project my-project --env herdr --parent 42
 ```
 
 Registry publication is still future work; use built tarballs for development.
-The current artifact provides `issue-runner`, configuration parsing, and the
-manually installed handoff skill. Delivery and native Agent orchestration remain
-downstream slices. Project-local/npx and mixed-prefix product installations are
-outside the agreed support policy. Project configuration remains
+The artifact includes `issue-runner`, configuration parsing, and the
+manually installed handoff skill. Project-local/npx and mixed-prefix product
+installations are outside the agreed support policy. Project configuration remains
 `<launch-directory>/<project>/config.yaml`.
 
 The required full-product CI matrix is Ubuntu and Windows with Node 22.18+
