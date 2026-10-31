@@ -21,7 +21,7 @@ import {
 } from "../agent/handoff.ts";
 import type { CodeHost, Ticket, Tracker } from "./contracts.ts";
 import { publishImplementation } from "./publication.ts";
-import { validateCiRepairContext } from "./ci-repair.ts";
+import { validateRepairContext } from "./repair.ts";
 import type { RunContext, RunSummary } from "./run.ts";
 import {
   hasOpenBlocker,
@@ -109,6 +109,8 @@ export async function runStandalone(input: {
         "fix_review_completed",
         "repairing_ci",
         "ci_repair_completed",
+        "repairing_conflict",
+        "conflict_repair_completed",
         "publication_eligible",
       ].includes(String(saved.phase))
     )
@@ -141,7 +143,7 @@ export async function runStandalone(input: {
       );
     restored = saved as unknown as ImplementationProgress;
     validateReviewContext(restored, loaded);
-    validateCiRepairContext(restored, loaded);
+    validateRepairContext(restored, loaded);
   }
   const inspect = async (): Promise<{ ticket: Ticket; reason?: string }> => {
     if (input.parentTicket !== undefined) {
@@ -210,6 +212,50 @@ export async function runStandalone(input: {
       selected.reason = "Reservation changed before dispatch";
     return selected.reason === undefined;
   };
+  const stageInput = (progress: ImplementationProgress): IssueStageContext => ({
+    loaded,
+    progress,
+    ticket: selected.ticket,
+    persist: () => persist(progress),
+    beforeDispatch,
+    closeTab: (close) =>
+      read(
+        `close_${progress.phase.replace("_completed", "")}_tab`,
+        `ticket:${number}`,
+        close,
+      ),
+    withEnvironment: (action) =>
+      context.git.withAgentEnvironment(loaded.directory, action),
+    terminal: {
+      createTab: (options) =>
+        read(
+          "create_tab",
+          options.label,
+          () => context.terminal.createTab(options),
+          { retry: "manual" },
+        ),
+      submitText: (tab, text, chord) =>
+        read(
+          "submit_text",
+          `ticket:${number}:${progress.phase}`,
+          () => context.terminal.submitText(tab, text, chord),
+          { retry: "never" },
+        ),
+      closeTab: (tab) => context.terminal.closeTab(tab),
+    },
+    clock: context.clock,
+    operator: context.operator,
+    ...(context.signal ? { signal: context.signal } : {}),
+  });
+  const publish = (progress: ImplementationProgress) =>
+    publishImplementation({
+      ...stageInput(progress),
+      context,
+      codeHost: input.codeHost,
+      read,
+      autoMerge: input.autoMerge,
+      stageInput: stageInput(progress),
+    });
   const integrate = async (
     progress: ImplementationProgress,
     publicationReason?: string,
@@ -222,15 +268,13 @@ export async function runStandalone(input: {
     const complete = async (): Promise<RunSummary> => {
       try {
         const delivery = await integrateImplementation({
-          progress,
-          loaded,
+          ...stageInput(progress),
           context,
           codeHost: input.codeHost,
           tracker,
           read,
-          persist: () => persist(progress),
-          beforeDispatch,
           inspectTicket: inspect,
+          continuePublication: () => publish(progress),
         });
         return {
           ...summary,
@@ -258,9 +302,13 @@ export async function runStandalone(input: {
   };
   if (
     restored?.publication &&
-    ["pending_merge", "merge_requested", "merged", "delivered"].includes(
-      restored.publication.phase,
-    )
+    [
+      "conflict_repair",
+      "pending_merge",
+      "merge_requested",
+      "merged",
+      "delivered",
+    ].includes(restored.publication.phase)
   )
     return integrate(restored);
   if (selected.reason)
@@ -270,41 +318,6 @@ export async function runStandalone(input: {
       reasons: [selected.reason],
     };
   const execute = async (progress: ImplementationProgress) => {
-    const stageInput: IssueStageContext = {
-      loaded,
-      progress,
-      ticket: selected.ticket,
-      persist: () => persist(progress),
-      beforeDispatch,
-      closeTab: (close) =>
-        read(
-          `close_${progress.phase.replace("_completed", "")}_tab`,
-          `ticket:${number}`,
-          close,
-        ),
-      withEnvironment: (action) =>
-        context.git.withAgentEnvironment(loaded.directory, action),
-      terminal: {
-        createTab: (options) =>
-          read(
-            "create_tab",
-            options.label,
-            () => context.terminal.createTab(options),
-            { retry: "manual" },
-          ),
-        submitText: (tab, text, chord) =>
-          read(
-            "submit_text",
-            `ticket:${number}:${progress.phase}`,
-            () => context.terminal.submitText(tab, text, chord),
-            { retry: "never" },
-          ),
-        closeTab: (tab) => context.terminal.closeTab(tab),
-      },
-      clock: context.clock,
-      operator: context.operator,
-      ...(context.signal ? { signal: context.signal } : {}),
-    };
     if (progress.result) {
       if (
         [
@@ -325,7 +338,7 @@ export async function runStandalone(input: {
         );
     } else {
       await runIssueStage({
-        ...stageInput,
+        ...stageInput(progress),
         stage: progress,
         purpose: "implement",
         task: async () =>
@@ -341,25 +354,13 @@ export async function runStandalone(input: {
       !progress.publication
     )
       await reviewImplementation({
-        ...stageInput,
-        ticket: selected.ticket,
+        ...stageInput(progress),
         git: context.git,
         read,
       });
     if (!selected.reason && progress.result?.outcome === "committed") {
       try {
-        const reason = await publishImplementation({
-          progress,
-          loaded,
-          context,
-          codeHost: input.codeHost,
-          read,
-          persist: () => persist(progress),
-          beforeDispatch,
-          autoMerge: input.autoMerge,
-          stageInput,
-        });
-        return integrate(progress, reason);
+        return integrate(progress, await publish(progress));
       } catch (error) {
         if (!(error instanceof OperationStopped)) throw error;
         return { ...summary, reasons: [selected.reason ?? error.message] };

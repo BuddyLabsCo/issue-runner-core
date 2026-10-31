@@ -19,6 +19,7 @@ export async function integrateImplementation(input: {
   read: ReadOperation;
   persist: () => Promise<void>;
   beforeDispatch: () => Promise<boolean>;
+  continuePublication: () => Promise<string>;
   inspectTicket: () => Promise<{ ticket: Ticket; reason?: string }>;
 }): Promise<{ outcome: "succeeded" | "incomplete"; reason: string }> {
   const { progress, loaded, context, codeHost, tracker, read, persist } = input;
@@ -27,6 +28,7 @@ export async function integrateImplementation(input: {
     !publication?.pullRequest ||
     ![
       "checks_ready",
+      "conflict_repair",
       "pending_merge",
       "merge_requested",
       "merged",
@@ -34,7 +36,7 @@ export async function integrateImplementation(input: {
     ].includes(publication.phase)
   )
     throw new Error("Integration requires a recorded CI-ready Pull Request");
-  const head = publishedHead(publication);
+  let head = publishedHead(publication);
   const { repository, ticket } = progress;
   const pullRequest = publication.pullRequest;
   const target = `ticket:${ticket}`;
@@ -50,11 +52,23 @@ export async function integrateImplementation(input: {
         );
       return state;
     });
+  const repair = async (reason: string) => {
+    publication.conflict ??= reason;
+    publication.phase = "conflict_repair";
+    delete publication.mergeDeadline;
+    await persist();
+    await input.continuePublication();
+    head = publishedHead(publication);
+  };
   const sleep = async (ms: number) => {
     context.signal?.throwIfAborted();
     await context.clock.sleep(ms);
     context.signal?.throwIfAborted();
   };
+  if (publication.phase === "conflict_repair") {
+    await input.continuePublication();
+    head = publishedHead(publication);
+  }
   if (publication.phase !== "merged" && publication.phase !== "delivered") {
     for (;;) {
       let state = await observe();
@@ -68,6 +82,47 @@ export async function integrateImplementation(input: {
         throw new OperationStopped(
           "Issue eligibility changed before integration",
         );
+      if (
+        publication.conflictRepair?.retryAuthorized &&
+        publication.conflict &&
+        !state.mergeRequested
+      ) {
+        if (state.mergeable === "unknown") {
+          publication.mergeDeadline ??=
+            context.clock.now().getTime() +
+            loaded.config.timeouts.mergeQueueMinutes * 60_000;
+          const remaining =
+            publication.mergeDeadline - context.clock.now().getTime();
+          await persist();
+          if (remaining <= 0) {
+            await pauseForOperator(
+              context.operator,
+              "Mergeability observation timed out.",
+              context.signal,
+            );
+            delete publication.mergeDeadline;
+            await persist();
+          } else await sleep(Math.min(10_000, remaining));
+          continue;
+        }
+        if (state.mergeable === "mergeable") {
+          delete publication.conflict;
+          delete publication.mergeDeadline;
+          publication.phase = "pr_created";
+          publication.discoveryNotBefore =
+            context.clock.now().getTime() + 30_000;
+          await persist();
+          await input.continuePublication();
+          head = publishedHead(publication);
+          continue;
+        }
+      }
+      if (!state.mergeRequested && state.mergeable === "conflicting") {
+        await repair(
+          publication.conflict ?? "Pull Request has an explicit merge conflict",
+        );
+        continue;
+      }
       if (state.mergeFailure !== null) {
         await pauseForOperator(
           context.operator,
@@ -90,6 +145,11 @@ export async function integrateImplementation(input: {
               throw new OperationStopped(
                 "Issue eligibility changed before merge request",
               );
+            if (state.mergeable === "conflicting")
+              return {
+                outcome: "conflict" as const,
+                error: new Error("Pull Request has an explicit merge conflict"),
+              };
             if (state.mergeFailure !== null)
               throw new Error(state.mergeFailure);
             const result = await codeHost.requestSquashMerge({
@@ -113,11 +173,14 @@ export async function integrateImplementation(input: {
             },
           },
         );
-        if (request.outcome === "conflict")
-          return {
-            outcome: "incomplete",
-            reason: `CI-ready PR ${pullRequest.url} has an explicit merge conflict; resources retained; conflict repair remains downstream`,
-          };
+        if (request.outcome === "conflict") {
+          await repair(
+            request.error instanceof Error
+              ? request.error.message
+              : String(request.error),
+          );
+          continue;
+        }
       }
       publication.phase = "merge_requested";
       publication.mergeDeadline ??=
@@ -131,6 +194,10 @@ export async function integrateImplementation(input: {
           throw new OperationStopped(
             "Issue eligibility changed while awaiting integration",
           );
+        if (!state.mergeRequested && state.mergeable === "conflicting") {
+          await repair("Pull Request has an explicit merge conflict");
+          break;
+        }
         const remaining =
           publication.mergeDeadline - context.clock.now().getTime();
         if (state.mergeFailure !== null || remaining <= 0) {

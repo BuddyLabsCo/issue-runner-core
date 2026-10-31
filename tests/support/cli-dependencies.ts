@@ -68,14 +68,14 @@ export function createCliDependencies(launchDirectory: string) {
           createdAt: "2026-10-30T00:00:00Z",
           merged: false,
           mergeRequested: false,
-          mergeable: "conflicting",
+          mergeable: "unknown",
           mergeFailure: null,
         };
       },
       async requestSquashMerge(): Promise<MergeRequestResult> {
         return {
-          outcome: "conflict",
-          error: new Error("explicit merge conflict"),
+          outcome: "rejected",
+          error: new Error("Integration is not scripted in this fixture"),
         };
       },
       async resolveTargetBranch(repository: string) {
@@ -161,6 +161,8 @@ export function createCliDependencies(launchDirectory: string) {
         messages.push(message);
       },
       async pause(message: string): Promise<string | null> {
+        if (message.includes("Integration is not scripted in this fixture"))
+          return "s";
         pauses.push(message);
         assert.fail("unexpected Operator Pause");
       },

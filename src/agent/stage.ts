@@ -49,6 +49,12 @@ const stageDetails = {
     phase: "fixing_review",
     completed: "fix_review_completed",
   },
+  conflict_repair: {
+    name: "Conflict repair",
+    heading: "Conflict repair",
+    phase: "repairing_conflict",
+    completed: "conflict_repair_completed",
+  },
   ci_repair: {
     name: "CI repair",
     heading: "CI repair",
@@ -60,7 +66,8 @@ const stageDetails = {
 export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
   input: IssueStageContext & {
     stage: StageProgress<R>;
-    purpose: "implement" | "review" | "fix_review" | "ci_repair";
+    purpose:
+      "implement" | "review" | "fix_review" | "ci_repair" | "conflict_repair";
     worktree?: string;
     task: () => string | Promise<string>;
     accept: (text: string) => Promise<R>;
@@ -69,10 +76,15 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
   const { loaded, progress, stage, purpose, signal, clock, operator } = input;
   const role = purpose === "review" ? "review" : "implement";
   const { name, heading, phase, completed } = stageDetails[purpose];
-  const profile =
-    loaded.config.agents[purpose === "ci_repair" ? "ciRepair" : role]!;
+  const repairRole =
+    purpose === "ci_repair"
+      ? "ciRepair"
+      : purpose === "conflict_repair"
+        ? "conflictRepair"
+        : undefined;
+  const profile = loaded.config.agents[repairRole ?? role]!;
   const sessionid = () =>
-    purpose === "ci_repair" ? stage.sessionid : progress.roles[role]?.sessionid;
+    repairRole ? stage.sessionid : progress.roles[role]?.sessionid;
   const conversations = new NativeConversations(input.terminal, clock, signal);
   const persist = input.persist;
   const assignment = (phase: string) =>
@@ -147,7 +159,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
         project: progress.project,
         repository: progress.repository,
         ticket: progress.ticket,
-        role: purpose === "ci_repair" ? "ciRepair" : role,
+        role: repairRole ?? role,
       };
       const prompt = (error?: string) =>
         `Session Probe\n${JSON.stringify(probeAssignment)}\n\n` +
@@ -193,7 +205,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
                   ? "Probe requires actual native identity and complete PR metadata"
                   : "Probe requires actual native session identity",
               );
-            if (purpose === "ci_repair") stage.sessionid = probe.sessionid;
+            if (repairRole) stage.sessionid = probe.sessionid;
             else progress.roles[role] = { sessionid: probe.sessionid };
             if (purpose === "implement") {
               progress.pr_title = probe.pr_title as string;

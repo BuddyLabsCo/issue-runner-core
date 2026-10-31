@@ -348,7 +348,9 @@ await test("concurrent Git failures serialize non-Agent Operator Pauses before r
   };
   let active = 0;
   let pauses = 0;
-  fixture.dependencies.operator.pause = async () => {
+  fixture.dependencies.operator.pause = async (message) => {
+    if (message.includes("Integration is not scripted in this fixture"))
+      return "s";
     active += 1;
     assert.equal(
       active,

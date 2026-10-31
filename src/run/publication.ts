@@ -10,7 +10,12 @@ import { verifiedImplementation } from "./review.ts";
 import { verifyWorkspace } from "./verification.ts";
 import { OperationStopped, pauseForOperator } from "./operations.ts";
 import type { IssueStageContext } from "../agent/stage.ts";
-import { repairRequiredChecks } from "./ci-repair.ts";
+import {
+  repairPullRequest,
+  pushedRepairs,
+  inspectRepairAncestry,
+  verifyRepairAncestry,
+} from "./repair.ts";
 
 // Publication policy follows the source workflow at 0adf499bf69217b56256ca2affb1c0dca0894110.
 export async function publishImplementation(input: {
@@ -40,15 +45,20 @@ export async function publishImplementation(input: {
         "Issue eligibility changed before publication",
       );
     verifyWorkspace(progress, await context.git.inspect(progress), result);
-    const repair = progress.publication?.ciRepair?.attempts
-      .filter((attempt) => attempt.pushed)
-      .at(-1);
-    if (repair)
+    const repairs = progress.publication
+      ? pushedRepairs(progress.publication)
+      : [];
+    for (const repair of repairs) {
       verifyWorkspace(
         repair,
         await context.git.inspect(repair),
         repair.result!,
       );
+      verifyRepairAncestry(
+        repair,
+        await inspectRepairAncestry(context.git, repair),
+      );
+    }
   };
   const remoteHead = () => {
     context.signal?.throwIfAborted();
@@ -75,7 +85,7 @@ export async function publishImplementation(input: {
   }
   const publication = verifiedPublication(progress);
 
-  if (!publication.ciRepair)
+  if (!publication.ciRepair && !publication.conflictRepair)
     await read("push_verified_branch", target, async () => {
       await verify();
       const remote = await remoteHead();
@@ -175,9 +185,24 @@ export async function publishImplementation(input: {
       if (!(await matchingPullRequest(expectedHead)))
         throw new Error("Published Pull Request is missing");
     });
+  if (publication.phase === "conflict_repair") {
+    do {
+      await repairPullRequest({
+        ...input.stageInput,
+        kind: "conflict",
+        git: context.git,
+        read,
+        confirm,
+        remoteHead,
+      });
+    } while (publication.phase === "conflict_repair");
+    if (publication.conflictRepair?.retryAuthorized)
+      return "Conflict repair budget exhausted; awaiting refreshed merge evidence";
+  }
   const repair = async () => {
     do {
-      await repairRequiredChecks({
+      await repairPullRequest({
+        kind: "ci",
         ...input.stageInput,
         git: context.git,
         read,
@@ -272,6 +297,7 @@ export function verifiedPublication(progress: ImplementationProgress) {
       "pr_created",
       "checks_ready",
       "checks_failed",
+      "conflict_repair",
       "pending_merge",
       "merge_requested",
       "merged",
@@ -287,9 +313,7 @@ export function verifiedPublication(progress: ImplementationProgress) {
 
 export function publishedHead(publication: PublicationProgress): string {
   return (
-    publication.ciRepair?.attempts
-      .filter((attempt) => attempt.pushed)
-      .at(-1)
-      ?.result?.commits.at(-1)?.sha ?? publication.headSha
+    pushedRepairs(publication).at(-1)?.result?.commits.at(-1)?.sha ??
+    publication.headSha
   );
 }

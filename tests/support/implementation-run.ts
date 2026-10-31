@@ -10,7 +10,7 @@ import type { Ticket, WorkspaceEvidence } from "../../src/run/contracts.ts";
 import { createProject, validConfig } from "./cli-project.ts";
 import { createCliDependencies } from "./cli-dependencies.ts";
 
-export const implementationCommand = [
+export const deliveryCommand = [
   "run",
   "--project",
   "demo",
@@ -19,6 +19,8 @@ export const implementationCommand = [
   "--issue",
   "50",
 ];
+export const implementationCommand = [...deliveryCommand, "--no-auto-merge"];
+
 export const implementationCommit = {
   sha: "b".repeat(40),
   message: "feat: implement the Issue",
