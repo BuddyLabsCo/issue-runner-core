@@ -226,6 +226,11 @@ export async function integrateImplementation(input: {
       throw new Error(
         "Delivery requires persisted completed tracker state and labels",
       );
+    const current = (await input.inspectTicket()).ticket;
+    if (current.state !== "closed" || current.stateReason !== "completed")
+      throw new OperationStopped(
+        "Previously delivered Issue is no longer closed/completed; retained delivery evidence",
+      );
     return {
       outcome: "succeeded",
       reason: `Issue #${ticket} delivered by confirmed squash integration ${pullRequest.url} and closed/completed tracker state`,

@@ -151,6 +151,7 @@ export interface BatchProgress {
   repository: string;
   target_branch: string;
   tickets: number[];
+  completed?: boolean;
 }
 
 export async function saveProgress(

@@ -6,7 +6,7 @@ import type {
   MergeRequestResult,
   RequiredCheck,
 } from "../../src/run/contracts.ts";
-import { child, parentRun } from "../support/parent-run.ts";
+import { child, parentDeliveryRun } from "../support/parent-run.ts";
 import { validConfig } from "../support/cli-project.ts";
 import {
   deferred,
@@ -16,7 +16,7 @@ import {
 
 async function batchRun(t: TestContext) {
   const children = [child(51), child(52), child(53)];
-  const fixture = await parentRun(t, children, {
+  const fixture = await parentDeliveryRun(t, children, {
     ...validConfig,
     issueList: [51, 52, 53],
   });
@@ -68,13 +68,6 @@ async function batchRun(t: TestContext) {
       );
       requests.push(input.pullRequest);
       return state.onMerge(input.pullRequest);
-    },
-  });
-  Object.assign(fixture.dependencies.tracker, {
-    async closeTicket(_repository: string, number: number) {
-      const ticket = children.find((ticket) => ticket.number === number)!;
-      ticket.state = "closed";
-      ticket.stateReason = "completed";
     },
   });
   return { ...fixture, children, ready, merged, requests, state };
@@ -212,7 +205,7 @@ for (const selector of ["parent", "issue"] as const) {
         const result = await running;
         assert.equal(
           result.summary.outcome,
-          selector === "parent" ? "incomplete" : "succeeded",
+          "succeeded",
           JSON.stringify(result),
         );
         assert.deepEqual(fixture.requests, [82, 83, 81]);

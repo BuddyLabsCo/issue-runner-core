@@ -125,7 +125,27 @@ Core selects ascending Issue numbers up to `maxBatchSize`, reports selected
 numbers and blocked/owned/reserved/missing work, and dispatches that Batch
 concurrently through implementation, Review/fixes, publication, and required checks, as a numbered Issue does.
 Integration waits for every Batch PR to become CI-ready, then runs serially.
-Further Batch discovery and parent closure remain downstream; an open parent Run remains `incomplete`.
+After a successful Batch, Core rescans parent state, all child pages, blockers,
+and ownership before selecting the next Batch. Newly eligible children can run
+in that same Run. An unfinished Batch retains its membership and reports
+`incomplete`; Core does not replace its members with other work.
+
+Open children prevent parent closure even when they are blocked, externally
+owned, unready, reserved, or excluded by `issueList`. Once all children are
+terminal, Core rescans before closing the parent as completed. All-cancelled
+children also permit closure. An initially empty parent remains `no_work`
+without closure. A scope emptied after successful delivery can close.
+Parent cancellation stops subsequent dispatch and retries without changing
+children. A completed parent with open children fails rather than dispatching
+work or rewriting tracker state.
+
+Parent closure uses the ordinary operation retry/pause policy and confirms
+`closed/completed` from the Tracker. A lost response reconciles current state
+before retrying the write. A successful request without confirmed closure
+cannot report success. Closure failure retains completed child checkpoints;
+a matching rerun continues without repeating their Agent work or merges.
+If a delivered child reopens, Core retains its evidence and reports incomplete
+instead of using stale delivery credit or repeating completed work.
 
 `maxBatchSize` also bounds concurrency: a Batch of two can run two Issues at
 once, and completion order may differ from ascending selection order. No
@@ -139,12 +159,14 @@ close or alter another Issue's resources.
 Before Reservation writes, Core saves Batch membership and ownership at
 `recovery/<input-hash>-batch.json`. Per-Issue progress remains at
 `recovery/<input-hash>-<issue-number>.json`. Matching reruns retain the recorded
-Batch, including members that are now ineligible or have left parent scope;
+unfinished Batch, including members that are now ineligible or have left parent scope;
 Core revalidates each member and reports why it cannot continue rather than
 filling its slot from newly eligible work. Cancellation before the first Issue
 checkpoint still retains this membership. Invalid Batch ownership or membership
 fails recovery before dispatch. Changed arguments or configuration select a new
-Batch without adopting previous Reservations.
+Batch without adopting previous Reservations. Successful parent Batches mark
+their checkpoint complete before further discovery. The next Batch replaces
+that membership while preserving each child's execution and delivery evidence.
 
 Non-Agent Operator Pauses are serialized so concurrent failures cannot read the
 same terminal input together. Pending pauses gate new workflow operations and

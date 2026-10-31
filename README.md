@@ -39,11 +39,17 @@ before granting delivery credit. Checkpoints retain those facts and exact delive
 Conflict repair and success cleanup remain downstream. Initial
 `no_change` skips Review and publication and also reports `incomplete`.
 Parent Runs select eligible direct children across all child/blocker pages,
-respect Issue List filtering and Reservation ownership, and execute one
-configured Batch concurrently through publication and CI, bounded by `maxBatchSize`.
+respect Issue List filtering and Reservation ownership, and execute successive
+Batches concurrently through publication and CI, bounded by `maxBatchSize`.
 Every Batch PR must be CI-ready before serial integration by creation time and PR number.
 Batch membership is checkpointed before dispatch and retained
-on recovery. A value-less `--issue` selects the configured Issue List
+on recovery. Parent Runs rescan after each Batch and before closure.
+An initially empty parent returns `no_work`; unresolved work remains `incomplete`.
+All-terminal children permit parent closure, including all-cancelled children.
+Runner confirms the parent's `closed/completed` state before reporting success.
+Parent cancellation stops dispatch without rewriting children, and completed
+child evidence survives interrupted parent closure.
+A value-less `--issue` selects the configured Issue List
 independently of parent discovery, using the same eligibility checks and
 publication, CI barrier, and integration workflow. Standalone documentation remains unimplemented.
 No npm package has been published.
