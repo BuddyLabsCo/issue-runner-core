@@ -311,7 +311,11 @@ Publication intent is saved before pushing or attempting PR creation. Checkpoint
 
 A lost push response is reconciled against the intended remote HEAD. A lost PR response is reconciled against all PR pages using the exact branch, Target Branch, and HEAD. Multiple matches, conflicting identity, closed/draft PRs, or unexpected remote advancement enter ordinary non-Agent Operator Pause; Runner never force-pushes or creates a replacement automatically.
 
+With matching Run inputs, recovery uses the saved publication intent and original Probe metadata. An absent remote branch can receive the verified push only while that push remains pending. An exact remote HEAD confirms the push without repeating it. A missing branch after a confirmed push requires Operator Pause. Recovery creates an absent PR without a pause only when no creation was attempted; an uncertain creation follows the authorization rule below.
+
 An uncertain creation with no exact match requires explicit operator authorization before another creation attempt. Audit retries repeat only the audit action.
+
+Recovery can adopt an exact merged PR and skip required-check discovery. If the Issue also became closed/completed while Runner was stopped, Runner confirms the recorded PR identity and merged HEAD before completing delivery and cleanup. The merged branch may already be deleted; a surviving branch must still match the recorded HEAD. Tracker completion alone grants no delivery credit. Conflicting evidence retains the execution resources without another push, PR, or Agent assignment.
 
 Runner waits 30 seconds before required-check discovery. Empty checks or checks with no pending, failed, or cancelled entries establish readiness, preserving the source treatment of skipped checks. Pending checks are polled every 10 seconds, bounded by `timeouts.requiredChecksMinutes`. A timeout enters Operator Pause; Enter starts another configured wait window and q/EOF cancels.
 
