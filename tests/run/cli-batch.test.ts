@@ -256,12 +256,25 @@ await test("invalid Batch ownership or membership fails closed before dispatch",
   const saved = JSON.parse(
     await readFile(path.join(recovery, file), "utf8"),
   ) as object;
+  assert.deepEqual(saved, {
+    ...saved,
+    run_arguments: [
+      "run",
+      "--project",
+      "demo",
+      "--env",
+      "fake",
+      "--parent",
+      "48",
+    ],
+  });
   fixture.dependencies.terminalPlugin.createTab = async () =>
     assert.fail("invalid Batch cannot dispatch");
   for (const patch of [
     { repository: "outside/repo" },
     { target_branch: "different" },
     { input_hash: "different" },
+    { run_arguments: ["run", "--project", "demo", "--document"] },
     { run_id: "" },
     { completed: "true" },
     { tickets: [51, 51] },

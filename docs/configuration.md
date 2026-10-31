@@ -522,9 +522,23 @@ Cancellation stops audit retries; the final outcome event may be absent when the
 Implementation snapshots under
 `recovery/` record execution/Run identities, role references, Probe metadata,
 invocation/path, a known unsent assignment or correction prompt, correction count,
-result facts and stage completion. Handles
-are process-local and never persisted. A hash of Run arguments and raw
-`config.yaml` scopes matching progress. In-flight assigned implementation
+result facts and stage completion. Execution, Batch, and maintenance snapshots
+store `run_arguments` and `input_hash` in their existing atomic checkpoints.
+The SHA-256 hash combines the exact Run argument array with the raw `config.yaml`
+bytes read and validated at startup. Argument order and configuration comments
+therefore affect matching. Each checkpoint validates its input scope and workflow
+ownership before restoring native invocation progress. Handles are process-local
+and never persisted. Audit logs are diagnostic output, never recovery input;
+unfinished `.tmp` snapshots cannot replace the last valid checkpoint.
+
+Matching arguments and configuration select saved progress for that Project and
+mode. Without matching progress, Runner starts a new Run with fresh counts.
+Changing either arguments alone or configuration alone ignores the old snapshots;
+Runner neither forces old settings nor enters recovery-failure pause for that
+mismatch. Copied or invalid checkpoints at the matching path fail ownership
+validation before dispatch.
+
+In-flight assigned implementation
 can resume its exact saved native conversation in the original Worktree; no
 replacement assignment is sent. An existing expected result is verified before
 opening a terminal; valid retained output can complete without a native tab.

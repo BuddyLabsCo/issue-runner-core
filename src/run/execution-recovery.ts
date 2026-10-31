@@ -15,6 +15,8 @@ export async function restoreExecution(input: {
   targetBranch: string;
   documentation: boolean;
   runId: string;
+  inputHash: string;
+  runArguments: readonly string[];
 }): Promise<ImplementationProgress | undefined> {
   const {
     file,
@@ -32,6 +34,9 @@ export async function restoreExecution(input: {
     if (previous !== undefined) {
       const saved = object(JSON.parse(previous.text) as unknown);
       if (
+        saved.input_hash !== input.inputHash ||
+        JSON.stringify(saved.run_arguments) !==
+          JSON.stringify(input.runArguments) ||
         saved.project !== project ||
         saved.ticket !== number ||
         saved.repository !== repository ||
