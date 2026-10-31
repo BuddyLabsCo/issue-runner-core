@@ -189,7 +189,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
             : "Establish only your native repair identity. Do not begin the task yet.\n") +
         `Write exactly the assignment fields above plus ${generatesMetadata ? "sessionid, pr_title, pr_body" : "sessionid"} as JSON to ${probeAssignment.path}.tmp, close it, and atomically rename it to ${probeAssignment.path}. Do not begin the task yet.`;
       if (
-        purpose !== "documentation" ||
+        (purpose !== "documentation" && !repairRole) ||
         !(await readHandoff(stage.probe!.path))
       )
         await conversations.submit(await open(), prompt(), profile.submitKey);
@@ -236,9 +236,9 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
           } catch (error) {
             const reason =
               error instanceof Error ? error.message : String(error);
-            if (purpose === "documentation" && !tab)
+            if (!tab)
               throw new Error(
-                `unable to recover: invalid native documentation Probe: ${reason}`,
+                `unable to recover: invalid native ${name} Probe: ${reason}`,
                 { cause: error },
               );
             operator.write(

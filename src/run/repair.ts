@@ -3,7 +3,12 @@ import { existsSync } from "node:fs";
 import { lstat } from "node:fs/promises";
 import path from "node:path";
 import { runIssueStage, type IssueStageContext } from "../agent/stage.ts";
-import { nonempty, object, parseExecution } from "../agent/handoff.ts";
+import {
+  nonempty,
+  object,
+  parseExecution,
+  readHandoff,
+} from "../agent/handoff.ts";
 import type {
   RepairProgress,
   ImplementationProgress,
@@ -270,6 +275,14 @@ export async function repairPullRequest(
   } else if (!existsSync(repair.worktree))
     throw new Error(
       `unable to recover: original ${name} repair Worktree is missing`,
+    );
+  if (
+    repair.probe &&
+    !repair.sessionid &&
+    !(await readHandoff(repair.probe.path))
+  )
+    throw new Error(
+      `unable to recover: missing native ${name} repair identity`,
     );
   const persist = async () => {
     if (repair.result && !repair.counted) {
