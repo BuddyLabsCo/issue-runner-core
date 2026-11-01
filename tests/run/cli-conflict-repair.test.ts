@@ -276,7 +276,6 @@ await test("conflict repair preserves the completed ordinary Review across match
   fixture.state.onProbe = async (assignment) => {
     if (assignment.role === "review")
       await publish(String(assignment.path), {
-        ...assignment,
         sessionid: "review-session",
       });
     else await probe(assignment);

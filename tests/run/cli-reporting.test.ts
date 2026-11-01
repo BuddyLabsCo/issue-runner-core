@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import { promptAssignment } from "../support/prompt-assignment.ts";
 import assert from "node:assert/strict";
 import { mkdirSync, readdirSync, renameSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
@@ -52,7 +53,7 @@ await test("reports keep selection order when native implementations finish in r
   fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
     if (!text.startsWith("Implementation assignment\n"))
       return submit(tab, text);
-    const { path: handoff } = JSON.parse(text.split("\n")[1]!) as {
+    const { path: handoff } = promptAssignment(text) as {
       path: string;
     };
     const ticket = Number(

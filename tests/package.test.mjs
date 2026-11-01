@@ -59,6 +59,17 @@ await test("built artifacts work in isolated consumer and npm global installatio
     "templates/prompts/review.md",
     "templates/prompts/documentation.md",
     "skills/issue-runner-handoff/SKILL.md",
+    "prompts/implement.md",
+    "prompts/review.md",
+    "prompts/review-fix.md",
+    "prompts/documentation.md",
+    "prompts/ci-repair.md",
+    "prompts/conflict-repair.md",
+    "prompts/probe.md",
+    "prompts/probe-metadata.md",
+    "prompts/probe-correction.md",
+    "prompts/handoff-invocation.md",
+    "prompts/handoff-correction.md",
   ])
     assert.ok(files.includes(file), file);
   assert.ok(files.every((file) => !file.startsWith("tests/")));

@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { copyFileSync, readFileSync, readdirSync, renameSync } from "node:fs";
 import { createRequire } from "node:module";
 import { basename, join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 /**
  * @param {import("node:test").TestContext} t
@@ -99,20 +100,31 @@ export async function testInstalledArtifacts(
           "--eval",
           `
       import assert from "node:assert/strict";
+      import { readFileSync } from "node:fs";
       import { join } from "node:path";
       import { pathToFileURL } from "node:url";
       const core = ${JSON.stringify(core)};
-      for (const [file, name, expected] of [
-        ["implement", "implementationInstructions", "Implement the accepted Issue"],
-        ["review", "reviewInstructions", "Standards"],
-        ["review", "reviewFixInstructions", "original implementation conversation"],
-        ["documentation", "documentationInstructions", "Maintain the project documentation"],
-        ["ci-repair", "ciRepairInstructions", "Diagnose the failed required checks"],
-        ["conflict-repair", "conflictRepairInstructions", "resolve the explicit merge conflict"]
+      for (const [file, name, asset, expected] of [
+        ["implement", "implementationInstructions", "implement", "Implement issue #{{issue}}"],
+        ["review", "reviewInstructions", "review", "issue requirements"],
+        ["review", "reviewFixInstructions", "review-fix", "assigned review report"],
+        ["documentation", "documentationInstructions", "documentation", "Maintain the documentation requested"],
+        ["ci-repair", "ciRepairInstructions", "ci-repair", "Fix the failed required checks"],
+        ["conflict-repair", "conflictRepairInstructions", "conflict-repair", "Resolve the pull request merge conflict"],
+        ["session", "probeInstructions", "probe", "actual native conversation session ID"],
+        ["session", "probeMetadataInstructions", "probe-metadata", "Generate pr_title and pr_body"],
+        ["session", "probeCorrectionInstructions", "probe-correction", "Correct the previous Probe"],
+        ["session", "handoffInvocationInstructions", "handoff-invocation", "sole absolute output-path argument"],
+        ["session", "handoffCorrectionInstructions", "handoff-correction", "Correct the {{name}} handoff"]
       ]) {
         const prompts = await import(pathToFileURL(join(core, "dist/prompts", file + ".js")).href);
         assert.equal(typeof prompts[name], "string", name);
         assert.ok(prompts[name].includes(expected), name);
+        assert.equal(prompts[name], readFileSync(join(core, "prompts", asset + ".md"), "utf8").trimEnd(), name);
+        assert.deepEqual(
+          readFileSync(join(core, "prompts", asset + ".md")),
+          readFileSync(new URL("../../prompts/" + asset + ".md", ${JSON.stringify(import.meta.url)}))
+        );
       }
     `,
         ],
@@ -129,4 +141,35 @@ export async function testInstalledArtifacts(
       );
     },
   );
+  await t.test(
+    "installed CLI preserves startup, Probe, task, correction and continuation submissions",
+    () => {
+      runNode(
+        [
+          "--input-type=module",
+          "--eval",
+          `
+          import test from "node:test";
+          const { executeCli } = await import(${JSON.stringify(pathToFileURL(join(core, "dist/cli.js")).href)});
+          const { testPromptAssembly, testPromptContinuation } = await import(${JSON.stringify(new URL("../support/prompt-assembly.ts", import.meta.url).href)});
+          await test("installed prompt assembly", t => testPromptAssembly(t, executeCli));
+          await test("installed continuation", t => testPromptContinuation(t, executeCli));
+          `,
+        ],
+        launch,
+      );
+    },
+  );
+  await t.test("installed prompts cannot fall back to the checkout", () => {
+    const assets = join(core, "prompts");
+    renameSync(assets, `${assets}.unavailable`);
+    try {
+      assert.throws(
+        () => runNode([join(core, "dist/cli.js"), "--version"], launch),
+        /ENOENT.*prompts/,
+      );
+    } finally {
+      renameSync(`${assets}.unavailable`, assets);
+    }
+  });
 }

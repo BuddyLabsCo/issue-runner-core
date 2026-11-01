@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import { promptAssignment } from "../support/prompt-assignment.ts";
 import assert from "node:assert/strict";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -48,7 +49,7 @@ for (const selector of ["parent", "issue"] as const) {
     fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
       const { number } = tabs.get(tab)!;
       if (text.startsWith("Session Probe\n")) {
-        const assignment = JSON.parse(text.split("\n")[1]!) as {
+        const assignment = promptAssignment(text) as {
           ticket: number;
           path: string;
         };
@@ -62,7 +63,7 @@ for (const selector of ["parent", "issue"] as const) {
         arrived.get(number)!.resolve();
         await gates.get(number)!.promise;
         await submitText(tab, text);
-        const assignment = JSON.parse(text.split("\n")[1]!) as { path: string };
+        const assignment = promptAssignment(text) as { path: string };
         await publish(assignment.path, {
           ...committed(number),
           summary: `Completed Issue #${number}`,

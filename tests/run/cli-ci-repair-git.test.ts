@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import { promptAssignment } from "../support/prompt-assignment.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import {
@@ -124,12 +125,11 @@ for (const kind of ["ci", "conflict"] as const) {
         async submitText(tab, text) {
           const options = tabs.get(tab)!;
           if (text.startsWith("Session Probe\n")) {
-            const assignment = JSON.parse(text.split("\n")[1]!) as {
+            const assignment = promptAssignment(text) as {
               path: string;
               role: string;
             };
             await publish(assignment.path, {
-              ...assignment,
               sessionid: `native-${tabs.size}`,
               ...(assignment.role === "implement"
                 ? {
@@ -144,7 +144,7 @@ for (const kind of ["ci", "conflict"] as const) {
               `${kind === "ci" ? "CI" : "Conflict"} repair assignment\n`,
             )
           ) {
-            const assignment = JSON.parse(text.split("\n")[1]!) as {
+            const assignment = promptAssignment(text) as {
               path: string;
             };
             const repair = !text.startsWith("Implementation");

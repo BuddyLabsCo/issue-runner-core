@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import { promptAssignment } from "../support/prompt-assignment.ts";
 import assert from "node:assert/strict";
 import { access, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -57,7 +58,6 @@ await test("explicit whole-Issue restart retains failed resources and resets onl
   };
   fixture.state.onProbe = async (assignment) => {
     await publish(String(assignment.path), {
-      ...assignment,
       sessionid: "new-native-context",
       pr_title: "fix: [issue-50] restart the Issue",
       pr_body: "New execution metadata.\n\nCloses #50",
@@ -205,18 +205,17 @@ for (const missing of [
     fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
       if (
         text.startsWith("Session Probe\n") &&
-        text.includes('"role":"review"')
+        text.includes("-review-probe-")
       ) {
-        const assignment = JSON.parse(text.split("\n")[1]!) as {
+        const assignment = promptAssignment(text) as {
           ticket: number;
           path: string;
         };
         await publish(assignment.path, {
-          ...assignment,
           sessionid: `review-${assignment.ticket}`,
         });
       } else if (text.startsWith("Review assignment\n")) {
-        const assignment = JSON.parse(text.split("\n")[1]!) as { path: string };
+        const assignment = promptAssignment(text) as { path: string };
         await publish(assignment.path, passed());
       } else await submit(tab, text);
     };

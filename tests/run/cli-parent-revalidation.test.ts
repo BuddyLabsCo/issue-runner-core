@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import { promptAssignment } from "../support/prompt-assignment.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { child, parentDeliveryRun, parentRun } from "../support/parent-run.ts";
@@ -236,7 +237,7 @@ await test("parent cancellation during correction backoff prevents the follow-up
     }
     await submitText(tab, text);
     if (text.startsWith("Implementation assignment\n")) {
-      const assignment = JSON.parse(text.split("\n")[1]!) as { path: string };
+      const assignment = promptAssignment(text) as { path: string };
       await publish(assignment.path, { outcome: "invalid" });
     }
   };

@@ -39,7 +39,7 @@ export interface ReviewResult {
 
 export interface StageProgress<R> {
   sessionid?: string;
-  probe?: { probe_id: string; path: string };
+  probe?: { path: string };
   invocation?: Invocation;
   pendingPrompt?: string;
   result?: R;
@@ -47,7 +47,6 @@ export interface StageProgress<R> {
   correctionNotBefore?: number;
   correctionExhausted?: true;
   probeRetries?: number;
-  probeIds?: string[];
   superseded: string[];
 }
 

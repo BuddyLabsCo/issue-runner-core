@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import { promptAssignment } from "../support/prompt-assignment.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
@@ -128,13 +129,12 @@ for (const scenario of [
       const submit = terminal.submitText.bind(terminal);
       terminal.submitText = async (tab, text, chord) => {
         if (text.startsWith("Session Probe\n")) {
-          const assignment = JSON.parse(text.split("\n")[1]!) as {
+          const assignment = promptAssignment(text) as {
             role: string;
             path: string;
           };
           if (assignment.role === "ciRepair") {
             await publish(assignment.path, {
-              ...assignment,
               sessionid: `native-repair-${repairs}`,
             });
             return;

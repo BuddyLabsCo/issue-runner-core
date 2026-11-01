@@ -9,11 +9,10 @@ import {
 } from "../support/implementation-run.ts";
 import { validConfig } from "../support/cli-project.ts";
 
-await test("invalid Probe correlation cannot establish identity or dispatch implementation", async (t) => {
+await test("unexpected Probe fields cannot establish identity or dispatch implementation", async (t) => {
   const fixture = await implementationRun(t);
   fixture.state.onProbe = async (assignment) => {
     await publish(String(assignment.path), {
-      ...assignment,
       ticket: 999,
       sessionid: "native-identity",
       pr_title: "title",
@@ -29,7 +28,7 @@ await test("invalid Probe correlation cannot establish identity or dispatch impl
   assert.equal(fixture.state.events.includes("close"), false);
   assert.match(
     fixture.dependencies.messages.join("\n"),
-    /ownership\/correlation mismatch/,
+    /Probe requires actual native identity/,
   );
 });
 
@@ -44,11 +43,10 @@ for (const invalid of [
     const fixture = await implementationRun(t);
     fixture.state.onProbe = async (assignment) => {
       await publish(String(assignment.path), {
-        ...assignment,
         sessionid: "native-session",
         pr_title: "Title",
         pr_body: "Body",
-        [invalid]: invalid === "sessionid" ? assignment.probe_id : "",
+        [invalid]: invalid === "sessionid" ? "latest" : "",
       });
     };
     fixture.state.onSleep = async (ms) => {

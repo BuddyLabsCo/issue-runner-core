@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import assert from "node:assert/strict";
-import { access } from "node:fs/promises";
+import { access, writeFile } from "node:fs/promises";
+import path from "node:path";
 import test from "node:test";
 import type { TerminalPlugin } from "../../src/terminal.ts";
 import { executeCli } from "../../src/cli.ts";
@@ -33,8 +34,10 @@ await test("configured commands and prompts use canonical LF while preserving li
       },
     },
   });
-  fixture.state.ticket.body =
-    "Line one\r\n  \u4f60\u597d $& '$`'\r\n\nLast line";
+  await writeFile(
+    path.join(fixture.directory, "prompts", "implement.md"),
+    "Line one\r\n  \u4f60\u597d $& '$`'\r\n\nLast line",
+  );
   assert.equal((await fixture.run()).summary.outcome, "incomplete");
   assert.equal(
     fixture.state.submissions[0]?.text,

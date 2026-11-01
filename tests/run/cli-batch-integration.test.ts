@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import { promptAssignment } from "../support/prompt-assignment.ts";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
@@ -311,17 +312,16 @@ for (const failure of ["rejected", "conflict"] as const) {
     );
     fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
       if (text.startsWith("Session Probe\n")) {
-        const assignment = JSON.parse(text.split("\n")[1]!) as {
+        const assignment = promptAssignment(text) as {
           path: string;
           role: string;
         };
         if (assignment.role !== "conflictRepair") return submit(tab, text);
         await publish(assignment.path, {
-          ...assignment,
           sessionid: `conflict-session-${repairAttempts}`,
         });
       } else if (text.startsWith("Conflict repair assignment\n")) {
-        const assignment = JSON.parse(text.split("\n")[1]!) as { path: string };
+        const assignment = promptAssignment(text) as { path: string };
         repairAttempts++;
         await publish(assignment.path, {
           outcome: "no_change",

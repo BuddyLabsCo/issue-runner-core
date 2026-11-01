@@ -334,9 +334,7 @@ async function executeStandalone(
         stage: progress,
         purpose,
         task: async () =>
-          `${input.documentation ? documentationInstructions : implementationInstructions}\n\n${await readFile(path.join(root, "prompts", `${purpose}.md`), "utf8")}\n\n` +
-          `Repository: ${repository}\nIssue #${number}: ${selected.ticket.title ?? ""}\n${selected.ticket.body ?? ""}\n` +
-          `Worktree: ${progress.worktree}\nDelivery branch: ${progress.branch}\nBase SHA: ${progress.base}\nTarget Branch: ${progress.target_branch}`,
+          `${(input.documentation ? documentationInstructions : implementationInstructions).replace("{{issue}}", () => String(number))}\n\n${await readFile(path.join(root, "prompts", `${purpose}.md`), "utf8")}`,
         accept: (text) => accept(progress, text),
       });
     }
