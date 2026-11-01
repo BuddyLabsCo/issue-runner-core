@@ -74,7 +74,7 @@ export async function testPromptAssembly(
   const saved = await fixture.snapshot();
   assert.ok(
     task.endsWith(
-      `After completing all work, checks, and commits, explicitly invoke the installed issue-runner-handoff skill as your final action, with this sole absolute output-path argument: ${JSON.stringify(saved.superseded[1])}`,
+      `Once the task is complete, explicitly invoke the installed issue-runner-handoff skill as your final action, with this sole absolute output-path argument: ${JSON.stringify(saved.superseded[1])}`,
     ),
   );
   assert.equal(

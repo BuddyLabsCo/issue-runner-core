@@ -5,7 +5,7 @@ disable-model-invocation: true
 argument-hint: "<absolute-handoff-json-path>"
 ---
 
-Invoke this skill only after completing all task work, checks, and local commits.
+Invoke this skill only after the assigned task is complete.
 Use the argument as the absolute path of the final JSON handoff file.
 
 Write one JSON object with exactly these fields:

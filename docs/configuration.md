@@ -230,7 +230,7 @@ A fresh invocation and absolute handoff path are persisted before task submissio
 without another startup delay. Tasks include built-in instructions, any applicable
 Project prompt, and only the context needed for that stage. They omit internal
 assignment JSON and redundant Worktree/branch details. The final instruction
-explicitly invokes the installed handoff skill after all work, checks, and commits.
+explicitly invokes the installed handoff skill after the assigned task is complete.
 The skill defines the result schema and requires all work to stop after atomic
 publication. The temporary Git configuration is removed when the call finishes.
 
@@ -280,7 +280,7 @@ Only `passed` and `findings` are allowed, with a nonempty summary and empty comm
 path and a regular nonempty report there. Independent Git inspection rejects
 reviewer commits, dirty files, changed branch/base, and rewritten implementation
 history. Review is instructed to write only its report and handoff, without
-implementation edits or remote operations.
+implementation edits or commits.
 
 After accepted findings, Core saves the Review result and closes its tab before
 opening a fresh tab that resumes the exact original implementation conversation.

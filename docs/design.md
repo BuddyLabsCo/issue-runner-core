@@ -234,8 +234,8 @@ The [accepted handoff decision](https://github.com/BuddyLabsCo/issue-runner-core
 supersedes earlier result payloads. Operators manually install the bundled
 [`issue-runner-handoff` skill](../skills/issue-runner-handoff/SKILL.md), following
 the [README](../README.md#install-the-handoff-skill-manually). Built-in
-purpose-specific prompts invoke the skill as the final action after all task
-work, checks, and local commits. Its sole argument is the assigned absolute
+purpose-specific prompts invoke the skill as the final action after the assigned
+task is complete. Its sole argument is the assigned absolute
 final JSON output path. Result schema instructions live in the skill rather
 than being repeated in each task prompt.
 

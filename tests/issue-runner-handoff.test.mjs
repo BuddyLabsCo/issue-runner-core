@@ -10,7 +10,7 @@ await test("explicit handoff skill defines the result and ends all work at publi
   assert.match(content, /disable-model-invocation: true/u);
   assert.match(
     content,
-    /Invoke this skill only after completing all task work, checks, and local commits/u,
+    /Invoke this skill only after the assigned task is complete/u,
   );
   const block = /```json\s*([\s\S]*?)```/u.exec(content);
   assert.ok(block?.[1]);
