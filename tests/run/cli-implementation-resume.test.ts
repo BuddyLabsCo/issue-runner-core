@@ -94,6 +94,7 @@ await test("a retained implementation resumes only its saved role with literal a
   });
   const controller = new AbortController();
   const before = fixture.state.submissions.length;
+  const messages = fixture.dependencies.messages.length;
   const sequence: string[] = [];
   fixture.state.onSleep = async (ms) => {
     if (ms === 10_000) sequence.push("wait 10 seconds");
@@ -114,6 +115,15 @@ await test("a retained implementation resumes only its saved role with literal a
         return tab;
       },
       async submitText(tab, text, chord) {
+        if (text === "continue") {
+          assert.ok(
+            fixture.dependencies.messages
+              .slice(messages)
+              .includes(
+                `Issue #50 implement sessionid=${saved.roles.implement!.sessionid} handoff=${saved.invocation!.path}`,
+              ),
+          );
+        }
         sequence.push(text === "continue" ? "continue" : "resume");
         await fixture.dependencies.terminalPlugin.submitText(tab, text, chord);
       },
@@ -218,53 +228,6 @@ await test("cancellation during recovered startup prevents the delayed continue"
   assert.deepEqual(await fixture.snapshot(), saved);
   for (const file of fixture.state.gitConfigs)
     await assert.rejects(access(file));
-});
-
-await test("a durably completed implementation is verified without dispatching another native stage", async (t) => {
-  const fixture = await implementationRun(t);
-  assert.equal((await fixture.run()).summary.outcome, "incomplete");
-  const before = fixture.state.submissions.length;
-  assert.equal((await fixture.run()).summary.outcome, "incomplete");
-  assert.equal(fixture.state.submissions.length, before);
-  assert.equal(fixture.state.taskCount, 1);
-});
-
-await test("a valid result produced while Runner was stopped completes without opening a native tab", async (t) => {
-  const fixture = await implementationRun(t);
-  fixture.state.onTask = async () => {
-    /* Leave the assigned invocation unfinished. */
-  };
-  fixture.state.onSleep = async (ms) => {
-    if (ms === 250) fixture.controller.abort();
-  };
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  const saved = await fixture.snapshot();
-  await publish(saved.invocation!.path, committed());
-  fixture.state.evidence.commits = committed().commits;
-  const before = fixture.state.submissions.length;
-  const sleeps = fixture.state.sleeps.length;
-  let opens = 0;
-  const result = await executeCli(implementationCommand, {
-    ...fixture.dependencies,
-    signal: new AbortController().signal,
-    terminalPlugin: {
-      ...fixture.dependencies.terminalPlugin,
-      async createTab() {
-        opens += 1;
-        throw new Error("native terminal unavailable");
-      },
-    },
-  });
-  assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
-  assert.equal(opens, 0);
-  assert.equal(fixture.state.submissions.length, before);
-  assert.equal(fixture.state.sleeps.length, sleeps + 1);
-  assert.equal(fixture.state.sleeps.at(-1), 30_000);
-  const accepted = await fixture.snapshot();
-  assert.equal(accepted.phase, "implementation_completed");
-  assert.deepEqual(accepted.result?.commits, committed().commits);
-  assert.equal(accepted.invocation?.path, saved.invocation?.path);
-  assert.equal(accepted.pr_body, saved.pr_body);
 });
 
 await test("invalid retained output resumes only for correction and keeps its implementation assignment", async (t) => {

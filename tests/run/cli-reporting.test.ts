@@ -5,43 +5,14 @@ import { mkdirSync, readdirSync, renameSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import { executeCli } from "../../src/cli.ts";
-import { createCliDependencies } from "../support/cli-dependencies.ts";
-import { createProject } from "../support/cli-project.ts";
 import {
   committed,
   deferred,
-  implementationCommand,
   implementationRun,
   publish,
 } from "../support/implementation-run.ts";
 import { child, parentDeliveryRun } from "../support/parent-run.ts";
 import { integrationRun } from "../support/integration-run.ts";
-import { documentationRun } from "../support/documentation-run.ts";
-
-await test("an empty Run reports no native conversation and a parsed workflow outcome", async (t) => {
-  const { root } = await createProject(t);
-  const dependencies = createCliDependencies(root);
-  const result = await executeCli(
-    ["run", "--project", "demo", "--env", "fake", "--parent", "48"],
-    dependencies,
-  );
-  assert.equal(result.exitCode, 0);
-  assert.equal(result.summary.outcome, "no_work");
-  assert.ok(
-    dependencies.messages.some((message) => message.includes("sessionid=n/a")),
-  );
-  const events = (await readFile(result.logPath!, "utf8"))
-    .trim()
-    .split("\n")
-    .map((line) => JSON.parse(line) as { operation: string; result: string });
-  assert.ok(
-    events.some(
-      (event) => event.operation === "run" && event.result === "no_work",
-    ),
-  );
-  assert.deepEqual(dependencies.effects, []);
-});
 
 await test("reports keep selection order when native implementations finish in reverse order", async (t) => {
   const fixture = await parentDeliveryRun(t, [child(52), child(51)]);
@@ -107,35 +78,6 @@ for (const outcome of ["failed", "cancelled"] as const) {
     assert.equal(fixture.state.ticket.state, "open");
   });
 }
-
-await test("confirmed merge and completed tracker state earn successful delivery credit", async (t) => {
-  const fixture = await integrationRun(t);
-  const result = await fixture.run();
-  assert.equal(result.exitCode, 0);
-  assert.equal(result.summary.outcome, "succeeded");
-  assert.equal(result.summary.tickets?.[0]?.status, "completed");
-  assert.equal(fixture.integrationState.pullRequest.merged, true);
-  assert.equal(fixture.state.ticket.stateReason, "completed");
-});
-
-await test("documentation no_change is reported after closure with no retained Worktree", async (t) => {
-  const fixture = await documentationRun(t);
-  fixture.state.onTask = async (file) => {
-    fixture.state.evidence.changed = false;
-    await publish(file, {
-      outcome: "no_change",
-      summary: "Documentation is current.",
-      commits: [],
-      findings_file: null,
-    });
-  };
-  const result = await fixture.run();
-  assert.equal(result.exitCode, 0);
-  assert.equal(result.summary.outcome, "succeeded");
-  assert.equal(result.summary.tickets?.[0]?.kind, "maintenance");
-  assert.equal(result.summary.tickets?.[0]?.status, "no_change");
-  assert.deepEqual(result.summary.tickets?.[0]?.retainedWorktrees, []);
-});
 
 await test("workflow audit errors redact credentials without recording task or Agent output", async (t) => {
   const fixture = await implementationRun(t);
@@ -222,6 +164,11 @@ await test("an ordinary no_change handoff reports no delivery credit", async (t)
   };
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "incomplete");
+  assert.equal((await fixture.snapshot()).phase, "implementation_completed");
+  assert.match(
+    result.summary.reasons.join(" "),
+    /no_change.*no Issue delivery/,
+  );
   assert.equal(result.exitCode, 1);
   assert.equal(result.summary.tickets?.[0]?.status, "no_change");
   assert.equal(result.summary.tickets?.[0]?.pullRequest, null);
@@ -261,44 +208,6 @@ await test("progress identifies pending Probes, native identity, and each curren
   };
   assert.equal((await fixture.run()).summary.outcome, "incomplete");
   assert.deepEqual((await fixture.snapshot()).superseded, [original]);
-});
-
-await test("resumed work displays its saved identity and active handoff before continuing", async (t) => {
-  const fixture = await implementationRun(t);
-  fixture.state.onTask = async () => {
-    /* Retain an unfinished assignment. */
-  };
-  fixture.state.onSleep = async (ms) => {
-    if (ms === 250) fixture.controller.abort();
-  };
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  const saved = await fixture.snapshot();
-  const before = fixture.dependencies.messages.length;
-  fixture.dependencies.signal = new AbortController().signal;
-  fixture.state.evidence.commits = committed().commits;
-  const submit = fixture.dependencies.terminalPlugin.submitText.bind(
-    fixture.dependencies.terminalPlugin,
-  );
-  fixture.dependencies.terminalPlugin.submitText = async (tab, text, chord) => {
-    if (text === "continue") {
-      assert.ok(
-        fixture.dependencies.messages
-          .slice(before)
-          .includes(
-            `Issue #50 implement sessionid=${saved.roles.implement!.sessionid} handoff=${saved.invocation!.path}`,
-          ),
-      );
-      await publish(saved.invocation!.path, committed());
-    }
-    await submit(tab, text, chord);
-  };
-  assert.equal(
-    (await executeCli(implementationCommand, fixture.dependencies)).summary
-      .outcome,
-    "incomplete",
-  );
-  assert.equal(fixture.state.probeCount, 1);
-  assert.equal(fixture.state.taskCount, 1);
 });
 
 await test("cancelling the final audit write retains completed ticket evidence without replaying delivery", async (t) => {

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { access, readFile } from "node:fs/promises";
 import { validConfig } from "../support/cli-project.ts";
 import {
   committed,
@@ -75,6 +76,13 @@ for (const boundary of [
       assert.equal(saved.corrections, boundary === "correction" ? 1 : 0);
       assert.equal(saved.probeRetries ?? 0, boundary === "Probe retry" ? 1 : 0);
       assert.deepEqual(fixture.dependencies.pauses, []);
+      if (boundary === "Probe retry") {
+        assert.equal(saved.superseded.length, 1);
+        assert.ok(await readFile(saved.superseded[0]!, "utf8"));
+        assert.notEqual(saved.probe?.path, saved.superseded[0]);
+        assert.equal(saved.roles.implement, undefined);
+        assert.equal(fixture.state.probeCount, 1);
+      }
     } finally {
       clearTimeout(deadline);
       release.resolve();
@@ -83,6 +91,7 @@ for (const boundary of [
     assert.equal(fixture.state.submissions.length, submissions);
     assert.deepEqual(fixture.state.events, events);
     assert.equal(fixture.state.closedTabs.length, 0);
+    await assert.rejects(access(fixture.state.gitConfigs[0]!));
     if (boundary === "operation backoff") assert.equal(operationAttempts, 1);
   });
 }
@@ -198,13 +207,24 @@ await test("an explicit matching rerun preserves a cancelled correction's consum
 await test("cancellation after accepted implementation retains completion for a matching rerun", async (t) => {
   const fixture = await implementationRun(t, {
     ...validConfig,
-    operationRetry: 0,
+    operationRetry: 1,
   });
   fixture.state.onClose = () => Promise.reject(new Error("close unavailable"));
-  fixture.dependencies.operator.pause = () => Promise.resolve("q");
+  fixture.dependencies.operator.pause = (message) => {
+    assert.match(message, /close unavailable/);
+    fixture.dependencies.pauses.push(message);
+    return Promise.resolve("q");
+  };
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   const saved = await fixture.snapshot();
   assert.equal(saved.phase, "implementation_completed");
+  assert.equal(fixture.state.closedTabs.length, 2);
+  assert.equal(new Set(fixture.state.closedTabs).size, 1);
+  assert.equal(fixture.dependencies.pauses.length, 1);
+  assert.equal(saved.cleanup, undefined);
+  assert.deepEqual(fixture.state.cleanup, []);
+  await access(saved.invocation!.path);
+  await access(saved.worktree);
   const before = fixture.state.submissions.length;
   fixture.dependencies.signal = new AbortController().signal;
   fixture.dependencies.operator.pause = () => Promise.resolve("s");

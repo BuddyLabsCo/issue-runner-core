@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { writeFile } from "node:fs/promises";
 import test from "node:test";
 import { validConfig } from "../support/cli-project.ts";
 import {
@@ -116,76 +115,6 @@ await test("additional corrections persist unique assignments, reuse the final s
   assert.equal(fixture.state.probeCount, 2);
   assert.equal(fixture.state.closedTabs.length, 1);
 });
-
-for (const [name, output, reason] of [
-  ["invalid JSON", "{", /JSON|Unexpected/u],
-  ["non-object JSON", "[]", /Expected a JSON object/u],
-  ["missing fields", "{}", /requires exactly/u],
-  [
-    "legacy fields",
-    JSON.stringify({ ...committed(), checks: [] }),
-    /requires exactly/u,
-  ],
-  [
-    "Review outcome",
-    JSON.stringify({ ...committed(), outcome: "findings" }),
-    /Invalid implementation outcome/u,
-  ],
-  [
-    "empty summary",
-    JSON.stringify({ ...committed(), summary: " " }),
-    /Execution summary must be a nonempty string/u,
-  ],
-  [
-    "non-array commits",
-    JSON.stringify({ ...committed(), commits: null }),
-    /Execution commits must be an array/u,
-  ],
-  [
-    "invalid commit",
-    JSON.stringify({
-      ...committed(),
-      commits: [{ sha: "abc", message: "Partial SHA" }],
-    }),
-    /Invalid full-SHA\/message commit evidence/u,
-  ],
-  [
-    "missing committed evidence",
-    JSON.stringify({ ...committed(), commits: [] }),
-    /committed requires commits/u,
-  ],
-  [
-    "duplicate commits",
-    JSON.stringify({
-      ...committed(),
-      commits: [...committed().commits, ...committed().commits],
-    }),
-    /Duplicate claimed commits/u,
-  ],
-] as const) {
-  await test(`${name} stays incomplete until corrected at the active path`, async (t) => {
-    const fixture = await implementationRun(t);
-    let original = "";
-    fixture.state.onTask = async (file) => {
-      original = file;
-      fixture.state.evidence.commits = committed().commits;
-      await writeFile(file, output);
-    };
-    fixture.state.onCorrection = async (file) => {
-      assert.match(fixture.state.submissions.at(-1)!.text, reason);
-      assert.notEqual(file, original);
-      const saved = await fixture.snapshot();
-      assert.equal(saved.phase, "implementing");
-      assert.equal(saved.result, undefined);
-      assert.equal(saved.corrections, 1);
-      assert.equal(fixture.state.closedTabs.length, 0);
-      await publish(file, committed());
-    };
-    assert.equal((await fixture.run()).summary.outcome, "incomplete");
-    assert.equal((await fixture.snapshot()).phase, "implementation_completed");
-    assert.equal((await fixture.snapshot()).corrections, 1);
-  });
-}
 
 for (const [mismatch, reason] of [
   ["branch", /Delivery branch mismatch/u],

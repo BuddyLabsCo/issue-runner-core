@@ -74,15 +74,15 @@ await test("one documentation occurrence follows each matching successful Batch 
   );
 });
 
-for (const labels of [["docs"], ["DOCS"], ["Docs-extra"], [" Docs "]]) {
-  await test(`delivery labels ${JSON.stringify(labels)} do not match Docs exactly`, async (t) => {
-    const fixture = await batchDocumentationRun(t, [
-      child(51, { labels: ["ready-for-agent", ...labels] }),
-    ]);
-    assert.equal((await fixture.run()).summary.outcome, "succeeded");
-    assert.equal(fixture.maintenance.length, 0);
-  });
-}
+await test("near-match delivery labels never trigger documentation", async (t) => {
+  const fixture = await batchDocumentationRun(t, [
+    child(51, {
+      labels: ["ready-for-agent", "docs", "DOCS", "Docs-extra", " Docs "],
+    }),
+  ]);
+  assert.equal((await fixture.run()).summary.outcome, "succeeded");
+  assert.equal(fixture.maintenance.length, 0);
+});
 
 await test("removing the trigger before confirmed delivery prevents maintenance", async (t) => {
   const ticket = child(51, { labels: ["ready-for-agent", "Docs"] });
@@ -174,33 +174,6 @@ await test("ordinary implementation no_change earns no delivery trigger", async 
   assert.equal(fixture.maintenance.length, 0);
 });
 
-await test("a completed occurrence satisfies its restored Batch barrier without another Maintenance Ticket", async (t) => {
-  const fixture = await batchDocumentationRun(t, [
-    child(51, { labels: ["ready-for-agent", "Docs"] }),
-  ]);
-  assert.equal((await fixture.run()).summary.outcome, "succeeded");
-  const recovery = path.join(fixture.directory, "recovery");
-  const files = await readdir(recovery);
-  const batchFile = path.join(
-    recovery,
-    files.find((file) => file.endsWith("-batch.json"))!,
-  );
-  const batch = JSON.parse(await readFile(batchFile, "utf8")) as {
-    completed?: boolean;
-  };
-  // Reproduce interruption between maintenance completion and Batch completion persistence.
-  delete batch.completed;
-  await writeFile(batchFile, JSON.stringify(batch));
-
-  assert.equal((await fixture.run()).summary.outcome, "succeeded");
-  assert.equal(fixture.maintenance.length, 1);
-  assert.equal(fixture.cleanup.length, 2);
-  assert.equal(
-    fixture.events.filter((event) => event === "document").length,
-    1,
-  );
-});
-
 await test("pending documentation recovers before any parent discovery, using its saved conversation and occurrence", async (t) => {
   const ticket = child(51, { labels: ["ready-for-agent", "Docs"] });
   const fixture = await batchDocumentationRun(t, [ticket]);
@@ -276,6 +249,11 @@ await test("pending documentation recovers before any parent discovery, using it
   assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
   assert.deepEqual(resumed, ['any-cli --resume "native-100"', "continue"]);
   assert.equal(fixture.maintenance.length, 1);
+  assert.equal(fixture.cleanup.length, 2);
+  assert.equal(
+    fixture.events.filter((event) => event === "document").length,
+    1,
+  );
   assert.ok(discovery > 0);
   assert.equal(fixture.parent.state, "closed");
   assert.equal(

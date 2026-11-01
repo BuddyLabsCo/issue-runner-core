@@ -240,25 +240,6 @@ for (const outcome of [
   });
 }
 
-await test("rejected stage close retains accepted output and cannot earn successful cleanup", async (t) => {
-  const fixture = await integrationRun(t);
-  fixture.state.onClose = async () => {
-    throw new Error("targeted close rejected");
-  };
-  fixture.dependencies.operator.pause = async (message) => {
-    assert.match(message, /targeted close rejected/u);
-    return "q";
-  };
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  const saved = await fixture.snapshot();
-  assert.equal(saved.phase, "implementation_completed");
-  assert.equal(saved.cleanup, undefined);
-  assert.deepEqual(fixture.state.cleanup, []);
-  assert.equal(new Set(fixture.state.closedTabs).size, 1);
-  await access(saved.probe!.path);
-  await access(saved.invocation!.path);
-});
-
 await test("a recovered cleanup rejects another Issue's assigned path before deleting any resources", async (t) => {
   const fixture = await integrationRun(t);
   fixture.integrationState.onClose = async () => {

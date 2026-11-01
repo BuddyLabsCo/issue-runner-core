@@ -202,6 +202,12 @@ await test("cancelled Maintenance Tickets retain documentation artifacts and ear
   assert.equal(fixture.integrationState.closures, 0);
   assert.equal(fixture.maintenance.cleanup.length, 0);
   await access((await fixture.snapshot()).invocation!.path);
+  fixture.dependencies.signal = new AbortController().signal;
+  const result = await fixture.run();
+  assert.equal(result.summary.outcome, "incomplete");
+  assert.equal(result.exitCode, 1);
+  assert.equal(fixture.state.taskCount, 1);
+  assert.equal(fixture.maintenance.cleanup.length, 0);
 });
 
 await test("changed configuration starts separate documentation and retains the interrupted occurrence", async (t) => {
@@ -329,22 +335,6 @@ await test("skipping documentation retains that occurrence and the next invocati
   assert.equal(fixture.maintenance.creates, 2);
   await access(previous.worktree);
   await access(previous.invocation!.path);
-});
-
-await test("a cancelled Maintenance Ticket on recovery reports incomplete without dispatch or cleanup", async (t) => {
-  const fixture = await documentationRun(t);
-  fixture.state.onTask = async () => {
-    fixture.controller.abort();
-  };
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  fixture.state.ticket.state = "closed";
-  fixture.state.ticket.stateReason = "not_planned";
-  fixture.dependencies.signal = new AbortController().signal;
-  const result = await fixture.run();
-  assert.equal(result.summary.outcome, "incomplete");
-  assert.equal(result.exitCode, 1);
-  assert.equal(fixture.state.taskCount, 1);
-  assert.equal(fixture.maintenance.cleanup.length, 0);
 });
 
 await test("a missing original documentation Worktree offers exit without opening a replacement Agent", async (t) => {

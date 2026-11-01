@@ -362,6 +362,10 @@ await test("restart preserves an exhausted CI generation until the operator auth
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   assert.equal(pauses, 2);
   assert.equal(fixture.repairs.tasks.length, 2);
+  const budget = (await fixture.snapshot()).publication!.ciRepair!;
+  assert.equal(budget.consumed, 2);
+  assert.equal(budget.attempts.length, 2);
+  assert.equal(fixture.publicationState.pushes, 1);
   assert.equal((await fixture.snapshot()).publication!.ciRepair!.generation, 0);
 });
 

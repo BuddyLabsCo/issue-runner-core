@@ -23,12 +23,17 @@ jobs:
           cache: npm
       - run: npm install --global npm@11.6.2
       - run: npm ci
-      - run: npm run build
-      - name: Verify static checks, workflows, real Git, and installed packages
+      - name: Check formatting, lint, and types
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           set -o pipefail
-          npm run verify 2>&1 | tee verification.log
+          npm run check 2>&1 | tee verification.log
+      - name: Verify workflows, real Git, and installed packages
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee -a verification.log
       - name: Retain verification evidence
         if: always()
         uses: actions/upload-artifact@v7

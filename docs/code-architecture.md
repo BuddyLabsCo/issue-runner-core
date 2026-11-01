@@ -18,6 +18,7 @@ prompts/                   # Built-in stage, Probe and handoff instruction bodie
 templates/                 # User-editable config/prompt defaults for init.
 skills/issue-runner-handoff/ # Handoff protocol; task instructions belong in prompts/.
 tests/
+|-- agent/                 # Handoff parsing contracts without application setup.
 |-- run/                   # Complete application scenarios, including recovery.
 |-- adapters/              # External boundary checks and real Git tests.
 |-- support/               # Shared test fixtures and private dependency fakes.

@@ -1,13 +1,6 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import assert from "node:assert/strict";
-import {
-  access,
-  mkdir,
-  readFile,
-  readdir,
-  rmdir,
-  writeFile,
-} from "node:fs/promises";
+import { access, mkdir, readdir, rmdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { executeCli } from "../../src/cli.ts";
@@ -22,53 +15,6 @@ import {
   passed,
   reviewRun,
 } from "../support/review-run.ts";
-
-await test("an interrupted fix retains findings and uncommitted work and resumes only the exact implementation conversation", async (t) => {
-  const fixture = await reviewRun(t, 1);
-  fixture.reviewState.onReview = findings;
-  fixture.reviewState.onFix = async () => {
-    fixture.state.evidence.clean = false;
-  };
-  fixture.state.onSleep = async (ms) => {
-    if (ms === 250) fixture.controller.abort();
-  };
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  const saved = await fixture.snapshot();
-  const round = saved.reviews![0]!;
-  assert.equal(saved.phase, "fixing_review");
-  assert.match(
-    await readFile(round.findings, "utf8"),
-    /missing accepted behavior/u,
-  );
-  assert.equal(round.fix!.result, undefined);
-  const before = fixture.state.submissions.length;
-  fixture.state.onSleep = async (ms) => {
-    if (ms === 250) {
-      fixture.state.evidence.clean = true;
-      fixture.state.evidence.commits.push(fixCommit);
-      await publish(round.fix!.invocation!.path, {
-        ...committed(),
-        commits: [fixCommit],
-      });
-    }
-  };
-  const result = await executeCli(implementationCommand, {
-    ...fixture.dependencies,
-    signal: new AbortController().signal,
-  });
-  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
-  assert.deepEqual(
-    fixture.state.submissions.slice(before).map((item) => item.text),
-    ['any-cli --resume "native/$&/$`/$\'/session"', "continue"],
-  );
-  assert.equal(fixture.reviewState.fixes.length, 1);
-  const resumed = await fixture.snapshot();
-  assert.equal(resumed.execution_id, saved.execution_id);
-  assert.equal(resumed.pr_body, saved.pr_body);
-  assert.deepEqual(resumed.roles, saved.roles);
-  assert.deepEqual(resumed.reviews![0]!.fix!.invocation, round.fix!.invocation);
-  await assert.rejects(access(round.findings));
-});
 
 await test("an interrupted later Review resumes the original reviewer with its preserved incremental base", async (t) => {
   const fixture = await reviewRun(t);
@@ -144,15 +90,6 @@ for (const stage of ["review", "fix"] as const) {
     assert.equal((await fixture.snapshot()).phase, "publication_eligible");
   });
 }
-
-await test("a completed Review/fix checkpoint revalidates all accumulated commits without redispatch", async (t) => {
-  const fixture = await reviewRun(t, 1);
-  fixture.reviewState.onReview = findings;
-  assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/u);
-  const before = fixture.state.submissions.length;
-  assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/u);
-  assert.equal(fixture.state.submissions.length, before);
-});
 
 for (const mismatch of ["dirty", "wrong branch"] as const) {
   await test(`a persisted passed Review with ${mismatch} evidence cannot restore publication eligibility`, async (t) => {

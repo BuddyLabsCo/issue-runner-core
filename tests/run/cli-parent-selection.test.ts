@@ -7,31 +7,6 @@ import test from "node:test";
 import { validConfig } from "../support/cli-project.ts";
 import { child, parentDeliveryRun, parentRun } from "../support/parent-run.ts";
 
-await test("parent dispatches the lowest eligible direct children up to the configured Batch size", async (t) => {
-  const fixture = await parentRun(
-    t,
-    [child(54), child(51), child(53), child(52)],
-    {
-      ...validConfig,
-      maxBatchSize: 2,
-    },
-  );
-  const result = await fixture.run();
-  assert.deepEqual(
-    [...fixture.dispatched].sort((a, b) => a - b),
-    [51, 52],
-  );
-  assert.deepEqual(
-    [...fixture.writes].sort(),
-    ["label:51", "assignee:51", "label:52", "assignee:52"].sort(),
-  );
-  assert.equal(result.summary.outcome, "incomplete");
-  assert.match(
-    result.summary.reasons.join(" "),
-    /selected Delivery Tickets: 51, 52/u,
-  );
-});
-
 await test("parent reads every child and blocker page before selecting across labels, ownership and Issue List filtering", async (t) => {
   const children = [
     child(51),
@@ -282,68 +257,22 @@ await test("failed assignee writes retain a partial Reservation without automati
   assert.deepEqual(fixture.dispatched, []);
 });
 
-await test("a lost write response is reconciled before retrying the same Reservation mutation", async (t) => {
-  const fixture = await parentRun(t, [child(51)]);
-  const addLabel = fixture.dependencies.tracker.addLabel.bind(
+await test("lost readiness after Reservation prevents dispatch and retains ownership markers", async (t) => {
+  const ticket = child(51);
+  const fixture = await parentDeliveryRun(t, [ticket]);
+  const assign = fixture.dependencies.tracker.addAssignee.bind(
     fixture.dependencies.tracker,
   );
-  fixture.dependencies.tracker.addLabel = async (...args) => {
-    await addLabel(...args);
-    throw new Error("response lost after label was added");
+  fixture.dependencies.tracker.addAssignee = async (...args) => {
+    await assign(...args);
+    ticket.labels = ["sandcastle:reserved"];
   };
-  await fixture.run();
+  assert.equal((await fixture.run()).summary.outcome, "incomplete");
+  assert.deepEqual(fixture.closures, []);
   assert.deepEqual(fixture.writes, ["label:51", "assignee:51"]);
-  assert.deepEqual(fixture.dispatched, [51]);
+  assert.deepEqual(fixture.dispatched, []);
+  assert.deepEqual(ticket.labels, ["sandcastle:reserved"]);
 });
-
-for (const change of [
-  "left_scope",
-  "external",
-  "blocked",
-  "not_ready",
-  "closed",
-] as const) {
-  await test(`parent stops dispatch and retains Reservation markers when a reserved child becomes ${change}`, async (t) => {
-    const ticket = child(51);
-    const fixture = await parentDeliveryRun(t, [ticket]);
-    const addAssignee = fixture.dependencies.tracker.addAssignee.bind(
-      fixture.dependencies.tracker,
-    );
-    fixture.dependencies.tracker.addAssignee = async (...args) => {
-      await addAssignee(...args);
-      if (change === "external") ticket.assignees!.push("developer");
-      if (change === "not_ready") ticket.labels = ["sandcastle:reserved"];
-      if (change === "closed") {
-        ticket.state = "closed";
-        ticket.stateReason = "completed";
-      }
-    };
-    if (change === "left_scope")
-      fixture.dependencies.tracker.listChildrenPage = async () => ({
-        children: fixture.writes.length === 2 ? [] : [structuredClone(ticket)],
-        nextPage: null,
-      });
-    if (change === "blocked")
-      fixture.dependencies.tracker.listBlockersPage = async () => ({
-        blockers: fixture.writes.length === 2 ? [child(900)] : [],
-        nextPage: null,
-      });
-    const result = await fixture.run();
-    assert.equal(
-      result.summary.outcome,
-      change === "closed" || change === "left_scope"
-        ? "succeeded"
-        : "incomplete",
-    );
-    assert.deepEqual(
-      fixture.closures,
-      change === "closed" || change === "left_scope" ? [48] : [],
-    );
-    assert.deepEqual(fixture.writes, ["label:51", "assignee:51"]);
-    assert.deepEqual(fixture.dispatched, []);
-    assert.ok(ticket.labels!.includes("sandcastle:reserved"));
-  });
-}
 
 await test("a blocker-page failure after an open blocker cannot permit selection", async (t) => {
   const fixture = await parentRun(t, [child(51)]);

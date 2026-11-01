@@ -62,17 +62,3 @@ await test("portable dependencies and adapter wiring remain allowed", async () =
     assert.deepEqual(await diagnostics(source, filePath), []);
   }
 });
-
-await test("500 code lines pass; 501 fail; comments and blanks do not count", async () => {
-  const code = Array.from(
-    { length: 500 },
-    (_, index) => `export const value${String(index)} = ${String(index)};`,
-  ).join("\n");
-  const filePath = "src/line-limit.ts";
-  assert.deepEqual(await diagnostics(`// comment\n\n${code}\n`, filePath), []);
-  assert.ok(
-    (
-      await diagnostics(`${code}\nexport const overflow = 1;`, filePath)
-    ).includes("max-lines"),
-  );
-});

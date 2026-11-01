@@ -58,6 +58,7 @@ await test("invalid Probes use their persisted operation budget and fresh assign
   });
   const assignments: Record<string, unknown>[] = [];
   fixture.state.onProbe = async (assignment) => {
+    assert.equal(fixture.state.taskCount, 0);
     assignments.push(assignment);
     const progress = await fixture.snapshot();
     assert.equal(progress.probeRetries ?? 0, assignments.length - 1);
@@ -143,26 +144,4 @@ await test("missing Probe output never consumes retries or injects reminders", a
   const progress = await fixture.snapshot();
   assert.equal(progress.probeRetries ?? 0, 0);
   assert.equal(progress.corrections, 0);
-});
-
-await test("cancelling Probe backoff keeps consumed retry evidence and sends no correction", async (t) => {
-  const fixture = await implementationRun(t);
-  fixture.state.onProbe = async (assignment) => {
-    await publish(String(assignment.path), {
-      sessionid: "latest",
-      pr_title: "Title",
-      pr_body: "Body",
-    });
-  };
-  fixture.state.onSleep = async (ms) => {
-    if (ms === 1_000 || ms === 250) fixture.controller.abort();
-  };
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  assert.equal(fixture.state.probeCount, 1);
-  const progress = await fixture.snapshot();
-  assert.equal(progress.probeRetries, 1);
-  assert.equal(progress.superseded.length, 1);
-  assert.ok(await readFile(progress.superseded[0]!, "utf8"));
-  assert.notEqual(progress.probe?.path, progress.superseded[0]);
-  assert.equal(progress.roles.implement, undefined);
 });

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import assert from "node:assert/strict";
-import { access, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import type { TerminalPlugin } from "../../src/terminal.ts";
@@ -10,18 +10,6 @@ import {
   implementationRun,
 } from "../support/implementation-run.ts";
 import { validConfig } from "../support/cli-project.ts";
-
-await test("cancellation during startup prevents the Probe and substantive task", async (t) => {
-  const fixture = await implementationRun(t);
-  fixture.state.onSleep = async () => {
-    fixture.controller.abort();
-  };
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  assert.equal(fixture.state.probeCount, 0);
-  assert.equal(fixture.state.taskCount, 0);
-  assert.equal(fixture.state.events.includes("close"), false);
-  await assert.rejects(access(fixture.state.gitConfigs[0]!));
-});
 
 await test("configured commands and prompts use canonical LF while preserving literal Unicode and quotes", async (t) => {
   const fixture = await implementationRun(t, {
@@ -124,23 +112,6 @@ await test("a transient close failure retries the same owned handle after the op
     [10_000, 1_000],
   );
   assert.equal(fixture.state.taskCount, 1);
-  assert.equal((await fixture.snapshot()).phase, "implementation_completed");
-});
-
-await test("exhausted close retries enter ordinary Operator Pause and q retains the accepted checkpoint", async (t) => {
-  const fixture = await implementationRun(t);
-  fixture.state.onClose = async () => {
-    throw new Error("owned tab close rejected");
-  };
-  fixture.dependencies.operator.pause = async (message) => {
-    assert.match(message, /Operation failed: owned tab close rejected/);
-    fixture.dependencies.pauses.push(message);
-    return "q";
-  };
-  const result = await fixture.run();
-  assert.equal(result.summary.outcome, "cancelled");
-  assert.equal(fixture.state.closedTabs.length, 2);
-  assert.equal(fixture.dependencies.pauses.length, 1);
   assert.equal((await fixture.snapshot()).phase, "implementation_completed");
 });
 
