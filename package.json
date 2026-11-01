@@ -32,10 +32,12 @@
     "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}\" --no-error-on-unmatched-pattern",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
-    "test": "node --test --test-concurrency=1 \"tests/*.test.mjs\" \"tests/run/*.test.ts\"",
+    "test": "node --test --test-concurrency=4 \"tests/*.test.mjs\" \"tests/agent/*.test.ts\" \"tests/run/*.test.ts\" \"tests/adapters/*.test.ts\"",
     "test:package": "node --test tests/package.test.mjs",
     "prepack": "npm run build",
-    "verify": "npm run check && npm test"
+    "verify": "npm run check && npm test",
+    "test:workflow": "node --test --test-concurrency=4 \"tests/agent/*.test.ts\" \"tests/run/*.test.ts\"",
+    "test:adapters": "node --test --test-concurrency=4 \"tests/adapters/*.test.ts\""
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

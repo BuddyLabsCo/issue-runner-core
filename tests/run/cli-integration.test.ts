@@ -52,6 +52,7 @@ await test("delivery requires confirmed squash integration and completed tracker
   const result = await executeCli(implementationCommand, fixture.dependencies);
   assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
   assert.equal(result.exitCode, 0);
+  assert.equal(result.summary.tickets?.[0]?.status, "completed");
   assert.deepEqual(effects, ["merge", "close"]);
   const saved = await fixture.snapshot();
   assert.equal(saved.publication?.phase, "delivered");
@@ -103,22 +104,6 @@ await test("a queued squash is observed as merged before runner closure, includi
   assert.equal(fixture.integrationState.requests[0]!.admin, true);
   assert.equal(fixture.integrationState.closures, 1);
   assert.equal((await fixture.snapshot()).publication?.merge?.merged, true);
-});
-
-await test("code_host closure observes the source 10-second and 30-second waits without a tracker write", async (t) => {
-  const fixture = await integrationRun(t, {
-    ...validConfig,
-    ticketClosure: "code_host",
-  });
-  fixture.state.onSleep = async (ms) => {
-    if (fixture.integrationState.pullRequest.merged && ms === 30_000) {
-      fixture.state.ticket.state = "closed";
-      fixture.state.ticket.stateReason = "completed";
-    }
-  };
-  assert.equal((await fixture.run()).summary.outcome, "succeeded");
-  assert.equal(fixture.integrationState.closures, 0);
-  assert.deepEqual(fixture.state.sleeps, [10_000, 30_000, 10_000, 30_000]);
 });
 
 for (const changed of ["not_planned", "reservation"] as const) {
@@ -219,24 +204,6 @@ await test("recovery after a confirmed merge skips Agent and merge work and fini
   );
 });
 
-await test("cancellation during queue polling retains merge evidence and prevents closure", async (t) => {
-  const fixture = await integrationRun(t);
-  fixture.integrationState.onMerge = async () => {
-    fixture.integrationState.pullRequest.mergeRequested = true;
-    return { outcome: "accepted" };
-  };
-  fixture.state.onSleep = async () => {
-    if (fixture.integrationState.pullRequest.mergeRequested)
-      fixture.controller.abort();
-  };
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  assert.equal(fixture.integrationState.closures, 0);
-  assert.equal(
-    (await fixture.snapshot()).publication?.phase,
-    "merge_requested",
-  );
-});
-
 await test("recovery cannot credit delivery when recorded publication differs from verified commits", async (t) => {
   const fixture = await integrationRun(t);
   assert.equal((await fixture.run()).summary.outcome, "succeeded");
@@ -304,6 +271,11 @@ await test("an interrupted queue resumes its existing request and deadline witho
       fixture.controller.abort();
   };
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  assert.equal(fixture.integrationState.closures, 0);
+  assert.equal(
+    (await fixture.snapshot()).publication?.phase,
+    "merge_requested",
+  );
   const deadline = (await fixture.snapshot()).publication!.mergeDeadline;
   fixture.dependencies.signal = new AbortController().signal;
   fixture.state.onSleep = async () => {

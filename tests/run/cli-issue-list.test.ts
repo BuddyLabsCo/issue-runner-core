@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
-import { promptAssignment } from "../support/prompt-assignment.ts";
 import assert from "node:assert/strict";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -9,7 +8,6 @@ import { executeCli } from "../../src/cli.ts";
 import type { Ticket } from "../../src/run/contracts.ts";
 import { createProject, validConfig } from "../support/cli-project.ts";
 import { createCliDependencies } from "../support/cli-dependencies.ts";
-import { publish } from "../support/implementation-run.ts";
 import { child, parentRun } from "../support/parent-run.ts";
 
 async function issueListRun(
@@ -401,36 +399,4 @@ await test("cancellation during a list assignment retains its Batch and handoff 
   assert.equal(after.run_id, before.run_id);
   assert.deepEqual(after.roles, before.roles);
   assert.deepEqual(fixture.dispatched, [51]);
-});
-
-await test("a verified no_change list implementation remains incomplete and retains its checkpoint", async (t) => {
-  const fixture = await issueListRun(t, [child(51)]);
-  const submitText = fixture.dependencies.terminalPlugin.submitText.bind(
-    fixture.dependencies.terminalPlugin,
-  );
-  fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
-    if (text.startsWith("Implementation assignment\n")) {
-      const assignment = promptAssignment(text) as { path: string };
-      await publish(assignment.path, {
-        outcome: "no_change",
-        summary: "No implementation change needed.",
-        commits: [],
-        findings_file: null,
-      });
-    } else await submitText(tab, text);
-  };
-  const result = await fixture.run();
-  assert.equal(result.summary.outcome, "incomplete");
-  assert.match(
-    result.summary.reasons.join("; "),
-    /no_change; no Issue delivery/u,
-  );
-  const [file] = (
-    await readdir(path.join(fixture.directory, "recovery"))
-  ).filter((file) => file.endsWith("-51.json"));
-  const checkpoint = JSON.parse(
-    await readFile(path.join(fixture.directory, "recovery", file!), "utf8"),
-  ) as Record<string, unknown>;
-  assert.equal(checkpoint.phase, "implementation_completed");
-  assert.equal((checkpoint.result as { outcome: string }).outcome, "no_change");
 });

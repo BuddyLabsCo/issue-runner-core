@@ -27,6 +27,7 @@ for (const outcome of ["committed", "no_change"] as const) {
     };
     assert.equal((await fixture.run()).summary.outcome, "cancelled");
     const saved = await fixture.snapshot();
+    assert.equal(fixture.maintenance.cleanup.length, 0);
     assert.equal(saved.correctionExhausted, true);
     assert.ok(saved.corrections > 0);
     await rm(saved.invocation!.path);

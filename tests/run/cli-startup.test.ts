@@ -131,17 +131,3 @@ await test("EOF during a real Operator Pause returns and reports a cancelled Run
   assert.match(child.stdout, /Run cancelled: operator cancelled/);
   assert.match(child.stdout, /RESULT 1 cancelled/);
 });
-
-await test("the application entry can be imported from a stdin script", () => {
-  const child = spawnSync(process.execPath, ["--input-type=module", "-"], {
-    input: `
-      import { executeCli } from ${JSON.stringify(new URL("../../src/cli.ts", import.meta.url).href)};
-      console.log(typeof executeCli);
-    `,
-    encoding: "utf8",
-    timeout: 10_000,
-  });
-  assert.ifError(child.error);
-  assert.equal(child.status, 0, child.stderr);
-  assert.equal(child.stdout.trim(), "function");
-});

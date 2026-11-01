@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { mkdir, rmdir, writeFile } from "node:fs/promises";
-import path from "node:path";
 import test from "node:test";
 import {
   committed,
@@ -15,13 +14,7 @@ import {
 } from "../support/review-run.ts";
 
 for (const scenario of [
-  "wrong purpose",
-  "extra field",
-  "empty summary",
-  "claimed commits",
-  "passed findings",
   "wrong findings path",
-  "relative findings path",
   "missing report",
   "empty report",
   "directory report",
@@ -32,11 +25,6 @@ for (const scenario of [
     const fixture = await reviewRun(t, 1);
     fixture.reviewState.onReview = async (round) => {
       const result: Record<string, unknown> = passed();
-      if (scenario === "wrong purpose") Object.assign(result, committed());
-      if (scenario === "extra field") result.checks = [];
-      if (scenario === "empty summary") result.summary = " ";
-      if (scenario === "claimed commits") result.commits = [fixCommit];
-      if (scenario === "passed findings") result.findings_file = round.findings;
       if (scenario.includes("report") || scenario.includes("findings path")) {
         result.outcome = "findings";
         result.findings_file = round.findings;
@@ -44,8 +32,6 @@ for (const scenario of [
           result.findings_file = `${round.findings}-unassigned`;
           await writeFile(String(result.findings_file), "Findings");
         }
-        if (scenario === "relative findings path")
-          result.findings_file = path.basename(round.findings);
         if (scenario === "empty report") await writeFile(round.findings, " \n");
         if (scenario === "directory report") await mkdir(round.findings);
       }

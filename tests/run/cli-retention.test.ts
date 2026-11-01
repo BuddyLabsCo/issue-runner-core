@@ -236,6 +236,11 @@ await test("no-auto-merge retains and reports failed and replacement repair exec
   const saved = await fixture.snapshot();
   const attempts = saved.publication!.ciRepair!.attempts;
   assert.equal(attempts.length, 2);
+  assert.equal(saved.publication!.ciRepair!.consumed, 2);
+  assert.equal(attempts[0]!.corrections, 0);
+  assert.equal(attempts[1]!.pushed, true);
+  assert.equal(fixture.publicationState.pushes, 2);
+  assert.equal(fixture.repairs.probes.length, 2);
   assert.match(attempts[0]!.verificationError!, /clean/u);
   assert.equal(saved.publication!.phase, "checks_ready");
   assert.equal(fixture.publicationState.creations, 1);

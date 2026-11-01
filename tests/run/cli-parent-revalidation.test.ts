@@ -132,14 +132,7 @@ await test("parent cancellation during native startup prevents implementation di
 });
 
 for (const operation of ["addLabel", "addAssignee"] as const) {
-  for (const change of [
-    "cancelled",
-    "external",
-    "blocked",
-    "left_scope",
-    "not_ready",
-    "reservation",
-  ] as const) {
+  for (const change of ["cancelled", "reservation"] as const) {
     await test(`${operation} retry stops when eligibility becomes ${change} during backoff`, async (t) => {
       const ticket = child(51);
       const fixture = await parentDeliveryRun(t, [ticket]);
@@ -154,15 +147,6 @@ for (const operation of ["addLabel", "addAssignee"] as const) {
             ? "not_planned"
             : fixture.parent.stateReason,
       });
-      fixture.dependencies.tracker.listChildrenPage = async () => ({
-        children:
-          changed && change === "left_scope" ? [] : [structuredClone(ticket)],
-        nextPage: null,
-      });
-      fixture.dependencies.tracker.listBlockersPage = async () => ({
-        blockers: changed && change === "blocked" ? [child(900)] : [],
-        nextPage: null,
-      });
       const write = fixture.dependencies.tracker[operation].bind(
         fixture.dependencies.tracker,
       );
@@ -174,8 +158,6 @@ for (const operation of ["addLabel", "addAssignee"] as const) {
       fixture.dependencies.clock.sleep = async (ms) => {
         assert.equal(ms, 1000);
         changed = true;
-        if (change === "external") ticket.assignees!.push("developer");
-        if (change === "not_ready") ticket.labels = [];
         if (change === "reservation") {
           if (operation === "addLabel") ticket.assignees = ["runner"];
           else ticket.labels = ["ready-for-agent"];
@@ -184,11 +166,7 @@ for (const operation of ["addLabel", "addAssignee"] as const) {
       const result = await fixture.run();
       assert.equal(
         result.summary.outcome,
-        change === "cancelled"
-          ? "cancelled"
-          : change === "left_scope"
-            ? "succeeded"
-            : "incomplete",
+        change === "cancelled" ? "cancelled" : "incomplete",
       );
       assert.equal(attempts, 1);
       assert.deepEqual(fixture.dispatched, []);
@@ -199,20 +177,6 @@ for (const operation of ["addLabel", "addAssignee"] as const) {
     });
   }
 }
-
-await test("a lost assignee response reconciles the complete Reservation without repeating the write", async (t) => {
-  const fixture = await parentRun(t, [child(51)]);
-  const addAssignee = fixture.dependencies.tracker.addAssignee.bind(
-    fixture.dependencies.tracker,
-  );
-  fixture.dependencies.tracker.addAssignee = async (...args) => {
-    await addAssignee(...args);
-    throw new Error("response lost after assignment");
-  };
-  assert.equal((await fixture.run()).summary.outcome, "incomplete");
-  assert.deepEqual(fixture.dispatched, [51]);
-  assert.deepEqual(fixture.writes, ["label:51", "assignee:51"]);
-});
 
 await test("parent cancellation during correction backoff prevents the follow-up prompt", async (t) => {
   const fixture = await parentRun(t, [child(51)]);

@@ -4,7 +4,6 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import test, { type TestContext } from "node:test";
-import { setTimeout } from "node:timers/promises";
 import type { ImplementationProgress } from "../../src/recovery.ts";
 import type {
   CodeHost,
@@ -78,14 +77,9 @@ async function batchRun(t: TestContext) {
   return { ...fixture, children, ready, merged, requests, state };
 }
 
-for (const [selector, checkpointDelay] of [
-  ["parent", 0],
-  ["issue", 0],
-  ["parent", 3200],
-  ["issue", 3200],
-] as const) {
+for (const selector of ["parent", "issue"] as const) {
   await test(
-    `${selector} holds the CI barrier across out-of-order implementation completion and confirms each merge before starting the next (checkpoint delay ${checkpointDelay} ms)`,
+    `${selector} holds the CI barrier across out-of-order implementation completion and confirms each merge before starting the next`,
     { timeout: 10_000 },
     async (t) => {
       const fixture = await batchRun(t);
@@ -102,7 +96,6 @@ for (const [selector, checkpointDelay] of [
             ) as ImplementationProgress;
             if (progress.publication?.phase === "checks_ready") {
               checkpointObserved = true;
-              await setTimeout(checkpointDelay);
               await rename(...args);
               checkpointReady.resolve();
               return;

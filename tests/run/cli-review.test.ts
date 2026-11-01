@@ -207,4 +207,7 @@ await test("cap=1 still fixes final findings in the exact implementation convers
   assert.equal(new Set(fixture.state.gitConfigs).size, 3);
   for (const file of fixture.state.gitConfigs)
     await assert.rejects(access(file));
+  const submissions = fixture.state.submissions.length;
+  assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/u);
+  assert.equal(fixture.state.submissions.length, submissions);
 });

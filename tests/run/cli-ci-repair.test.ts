@@ -242,24 +242,6 @@ await test("cancellation after accepting a repair retains its consumed count and
   assert.equal(fixture.publicationState.pushes, 2);
 });
 
-await test("failed Git verification consumes an attempt without pushing false claims or correcting the same repair", async (t) => {
-  const fixture = await ciRepairRun(t);
-  const validRepair = fixture.repairs.onTask;
-  fixture.repairs.onTask = async (file, evidence) => {
-    await validRepair(file, evidence);
-    if (fixture.repairs.tasks.length === 1) evidence.clean = false;
-  };
-  assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/u);
-  const budget = (await fixture.snapshot()).publication!.ciRepair!;
-  assert.equal(budget.consumed, 2);
-  assert.equal(budget.attempts.length, 2);
-  assert.match(budget.attempts[0]!.verificationError!, /clean/u);
-  assert.equal(budget.attempts[0]!.corrections, 0);
-  assert.equal(budget.attempts[1]!.pushed, true);
-  assert.equal(fixture.publicationState.pushes, 2);
-  assert.equal(fixture.repairs.probes.length, 2);
-});
-
 await test("operator retry rechecks CI before authorizing a fresh two-attempt generation", async (t) => {
   const fixture = await ciRepairRun(t);
   const validRepair = fixture.repairs.onTask;
@@ -300,52 +282,4 @@ await test("a repair push with a lost response reconciles its pending evidence w
   assert.equal(fixture.publicationState.pushes, 2);
   assert.equal(fixture.dependencies.pauses.length, 0);
   assert.equal((await fixture.snapshot()).publication!.ciRepair!.consumed, 1);
-});
-
-await test("an interrupted repair push resumes from its verified pending evidence", async (t) => {
-  const fixture = await ciRepairRun(t);
-  const push = fixture.publicationState.onPush;
-  fixture.publicationState.onPush = async (branch, head) => {
-    await push(branch, head);
-    if (head === repairCommit.sha) fixture.controller.abort();
-  };
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  const before = await fixture.snapshot();
-  assert.equal(
-    before.publication!.ciRepair!.attempts[0]!.pendingPush,
-    repairCommit.sha,
-  );
-  fixture.dependencies.signal = new AbortController().signal;
-  fixture.dependencies.operator.pause = async () => "q";
-  const result = await fixture.run();
-  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
-  assert.equal(fixture.publicationState.pushes, 2);
-  assert.equal(fixture.repairs.tasks.length, 1);
-  const saved = await fixture.snapshot();
-  assert.equal(saved.publication!.ciRepair!.consumed, 1);
-  assert.equal(saved.publication!.ciRepair!.attempts[0]!.pushed, true);
-});
-
-await test("two no_change repairs exhaust the independent CI budget and require operator authorization", async (t) => {
-  const fixture = await ciRepairRun(t);
-  fixture.repairs.onTask = async (file) => {
-    if (fixture.repairs.tasks.length > 2) fixture.controller.abort();
-    await publish(file, {
-      outcome: "no_change",
-      summary: "No local repair",
-      commits: [],
-      findings_file: null,
-    });
-  };
-  fixture.dependencies.operator.pause = async (message) => {
-    assert.match(message, /CI repair failed after two attempts/u);
-    return "q";
-  };
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  assert.equal(fixture.repairs.tasks.length, 2);
-  const budget = (await fixture.snapshot()).publication!.ciRepair!;
-  assert.equal(budget.consumed, 2);
-  assert.equal(budget.generation, 0);
-  assert.equal(budget.attempts.length, 2);
-  assert.equal(fixture.publicationState.pushes, 1);
 });

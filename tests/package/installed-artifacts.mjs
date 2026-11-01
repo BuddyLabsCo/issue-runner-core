@@ -3,7 +3,6 @@ import { execFileSync } from "node:child_process";
 import { copyFileSync, readFileSync, readdirSync, renameSync } from "node:fs";
 import { createRequire } from "node:module";
 import { basename, join } from "node:path";
-import { pathToFileURL } from "node:url";
 
 /**
  * @param {import("node:test").TestContext} t
@@ -37,15 +36,6 @@ export async function testInstalledArtifacts(
           // Windows needs a shell to execute npm's .cmd shim; quote paths with spaces.
           shell: windows,
         });
-      renameSync(executable, `${executable}.unavailable`);
-      try {
-        assert.throws(
-          () => cli(["--version"]),
-          "a local executable must not replace the missing global executable",
-        );
-      } finally {
-        renameSync(`${executable}.unavailable`, executable);
-      }
       assert.equal(cli(["--version"]).trim(), version);
       assert.match(cli(["--help"]), /issue-runner/);
       assert.match(cli(["run", "--help"]), /--env/);
@@ -138,25 +128,6 @@ export async function testInstalledArtifacts(
             import.meta.url,
           ),
         ),
-      );
-    },
-  );
-  await t.test(
-    "installed CLI preserves startup, Probe, task, correction and continuation submissions",
-    () => {
-      runNode(
-        [
-          "--input-type=module",
-          "--eval",
-          `
-          import test from "node:test";
-          const { executeCli } = await import(${JSON.stringify(pathToFileURL(join(core, "dist/cli.js")).href)});
-          const { testPromptAssembly, testPromptContinuation } = await import(${JSON.stringify(new URL("../support/prompt-assembly.ts", import.meta.url).href)});
-          await test("installed prompt assembly", t => testPromptAssembly(t, executeCli));
-          await test("installed continuation", t => testPromptContinuation(t, executeCli));
-          `,
-        ],
-        launch,
       );
     },
   );

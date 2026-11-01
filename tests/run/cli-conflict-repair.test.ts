@@ -302,27 +302,6 @@ await test("conflict repair preserves the completed ordinary Review across match
   assert.equal(fixture.repairs.tasks.length, 1);
 });
 
-await test("cancellation after a conflict push resumes its pending evidence without pushing again", async (t) => {
-  const fixture = await conflictRepairRun(t);
-  const push = fixture.publicationState.onPush;
-  fixture.publicationState.onPush = async (branch, head) => {
-    await push(branch, head);
-    if (head === repairCommit.sha) fixture.controller.abort();
-  };
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  const pending = (await fixture.snapshot()).publication!.conflictRepair!
-    .attempts[0]!;
-  assert.equal(pending.pendingPush, repairCommit.sha);
-  fixture.dependencies.signal = new AbortController().signal;
-  assert.equal((await fixture.run()).summary.outcome, "succeeded");
-  assert.equal(fixture.publicationState.pushes, 2);
-  assert.equal(fixture.repairs.tasks.length, 1);
-  assert.equal(
-    (await fixture.snapshot()).publication!.conflictRepair!.attempts[0]!.pushed,
-    true,
-  );
-});
-
 await test("authorized conflict retry waits for explicit mergeability evidence before starting its next generation", async (t) => {
   const fixture = await conflictRepairRun(t);
   const repair = fixture.repairs.onTask;

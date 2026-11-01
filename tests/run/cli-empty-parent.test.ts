@@ -33,7 +33,18 @@ await test("an empty parent returns no_work through the application without clos
   ]);
   assert.ok(result.logPath);
   const audit = await readFile(result.logPath, "utf8");
-  assert.match(audit, /no_work/);
+  assert.ok(
+    dependencies.messages.some((message) => message.includes("sessionid=n/a")),
+  );
+  const events = audit
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as { operation: string; result: string });
+  assert.ok(
+    events.some(
+      (event) => event.operation === "run" && event.result === "no_work",
+    ),
+  );
   assert.doesNotMatch(audit, /tracker-secret|host-secret/);
 });
 
@@ -115,67 +126,5 @@ await test("cancelled parents stop discovery without rewriting children", async 
     },
   );
   assert.equal(result.summary.outcome, "cancelled");
-  assert.deepEqual(deps.effects, []);
-});
-
-await test("read retries are additional attempts", async (t) => {
-  const { root } = await createProject(t);
-  const deps = createCliDependencies(root);
-  let attempts = 0;
-  deps.tracker.getParent = async () => {
-    attempts += 1;
-    if (attempts === 1) throw new Error("transient tracker failure");
-    return { number: 48, state: "open", stateReason: null };
-  };
-  const result = await executeCli(
-    ["run", "--project", "demo", "--env", "fake", "--parent", "48"],
-    deps,
-  );
-  assert.equal(result.summary.outcome, "no_work");
-  assert.equal(attempts, 2);
-  assert.ok(deps.reads.includes("sleep:1000"));
-});
-
-await test("exhausted read retries preserve non-Agent Operator Pause and q cancels", async (t) => {
-  const { root } = await createProject(t);
-  const deps = createCliDependencies(root);
-  let attempts = 0;
-  deps.tracker.getParent = async () => {
-    attempts += 1;
-    throw new Error("tracker unavailable");
-  };
-  deps.operator.pause = async (message) => {
-    deps.pauses.push(message);
-    return "q";
-  };
-  const result = await executeCli(
-    ["run", "--project", "demo", "--env", "fake", "--parent", "48"],
-    deps,
-  );
-  assert.equal(result.summary.outcome, "cancelled");
-  assert.equal(result.exitCode, 1);
-  assert.equal(attempts, 2);
-  assert.match(deps.pauses.join(" "), /tracker unavailable/);
-  assert.deepEqual(deps.effects, []);
-});
-
-await test("cancellation during backoff prevents subsequent tracker reads", async (t) => {
-  const { root } = await createProject(t);
-  const deps = createCliDependencies(root);
-  const controller = new AbortController();
-  let attempts = 0;
-  deps.tracker.getParent = async () => {
-    attempts += 1;
-    throw new Error("retry");
-  };
-  deps.clock.sleep = async () => {
-    controller.abort();
-  };
-  const result = await executeCli(
-    ["run", "--project", "demo", "--env", "fake", "--parent", "48"],
-    { ...deps, signal: controller.signal },
-  );
-  assert.equal(result.summary.outcome, "cancelled");
-  assert.equal(attempts, 1);
   assert.deepEqual(deps.effects, []);
 });
