@@ -174,14 +174,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
     if (!sessionid()) {
       const prompt = (error?: string) => {
         const values = {
-          identity: generatesMetadata
-            ? probeMetadataInstructions.replace("{{issue}}", () =>
-                String(progress.ticket),
-              )
-            : "",
-          fields: generatesMetadata
-            ? "sessionid, pr_title, pr_body"
-            : "sessionid",
+          issue: String(progress.ticket),
           temporary: JSON.stringify(`${stage.probe!.path}.tmp`),
           path: JSON.stringify(stage.probe!.path),
         };
@@ -191,8 +184,11 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
             ? probeCorrectionInstructions.replace("{{reason}}", () => error) +
               "\n"
             : "") +
-          probeInstructions.replace(
-            /\{\{(identity|fields|temporary|path)\}\}/gu,
+          (generatesMetadata
+            ? probeMetadataInstructions
+            : probeInstructions
+          ).replace(
+            /\{\{(issue|temporary|path)\}\}/gu,
             (_, key: keyof typeof values) => values[key],
           )
         );

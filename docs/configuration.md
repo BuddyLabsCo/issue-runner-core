@@ -293,6 +293,10 @@ verified fix commits remain recorded separately; their ordered combination is
 the implementation eligible for publication. Initial Probe PR metadata remains
 fixed throughout.
 
+Each Review assignment includes `Review round: N`, starting at 1. Your
+`prompts/review.md` can use this context to distinguish the first Review from
+later rounds.
+
 Later Reviews resume the exact original reviewer in fresh tabs, with a
 10-second wait and fresh invocation/path. The previous reviewed HEAD becomes the
 next Review base; the implementation HEAD includes the latest fixes.

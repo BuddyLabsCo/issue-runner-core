@@ -52,9 +52,11 @@ export async function testPromptAssembly(
         (index === 1
           ? "Correct the previous Probe: Probe requires actual native identity and complete PR metadata\n"
           : "") +
-        "Determine your actual native conversation session ID from your CLI context. Do not invent an ID or use a latest-session alias. " +
+        "Determine your actual native conversation session ID from your CLI context. Do not invent an ID or use a latest-session alias.\n" +
         "Read issue #50 in the current repository and its contribution and pull request conventions. Generate pr_title and pr_body.\n" +
-        `Write exactly sessionid, pr_title, pr_body as JSON to ${JSON.stringify(`${String(assignment.path)}.tmp`)}, close it, and atomically rename it to ${JSON.stringify(assignment.path)}. Do not begin the task yet.`,
+        "\nWrite one JSON object with exactly the fields below. Replace each placeholder with its actual non-empty string value.\n\n" +
+        '```json\n{\n  "sessionid": "actual_native_session_id",\n  "pr_title": "generated_pr_title",\n  "pr_body": "generated_pr_body"\n}\n```\n\n' +
+        `Write the JSON object to ${JSON.stringify(`${String(assignment.path)}.tmp`)}, close it, and atomically rename it to ${JSON.stringify(assignment.path)}. Do not begin the task yet.`,
     );
   }
   const task = submissions[3]!.text;

@@ -167,7 +167,7 @@ export async function reviewImplementation(
         purpose: "review",
         task: async () =>
           `${reviewInstructions.replace("{{issue}}", () => String(progress.ticket))}\n\n${await readFile(path.join(loaded.directory, "prompts", "review.md"), "utf8")}\n\n` +
-          `Review base: ${round.base}\nImplementation HEAD: ${round.head}\nAssigned findings path: ${JSON.stringify(round.findings)}`,
+          `Review round: ${round.round}\nReview base: ${round.base}\nImplementation HEAD: ${round.head}\nAssigned findings path: ${JSON.stringify(round.findings)}`,
         accept: async (text) => {
           const result = parseReview(text, round.findings);
           if (result.outcome === "findings") {
