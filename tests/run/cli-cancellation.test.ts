@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { access } from "node:fs/promises";
@@ -79,13 +80,29 @@ for (const boundary of [
 }
 
 await test("q in a sibling's non-Agent pause cancels startup without waiting for its delay", async (t) => {
+  EventEmitter.prototype.emit.call(process, "issue178", "cancel-test-start");
   const fixture = await parentRun(t, [child(51), child(52)], {
     ...validConfig,
     operationRetry: 0,
   });
   const entered = deferred<void>();
   const release = deferred<void>();
-  fixture.dependencies.clock.sleep = () => {
+  fixture.dependencies.clock.sleep = (_ms: number, signal?: AbortSignal) => {
+    signal?.addEventListener(
+      "abort",
+      () =>
+        EventEmitter.prototype.emit.call(
+          process,
+          "issue178",
+          "startup-clock-aborted",
+        ),
+      { once: true },
+    );
+    EventEmitter.prototype.emit.call(
+      process,
+      "issue178",
+      "startup-delay-entered",
+    );
     entered.resolve();
     return release.promise;
   };
@@ -95,12 +112,18 @@ await test("q in a sibling's non-Agent pause cancels startup without waiting for
   fixture.dependencies.gitWorkspace.inspect = async (input) => {
     if (input.worktree.endsWith("ticket-51")) {
       await entered.promise;
+      EventEmitter.prototype.emit.call(
+        process,
+        "issue178",
+        "sibling-inspect-throws",
+      );
       throw new Error("Git unavailable before dispatch");
     }
     return inspect(input);
   };
   fixture.dependencies.operator.pause = (message) => {
     assert.match(message, /Git unavailable before dispatch/);
+    EventEmitter.prototype.emit.call(process, "issue178", "operator-q");
     return Promise.resolve("q");
   };
   const submissions: string[] = [];
@@ -111,16 +134,40 @@ await test("q in a sibling's non-Agent pause cancels startup without waiting for
     submissions.push(text);
     return submit(tab, text);
   };
-  const running = fixture.run();
+  EventEmitter.prototype.emit.call(process, "issue178", "cancel-run-start");
+  const running = fixture.run().then((result) => {
+    EventEmitter.prototype.emit.call(
+      process,
+      "issue178",
+      "cancel-run-settled",
+      result.summary.outcome,
+    );
+    return result;
+  });
   let deadline: ReturnType<typeof setTimeout> | undefined;
+  const safety = setTimeout(() => {
+    EventEmitter.prototype.emit.call(
+      process,
+      "issue178",
+      "cancel-safety-timeout",
+    );
+    fixture.controller.abort();
+    release.resolve();
+  }, 30_000);
+  safety.unref();
   try {
     const result = await Promise.race([
       running,
       new Promise<never>((_resolve, reject) => {
-        deadline = setTimeout(
-          () => reject(new Error("Batch still waits for sibling startup")),
-          1_000,
-        );
+        deadline = setTimeout(() => {
+          EventEmitter.prototype.emit.call(
+            process,
+            "issue178",
+            "cancel-deadline",
+          );
+          if (process.env.I178_OBSERVE !== "1")
+            reject(new Error("Batch still waits for sibling startup"));
+        }, 1_000);
       }),
     ]);
     assert.equal(result.summary.outcome, "cancelled");
@@ -135,6 +182,12 @@ await test("q in a sibling's non-Agent pause cancels startup without waiting for
     );
   } finally {
     clearTimeout(deadline);
+    clearTimeout(safety);
+    EventEmitter.prototype.emit.call(
+      process,
+      "issue178",
+      "cancel-finally-release",
+    );
     release.resolve();
     await running;
   }

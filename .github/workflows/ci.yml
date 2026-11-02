@@ -33,12 +33,48 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
+          export I178_TRACE_DIR="$PWD/diagnostic-traces"
+          export NODE_OPTIONS="--import=$(node -p "require('node:url').pathToFileURL(process.cwd() + '/scripts/issue-178-preload.mjs').href")"
           npm test 2>&1 | tee -a verification.log
       - name: Retain verification evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: core-verification-${{ matrix.os }}
-          path: verification.log
+          path: |
+            verification.log
+            diagnostic-traces/
           if-no-files-found: ignore
+          retention-days: 7
+
+  timing-diagnostics:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.18.0
+          cache: npm
+      - run: npm install --global npm@11.6.2
+      - run: npm ci
+      - name: Observe original deadlines without releasing blocked work
+        shell: bash
+        run: |
+          mkdir -p diagnostic-traces
+          export I178_TRACE_DIR="$PWD/diagnostic-traces"
+          export NODE_OPTIONS="--import=$(node -p "require('node:url').pathToFileURL(process.cwd() + '/scripts/issue-178-preload.mjs').href")"
+          export I178_OBSERVE=1
+          for concurrency in 1 4; do
+            for iteration in $(seq 1 20); do
+              echo "[I178-RUN] concurrency=$concurrency iteration=$iteration"
+              node --test --test-concurrency="$concurrency" --test-name-pattern='bounded Batch concurrently|sibling.*non-Agent pause' tests/run/cli-batch.test.ts tests/run/cli-cancellation.test.ts || exit 1
+            done
+          done
+      - name: Retain timing evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: issue-178-timing-traces
+          path: diagnostic-traces/
           retention-days: 7

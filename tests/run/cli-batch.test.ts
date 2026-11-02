@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import { promptAssignment } from "../support/prompt-assignment.ts";
 import assert from "node:assert/strict";
@@ -16,6 +17,12 @@ import { child, parentRun } from "../support/parent-run.ts";
 
 for (const selector of ["parent", "issue"] as const) {
   await test(`${selector} executes a bounded Batch concurrently with isolated Issue contexts and reversed completion`, async (t) => {
+    EventEmitter.prototype.emit.call(
+      process,
+      "issue178",
+      "batch-test-start",
+      selector,
+    );
     const fixture = await parentRun(t, [child(53), child(52), child(51)], {
       ...validConfig,
       issueList: selector === "issue" ? [53, 52, 51] : [],
@@ -60,6 +67,12 @@ for (const selector of ["parent", "issue"] as const) {
         );
       }
       if (text.startsWith("Implementation assignment\n")) {
+        EventEmitter.prototype.emit.call(
+          process,
+          "issue178",
+          "assignment-arrived",
+          { selector, number },
+        );
         arrived.get(number)!.resolve();
         await gates.get(number)!.promise;
         await submitText(tab, text);
@@ -80,17 +93,41 @@ for (const selector of ["parent", "issue"] as const) {
       fetches += 1;
       return "c".repeat(40);
     };
+    EventEmitter.prototype.emit.call(
+      process,
+      "issue178",
+      "batch-run-start",
+      selector,
+    );
     const running = fixture.run([
       `--${selector}`,
       ...(selector === "parent" ? ["48"] : []),
     ]);
-    const deadline = setTimeout(
-      () =>
+    const deadline = setTimeout(() => {
+      EventEmitter.prototype.emit.call(
+        process,
+        "issue178",
+        "batch-deadline",
+        selector,
+      );
+      if (process.env.I178_OBSERVE !== "1")
         arrived
           .get(52)!
-          .reject(new Error("second Issue did not run concurrently")),
-      3000,
-    );
+          .reject(new Error("second Issue did not run concurrently"));
+    }, 3000);
+    const safety = setTimeout(() => {
+      EventEmitter.prototype.emit.call(
+        process,
+        "issue178",
+        "batch-safety-timeout",
+        selector,
+      );
+      fixture.controller.abort();
+      for (const gate of gates.values()) gate.resolve();
+      for (const arrival of arrived.values())
+        arrival.reject(new Error("diagnostic safety timeout"));
+    }, 30_000);
+    safety.unref();
     try {
       await Promise.all([...arrived.values()].map(({ promise }) => promise));
       clearTimeout(deadline);
@@ -123,6 +160,12 @@ for (const selector of ["parent", "issue"] as const) {
             fixture.writes.indexOf(`assignee:${item.ticket}`),
         );
       }
+      EventEmitter.prototype.emit.call(
+        process,
+        "issue178",
+        "release-52",
+        selector,
+      );
       gates.get(52)!.resolve();
       await closedSecond.promise;
       assert.deepEqual(closed, [52]);
@@ -136,6 +179,10 @@ for (const selector of ["parent", "issue"] as const) {
       );
       gates.get(51)!.resolve();
       const result = await running;
+      EventEmitter.prototype.emit.call(process, "issue178", "batch-settled", {
+        selector,
+        outcome: result.summary.outcome,
+      });
       assert.equal(result.summary.outcome, "incomplete");
       assert.deepEqual(closed, [52, 51]);
       assert.equal(
@@ -151,6 +198,13 @@ for (const selector of ["parent", "issue"] as const) {
         await assert.rejects(readFile(file), { code: "ENOENT" });
     } finally {
       clearTimeout(deadline);
+      clearTimeout(safety);
+      EventEmitter.prototype.emit.call(
+        process,
+        "issue178",
+        "batch-finally",
+        selector,
+      );
       for (const gate of gates.values()) gate.resolve();
       await running;
     }

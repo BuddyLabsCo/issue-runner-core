@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import { promptAssignment } from "./prompt-assignment.ts";
 import assert from "node:assert/strict";
@@ -127,6 +128,26 @@ export async function parentRun(
       },
     },
   };
+  const withAgentEnvironment = dependencies.gitWorkspace.withAgentEnvironment;
+  dependencies.gitWorkspace.withAgentEnvironment = (directory, action) =>
+    withAgentEnvironment(directory, async (env) => {
+      EventEmitter.prototype.emit.call(
+        process,
+        "issue178",
+        "agent-environment-action-enter",
+        directory,
+      );
+      try {
+        return await action(env);
+      } finally {
+        EventEmitter.prototype.emit.call(
+          process,
+          "issue178",
+          "agent-environment-action-unwind",
+          directory,
+        );
+      }
+    });
   return {
     directory,
     dependencies,
