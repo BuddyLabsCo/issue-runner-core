@@ -84,6 +84,7 @@ await test("q in a sibling's non-Agent pause cancels startup without waiting for
     operationRetry: 0,
   });
   const entered = deferred<void>();
+  const paused = deferred<void>();
   const release = deferred<void>();
   fixture.dependencies.clock.sleep = () => {
     entered.resolve();
@@ -101,6 +102,7 @@ await test("q in a sibling's non-Agent pause cancels startup without waiting for
   };
   fixture.dependencies.operator.pause = (message) => {
     assert.match(message, /Git unavailable before dispatch/);
+    paused.resolve();
     return Promise.resolve("q");
   };
   const submissions: string[] = [];
@@ -112,17 +114,21 @@ await test("q in a sibling's non-Agent pause cancels startup without waiting for
     return submit(tab, text);
   };
   const running = fixture.run();
-  let deadline: ReturnType<typeof setTimeout> | undefined;
+  const ended = running.then(() => {
+    throw new Error("Run ended before startup and Operator Pause");
+  });
+  const timedOut = deferred<never>();
+  const deadline = setTimeout(
+    () => timedOut.reject(new Error("Cancellation scenario did not settle")),
+    30_000,
+  );
   try {
-    const result = await Promise.race([
-      running,
-      new Promise<never>((_resolve, reject) => {
-        deadline = setTimeout(
-          () => reject(new Error("Batch still waits for sibling startup")),
-          1_000,
-        );
-      }),
+    await Promise.race([
+      Promise.all([entered.promise, paused.promise]),
+      ended,
+      timedOut.promise,
     ]);
+    const result = await Promise.race([running, timedOut.promise]);
     assert.equal(result.summary.outcome, "cancelled");
     assert.equal(fixture.controller.signal.aborted, false);
     assert.equal(
@@ -135,6 +141,7 @@ await test("q in a sibling's non-Agent pause cancels startup without waiting for
     );
   } finally {
     clearTimeout(deadline);
+    entered.resolve();
     release.resolve();
     await running;
   }
