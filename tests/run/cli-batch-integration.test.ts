@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import test, { type TestContext } from "node:test";
+import { AuditLog, type AuditEvent } from "../../src/audit.ts";
 import type { ImplementationProgress } from "../../src/recovery.ts";
 import type {
   CodeHost,
@@ -401,16 +402,24 @@ await test("an incomplete PR keeps its ownership diagnostic when a sibling later
     ...validConfig,
     operationRetry: 0,
   });
-  const ownershipObserved = deferred<void>();
-  const getTicket = fixture.dependencies.tracker.getTicket.bind(
-    fixture.dependencies.tracker,
+  const publicationStopped = deferred<void>();
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- Rebound to each audit instance with call below.
+  const append = AuditLog.prototype.append;
+  t.mock.method(
+    AuditLog.prototype,
+    "append",
+    async function (this: AuditLog, event: AuditEvent) {
+      await append.call(this, event);
+      if (
+        event.target === "ticket:51" &&
+        event.operation === "confirm_publication" &&
+        event.result === "failed"
+      ) {
+        // Let the recorded stop unwind into the Issue report before failing its sibling.
+        setImmediate(() => publicationStopped.resolve());
+      }
+    },
   );
-  fixture.dependencies.tracker.getTicket = async (repository, number) => {
-    const ticket = await getTicket(repository, number);
-    if (number === 51 && ticket.assignees?.includes("outside-owner"))
-      ownershipObserved.resolve();
-    return ticket;
-  };
   Object.assign(fixture.dependencies.codeHost, {
     async getRequiredChecks(
       _repository: string,
@@ -425,7 +434,7 @@ await test("an incomplete PR keeps its ownership diagnostic when a sibling later
           { name: "test", state: "PENDING", link: "", bucket: "pending" },
         ];
       }
-      await ownershipObserved.promise;
+      await publicationStopped.promise;
       throw new Error("Issue 52 check lookup failed");
     },
   });
