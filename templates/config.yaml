@@ -1,5 +1,5 @@
-# Created by issue-runner init. Replace repository, checkout, runnerAccount,
-# and every start/resume command before running. Core and the selected terminal
+# Created by issue-runner init. Replace repository, checkout, and runnerAccount
+# before running. Core and the selected terminal
 # plugin must be installed globally in the same npm environment.
 repository: your-account/your-repository
 # Absolute checkout path; on Windows use e.g. C:\work\your-repository.
@@ -39,48 +39,35 @@ codeHost:
 # submitKey is a Runner setting alongside start/resume, outside native options.
 # startupDelaySeconds is also a Runner setting: positive seconds, default 10.
 # Increase it if your Agent needs more time after start or resume before input.
-# Choose one pair below and replace start/resume in each purpose you use:
-# implement, review (including Review fixes), ciRepair, conflictRepair, documentation.
-# Keep one pair per purpose; purposes may use different CLIs.
-# POSIX shell examples; adapt quoting and environment assignment for other shells.
-# Both examples bypass approvals; use only in an externally isolated environment.
-# Verified 2026-11-02 with each CLI's --version/--help and codex resume --help.
-# All four commands accept an appended --help; live model sessions were not tested.
-# Codex flags: https://developers.openai.com/codex/cli/reference
-# Effort: https://developers.openai.com/codex/config-reference
-# Model: https://developers.openai.com/api/docs/models/gpt-6.1-sol
-# CodeBuddy flags and full bypass: https://www.codebuddy.ai/docs/cli/cli-reference
-# Codex (0.166.0):
-# start: 'codex --model gpt-6.1-sol -c model_reasoning_effort="max" --dangerously-bypass-approvals-and-sandbox'
-# resume: 'codex resume "{sessionref}" --model gpt-6.1-sol -c model_reasoning_effort="max" --dangerously-bypass-approvals-and-sandbox'
-# CodeBuddy (2.179.0):
+# Defaults use Codex. For CodeBuddy, replace start/resume in any purpose with:
 # start: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --model deepseek-v4.1-flash --effort max --dangerously-skip-permissions'
 # resume: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --resume "{sessionref}" --model deepseek-v4.1-flash --effort max --dangerously-skip-permissions'
-# CodeBuddy needs this process environment variable to skip HIGH/CRITICAL confirmations too.
+# CodeBuddy uses POSIX environment assignment; adapt it for other shells.
+# CODEBUDDY_IS_SANDBOX=1 also skips HIGH/CRITICAL confirmations.
 agents:
   implement:
-    start: my-agent
-    resume: 'my-agent --resume "{sessionref}"'
+    start: 'codex --model gpt-6.1-sol -c model_reasoning_effort="max" --dangerously-bypass-approvals-and-sandbox'
+    resume: 'codex resume "{sessionref}" --model gpt-6.1-sol -c model_reasoning_effort="max" --dangerously-bypass-approvals-and-sandbox'
     submitKey: Enter
     startupDelaySeconds: 10
   review:
-    start: my-review-agent
-    resume: 'my-review-agent --resume "{sessionref}"'
+    start: 'codex --model gpt-6.1-sol -c model_reasoning_effort="max" --dangerously-bypass-approvals-and-sandbox'
+    resume: 'codex resume "{sessionref}" --model gpt-6.1-sol -c model_reasoning_effort="max" --dangerously-bypass-approvals-and-sandbox'
     submitKey: Enter
     startupDelaySeconds: 10
   ciRepair:
-    start: my-agent
-    resume: 'my-agent --resume "{sessionref}"'
+    start: 'codex --model gpt-6.1-sol -c model_reasoning_effort="max" --dangerously-bypass-approvals-and-sandbox'
+    resume: 'codex resume "{sessionref}" --model gpt-6.1-sol -c model_reasoning_effort="max" --dangerously-bypass-approvals-and-sandbox'
     submitKey: Enter
     startupDelaySeconds: 10
   conflictRepair:
-    start: my-agent
-    resume: 'my-agent --resume "{sessionref}"'
+    start: 'codex --model gpt-6.1-sol -c model_reasoning_effort="max" --dangerously-bypass-approvals-and-sandbox'
+    resume: 'codex resume "{sessionref}" --model gpt-6.1-sol -c model_reasoning_effort="max" --dangerously-bypass-approvals-and-sandbox'
     submitKey: Enter
     startupDelaySeconds: 10
   documentation:
-    start: my-agent
-    resume: 'my-agent --resume "{sessionref}"'
+    start: 'codex --model gpt-6.1-sol -c model_reasoning_effort="max" --dangerously-bypass-approvals-and-sandbox'
+    resume: 'codex resume "{sessionref}" --model gpt-6.1-sol -c model_reasoning_effort="max" --dangerously-bypass-approvals-and-sandbox'
     submitKey: Enter
     startupDelaySeconds: 10
 # Positive minute thresholds retained for downstream delivery slices.
