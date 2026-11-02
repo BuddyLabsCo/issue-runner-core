@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   mkdirSync,
   readFileSync,
+  readdirSync,
   renameSync,
   rmSync,
   symlinkSync,
@@ -139,21 +140,18 @@ export async function testGlobalPluginLoading(
     "issue-runner-scripted",
   );
   writePlugin(pluginSource);
-  /** @type {unknown} */
-  const packed = JSON.parse(
-    npm(
-      ["pack", "--json", "--ignore-scripts", "--pack-destination", consumer],
-      pluginSource,
-    ),
+  const artifactsDir = join(consumer, "plugin artifacts");
+  mkdirSync(artifactsDir);
+  npm(
+    ["pack", "--ignore-scripts", "--pack-destination", artifactsDir],
+    pluginSource,
   );
-  assert.ok(Array.isArray(packed));
-  assert.equal(packed.length, 1);
-  /** @type {unknown} */
-  const pluginArtifact = packed[0];
-  assert.ok(pluginArtifact && typeof pluginArtifact === "object");
-  assert.ok(
-    "filename" in pluginArtifact && typeof pluginArtifact.filename === "string",
+  const tarballs = readdirSync(artifactsDir).filter((file) =>
+    file.endsWith(".tgz"),
   );
+  assert.equal(tarballs.length, 1);
+  assert.ok(tarballs[0]);
+  const pluginArtifact = join(artifactsDir, tarballs[0]);
   npm(
     [
       "install",
@@ -164,7 +162,7 @@ export async function testGlobalPluginLoading(
       "--no-audit",
       "--no-fund",
       artifact,
-      join(consumer, pluginArtifact.filename),
+      pluginArtifact,
     ],
     launch,
   );
