@@ -87,8 +87,6 @@ function validateRepairBudget(
       attempt.generation > budget.generation ||
       (index > 0 &&
         attempt.generation < budget.attempts[index - 1]!.generation) ||
-      !Number.isSafeInteger(attempt.corrections) ||
-      attempt.corrections < 0 ||
       !Array.isArray(attempt.superseded) ||
       !attempt.superseded.every(owned) ||
       (attempt.pendingPrompt !== undefined &&
@@ -96,9 +94,6 @@ function validateRepairBudget(
       (attempt.sessionid !== undefined && !nonempty(attempt.sessionid)) ||
       (attempt.verificationError !== undefined &&
         !nonempty(attempt.verificationError)) ||
-      (attempt.probeRetries !== undefined &&
-        (!Number.isSafeInteger(attempt.probeRetries) ||
-          attempt.probeRetries < 0)) ||
       [attempt.worktreeCreated, attempt.counted, attempt.pushed].some(
         (value) => value !== undefined && value !== true,
       )
@@ -226,7 +221,6 @@ export async function repairPullRequest(
             conflict: publication.conflict!,
           }
         : {}),
-      corrections: 0,
       superseded: [],
       failedChecks: structuredClone(
         (publication.checks ?? []).filter(

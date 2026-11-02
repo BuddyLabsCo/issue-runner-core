@@ -159,14 +159,13 @@ await test("a retained implementation resumes only its saved role with literal a
     "roles",
     "pr_title",
     "pr_body",
-    "corrections",
     "superseded",
   ] as const)
     assert.deepEqual(recovered[key], saved[key]);
 });
 
-await test("missing output resumes with continue even after correction capacity is exhausted", async (t) => {
-  const fixture = await implementationRun(t, { ...validConfig, agentRetry: 1 });
+await test("missing output resumes the saved correction conversation with continue", async (t) => {
+  const fixture = await implementationRun(t);
   fixture.state.onTask = async (file) => {
     await publish(file, {});
   };
@@ -175,7 +174,6 @@ await test("missing output resumes with continue even after correction capacity 
   };
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   const saved = await fixture.snapshot();
-  assert.equal(saved.corrections, 1);
   assert.equal(saved.pendingPrompt, undefined);
   const before = fixture.state.submissions.length;
   const controller = new AbortController();
@@ -260,88 +258,6 @@ await test("invalid retained output resumes only for correction and keeps its im
   const accepted = await fixture.snapshot();
   assert.notEqual(accepted.invocation?.path, saved.invocation?.path);
   assert.deepEqual(accepted.superseded, [saved.invocation!.path]);
-  assert.equal(accepted.corrections, 1);
   assert.equal(accepted.execution_id, saved.execution_id);
   assert.equal(fixture.state.taskCount, 1);
-});
-
-await test("exhausted retained output can be corrected manually without reopening a native tab", async (t) => {
-  const fixture = await implementationRun(t, { ...validConfig, agentRetry: 0 });
-  fixture.state.onTask = async () => {
-    /* Leave the invocation unfinished. */
-  };
-  fixture.state.onSleep = async (ms) => {
-    if (ms === 250) fixture.controller.abort();
-  };
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  const saved = await fixture.snapshot();
-  await publish(saved.invocation!.path, { ...committed(), checks: [] });
-  fixture.state.evidence.commits = committed().commits;
-  fixture.state.onSleep = async (ms) => {
-    if (ms === 250) await publish(saved.invocation!.path, committed());
-  };
-  const result = await executeCli(implementationCommand, {
-    ...fixture.dependencies,
-    signal: new AbortController().signal,
-    terminalPlugin: {
-      ...fixture.dependencies.terminalPlugin,
-      async createTab() {
-        assert.fail("manual file correction does not require a tab");
-      },
-    },
-  });
-  assert.equal(result.summary.outcome, "incomplete");
-  assert.equal((await fixture.snapshot()).phase, "implementation_completed");
-  assert.equal(
-    (await fixture.snapshot()).invocation?.path,
-    saved.invocation?.path,
-  );
-});
-
-await test("a consumed nonzero correction budget stays exhausted across restart and invalid manual writes", async (t) => {
-  const fixture = await implementationRun(t, { ...validConfig, agentRetry: 1 });
-  fixture.state.onTask = async (file) => {
-    fixture.state.evidence.commits = committed().commits;
-    await publish(file, {});
-  };
-  fixture.state.onCorrection = async (file) => {
-    await publish(file, { ...committed(), findings_file: file });
-  };
-  fixture.state.onSleep = async (ms) => {
-    if (ms === 250) fixture.controller.abort();
-  };
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  const saved = await fixture.snapshot();
-  assert.equal(saved.corrections, 1);
-  const before = fixture.state.submissions.length;
-  let polls = 0;
-  fixture.state.onSleep = async (ms) => {
-    if (ms === 30_000) return;
-    assert.equal(ms, 250);
-    assert.ok(++polls <= 2);
-    assert.equal((await fixture.snapshot()).corrections, 1);
-    await publish(
-      saved.invocation!.path,
-      polls === 1 ? { ...committed(), outcome: "blocked" } : committed(),
-    );
-  };
-  const result = await executeCli(implementationCommand, {
-    ...fixture.dependencies,
-    signal: new AbortController().signal,
-    terminalPlugin: {
-      ...fixture.dependencies.terminalPlugin,
-      async createTab() {
-        assert.fail("exhaustion must not dispatch automatic corrections");
-      },
-    },
-  });
-  assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
-  assert.equal(fixture.state.submissions.length, before);
-  const accepted = await fixture.snapshot();
-  assert.equal(accepted.phase, "implementation_completed");
-  assert.equal(accepted.corrections, 1);
-  assert.deepEqual(accepted.invocation, saved.invocation);
-  assert.deepEqual(accepted.superseded, saved.superseded);
-  assert.equal(accepted.execution_id, saved.execution_id);
-  assert.equal(accepted.pr_body, saved.pr_body);
 });

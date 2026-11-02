@@ -40,7 +40,6 @@ await test("cancellation reports and retains original working changes, partial f
   assert.equal(result.summary.outcome, "cancelled");
   assert.equal(result.exitCode, 1);
   const saved = await fixture.snapshot();
-  assert.equal(saved.corrections, 1);
   assert.equal(saved.pr_title, "feat: [issue-50] implement the Issue");
   assert.equal(saved.pr_body, "Implement the Issue.\n\nCloses #50");
   assert.equal(saved.roles.implement?.sessionid, "native/$&/$`/$'/session");
@@ -237,7 +236,6 @@ await test("no-auto-merge retains and reports failed and replacement repair exec
   const attempts = saved.publication!.ciRepair!.attempts;
   assert.equal(attempts.length, 2);
   assert.equal(saved.publication!.ciRepair!.consumed, 2);
-  assert.equal(attempts[0]!.corrections, 0);
   assert.equal(attempts[1]!.pushed, true);
   assert.equal(fixture.publicationState.pushes, 2);
   assert.equal(fixture.repairs.probes.length, 2);

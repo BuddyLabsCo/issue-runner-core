@@ -13,7 +13,7 @@ import {
 } from "../support/implementation-run.ts";
 
 await test(
-  "five-Issue Run retries a Reservation and accepts native manual correction after automatic exhaustion",
+  "five-Issue Run retries a Reservation while Agent corrections continue beyond the old budget",
   { timeout: 10_000 },
   async (t) => {
     const fixture = await fiveIssueRun(t);
@@ -44,48 +44,29 @@ await test(
           assert.equal(chord, "Shift+Enter");
           const saved = await implementationProgress(fixture.directory, 52);
           invalidPaths.push(saved.invocation!.path);
-          await publish(saved.invocation!.path, {
-            ...committed(52),
-            outcome: "blocked",
-          });
+          assert.ok(invalidPaths.length <= 6);
+          await publish(
+            saved.invocation!.path,
+            invalidPaths.length < 6
+              ? {
+                  ...committed(52),
+                  outcome: "blocked",
+                }
+              : committed(52),
+          );
           return;
         }
       }
       await submit(tab, text, chord);
     };
-    const sleep = fixture.dependencies.clock.sleep.bind(
-      fixture.dependencies.clock,
-    );
-    let manualWrites = 0;
-    fixture.dependencies.clock.sleep = async (ms) => {
-      if (ms === 250 && invalidPaths.length === 3 && manualWrites === 0) {
-        const saved = await implementationProgress(fixture.directory, 52);
-        assert.equal(saved.corrections, 2);
-        assert.equal(saved.result, undefined);
-        assert.equal(saved.invocation!.path, invalidPaths[2]);
-        assert.ok(fixture.active.has(correctedTab!));
-        assert.ok(
-          fixture.dependencies.messages.some((message) =>
-            message.startsWith("Automatic correction budget exhausted."),
-          ),
-        );
-        assert.deepEqual(fixture.integrations, []);
-        manualWrites++;
-        await publish(saved.invocation!.path, committed(52));
-      }
-      await sleep(ms);
-    };
-
     const result = await fixture.run();
 
     assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
     assert.equal(result.exitCode, 0);
     assert.equal(reservationAttempts, 2);
-    assert.equal(manualWrites, 1);
-    assert.equal(new Set(invalidPaths).size, 3);
+    assert.equal(new Set(invalidPaths).size, 6);
     const saved = await implementationProgress(fixture.directory, 52);
-    assert.equal(saved.corrections, 2);
-    assert.deepEqual(saved.superseded, invalidPaths.slice(0, 2));
+    assert.deepEqual(saved.superseded, invalidPaths.slice(0, 5));
     assert.equal(saved.roles.implement?.sessionid, "native-52");
     assert.deepEqual(fixture.integrations, [51, 52, 53, 100, 54, 101, 55]);
     assert.deepEqual(fixture.dependencies.pauses, []);

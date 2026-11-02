@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir, rmdir, writeFile } from "node:fs/promises";
 import test from "node:test";
+import { validConfig } from "../support/cli-project.ts";
 import {
   committed,
   implementationCommit,
@@ -43,7 +44,6 @@ for (const scenario of [
     fixture.reviewState.onCorrection = async (round, purpose) => {
       assert.equal(purpose, "review");
       assert.equal(round.round, 1);
-      assert.equal(round.corrections, 1);
       assert.notEqual(
         round.invocation!.path,
         fixture.reviewState.reviews[0]!.invocation!.path,
@@ -61,7 +61,7 @@ for (const scenario of [
     assert.equal(fixture.state.closedTabs.length, 2);
     assert.deepEqual(
       fixture.state.sleeps.filter((ms) => ms !== 30_000),
-      [10_000, 10_000, 2000],
+      [10_000, 10_000],
     );
     const prompts = fixture.state.submissions.filter(
       (item) =>
@@ -83,7 +83,7 @@ for (const scenario of [
   "generated identity",
   "wrong ownership",
 ] as const) {
-  await test(`reviewer Probe rejects ${scenario} without spending a Review round or correction budget`, async (t) => {
+  await test(`reviewer Probe rejects ${scenario} without spending a Review round`, async (t) => {
     const fixture = await reviewRun(t, 1);
     const probe = fixture.state.onProbe;
     let reviewProbes = 0;
@@ -103,12 +103,10 @@ for (const scenario of [
     assert.match(result.summary.reasons.join(" "), /CI-ready/u);
     assert.equal(reviewProbes, 2);
     assert.equal(fixture.reviewState.reviews.length, 1);
-    const round = (await fixture.snapshot()).reviews![0]!;
-    assert.equal(round.probeRetries, 1);
-    assert.equal(round.corrections, 0);
+    assert.equal((await fixture.snapshot()).reviews![0]!.superseded.length, 1);
     assert.deepEqual(
       fixture.state.sleeps.filter((ms) => ms !== 30_000),
-      [10_000, 10_000, 1000],
+      [10_000, 10_000],
     );
   });
 }
@@ -126,7 +124,6 @@ await test("no_change cannot satisfy findings; the correction remains in the fix
   };
   fixture.reviewState.onCorrection = async (round, purpose) => {
     assert.equal(purpose, "fix");
-    assert.equal(round.fix!.corrections, 1);
     assert.match(
       fixture.state.submissions.at(-1)!.text,
       /no_change cannot satisfy findings/u,
@@ -143,7 +140,7 @@ await test("no_change cannot satisfy findings; the correction remains in the fix
   assert.equal(fixture.reviewState.fixes.length, 1);
   assert.deepEqual(
     fixture.state.sleeps.filter((ms) => ms !== 30_000),
-    [10_000, 10_000, 10_000, 2000],
+    [10_000, 10_000, 10_000],
   );
   const prompts = fixture.state.submissions.filter(
     (item) =>
@@ -192,6 +189,45 @@ for (const scenario of [
     };
     const result = await fixture.run();
     assert.match(result.summary.reasons.join(" "), /CI-ready/u);
-    assert.equal((await fixture.snapshot()).reviews![0]!.fix!.corrections, 1);
   });
 }
+
+await test("Review handoffs containing commits receive immediate feedback for every new publication", async (t) => {
+  const legacy = { agentRetry: 1, agentRetryDelay: [300, 300] };
+  const fixture = await reviewRun(t, 1, { ...validConfig, ...legacy });
+  const paths: string[] = [];
+  fixture.reviewState.onReview = async (round) => {
+    paths.push(round.invocation!.path);
+    await publish(round.invocation!.path, {
+      ...passed(),
+      commits: committed().commits,
+    });
+  };
+  fixture.reviewState.onCorrection = async (round, purpose) => {
+    assert.equal(purpose, "review");
+    assert.deepEqual(round.superseded, paths);
+    paths.push(round.invocation!.path);
+    assert.ok(paths.length <= 6);
+    await publish(
+      round.invocation!.path,
+      paths.length < 6
+        ? { ...passed(), commits: committed().commits }
+        : passed(),
+    );
+  };
+  assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/u);
+  assert.equal(paths.length, 6);
+  assert.equal(new Set(paths).size, 6);
+  const submissions = fixture.state.submissions.filter(
+    ({ text }) =>
+      text.startsWith("Review assignment") ||
+      text.startsWith("Correct the Review handoff:"),
+  );
+  assert.equal(submissions.length, 6);
+  assert.equal(new Set(submissions.map(({ tab }) => tab)).size, 1);
+  assert.deepEqual(
+    fixture.state.sleeps.filter((ms) => ms !== 30_000),
+    [10_000, 10_000],
+  );
+  assert.equal((await fixture.snapshot()).reviews!.length, 1);
+});

@@ -216,11 +216,6 @@ export async function restoreExecution(input: {
             !nonempty(invocation.path) ||
             path.dirname(invocation.path) !==
               path.join(loaded.directory, "handoffs"))) ||
-        !Number.isSafeInteger(saved.corrections) ||
-        (saved.corrections as number) < 0 ||
-        (saved.probeRetries !== undefined &&
-          (!Number.isSafeInteger(saved.probeRetries) ||
-            (saved.probeRetries as number) < 0)) ||
         (saved.pendingPrompt !== undefined && !nonempty(saved.pendingPrompt)) ||
         !Array.isArray(saved.superseded)
       )
@@ -306,21 +301,15 @@ function validateRetryProgress(
       ...(progress.publication?.ciRepair?.attempts ?? []),
       ...(progress.publication?.conflictRepair?.attempts ?? []),
     ];
+    // Ignore obsolete Agent policy without discarding unrelated saved progress.
     for (const stage of stages) {
-      if (
-        stage.corrections > loaded.config.agentRetry ||
-        (stage.correctionNotBefore !== undefined &&
-          (!Number.isFinite(stage.correctionNotBefore) ||
-            stage.correctionNotBefore < 0 ||
-            !stage.pendingPrompt ||
-            stage.corrections === 0)) ||
-        (stage.correctionExhausted !== undefined &&
-          (stage.correctionExhausted !== true ||
-            stage.corrections !== loaded.config.agentRetry ||
-            stage.pendingPrompt !== undefined ||
-            stage.correctionNotBefore !== undefined))
-      )
-        throw new Error("invalid correction budget or delay");
+      for (const key of [
+        "corrections",
+        "correctionNotBefore",
+        "correctionExhausted",
+        "probeRetries",
+      ])
+        delete object(stage)[key];
     }
     for (const value of Object.values(object(progress.operations ?? {}))) {
       const retry = object(value);

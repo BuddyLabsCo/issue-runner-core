@@ -58,14 +58,9 @@ export function validateReviewContext(
   const validateStage = (value: StageProgress<unknown>) => {
     const stage = object(value);
     if (
-      !Number.isSafeInteger(stage.corrections) ||
-      (stage.corrections as number) < 0 ||
       !Array.isArray(stage.superseded) ||
       !stage.superseded.every(owned) ||
-      (stage.pendingPrompt !== undefined && !nonempty(stage.pendingPrompt)) ||
-      (stage.probeRetries !== undefined &&
-        (!Number.isSafeInteger(stage.probeRetries) ||
-          (stage.probeRetries as number) < 0))
+      (stage.pendingPrompt !== undefined && !nonempty(stage.pendingPrompt))
     )
       throw invalid();
     for (const [key, id] of [
@@ -153,7 +148,6 @@ export async function reviewImplementation(
         "handoffs",
         `${progress.ticket}-review-findings-${randomUUID()}.md`,
       ),
-      corrections: 0,
       superseded: [],
     };
     if (reviews.length === index) {
@@ -201,7 +195,7 @@ export async function reviewImplementation(
     if (!round.result) return;
     if (round.result.outcome === "passed") break;
     if (!round.fix) {
-      round.fix = { corrections: 0, superseded: [] };
+      round.fix = { superseded: [] };
       progress.phase = "fixing_review";
       await input.persist();
     }

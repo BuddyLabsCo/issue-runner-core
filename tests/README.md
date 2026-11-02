@@ -18,7 +18,7 @@ Run `npm test` for all tests, or `npm run verify` to include formatting, lint, a
 | `agent/handoff.test.ts` | Execution and Review JSON validation, accepted results, assigned findings paths |
 | `run/cli-startup*`, `cli-validation*` | Argument/config validation, initialization, real process entry and EOF |
 | `run/cli-implementation*`, `cli-prompt-assembly*` | Reservation through implementation, startup/Probe/task submissions, native resume |
-| `run/cli-handoff*`, `cli-correction-budget-recovery*` | Observation, correction, atomic publication, persisted budgets and interrupted acceptance |
+| `run/cli-handoff*`, `cli-correction-budget-recovery*` | Observation, correction, atomic publication, legacy Agent policy removal, Operator retries and interrupted acceptance |
 | `run/cli-review*` | Review rounds, findings files, fixes, Git verification and role-specific recovery |
 | `run/cli-parent*`, `cli-empty-parent*`, `cli-issue-list*` | Discovery, eligibility, pagination, selection, reservations and parent closure |
 | `run/cli-batch*` | Concurrent dispatch, pauses, delivery barriers, maintenance association and Batch recovery |
@@ -35,11 +35,11 @@ Run `npm test` for all tests, or `npm run verify` to include formatting, lint, a
 
 ## Consolidation decisions
 
-- Move ten execution schema cases to the parser boundary. Keep correction dispatch, fresh assignments, exhausted budgets and manual recovery in workflow tests.
+- Move ten execution schema cases to the parser boundary. Keep correction dispatch, fresh assignments, repeated publications and matching recovery in workflow tests.
 - Move Review schema variants to parser tests. Keep wrong-path correction as the integration example, plus missing/empty/directory reports and actual Git violations.
 - Remove five duplicate Git-mismatch rejection runs. The actionable-correction matrix still checks each mismatch before accepting corrected evidence.
 - Merge startup cancellation into the unresolved-wait cancellation matrix, including removal of temporary Git configuration.
-- Remove the duplicate correction-cancellation case. The cancellation matrix and matching-rerun test cover both interruption and retained budget.
+- Remove the duplicate correction-cancellation case. The cancellation matrix covers unresolved waits; invalid-publication scenarios prevent feedback after cancellation.
 - Keep no-change reporting and its completed checkpoint in one scenario. Keep identical handoff republication in the observation suite.
 - Remove the legacy-field correction scenario duplicated by schema, assignment-history and superseded-file tests.
 - Remove two Batch variants that added 3.2 seconds each without changing operation ordering. Both parent and Issue List selectors retain checkpoint and merge-barrier assertions.

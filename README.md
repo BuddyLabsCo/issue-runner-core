@@ -157,27 +157,23 @@ startup wait, Probe and task use the configured Agent chord as separate
 submissions. Approvals, questions, native errors, and missing output require
 direct handling in that native conversation. Runner sends no missing-output
 reminders. Invalid results get specific corrections in the same tab at new paths,
-without another startup wait. `agentRetry` allows additional corrections;
-`agentRetryDelay` is in seconds and reuses its final delay. After exhaustion,
-fix the reported problem and manually invoke the skill at the current displayed
-path. Runner keeps watching that path; further invalid writes do not restore
-automatic attempts. See [correction behavior](docs/configuration.md#rejected-handoffs-and-manual-correction).
+without another startup wait or correction backoff. Each newly published invalid
+result receives feedback; missing output and unchanged invalid files cause no reminders.
+See [correction behavior](docs/configuration.md#rejected-handoffs-and-correction).
 
 Recovery Snapshots retain role identity, fixed Probe PR metadata, invocation,
-Worktree/branch/base, consumed correction count, accepted commits, and stage
+Worktree/branch/base, accepted commits, and stage
 completion under the Project's `recovery/`. Matching arguments and configuration
 can continue assigned implementation, Review, and fixes using each role's exact
-saved native reference. Review round/base/HEAD, assigned findings, per-stage
-correction budgets, and accepted fix commits are retained. Findings stay available
+saved native reference. Review round/base/HEAD, assigned findings, superseded paths, and accepted fix commits are retained. Findings stay available
 through the loop and are deleted after the complete Review/fix loop; Probe and
 handoff files remain until successful Issue cleanup.
 A known unsent assignment or correction remains pending when eligibility stops
-dispatch and is submitted when eligibility returns, retaining its path and consumed
-retry count. Missing output from an attempted assignment opens a fresh Runner Tab
+dispatch and is submitted when eligibility returns, retaining its path. Missing output from an attempted assignment opens a fresh Runner Tab
 in the original Worktree with recreated per-call Git configuration. Runner submits
 the saved role's exact resume command with Enter, waits 10 seconds, then sends only
 `continue` with the configured Agent chord. It preserves the invocation, active
-handoff path, uncommitted work, metadata, and correction budget without another
+handoff path, uncommitted work, and metadata without another
 Probe or task prompt.
 
 If required original context cannot be recovered, including a missing original

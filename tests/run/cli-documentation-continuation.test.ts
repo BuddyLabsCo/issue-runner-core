@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import assert from "node:assert/strict";
-import { access, readFile, readdir, rm } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { executeCli } from "../../src/cli.ts";
@@ -18,19 +18,18 @@ const noChange = {
 };
 
 for (const outcome of ["committed", "no_change"] as const) {
-  await test(`documentation recovery preserves exhausted corrections and its own ${outcome} result`, async (t) => {
+  await test(`documentation recovery preserves its active correction and its own ${outcome} result`, async (t) => {
     const fixture = await documentationRun(t);
     fixture.state.onTask = (file) => publish(file, {});
-    fixture.state.onCorrection = (file) => publish(file, {});
+    fixture.state.onCorrection = async () => {
+      /* Wait for the assigned correction. */
+    };
     fixture.state.onSleep = async (ms) => {
       if (ms === 250) fixture.controller.abort();
     };
     assert.equal((await fixture.run()).summary.outcome, "cancelled");
     const saved = await fixture.snapshot();
     assert.equal(fixture.maintenance.cleanup.length, 0);
-    assert.equal(saved.correctionExhausted, true);
-    assert.ok(saved.corrections > 0);
-    await rm(saved.invocation!.path);
     for (const file of saved.superseded) await publish(file, noChange);
     const recovery = path.join(fixture.directory, "recovery");
     // An unrelated business checkpoint must not supply history, counts, or paths.
@@ -40,7 +39,6 @@ for (const outcome of ["committed", "no_change"] as const) {
       purpose: undefined,
       execution_id: "business-execution",
       roles: { implement: { sessionid: "business-history" } },
-      corrections: 0,
     });
     const submitted = fixture.state.submissions.length;
     const sleeps = fixture.state.sleeps.length;
@@ -50,7 +48,7 @@ for (const outcome of ["committed", "no_change"] as const) {
     fixture.state.evidence.commits = result.commits;
     fixture.state.onProbe = async () => assert.fail("metadata must stay fixed");
     fixture.state.onCorrection = async () =>
-      assert.fail("budget stays exhausted");
+      assert.fail("resume uses continue for already submitted feedback");
     const submit = fixture.dependencies.terminalPlugin.submitText.bind(
       fixture.dependencies.terminalPlugin,
     );
@@ -80,8 +78,6 @@ for (const outcome of ["committed", "no_change"] as const) {
     assert.equal(current.execution_id, saved.execution_id);
     assert.deepEqual(current.roles, saved.roles);
     assert.deepEqual(current.invocation, saved.invocation);
-    assert.equal(current.corrections, saved.corrections);
-    assert.equal(current.correctionExhausted, true);
     assert.equal(current.pr_title, saved.pr_title);
     assert.equal(current.pr_body, saved.pr_body);
     assert.deepEqual(current.result, result);
@@ -123,7 +119,6 @@ await test("changed documentation arguments start new resources without consumin
   assert.notEqual(current.execution_id, old.execution_id);
   assert.notEqual(current.worktree, old.worktree);
   assert.notEqual(current.invocation!.path, old.invocation!.path);
-  assert.equal(current.corrections, 0);
   assert.equal(fixture.maintenance.creates, 2);
   assert.deepEqual(fixture.dependencies.pauses, []);
   assert.deepEqual(

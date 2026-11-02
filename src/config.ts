@@ -50,9 +50,7 @@ export interface ProjectConfig {
   };
   ticketClosure: TicketClosurePolicy;
   operationRetry: number;
-  agentRetry: number;
   operationRetryDelay: number[];
-  agentRetryDelay: number[];
   maintenanceTicket: { title: string; body: string; label: string };
 }
 
@@ -185,6 +183,7 @@ function parseConfig(
       "timeouts",
       "ticketClosure",
       "operationRetry",
+      // Accepted only so unchanged legacy config can recover matching Runs.
       "agentRetry",
       "operationRetryDelay",
       "agentRetryDelay",
@@ -237,12 +236,10 @@ function parseConfig(
   );
   const retryPolicy: RetryPolicy = {
     operationRetry: nonNegativeInteger(input.operationRetry, "operationRetry"),
-    agentRetry: nonNegativeInteger(input.agentRetry, "agentRetry"),
     operationRetryDelay: retryDelays(
       input.operationRetryDelay,
       "operationRetryDelay",
     ),
-    agentRetryDelay: retryDelays(input.agentRetryDelay, "agentRetryDelay"),
   };
   const repository = text(input.repository, "repository");
   const configuredIssueList = issueList(input.issueList);

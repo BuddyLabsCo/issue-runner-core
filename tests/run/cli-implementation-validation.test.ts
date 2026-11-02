@@ -6,6 +6,7 @@ import { implementationRun, publish } from "../support/implementation-run.ts";
 await test("unexpected Probe fields cannot establish identity or dispatch implementation", async (t) => {
   const fixture = await implementationRun(t);
   fixture.state.onProbe = async (assignment) => {
+    if (fixture.state.probeCount > 1) return;
     await publish(String(assignment.path), {
       ticket: 999,
       sessionid: "native-identity",
@@ -30,6 +31,7 @@ for (const invalid of ["pr_title", "pr_body"] as const) {
   await test(`Probe rejects invalid ${invalid} before task submission`, async (t) => {
     const fixture = await implementationRun(t);
     fixture.state.onProbe = async (assignment) => {
+      if (fixture.state.probeCount > 1) return;
       await publish(String(assignment.path), {
         sessionid: "native-session",
         pr_title: "Title",

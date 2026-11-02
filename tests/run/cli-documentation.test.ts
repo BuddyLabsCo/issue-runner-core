@@ -91,7 +91,6 @@ await test("no_change with actual changes is corrected before closure and cleanu
   };
   assert.equal((await fixture.run()).summary.outcome, "succeeded");
   const saved = await fixture.snapshot();
-  assert.equal(saved.corrections, 1);
   assert.equal(saved.superseded.length, 1);
   assert.equal(fixture.integrationState.closures, 1);
   assert.equal(fixture.publicationState.creations, 0);

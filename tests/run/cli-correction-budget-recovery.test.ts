@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import assert from "node:assert/strict";
-import { readdir, rm } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { executeCli } from "../../src/cli.ts";
@@ -13,131 +13,139 @@ import {
 } from "../support/implementation-run.ts";
 import { passed, reviewRun } from "../support/review-run.ts";
 
-for (const recover of [false, true]) {
-  await test(`a result arriving during correction backoff is validated before dispatch${recover ? " after matching recovery" : ""}`, async (t) => {
-    const fixture = await implementationRun(t);
-    fixture.state.onTask = async (file) => {
-      fixture.state.evidence.commits = committed().commits;
-      await publish(file, {});
-    };
-    fixture.state.onCorrection = async () => {
-      assert.fail(
-        "a valid active result must be accepted before correction dispatch",
-      );
-    };
-    if (recover) {
+for (const purpose of ["implementation", "Review"] as const) {
+  for (const legacy of ["delay", "exhaustion"] as const) {
+    await test(`matching ${purpose} recovery discards legacy Agent ${legacy} without losing native context`, async (t) => {
+      const config = {
+        ...validConfig,
+        agentRetry: 1,
+        agentRetryDelay: [300, 300],
+      };
+      const reviewer =
+        purpose === "Review" ? await reviewRun(t, 1, config) : undefined;
+      const fixture = reviewer ?? (await implementationRun(t, config));
+      if (reviewer) {
+        reviewer.reviewState.onReview = async (round) =>
+          publish(round.invocation!.path, {});
+        reviewer.reviewState.onCorrection = async () => {
+          /* Wait for the assigned correction. */
+        };
+      } else {
+        fixture.state.onTask = async (file) => {
+          fixture.state.evidence.commits = committed().commits;
+          await publish(file, {});
+        };
+        fixture.state.onCorrection = async () => {
+          /* Wait for the assigned correction. */
+        };
+      }
       fixture.state.onSleep = async (ms) => {
-        if (ms === 2_000) fixture.controller.abort();
+        if (ms === 250) fixture.controller.abort();
       };
       assert.equal((await fixture.run()).summary.outcome, "cancelled");
-    }
-    let active: Awaited<ReturnType<typeof fixture.snapshot>>["invocation"];
-    fixture.state.onSleep = async (ms) => {
-      if (ms !== 2_000) return;
-      active = (await fixture.snapshot()).invocation!;
-      await publish(active.path, committed());
-    };
-    const before = fixture.state.submissions.length;
-    const result = await executeCli(implementationCommand, {
-      ...fixture.dependencies,
-      signal: new AbortController().signal,
+      const saved = await fixture.snapshot();
+      const stage = purpose === "Review" ? saved.reviews![0]! : saved;
+      const active = structuredClone(stage.invocation);
+      Object.assign(stage, {
+        corrections: 999,
+        probeRetries: 999,
+        ...(legacy === "delay"
+          ? {
+              pendingPrompt: fixture.state.submissions.at(-1)!.text,
+              correctionNotBefore:
+                fixture.dependencies.clock.now().getTime() + 300_000,
+            }
+          : { correctionExhausted: true }),
+      });
+      if (legacy === "exhaustion") await publish(stage.invocation!.path, {});
+      const recovery = path.join(fixture.directory, "recovery");
+      const [file] = await readdir(recovery);
+      await publish(path.join(recovery, file!), saved);
+      const before = fixture.state.submissions.length;
+      const sleeps = fixture.state.sleeps.length;
+      if (reviewer) {
+        reviewer.reviewState.onCorrection = async (round) =>
+          publish(round.invocation!.path, passed());
+      } else
+        fixture.state.onCorrection = async (file) => publish(file, committed());
+      const result = await executeCli(implementationCommand, {
+        ...fixture.dependencies,
+        signal: new AbortController().signal,
+      });
+      assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+      const resumed = fixture.state.submissions.slice(before);
+      assert.equal(resumed.length, 2);
+      assert.match(resumed[0]!.text, /resume/u);
+      assert.match(
+        resumed[1]!.text,
+        new RegExp(`^Correct the ${purpose} handoff:`),
+      );
+      assert.deepEqual(
+        fixture.state.sleeps.slice(sleeps).filter((ms) => ms !== 30_000),
+        [10_000],
+      );
+      const recovered = await fixture.snapshot();
+      const current = purpose === "Review" ? recovered.reviews![0]! : recovered;
+      assert.deepEqual(recovered.roles, saved.roles);
+      assert.equal(recovered.execution_id, saved.execution_id);
+      assert.equal(recovered.worktree, saved.worktree);
+      assert.equal(recovered.pr_body, saved.pr_body);
+      if (legacy === "delay") assert.deepEqual(current.invocation, active);
+      else
+        assert.deepEqual(current.superseded, [
+          ...stage.superseded,
+          active!.path,
+        ]);
+      for (const key of [
+        "corrections",
+        "probeRetries",
+        "correctionNotBefore",
+        "correctionExhausted",
+      ])
+        assert.equal(Object.hasOwn(current, key), false);
     });
-    assert.match(result.summary.reasons.join(" "), /CI-ready/u);
-    assert.ok(active);
-    assert.equal(
-      fixture.state.submissions.filter(({ text }) =>
-        text.startsWith("Correct the"),
-      ).length,
-      0,
-    );
-    if (recover) assert.equal(fixture.state.submissions.length, before);
-    const saved = await fixture.snapshot();
-    assert.deepEqual(saved.invocation, active);
-    assert.deepEqual(saved.result, committed());
-    assert.equal(saved.corrections, 1);
-  });
+  }
 }
 
-await test("matching rerun waits only the remaining correction delay and keeps the allocated correction", async (t) => {
-  const fixture = await implementationRun(t, {
-    ...validConfig,
-    agentRetry: 3,
-    agentRetryDelay: [2, 5],
-  });
-  let now = Date.parse("2026-10-30T00:00:00Z");
-  fixture.dependencies.clock.now = () => new Date(now);
+await test("a valid active result wins over a legacy pending correction before native dispatch", async (t) => {
+  const fixture = await implementationRun(t);
   fixture.state.onTask = async (file) => {
     fixture.state.evidence.commits = committed().commits;
     await publish(file, {});
   };
-  fixture.state.onCorrection = async (file) => publish(file, {});
+  fixture.state.onCorrection = async () => {
+    /* Leave the active assignment pending. */
+  };
   fixture.state.onSleep = async (ms) => {
-    now += ms === 5_000 ? 2_000 : ms;
-    if (ms === 5_000) fixture.controller.abort();
+    if (ms === 250) fixture.controller.abort();
   };
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   const saved = await fixture.snapshot();
-  assert.equal(saved.corrections, 2);
-  assert.equal(saved.superseded.length, 2);
-  const before = fixture.state.submissions.length;
-  const sleeps: number[] = [];
-  fixture.state.onSleep = async (ms) => {
-    sleeps.push(ms);
-    now += ms;
-  };
-  fixture.state.onCorrection = async (file) => publish(file, committed());
-  const result = await executeCli(implementationCommand, {
-    ...fixture.dependencies,
-    signal: new AbortController().signal,
-  });
-  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
-  assert.deepEqual(sleeps.slice(0, 2), [3_000, 10_000]);
-  const resumed = fixture.state.submissions.slice(before);
-  assert.equal(resumed[0]!.text, 'any-cli --resume "native/$&/$`/$\'/session"');
-  assert.match(resumed[1]!.text, /^Correct the implementation handoff:/u);
-  assert.equal(resumed.length, 2);
-  const recovered = await fixture.snapshot();
-  assert.equal(recovered.corrections, 2);
-  assert.deepEqual(recovered.invocation, saved.invocation);
-  assert.deepEqual(recovered.superseded, saved.superseded);
-});
-
-await test("an invalid retained Review uses only its remaining correction in the original reviewer conversation", async (t) => {
-  const fixture = await reviewRun(t, 1, { agentRetry: 2 });
-  fixture.reviewState.onReview = async (round) =>
-    publish(round.invocation!.path, {});
-  fixture.reviewState.onCorrection = async () => fixture.controller.abort();
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  const saved = await fixture.snapshot();
-  const round = saved.reviews![0]!;
-  assert.equal(round.corrections, 1);
-  await publish(round.invocation!.path, {});
-  fixture.reviewState.onCorrection = async (current) =>
-    publish(current.invocation!.path, passed());
-  const before = fixture.state.submissions.length;
-  const sleeps = fixture.state.sleeps.length;
-  const result = await executeCli(implementationCommand, {
-    ...fixture.dependencies,
-    signal: new AbortController().signal,
-  });
-  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
-  assert.deepEqual(
-    fixture.state.sleeps.slice(sleeps, sleeps + 2),
-    [3_000, 10_000],
+  await publish(saved.invocation!.path, committed());
+  await publish(
+    path.join(fixture.directory, "recovery", `${saved.input_hash}-50.json`),
+    {
+      ...saved,
+      pendingPrompt: fixture.state.submissions.at(-1)!.text,
+      corrections: 1,
+      correctionNotBefore: fixture.dependencies.clock.now().getTime() + 300_000,
+    },
   );
-  const resumed = fixture.state.submissions.slice(before);
-  assert.equal(resumed.length, 2);
-  assert.equal(resumed[0]!.text, 'review-cli resume "review-native/$&"');
-  assert.match(resumed[1]!.text, /^Correct the Review handoff:/u);
-  const recovered = await fixture.snapshot();
-  assert.equal(recovered.reviews![0]!.corrections, 2);
-  assert.deepEqual(recovered.reviews![0]!.superseded, [
-    ...round.superseded,
-    round.invocation!.path,
-  ]);
-  assert.deepEqual(recovered.roles, saved.roles);
-  assert.equal(recovered.execution_id, saved.execution_id);
-  assert.equal(recovered.pr_body, saved.pr_body);
+  const before = fixture.state.submissions.length;
+  const result = await executeCli(implementationCommand, {
+    ...fixture.dependencies,
+    signal: new AbortController().signal,
+    terminalPlugin: {
+      ...fixture.dependencies.terminalPlugin,
+      async createTab() {
+        assert.fail("valid active output must precede pending feedback");
+      },
+    },
+  });
+  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+  assert.equal(fixture.state.submissions.length, before);
+  assert.deepEqual((await fixture.snapshot()).invocation, saved.invocation);
+  assert.deepEqual((await fixture.snapshot()).result, committed());
 });
 
 await test("operation retries keep their remaining delay and exhausted pause across matching reruns", async (t) => {
@@ -192,52 +200,38 @@ await test("operation retries keep their remaining delay and exhausted pause acr
   assert.equal(attempts, 3);
   assert.equal(pauses, 2);
   assert.equal(fixture.state.submissions.length, before);
-  assert.equal((await fixture.snapshot()).corrections, 0);
   unavailable = false;
   fixture.dependencies.operator.pause = async () => "";
   assert.match((await resume()).summary.reasons.join(" "), /CI-ready/u);
   const recovered = await fixture.snapshot();
   assert.deepEqual(recovered.invocation, saved.invocation);
-  assert.equal(recovered.corrections, 0);
   assert.equal(fixture.state.submissions.length, before);
 });
-
-for (const category of ["correction", "operation"] as const) {
+for (const category of ["operation"] as const) {
   await test(`matching rerun restores a fractional ${category} delay`, async (t) => {
     const fixture = await implementationRun(t, {
       ...validConfig,
-      agentRetryDelay: [0.0001],
       operationRetryDelay: [0.0001],
     });
-    if (category === "correction") {
-      fixture.state.onTask = async (file) => {
-        fixture.state.evidence.commits = committed().commits;
-        await publish(file, {});
-      };
-    } else {
-      const inspect = fixture.dependencies.gitWorkspace.inspect.bind(
-        fixture.dependencies.gitWorkspace,
-      );
-      let failed = false;
-      fixture.dependencies.gitWorkspace.inspect = async (input) => {
-        if (fixture.state.taskCount && !failed) {
-          failed = true;
-          throw new Error("inspection unavailable");
-        }
-        return inspect(input);
-      };
-    }
+    const inspect = fixture.dependencies.gitWorkspace.inspect.bind(
+      fixture.dependencies.gitWorkspace,
+    );
+    let failed = false;
+    fixture.dependencies.gitWorkspace.inspect = async (input) => {
+      if (fixture.state.taskCount && !failed) {
+        failed = true;
+        throw new Error("inspection unavailable");
+      }
+      return inspect(input);
+    };
     fixture.state.onSleep = async (ms) => {
       if (ms < 1) fixture.controller.abort();
     };
     assert.equal((await fixture.run()).summary.outcome, "cancelled");
     const saved = await fixture.snapshot();
-    const deadline =
-      category === "correction"
-        ? saved.correctionNotBefore
-        : Object.values(saved.operations!).find(
-            (operation) => operation.notBefore !== undefined,
-          )!.notBefore;
+    const deadline = Object.values(saved.operations!).find(
+      (operation) => operation.notBefore !== undefined,
+    )!.notBefore;
     assert.ok(Number.isFinite(deadline));
     assert.equal(Number.isInteger(deadline), false);
     let fractionalWait = false;
@@ -255,66 +249,8 @@ for (const category of ["correction", "operation"] as const) {
     assert.ok(fractionalWait);
     const recovered = await fixture.snapshot();
     assert.deepEqual(recovered.invocation, saved.invocation);
-    assert.equal(recovered.corrections, category === "correction" ? 1 : 0);
   });
 }
-
-await test("exhausted recovery displays the same manual path before continue and ignores superseded results", async (t) => {
-  const fixture = await implementationRun(t, { ...validConfig, agentRetry: 1 });
-  fixture.state.onTask = async (file) => {
-    fixture.state.evidence.commits = committed().commits;
-    await publish(file, {});
-  };
-  fixture.state.onCorrection = async (file) => publish(file, {});
-  fixture.state.onSleep = async (ms) => {
-    if (ms === 250) fixture.controller.abort();
-  };
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  const saved = await fixture.snapshot();
-  assert.equal(saved.correctionExhausted, true);
-  await publish(saved.superseded[0]!, committed());
-  await rm(saved.invocation!.path);
-  const before = fixture.state.submissions.length;
-  const messages = fixture.dependencies.messages.length;
-  let polls = 0;
-  fixture.state.onSleep = async (ms) => {
-    if (ms !== 250) return;
-    assert.ok(++polls <= 3);
-    assert.equal((await fixture.snapshot()).result, undefined);
-    if (polls === 1) await publish(saved.invocation!.path, {});
-    if (polls === 2) await publish(saved.invocation!.path, committed());
-  };
-  const plugin = fixture.dependencies.terminalPlugin;
-  const result = await executeCli(implementationCommand, {
-    ...fixture.dependencies,
-    signal: new AbortController().signal,
-    terminalPlugin: {
-      ...plugin,
-      async createTab(options) {
-        assert.ok(
-          fixture.dependencies.messages
-            .slice(messages)
-            .some((message) =>
-              message.includes("Automatic correction budget exhausted"),
-            ),
-        );
-        assert.equal(options.cwd, saved.worktree);
-        return plugin.createTab(options);
-      },
-    },
-  });
-  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
-  assert.deepEqual(
-    fixture.state.submissions.slice(before).map(({ text }) => text),
-    ['any-cli --resume "native/$&/$`/$\'/session"', "continue"],
-  );
-  const recovered = await fixture.snapshot();
-  assert.equal(recovered.corrections, 1);
-  assert.equal(recovered.correctionExhausted, true);
-  assert.deepEqual(recovered.invocation, saved.invocation);
-  assert.deepEqual(recovered.superseded, saved.superseded);
-  assert.deepEqual(recovered.result, committed());
-});
 
 for (const interruptedAttempt of [1, 2]) {
   await test(`cancellation inside operation attempt ${interruptedAttempt} cannot reclaim that attempt on rerun`, async (t) => {
@@ -344,13 +280,10 @@ for (const interruptedAttempt of [1, 2]) {
     });
     assert.equal(resumed.summary.outcome, "cancelled");
     assert.equal(attempts, 2);
-    assert.equal((await fixture.snapshot()).corrections, 0);
   });
 }
 
 for (const invalid of [
-  { correctionNotBefore: -1 },
-  { correctionExhausted: true },
   { operations: { inspection: { consumed: -1, error: "unavailable" } } },
   {
     operations: {

@@ -178,7 +178,7 @@ for (const operation of ["addLabel", "addAssignee"] as const) {
   }
 }
 
-await test("parent cancellation during correction backoff prevents the follow-up prompt", async (t) => {
+await test("parent cancellation after invalid publication prevents the follow-up prompt", async (t) => {
   const fixture = await parentRun(t, [child(51)]);
   let cancelled = false;
   const followups: string[] = [];
@@ -187,9 +187,6 @@ await test("parent cancellation during correction backoff prevents the follow-up
     state: cancelled ? "closed" : "open",
     stateReason: cancelled ? "not_planned" : null,
   });
-  fixture.dependencies.clock.sleep = async (ms) => {
-    if (ms === 2000) cancelled = true;
-  };
   const submitText = fixture.dependencies.terminalPlugin.submitText.bind(
     fixture.dependencies.terminalPlugin,
   );
@@ -203,6 +200,7 @@ await test("parent cancellation during correction backoff prevents the follow-up
     if (text.startsWith("Implementation assignment\n")) {
       const assignment = promptAssignment(text) as { path: string };
       await publish(assignment.path, { outcome: "invalid" });
+      cancelled = true;
     }
   };
   assert.equal((await fixture.run()).summary.outcome, "cancelled");

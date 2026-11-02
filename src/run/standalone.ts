@@ -463,7 +463,6 @@ async function executeStandalone(
     base: await input.fetchBase(),
     phase: "reserved",
     roles: {},
-    corrections: 0,
     superseded: [],
   });
   context.retained?.set(progressFile, progress);

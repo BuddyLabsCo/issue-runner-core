@@ -34,9 +34,7 @@ export const validConfig = {
   },
   ticketClosure: "runner",
   operationRetry: 1,
-  agentRetry: 2,
   operationRetryDelay: [1],
-  agentRetryDelay: [2, 3],
 };
 
 export async function createProject(

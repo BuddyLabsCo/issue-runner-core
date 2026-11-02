@@ -307,7 +307,6 @@ await test("unrecoverable documentation offers an explicit whole-occurrence rest
   const current = await fixture.snapshot();
   assert.notEqual(current.execution_id, previous.execution_id);
   assert.notEqual(current.run_id, previous.run_id);
-  assert.equal(current.corrections, 0);
   await access(previous.worktree);
   await access(previous.probe!.path);
 });
