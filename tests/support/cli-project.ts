@@ -3,8 +3,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TestContext } from "node:test";
 import { stringify } from "yaml";
+import type { AgentConfig } from "../../src/config.ts";
 
-export const agent = {
+export const agent: AgentConfig = {
   start: 'any-cli --model "my model" --native-option',
   resume: 'any-cli --resume "{sessionref}"',
   submitKey: "Shift+Enter",

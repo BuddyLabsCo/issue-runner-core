@@ -37,27 +37,34 @@ codeHost:
 # Core does not choose an Agent brand, rebuild argv, or interpret native options.
 # Every resume command must contain the exact {sessionref} placeholder.
 # submitKey is a Runner setting alongside start/resume, outside native options.
+# startupDelaySeconds is also a Runner setting: positive seconds, default 10.
+# Increase it if your Agent needs more time after start or resume before input.
 agents:
   implement:
     start: my-agent
     resume: 'my-agent --resume "{sessionref}"'
     submitKey: Enter
+    startupDelaySeconds: 10
   review:
     start: my-review-agent
     resume: 'my-review-agent --resume "{sessionref}"'
     submitKey: Enter
+    startupDelaySeconds: 10
   ciRepair:
     start: my-agent
     resume: 'my-agent --resume "{sessionref}"'
     submitKey: Enter
+    startupDelaySeconds: 10
   conflictRepair:
     start: my-agent
     resume: 'my-agent --resume "{sessionref}"'
     submitKey: Enter
+    startupDelaySeconds: 10
   documentation:
     start: my-agent
     resume: 'my-agent --resume "{sessionref}"'
     submitKey: Enter
+    startupDelaySeconds: 10
 # Positive minute thresholds retained for downstream delivery slices.
 # agentIdleMinutes is optional and defaults to 10.
 timeouts:

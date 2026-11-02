@@ -212,8 +212,9 @@ Worktree and branch from that exact base. Partial writes remain retained.
 The Reservation label must already exist in the repository.
 
 Core opens a tab with an absolute cwd and a unique temporary `GIT_CONFIG_GLOBAL`
-overlay. It submits the full configured start command with Enter, waits 10
-seconds, then separately submits a Session Probe with the Agent chord. The
+overlay. It submits the full configured start command with Enter, waits for the
+profile's `startupDelaySeconds` (default 10 seconds), then separately submits a
+Session Probe with the Agent chord. The
 persisted unique output path associates the response with its execution and stage;
 the Agent does not receive or echo internal correlation fields. Implementation
 and documentation Probes return exactly `sessionid`, `pr_title`, and `pr_body`.
@@ -268,7 +269,8 @@ Verified commits proceed to publication after enabled Review/fixes.
 
 When Review is enabled (the default), only a verified `committed` implementation
 starts it. A separate reviewer starts in a fresh Runner Tab in the original
-Worktree with its own per-call Git configuration. Core waits 10 seconds, Probes
+Worktree with its own per-call Git configuration. Core waits for
+`agents.review.startupDelaySeconds` (default 10 seconds), Probes
 only the reviewer's native identity, and saves that role reference before the
 Review assignment. Review receives the Issue number, repository/spec review
 instructions, the Project review prompt, Review base, implementation HEAD,
@@ -284,7 +286,8 @@ implementation edits or commits.
 
 After accepted findings, Core saves the Review result and closes its tab before
 opening a fresh tab that resumes the exact original implementation conversation.
-After the 10-second wait, the fix receives the findings report, reviewed HEAD as
+After waiting for `agents.implement.startupDelaySeconds` (default 10 seconds),
+the fix receives the findings report, reviewed HEAD as
 its Base SHA, and a fresh handoff path. It must produce verified new commits and
 a clean Worktree. `no_change` cannot satisfy findings. Core verifies both this
 turn's commits relative to the reviewed HEAD and the complete accumulated history
@@ -302,8 +305,8 @@ including assignment headings, context labels, and handoff instructions.
 Core substitutes named placeholders once. Project prompt contents are inserted
 as literal text through `{{instructions}}`; their own placeholders are not expanded.
 
-Later Reviews resume the exact original reviewer in fresh tabs, with a
-10-second wait and fresh invocation/path. The previous reviewed HEAD becomes the
+Later Reviews resume the exact original reviewer in fresh tabs, with the
+review profile's startup delay and fresh invocation/path. The previous reviewed HEAD becomes the
 next Review base; the implementation HEAD includes the latest fixes.
 `workflow.maxReviewRounds` has no default cap. With a cap, every allowed findings
 round still receives its fix before the loop exits. For example:
@@ -352,7 +355,7 @@ Recovery can adopt an exact merged PR and skip required-check discovery. If the 
 
 Runner waits 30 seconds before required-check discovery. Empty checks or checks with no pending, failed, or cancelled entries establish readiness, preserving the source treatment of skipped checks. Pending checks are polled every 10 seconds, bounded by `timeouts.requiredChecksMinutes`. A timeout enters Operator Pause; Enter starts another configured wait window and q/EOF cancels.
 
-Failed or cancelled required checks start CI repair using `agents.ciRepair`. Each attempt uses a fresh native conversation and a separate repair Worktree and local branch based on the recorded PR head. Its assignment includes the Issue number, PR URL, and failed check names/states/links. The Agent reads the check logs; log bodies are not embedded in the prompt. The original PR and remote branch remain unchanged in identity. Repair Probes establish only native session identity; they never regenerate publication metadata. Each start or exact resume waits 10 seconds, and each completed stage closes its own Runner Tab.
+Failed or cancelled required checks start CI repair using `agents.ciRepair`. Each attempt uses a fresh native conversation and a separate repair Worktree and local branch based on the recorded PR head. Its assignment includes the Issue number, PR URL, and failed check names/states/links. The Agent reads the check logs; log bodies are not embedded in the prompt. The original PR and remote branch remain unchanged in identity. Repair Probes establish only native session identity; they never regenerate publication metadata. Each start or exact resume waits for the selected profile's `startupDelaySeconds` (default 10 seconds), and each completed stage closes its own Runner Tab.
 
 Runner verifies the repair Worktree, local branch, base, cleanliness, actual changes, and exact commit claims before pushing the verified HEAD to the original remote branch. It never force-pushes. Lost push responses reconcile against persisted pending-push evidence; unexpected remote advancement or PR identity changes require ordinary operation recovery. Each repair push restarts the 30-second discovery delay and required-check timeout window. CI repair does not enter ordinary Review.
 
@@ -458,7 +461,7 @@ and its execution in `recovery/<input-hash>-document-<ticket>.json`. Matching in
 Runs reuse the original ticket, native conversation, paths, PR metadata, and consumed
 budgets. Completed document stages skip Agent work. Existing output is verified before
 opening a tab; missing output resumes the saved documentation conversation, waits
-10 seconds, and sends only `continue`. Superseded handoffs cannot replace the current assignment. Close leftover Agent
+for `agents.documentation.startupDelaySeconds` (default 10 seconds), and sends only `continue`. Superseded handoffs cannot replace the current assignment. Close leftover Agent
 tabs and stop their execution before recovery, retaining native history and Worktrees.
 Runner does not adopt live tabs. If the original context cannot be recovered, Runner
 prints `unable to recover` and offers an entire documentation-occurrence restart or exit.
@@ -600,7 +603,8 @@ unsent; a rejected eligibility check restores that evidence. If an attempted
 assignment has no expected result, recovery sends only `continue` after the resume
 wait. Runner opens a fresh Runner Tab in the original Worktree, recreates its
 per-call Git configuration, submits the exact saved role's resume command with
-Enter, waits 10 seconds, then submits the literal `continue` with that Agent's
+Enter, waits for that profile's `startupDelaySeconds` (default 10 seconds), then
+submits the literal `continue` with that Agent's
 configured `submitKey`. It sends no task, path reminder, context message, or new
 Probe. The invocation, active output path, and fixed PR metadata remain unchanged.
 Staged, unstaged, and untracked work remain in the original Worktree.
@@ -692,6 +696,13 @@ Unknown or obsolete fields are rejected at every Runner-owned object.
 - Optional `submitKey` is a nonempty Runner setting beside `start`/`resume`,
   outside the optional opaque native `options` object. Omission uses Enter.
   Old `agent`, `model`, and `reasoningEffort` profile fields are rejected.
+- Optional `startupDelaySeconds` is a positive finite number of seconds, defaulting to 10.
+  Set it beside `start`, `resume`, and `submitKey`, outside native `options`.
+  Each profile (`implement`, `review`, `ciRepair`, `conflictRepair`, and `documentation`) uses its own value.
+  After successful start or resume submission, Runner waits before sending the first Probe, continuation, or task prompt.
+  This includes recovery and later stage openings; ordinary prompts within an open session add no startup delay.
+  Fractions are accepted; zero, negative, nonnumeric, and non-finite values are rejected.
+  The delay does not guarantee Agent readiness or retry missing output.
 - `implement`, `ciRepair`, and `conflictRepair` profiles are required. Review
   defaults enabled, requiring its profile and nonempty `prompts/review.md`.
   Setting `workflow.review: false` removes that requirement. An optional

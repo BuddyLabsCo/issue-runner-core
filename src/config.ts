@@ -15,6 +15,7 @@ export interface AgentConfig {
   start: string;
   resume: string;
   submitKey?: string;
+  startupDelaySeconds?: number;
   options?: Record<string, unknown>;
 }
 
@@ -138,7 +139,11 @@ function switchValue(
 
 function agent(value: unknown, name: string): AgentConfig {
   const input = record(value, name);
-  knownFields(input, ["start", "resume", "submitKey", "options"], name);
+  knownFields(
+    input,
+    ["start", "resume", "submitKey", "startupDelaySeconds", "options"],
+    name,
+  );
   const start = text(input.start, `${name}.start`);
   const resume = text(input.resume, `${name}.resume`);
   if (!resume.includes("{sessionref}"))
@@ -158,6 +163,10 @@ function agent(value: unknown, name: string): AgentConfig {
   return {
     start,
     resume,
+    startupDelaySeconds: positive(
+      input.startupDelaySeconds === undefined ? 10 : input.startupDelaySeconds,
+      `${name}.startupDelaySeconds`,
+    ),
     ...(submitKey === undefined ? {} : { submitKey }),
     ...(options === undefined ? {} : { options }),
   };

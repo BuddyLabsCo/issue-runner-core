@@ -40,7 +40,7 @@ export class NativeConversations {
       });
     }
     this.signal?.throwIfAborted();
-    await this.clock.sleep(10_000);
+    await this.clock.sleep((profile.startupDelaySeconds ?? 10) * 1_000);
     this.signal?.throwIfAborted();
     return tab;
   }
