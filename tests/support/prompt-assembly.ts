@@ -4,6 +4,7 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { TestContext } from "node:test";
 import type { executeCli } from "../../src/cli.ts";
+import { loadPrompt, renderPrompt } from "../../src/prompts/load.ts";
 import { validConfig } from "./cli-project.ts";
 import {
   committed,
@@ -48,17 +49,21 @@ export async function testPromptAssembly(
   for (const [index, assignment] of probes.entries()) {
     assert.equal(
       submissions[index + 1]!.text,
-      "Session Probe\n" +
-        (index === 1
-          ? "Correct the previous Probe: Probe requires actual native identity and complete PR metadata\n"
-          : "") +
-        "Determine your actual native conversation session ID from your CLI context. Do not invent an ID or use a latest-session alias. " +
-        "Read issue #50 in the current repository and its contribution and pull request conventions. Generate pr_title and pr_body.\n" +
-        `Write exactly sessionid, pr_title, pr_body as JSON to ${JSON.stringify(`${String(assignment.path)}.tmp`)}, close it, and atomically rename it to ${JSON.stringify(assignment.path)}. Do not begin the task yet.`,
+      renderPrompt(loadPrompt("probe-metadata"), {
+        issue: "50",
+        correction:
+          index === 1
+            ? renderPrompt(loadPrompt("probe-correction"), {
+                reason:
+                  "Probe requires actual native identity and complete PR metadata",
+              })
+            : "",
+        temporary: JSON.stringify(`${String(assignment.path)}.tmp`),
+        path: JSON.stringify(assignment.path),
+      }),
     );
   }
   const task = submissions[3]!.text;
-  assert.match(task, /^Implementation assignment\nImplement issue #50\./u);
   assert.ok(task.includes(custom));
   assert.match(task, /Do not fetch or pull code/u);
   assert.doesNotMatch(
@@ -72,6 +77,14 @@ export async function testPromptAssembly(
       /probe_id|run_id|execution_id|owner\/repo|Implement the Issue|Accepted scope/u,
     );
   const saved = await fixture.snapshot();
+  assert.equal(
+    task,
+    renderPrompt(loadPrompt("implement"), {
+      issue: "50",
+      instructions: custom,
+      path: JSON.stringify(saved.superseded[1]),
+    }),
+  );
   assert.ok(
     task.endsWith(
       `Once the task is complete, explicitly invoke the installed issue-runner-handoff skill as your final action, with this sole absolute output-path argument: ${JSON.stringify(saved.superseded[1])}`,
@@ -79,7 +92,7 @@ export async function testPromptAssembly(
   );
   assert.equal(
     submissions[4]!.text,
-    "Correct the implementation handoff: Execution findings_file must be null\n" +
+    "Correct the implementation handoff: Execution findings_file must be null\n\n" +
       `After completing the correction, explicitly invoke the installed issue-runner-handoff skill as your final action, with this sole absolute output-path argument: ${JSON.stringify(saved.invocation!.path)}`,
   );
   assert.ok(

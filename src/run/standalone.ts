@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import type { LoadedProject } from "../config.ts";
 import {
@@ -9,8 +8,7 @@ import {
 } from "./integration.ts";
 import { saveProgress, type ImplementationProgress } from "../recovery.ts";
 import { runIssueStage, type IssueStageContext } from "../agent/stage.ts";
-import { implementationInstructions } from "../prompts/implement.ts";
-import { documentationInstructions } from "../prompts/documentation.ts";
+import { executionPrompt } from "../prompts/implement.ts";
 import { reviewImplementation, verifiedImplementation } from "./review.ts";
 import { verifyWorkspace } from "./verification.ts";
 import { parseExecution } from "../agent/handoff.ts";
@@ -333,8 +331,8 @@ async function executeStandalone(
         ...stageInput(progress),
         stage: progress,
         purpose,
-        task: async () =>
-          `${(input.documentation ? documentationInstructions : implementationInstructions).replace("{{issue}}", () => String(number))}\n\n${await readFile(path.join(root, "prompts", `${purpose}.md`), "utf8")}`,
+        task: (handoffPath) =>
+          executionPrompt(root, purpose, number, handoffPath),
         accept: (text) => accept(progress, text),
       });
     }

@@ -13,6 +13,7 @@ import {
   reviewFixInstructions,
   reviewInstructions,
 } from "../prompts/review.ts";
+import { renderPrompt } from "../prompts/load.ts";
 import type { ImplementationProgress, StageProgress } from "../recovery.ts";
 import type { LoadedProject } from "../config.ts";
 import type { GitWorkspace } from "./contracts.ts";
@@ -165,9 +166,19 @@ export async function reviewImplementation(
         ...input,
         stage: round,
         purpose: "review",
-        task: async () =>
-          `${reviewInstructions.replace("{{issue}}", () => String(progress.ticket))}\n\n${await readFile(path.join(loaded.directory, "prompts", "review.md"), "utf8")}\n\n` +
-          `Review base: ${round.base}\nImplementation HEAD: ${round.head}\nAssigned findings path: ${JSON.stringify(round.findings)}`,
+        task: async (handoffPath) =>
+          renderPrompt(reviewInstructions, {
+            issue: String(progress.ticket),
+            instructions: await readFile(
+              path.join(loaded.directory, "prompts", "review.md"),
+              "utf8",
+            ),
+            round: String(round.round),
+            base: round.base,
+            head: round.head,
+            findings: JSON.stringify(round.findings),
+            path: JSON.stringify(handoffPath),
+          }),
         accept: async (text) => {
           const result = parseReview(text, round.findings);
           if (result.outcome === "findings") {
@@ -204,8 +215,12 @@ export async function reviewImplementation(
         ...input,
         stage: round.fix,
         purpose: "fix_review",
-        task: () =>
-          `${reviewFixInstructions}\n\nFindings report: ${JSON.stringify(round.findings)}\nBase SHA: ${round.head}`,
+        task: (handoffPath) =>
+          renderPrompt(reviewFixInstructions, {
+            findings: JSON.stringify(round.findings),
+            base: round.head,
+            path: JSON.stringify(handoffPath),
+          }),
         accept: async (text) => {
           const result = parseExecution(text);
           if (result.outcome !== "committed")

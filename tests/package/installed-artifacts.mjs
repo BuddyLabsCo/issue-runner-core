@@ -104,7 +104,7 @@ export async function testInstalledArtifacts(
         ["session", "probeInstructions", "probe", "actual native conversation session ID"],
         ["session", "probeMetadataInstructions", "probe-metadata", "Generate pr_title and pr_body"],
         ["session", "probeCorrectionInstructions", "probe-correction", "Correct the previous Probe"],
-        ["session", "handoffInvocationInstructions", "handoff-invocation", "sole absolute output-path argument"],
+        ["session", "resumeInstructions", "resume", "continue"],
         ["session", "handoffCorrectionInstructions", "handoff-correction", "Correct the {{name}} handoff"]
       ]) {
         const prompts = await import(pathToFileURL(join(core, "dist/prompts", file + ".js")).href);

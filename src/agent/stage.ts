@@ -13,12 +13,13 @@ import { OperatorCancelled, TicketSkipped } from "../run/operations.ts";
 import type { TabHandle, TerminalPlugin } from "../terminal.ts";
 import { NativeConversations } from "./conversation.ts";
 import { nonempty, object, readHandoff } from "./handoff.ts";
+import { renderPrompt } from "../prompts/load.ts";
 import {
   probeInstructions,
   probeMetadataInstructions,
   probeCorrectionInstructions,
-  handoffInvocationInstructions,
   handoffCorrectionInstructions,
+  resumeInstructions,
 } from "../prompts/session.ts";
 
 export interface IssueStageContext {
@@ -40,37 +41,31 @@ export interface IssueStageContext {
 const stageDetails = {
   documentation: {
     name: "documentation",
-    heading: "Documentation",
     phase: "documenting",
     completed: "documentation_completed",
   },
   implement: {
     name: "implementation",
-    heading: "Implementation",
     phase: "implementing",
     completed: "implementation_completed",
   },
   review: {
     name: "Review",
-    heading: "Review",
     phase: "reviewing",
     completed: "review_completed",
   },
   fix_review: {
     name: "Review fix",
-    heading: "Fix",
     phase: "fixing_review",
     completed: "fix_review_completed",
   },
   conflict_repair: {
     name: "Conflict repair",
-    heading: "Conflict repair",
     phase: "repairing_conflict",
     completed: "conflict_repair_completed",
   },
   ci_repair: {
     name: "CI repair",
-    heading: "CI repair",
     phase: "repairing_ci",
     completed: "ci_repair_completed",
   },
@@ -87,7 +82,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
       | "ci_repair"
       | "conflict_repair";
     worktree?: string;
-    task: () => string | Promise<string>;
+    task: (handoffPath: string) => string | Promise<string>;
     accept: (text: string) => Promise<R>;
   },
 ): Promise<void> {
@@ -100,7 +95,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
         : "implement";
   const generatesMetadata =
     purpose === "implement" || purpose === "documentation";
-  const { name, heading, phase, completed } = stageDetails[purpose];
+  const { name, phase, completed } = stageDetails[purpose];
   const repairRole =
     purpose === "ci_repair"
       ? "ciRepair"
@@ -172,31 +167,18 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
       return true;
     };
     if (!sessionid()) {
-      const prompt = (error?: string) => {
-        const values = {
-          identity: generatesMetadata
-            ? probeMetadataInstructions.replace("{{issue}}", () =>
-                String(progress.ticket),
-              )
-            : "",
-          fields: generatesMetadata
-            ? "sessionid, pr_title, pr_body"
-            : "sessionid",
-          temporary: JSON.stringify(`${stage.probe!.path}.tmp`),
-          path: JSON.stringify(stage.probe!.path),
-        };
-        return (
-          "Session Probe\n" +
-          (error
-            ? probeCorrectionInstructions.replace("{{reason}}", () => error) +
-              "\n"
-            : "") +
-          probeInstructions.replace(
-            /\{\{(identity|fields|temporary|path)\}\}/gu,
-            (_, key: keyof typeof values) => values[key],
-          )
+      const prompt = (error?: string) =>
+        renderPrompt(
+          generatesMetadata ? probeMetadataInstructions : probeInstructions,
+          {
+            correction: error
+              ? renderPrompt(probeCorrectionInstructions, { reason: error })
+              : "",
+            issue: String(progress.ticket),
+            temporary: JSON.stringify(`${stage.probe!.path}.tmp`),
+            path: JSON.stringify(stage.probe!.path),
+          },
         );
-      };
       if (
         (purpose !== "documentation" && !repairRole) ||
         !(await readHandoff(stage.probe!.path))
@@ -290,11 +272,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
         invocation_id: randomUUID(),
         path: assignment(purpose),
       };
-      stage.pendingPrompt =
-        `${heading} assignment\n${await input.task()}\n\n` +
-        handoffInvocationInstructions.replace("{{path}}", () =>
-          JSON.stringify(stage.invocation!.path),
-        );
+      stage.pendingPrompt = await input.task(stage.invocation.path);
     }
     progress.phase = phase;
     await persist();
@@ -325,7 +303,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
       if (
         resumeIfMissing &&
         observed === undefined &&
-        !(await submitWork("continue"))
+        !(await submitWork(resumeInstructions))
       )
         return;
       resumeIfMissing = false;
@@ -360,9 +338,9 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
               reason,
               path: JSON.stringify(stage.invocation.path),
             };
-            stage.pendingPrompt = handoffCorrectionInstructions.replace(
-              /\{\{(name|reason|path)\}\}/gu,
-              (_, key: keyof typeof values) => values[key],
+            stage.pendingPrompt = renderPrompt(
+              handoffCorrectionInstructions,
+              values,
             );
             stage.correctionNotBefore =
               clock.now().getTime() +

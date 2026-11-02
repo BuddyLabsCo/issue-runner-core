@@ -11,6 +11,7 @@ import {
 } from "../support/review-run.ts";
 import { access, readFile } from "node:fs/promises";
 import { implementationCommit } from "../support/implementation-run.ts";
+import { loadPrompt, renderPrompt } from "../../src/prompts/load.ts";
 
 await test("verified implementation starts an independent Standards/Spec Review and becomes eligible for publication on passed", async (t) => {
   const fixture = await implementationRun(t, {
@@ -33,6 +34,10 @@ await test("verified implementation starts an independent Standards/Spec Review 
     if (text.startsWith("Session Probe\n") && text.includes("-review-probe-")) {
       assert.equal(fixture.state.closedTabs.length, 1);
       assert.doesNotMatch(text, /pr_title|pr_body/u);
+      assert.ok(
+        text.includes('{\n  "sessionid": "actual_native_session_id"\n}'),
+      );
+      assert.doesNotMatch(text, /\{\{/u);
       const assignment = promptAssignment(text) as { path: string };
       await publish(assignment.path, {
         sessionid: "native-review",
@@ -85,6 +90,22 @@ await test("with no default cap, every findings round receives a fix and later R
   ];
   fixture.reviewState.onReview = async (round) => {
     const prompt = fixture.state.submissions.at(-1)!.text;
+    assert.equal(
+      prompt,
+      renderPrompt(loadPrompt("review"), {
+        issue: "50",
+        instructions: await readFile(
+          `${fixture.directory}/prompts/review.md`,
+          "utf8",
+        ),
+        round: String(round.round),
+        base: round.base,
+        head: round.head,
+        findings: JSON.stringify(round.findings),
+        path: JSON.stringify(round.invocation!.path),
+      }),
+    );
+    assert.ok(prompt.includes(`\n- Review round: ${round.round}\n`));
     assert.ok(
       prompt.includes(
         `Review base: ${round.round === 1 ? "a".repeat(40) : ["b", "c", "d"][round.round - 2]!.repeat(40)}`,
