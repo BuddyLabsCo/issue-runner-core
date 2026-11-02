@@ -59,25 +59,14 @@ jobs:
           cache: npm
       - run: npm install --global npm@11.6.2
       - run: npm ci
-      - name: Observe original deadlines without releasing blocked work
+      - name: Verify setup and cleanup counterexamples on Windows
         shell: bash
         run: |
           mkdir -p diagnostic-traces
           export I178_TRACE_DIR="$PWD/diagnostic-traces"
           export NODE_OPTIONS="--import=$(node -p "require('node:url').pathToFileURL(process.cwd() + '/scripts/issue-178-preload.mjs').href")"
           export I178_OBSERVE=1
-          for pressure in 0 1; do
-            export I178_PRESSURE="$pressure"
-            if [ "$pressure" = 1 ]; then
-              node scripts/issue-178-pressure.mjs &
-              pressure_pid=$!
-              trap 'kill "$pressure_pid" 2>/dev/null || true' EXIT
-            fi
-            for iteration in $(seq 1 10); do
-              echo "[I178-RUN] pressure=$pressure iteration=$iteration"
-              node --test --test-concurrency=4 --test-name-pattern='bounded Batch concurrently|sibling.*non-Agent pause' tests/run/cli-batch.test.ts tests/run/cli-cancellation.test.ts || exit 1
-            done
-          done
+          node scripts/issue-178-causal.mjs
       - name: Retain timing evidence
         if: always()
         uses: actions/upload-artifact@v7
