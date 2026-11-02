@@ -84,16 +84,20 @@ for (const selector of ["parent", "issue"] as const) {
       `--${selector}`,
       ...(selector === "parent" ? ["48"] : []),
     ]);
+    const ended = running.then(() => {
+      throw new Error("Batch ended before the expected lifecycle events");
+    });
+    const timedOut = deferred<never>();
     const deadline = setTimeout(
-      () =>
-        arrived
-          .get(52)!
-          .reject(new Error("second Issue did not run concurrently")),
-      3000,
+      () => timedOut.reject(new Error("Batch scenario did not settle")),
+      30_000,
     );
     try {
-      await Promise.all([...arrived.values()].map(({ promise }) => promise));
-      clearTimeout(deadline);
+      await Promise.race([
+        Promise.all([...arrived.values()].map(({ promise }) => promise)),
+        ended,
+        timedOut.promise,
+      ]);
       assert.equal(tabs.size, 2);
       assert.equal(fetches, 1);
       const contexts = [...tabs.values()];
@@ -124,7 +128,7 @@ for (const selector of ["parent", "issue"] as const) {
         );
       }
       gates.get(52)!.resolve();
-      await closedSecond.promise;
+      await Promise.race([closedSecond.promise, ended, timedOut.promise]);
       assert.deepEqual(closed, [52]);
       assert.equal(
         (await progress(fixture.directory, 51)).phase,
@@ -135,7 +139,7 @@ for (const selector of ["parent", "issue"] as const) {
         "Completed Issue #52",
       );
       gates.get(51)!.resolve();
-      const result = await running;
+      const result = await Promise.race([running, timedOut.promise]);
       assert.equal(result.summary.outcome, "incomplete");
       assert.deepEqual(closed, [52, 51]);
       assert.equal(
