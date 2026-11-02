@@ -34,9 +34,16 @@ Write one JSON object with exactly these fields:
 outcome applies. Include verification actually performed, its results,
 and relevant limitations. Report only work and checks actually performed.
 
-`commits`: this task's commits, each with its full SHA and message.
-When the task supplies a commit range, include every commit in that range, including commits introduced by a merge.
-Nonempty for `committed`; otherwise `[]`.
+`commits` depends on `outcome`:
+
+- `passed`, `findings`, or `no_change`: always `[]`.
+  A Review's commit range identifies existing commits to inspect.
+  Do not include those reviewed commits in the handoff.
+
+- `committed`: a nonempty list of this execution's commits,
+  each with its full SHA and message.
+  If an execution commit range is supplied, include every commit
+  in that range, including commits introduced by a merge.
 
 `findings_file`: the findings report's absolute path for `findings`;
 otherwise `null`.
