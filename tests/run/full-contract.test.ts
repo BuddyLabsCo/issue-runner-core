@@ -326,7 +326,7 @@ await test(
     );
     assert.match(
       fixture.dependencies.messages.at(-1)!,
-      /^demo: succeeded targetBranch=default-branch/u,
+      /^Issue\s+Status\s+PR\s+Detail$/mu,
     );
     assert.deepEqual(fixture.dependencies.pauses, []);
     assert.ok(result.logPath);

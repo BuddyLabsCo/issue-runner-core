@@ -128,6 +128,6 @@ await test("EOF during a real Operator Pause returns and reports a cancelled Run
   );
   assert.ifError(child.error);
   assert.equal(child.status, 0, child.stderr);
-  assert.match(child.stdout, /Run cancelled: operator cancelled/);
+  assert.match(child.stdout, /Run cancelled\./);
   assert.match(child.stdout, /RESULT 1 cancelled/);
 });

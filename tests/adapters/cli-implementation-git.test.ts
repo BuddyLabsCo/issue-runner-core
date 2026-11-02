@@ -231,7 +231,7 @@ for (const scenario of [
       assert.ok(
         fixture.dependencies.messages.some(
           (message) =>
-            message.startsWith("Retained ") &&
+            message.includes("Retained Worktrees:") &&
             message.includes(progress.worktree),
         ),
       );

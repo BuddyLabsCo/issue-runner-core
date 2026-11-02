@@ -22,6 +22,7 @@ import type {
 } from "./run/contracts.ts";
 import type { TerminalPlugin } from "./terminal.ts";
 import { runProject, type RunOptions, type RunSummary } from "./run/run.ts";
+import { renderRunReport } from "./run/report.ts";
 import { OperatorCancelled, supervisedAuditWrite } from "./run/operations.ts";
 
 export interface CliDependencies {
@@ -308,10 +309,6 @@ export async function executeRun(
     );
     summary = runSummary;
     targetBranch = runSummary.targetBranch;
-    for (const ticket of runSummary.tickets ?? [])
-      dependencies.operator.write(
-        `Issue #${ticket.ticket} ${ticket.kind}: ${ticket.status} PR=${ticket.pullRequest === null ? "-" : `#${ticket.pullRequest}`} ${ticket.detail.replace(/\s+/gu, " ").trim()}`,
-      );
     if (!dependencies.signal?.aborted)
       await supervisedAuditWrite(
         () =>
@@ -330,9 +327,7 @@ export async function executeRun(
         dependencies.operator,
         dependencies.signal,
       );
-    dependencies.operator.write(
-      `${project}: ${runSummary.outcome} targetBranch=${runSummary.targetBranch}${runSummary.reasons.length ? `: ${runSummary.reasons.join("; ")}` : ""}`,
-    );
+    dependencies.operator.write(renderRunReport(runSummary));
     return {
       exitCode: ["succeeded", "no_work"].includes(runSummary.outcome) ? 0 : 1,
       summary: runSummary,
@@ -343,21 +338,21 @@ export async function executeRun(
     const cancelled =
       error instanceof OperatorCancelled ||
       dependencies.signal?.aborted === true;
-    dependencies.operator.write(
-      `${logPath ? "Run" : "Startup"} ${cancelled ? "cancelled" : "failed"}: ${reason.replace(/\s+/gu, " ").trim()}`,
-    );
-    return {
-      exitCode: 1,
-      summary: {
-        ...summary,
-        outcome: cancelled ? "cancelled" : "failed",
-        project,
-        parentTicket,
-        targetBranch,
-        reasons: [...(summary?.reasons ?? []), reason],
-      },
-      logPath,
+    const failed: RunSummary = {
+      ...summary,
+      outcome: cancelled ? "cancelled" : "failed",
+      project,
+      parentTicket,
+      targetBranch,
+      reasons: [...(summary?.reasons ?? []), reason],
+      failure: reason,
     };
+    dependencies.operator.write(
+      logPath
+        ? renderRunReport(failed)
+        : `Startup ${cancelled ? "cancelled" : "failed"}: ${reason.replace(/\s+/gu, " ").trim()}`,
+    );
+    return { exitCode: 1, summary: failed, logPath };
   }
 }
 
