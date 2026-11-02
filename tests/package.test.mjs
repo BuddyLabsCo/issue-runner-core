@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,24 +33,33 @@ await test("built artifacts work in isolated consumer and npm global installatio
   /** @param {string[]} args @param {string} cwd */
   const npm = (args, cwd) => runNode([npmCli, ...args], cwd);
 
-  /** @type {unknown} */
-  const packed = JSON.parse(
-    npm(["pack", "--json", "--pack-destination", consumer], root),
+  const artifactsDir = join(consumer, "artifacts");
+  mkdirSync(artifactsDir);
+  npm(["pack", "--pack-destination", artifactsDir], root);
+  const tarballs = readdirSync(artifactsDir).filter((file) =>
+    file.endsWith(".tgz"),
   );
-  assert.ok(Array.isArray(packed));
-  /** @type {unknown} */
-  const artifact = packed[0];
-  assert.ok(artifact && typeof artifact === "object");
-  assert.ok("filename" in artifact && typeof artifact.filename === "string");
-  assert.ok("files" in artifact && Array.isArray(artifact.files));
-  const files = artifact.files.map(
-    /** @param {unknown} file */
-    (file) => {
-      assert.ok(file && typeof file === "object" && "path" in file);
-      assert.ok(typeof file.path === "string");
-      return file.path;
-    },
+  assert.equal(tarballs.length, 1);
+  assert.ok(tarballs[0]);
+  const artifact = join(artifactsDir, tarballs[0]);
+
+  writeFileSync(
+    join(consumer, "package.json"),
+    JSON.stringify({ private: true, type: "module" }),
   );
+  npm(
+    [
+      "install",
+      "--ignore-scripts",
+      "--no-audit",
+      "--no-fund",
+      "--package-lock=false",
+      "--omit=dev",
+      artifact,
+    ],
+    consumer,
+  );
+  const installed = join(consumer, "node_modules/issue-runner-core");
   for (const file of [
     "dist/cli.js",
     "dist/terminal.js",
@@ -71,31 +88,12 @@ await test("built artifacts work in isolated consumer and npm global installatio
     "prompts/resume.md",
     "prompts/handoff-correction.md",
   ])
-    assert.ok(files.includes(file), file);
-  assert.ok(files.every((file) => !file.startsWith("tests/")));
+    assert.ok(statSync(join(installed, file)).isFile(), file);
+  assert.ok(!readdirSync(installed).includes("tests"));
 
-  writeFileSync(
-    join(consumer, "package.json"),
-    JSON.stringify({ private: true, type: "module" }),
-  );
-  npm(
-    [
-      "install",
-      "--ignore-scripts",
-      "--no-audit",
-      "--no-fund",
-      "--package-lock=false",
-      "--omit=dev",
-      join(consumer, artifact.filename),
-    ],
-    consumer,
-  );
   /** @type {unknown} */
   const manifest = JSON.parse(
-    readFileSync(
-      join(consumer, "node_modules/issue-runner-core/package.json"),
-      "utf8",
-    ),
+    readFileSync(join(installed, "package.json"), "utf8"),
   );
   assert.ok(manifest && typeof manifest === "object");
   assert.ok(
@@ -131,7 +129,7 @@ await test("built artifacts work in isolated consumer and npm global installatio
 
   await testGlobalPluginLoading(t, {
     consumer,
-    artifact: join(consumer, artifact.filename),
+    artifact,
     npm,
     runNode,
   });
