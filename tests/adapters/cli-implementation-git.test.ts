@@ -58,7 +58,6 @@ for (const scenario of [
     const fixture = await implementationRun(t, {
       ...validConfig,
       checkout,
-      agentRetry: 0,
     });
     fixture.dependencies.codeHost.resolveTargetBranch = async () => "main";
     let observations = 0;
@@ -131,6 +130,8 @@ for (const scenario of [
         findings_file: null,
       });
     };
+    // Leave invalid real Git evidence for the native conversation to correct.
+    fixture.state.onCorrection = () => Promise.resolve();
     fixture.state.onSleep = async (ms) => {
       if (ms === 250) fixture.controller.abort();
     };

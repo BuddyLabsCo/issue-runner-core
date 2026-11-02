@@ -18,7 +18,7 @@ import {
 
 for (const stage of ["review", "fix"] as const) {
   await test(`an invalid retained ${stage} result corrects in the original role without gaining a Review round`, async (t) => {
-    const fixture = await reviewRun(t, 1, { agentRetry: 1 });
+    const fixture = await reviewRun(t, 1);
     fixture.reviewState.onReview =
       stage === "review"
         ? async () => {
@@ -47,7 +47,6 @@ for (const stage of ["review", "fix"] as const) {
       assert.equal(current.base, round.base);
       assert.equal(current.head, round.head);
       const corrected = stage === "review" ? current : current.fix!;
-      assert.equal(corrected.corrections, 1);
       assert.deepEqual(corrected.superseded, [active.invocation!.path]);
       if (stage === "review") await findings(current);
       else {

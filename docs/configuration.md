@@ -241,11 +241,11 @@ runtime values, and assembles each submission. These assets are separate from
 the three user-editable Project prompts; `init` still copies those from
 `templates/prompts/`. There are no additional Project prompt settings.
 
-Invalid Probe output uses `operationRetry` and `operationRetryDelay`, separately
-from execution-result corrections. Each Probe retry saves its consumed count and
-a fresh output path before submission; missing output never spends this
-budget or causes reminders. After exhaustion, the active Probe path remains
-available for manual publication in the native conversation.
+Invalid Probe output receives immediate validation feedback in the same native
+conversation, with a fresh assigned path saved before submission. Probe feedback
+uses no retry count or backoff. Missing output causes no reminders; superseded
+files cannot establish native identity. `operationRetry` and `operationRetryDelay`
+apply only to non-Agent operation failures.
 Probe IDs are not generated. Responses require nonempty native session identity;
 Run/execution IDs and latest-session aliases are rejected. Only the active path
 can establish identity; superseded output cannot satisfy a later attempt.
@@ -316,12 +316,12 @@ workflow:
 
 This allows implementation -> Review findings -> verified fix -> publication
 eligibility, with no second Review. Validation corrections stay in their current
-stage tab, use fresh handoff paths and the ordinary correction budget, and do not
+stage tab, use fresh handoff paths without backoff, and do not
 spend another Review round or startup wait. Setting `workflow.review: false`
 skips Review and fixes. Initial `no_change` also skips Review.
 
 Snapshots preserve both role references, each round's base/HEAD/findings,
-invocations, pending prompts, budgets, accepted Review/fix results, and phase at
+invocations, pending prompts, superseded paths, accepted Review/fix results, and phase at
 transitions. Matching in-flight Review/fix recovery processes existing results
 before opening a tab; absent attempted output resumes the saved role and sends
 only `continue`. Original uncommitted fix work is retained. Invalid or missing
@@ -356,9 +356,9 @@ Failed or cancelled required checks start CI repair using `agents.ciRepair`. Eac
 
 Runner verifies the repair Worktree, local branch, base, cleanliness, actual changes, and exact commit claims before pushing the verified HEAD to the original remote branch. It never force-pushes. Lost push responses reconcile against persisted pending-push evidence; unexpected remote advancement or PR identity changes require ordinary operation recovery. Each repair push restarts the 30-second discovery delay and required-check timeout window. CI repair does not enter ordinary Review.
 
-The CI budget allows two consumed attempts per generation, independently of operation retries, handoff corrections, and conflict repair. A valid `no_change` or failed Git verification consumes an attempt without a push. Invalid handoff schemas stay in the same stage under the ordinary correction/manual-output policy; `blocked` is invalid. After two consumed attempts, Runner pauses. Enter authorizes another check observation after 30 seconds. Passing checks need no further repair; continued failure starts a new two-attempt generation. `q` or EOF cancels, and Issue-scoped pauses also support skip.
+The CI budget allows two consumed attempts per generation, independently of operation retries, handoff corrections, and conflict repair. A valid `no_change` or failed Git verification consumes an attempt without a push. Invalid handoff schemas stay in the same stage under the publication-driven correction policy; `blocked` is invalid. After two consumed attempts, Runner pauses. Enter authorizes another check observation after 30 seconds. Passing checks need no further repair; continued failure starts a new two-attempt generation. `q` or EOF cancels, and Issue-scoped pauses also support skip.
 
-Snapshots retain each attempt's identity, generation, native session, repair Worktree/branch/base, Probe/handoff assignments, correction counts, result, verification failure, consumed count, and pending or confirmed push. Recovery verifies retained evidence without restarting implementation or Review. Existing repair output is processed before opening a tab; missing attempted output resumes the exact repair session and sends only `continue`. Exhausted budgets remain exhausted across restart. Unmerged and failed resources, including repair Worktrees, remain available for inspection. Eligibility changes stop the affected Issue, and cancellation prevents new repair, publication, or check operations.
+Snapshots retain each attempt's identity, generation, native session, repair Worktree/branch/base, Probe/handoff assignments, superseded paths, result, verification failure, consumed count, and pending or confirmed push. Recovery verifies retained evidence without restarting implementation or Review. Existing repair output is processed before opening a tab; missing attempted output resumes the exact repair session and sends only `continue`. Exhausted budgets remain exhausted across restart. Unmerged and failed resources, including repair Worktrees, remain available for inspection. Eligibility changes stop the affected Issue, and cancellation prevents new repair, publication, or check operations.
 
 With a numbered `--issue` or `--document`, the CLI accepts `--no-auto-merge`:
 
@@ -458,8 +458,7 @@ and its execution in `recovery/<input-hash>-document-<ticket>.json`. Matching in
 Runs reuse the original ticket, native conversation, paths, PR metadata, and consumed
 budgets. Completed document stages skip Agent work. Existing output is verified before
 opening a tab; missing output resumes the saved documentation conversation, waits
-10 seconds, and sends only `continue`. Exhausted corrections remain exhausted;
-superseded handoffs cannot replace the current assignment. Close leftover Agent
+10 seconds, and sends only `continue`. Superseded handoffs cannot replace the current assignment. Close leftover Agent
 tabs and stop their execution before recovery, retaining native history and Worktrees.
 Runner does not adopt live tabs. If the original context cannot be recovered, Runner
 prints `unable to recover` and offers an entire documentation-occurrence restart or exit.
@@ -489,9 +488,8 @@ Input already queued in a terminal can still execute; cancellation does not undo
 that input or establish that Agent processes have stopped.
 
 Runner retains unfinished Worktrees, Probe/handoff files, and Recovery Snapshots.
-Snapshots preserve accepted stage completion and consumed retry counts, including
-corrections allocated before a cancelled delay. Cancellation never automatically
-restarts an Issue or grants another correction budget. To continue, stop leftover
+Snapshots preserve accepted stage completion, assigned paths, pending prompts, and
+consumed non-Agent operation retries. Cancellation never automatically restarts an Issue. To continue, stop leftover
 Agent sessions and explicitly rerun with the same arguments and `config.yaml`.
 Recovery uses the saved progress where the original context remains available.
 
@@ -503,54 +501,45 @@ At Run exit, `Retained` reports identify executions, recorded branches, and reso
 
 Changed arguments or configuration ignore old progress without authorizing its deletion or adopting an unrelated Reservation. Runner adds no retention expiry, periodic pruning, or native-history deletion. Per-call temporary Git configuration is removed when each call unwinds, including failure and cancellation; abrupt process termination can prevent that cleanup. Later stages recreate their temporary configuration.
 
-### Rejected handoffs and manual correction
+### Rejected handoffs and correction
 
 Invalid JSON, wrong fields or outcomes, invalid execution findings, and false
 Git claims leave the implementation incomplete. Core sends the validation error
 and a fresh absolute handoff path to the current tab and native conversation,
 using the configured Agent chord without another startup wait. Each correction's
-unique invocation/path, superseded path, and consumed count are saved before its
-delay and prompt. Superseded files cannot satisfy the active assignment.
+unique invocation/path and superseded path are saved before its prompt. Superseded files cannot satisfy the active assignment.
 
 Core reads only the active assigned final path immediately and every 250 ms
 while the stage is incomplete. It does not depend on filesystem notifications.
 Temporary siblings and other invocation paths cannot satisfy the assignment.
 Unique suffixes keep assignment paths distinct even when timestamps coincide.
-An incomplete final file can be overwritten in place or replaced by atomic
-rename. Change detection includes the contents read, so matching file metadata
-cannot hide changed output; republishing identical output after correcting Git
-state also permits another verification.
+Core validates the contents read from the active path, including incomplete JSON.
+An invalid final is superseded by a fresh assignment; publish corrections at that path.
+Timestamps and file size do not determine validity. Identical output at the new
+assigned path can pass after correcting independent Git evidence.
 
 The exact read that passes schema and independent verification supplies the
 saved result, even if the file is replaced during verification. Once accepted,
 Core stops observing that path. Later overwrites cause no further stage
 transition or validation, and Core makes no immutable accepted-file copy.
 
-`agentRetry` counts additional automatic corrections after the initial result.
-For example, `agentRetry: 3` with `agentRetryDelay: [2, 5]` allows three
-corrections, after 2, 5, and 5 seconds. This budget is independent of
-`operationRetry`, Probe retries, and CI/conflict repair budgets. Cancellation
-during a delay prevents submission and retains the consumed count. Missing
-output, including a temporary sibling without its final file, spends no
-correction budget and causes no automatic prompt.
+Each newly published invalid handoff receives one validation response without
+an Agent retry budget, backoff, or exhaustion. Missing output, including a
+temporary sibling without its final file, causes no automatic prompt. Unchanged
+invalid files do not generate repeated feedback. A newly published correction
+undergoes the same schema and independent Git verification.
 
-Matching reruns restore a pending correction's deadline before sending it.
-Time while Runner is stopped counts toward the delay; only the remaining time
-is waited. The allocated correction keeps its invocation, path, and consumed
-count. An existing final file is validated before sending any follow-up.
+Matching reruns preserve active paths, native identity, accepted results, and
+known unsent prompts. Existing final output is validated before any follow-up.
+Missing output from an attempted submission resumes the saved conversation with
+only `continue`; uncertain delivery never causes blind prompt replay.
 
-After exhaustion (immediately when `agentRetry: 0`), Core displays diagnostics,
-the native session identity, and the current path. It keeps the stage and tab
-available and stops automatic correction prompts. Fix the reported problem in
-that native conversation, including the actual Git state when needed, then
-explicitly invoke `issue-runner-handoff` with the displayed path to replace its
-file. Further invalid writes leave the budget exhausted; a later valid write is
-independently verified and can complete the stage. Restarting with matching
-inputs retains the consumed budget, exhausted status, and active path. Runner
-displays the manual-correction instructions again before any continuation.
-A missing final file resumes the saved conversation with only `continue`;
-this spends no correction and keeps the manual path. Superseded results remain
-ineligible even when valid.
+Legacy `agentRetry` and `agentRetryDelay` config keys are accepted and ignored;
+new configurations omit them. Matching recovery discards obsolete `corrections`,
+`probeRetries`, `correctionNotBefore`, and `correctionExhausted` fields across
+implementation, documentation, Review/fix, and repair stages. Other saved progress
+and ownership checks remain intact. Keep configuration bytes unchanged to recover
+an existing Run: removing legacy keys changes the input hash and starts a separate Run.
 
 Run startup displays `sessionid=n/a` for workflow work without an Agent conversation.
 Each Agent stage identifies its Issue and purpose, with `sessionid=pending` before its Probe.
@@ -577,7 +566,7 @@ They record workflow operations and diagnostics, without Agent output or convers
 Cancellation stops audit retries; the final outcome event may be absent when the cancellation signal is already set.
 Implementation snapshots under
 `recovery/` record execution/Run identities, role references, Probe metadata,
-invocation/path, a known unsent assignment or correction prompt, correction count,
+invocation/path, superseded paths, a known unsent assignment or correction prompt,
 result facts and stage completion. Execution, Batch, and maintenance snapshots
 store `run_arguments` and `input_hash` in their existing atomic checkpoints.
 The SHA-256 hash combines the exact Run argument array with the raw `config.yaml`
@@ -599,13 +588,11 @@ can resume its exact saved native conversation in the original Worktree; no
 replacement assignment is sent. An existing expected result is verified before
 opening a terminal; valid retained output can complete without a native tab.
 Invalid retained output opens the original conversation only for an automatic
-correction that needs submission; exhausted output can be corrected manually at
-its current path. When eligibility revalidation withholds an assignment or
+correction that needs submission. When eligibility revalidation withholds an assignment or
 correction, its exact prompt remains pending in the checkpoint. Once eligible,
 Core resumes the original native conversation and submits that prompt with the
 same invocation/path and fixed PR metadata. A withheld correction keeps its
-already consumed budget and superseded paths; recovery does not spend another
-retry. Cancellation during the dispatch gate also retains known unsent work.
+active invocation and superseded paths. Cancellation during the dispatch gate also retains known unsent work.
 
 Core processes a valid expected result before sending a pending prompt. Once a
 dispatch attempt begins, the checkpoint no longer classifies the prompt as known
@@ -615,8 +602,7 @@ wait. Runner opens a fresh Runner Tab in the original Worktree, recreates its
 per-call Git configuration, submits the exact saved role's resume command with
 Enter, waits 10 seconds, then submits the literal `continue` with that Agent's
 configured `submitKey`. It sends no task, path reminder, context message, or new
-Probe. The invocation, active output path, fixed PR metadata, and consumed
-correction count remain unchanged, including an exhausted correction budget.
+Probe. The invocation, active output path, and fixed PR metadata remain unchanged.
 Staged, unstaged, and untracked work remain in the original Worktree.
 Checkpoints without pending-prompt evidence retain this continuation-only
 behavior. Uncertain transport and abrupt process loss around dispatch retain
@@ -630,7 +616,7 @@ purpose-specific validation and independent Git checks during recovery:
 | Saved stage and observed output | Recovery behavior |
 | --- | --- |
 | Unfinished stage, valid expected final | Verify and persist completion before advancing; no Agent tab is needed for that stage. |
-| Unfinished stage, invalid expected final | Keep the stage incomplete and use its remaining correction budget, or wait for manual correction when exhausted. |
+| Unfinished stage, invalid expected final | Keep the stage incomplete and send validation feedback in the saved native conversation at a fresh path. |
 | Unfinished stage, only a superseded final or active `.tmp` | Treat the expected final as absent; retain the active invocation and path. |
 | Crash after validation but before completion persistence | Re-read the expected final and repeat normal verification. |
 | Crash after completion persistence | Skip the completed Agent stage and continue the next recorded workflow step, rechecking required Git evidence. |
@@ -646,7 +632,7 @@ Review recovery keeps the original implementation and reviewer conversations
 separate. A missing Review handoff resumes the reviewer; a missing fix handoff
 resumes the implementation conversation. Both use the original Worktree, fixed
 PR metadata, and active invocation. Recovery retains the round, Review base/HEAD,
-assigned findings, accumulated commits, and consumed correction budget.
+assigned findings, accumulated commits, and superseded paths.
 
 Completed Reviews and fixes use their saved results without repeating Agent work.
 A findings Review still requires a committed fix, including the final allowed
@@ -719,8 +705,8 @@ Unknown or obsolete fields are rejected at every Runner-owned object.
 - All timeouts are positive finite minutes. `agentIdleMinutes` defaults to 10;
   `agentMinutes`, `requiredChecksMinutes`, and `mergeQueueMinutes` are required.
   They do not authorize automated missing-output reminders or Agent-session Pause.
-- `operationRetry` and `agentRetry` are nonnegative safe integers counting
-  additional attempts. Both delay schedules are nonempty positive finite
+- `operationRetry` is a nonnegative safe integer counting additional non-Agent
+  attempts. `operationRetryDelay` is a nonempty schedule of positive finite
   seconds; the last delay repeats. Exhausted operation reads retain non-Agent
   Operator Pause: Enter retries, q/EOF cancels; Issue-scoped failures also allow
   `s` to skip that Issue. Audit failures retry only the
@@ -792,7 +778,7 @@ node --test tests/run/full-contract.test.ts tests/run/full-contract-failure.test
 
 The scenarios use `maxBatchSize: 3`, enabled Review, and `docMaintainTriggerLabel: Docs`. The first and fourth Issues carry `Docs`; the fifth depends on all four earlier Issues. This produces Batches of three, one, and one, with committed documentation maintenance between Batches. Scripted external dependencies and a private fake terminal drive `executeCli` through the real conversation coordinator and correlated temporary files.
 
-The success case holds the first Batch's CI barrier while implementations finish out of order. It checks original-role Review/fix resumption, ordered integration and closure, maintenance barriers, snapshots, owned cleanup, reports, and exit status. Failure cases cover Reservation retries, manual correction after automatic exhaustion, and cancellation followed by matching-input recovery with only `continue` for the missing handoff. Independent CI/conflict repair budgets and incompatible failure combinations remain in focused tests. These checks do not establish live Agent acceptance, native history restoration, or Herdr transport behavior.
+The success case holds the first Batch's CI barrier while implementations finish out of order. It checks original-role Review/fix resumption, ordered integration and closure, maintenance barriers, snapshots, owned cleanup, reports, and exit status. Failure cases cover Reservation retries, publication-driven corrections beyond the former Agent budget, and cancellation followed by matching-input recovery with only `continue` for the missing handoff. Independent CI/conflict repair budgets and incompatible failure combinations remain in focused tests. These checks do not establish live Agent acceptance, native history restoration, or Herdr transport behavior.
 
 Private scripted tests enter through `executeCli` with real temporary config,
 prompts, and audit files. An empty Run never needs a conversation coordinator;
@@ -804,7 +790,7 @@ Directory. Complete implementation Runs exercise the real conversation/handoff
 coordinator over a private fake terminal, real Probe/result/snapshot files, and
 scripted boundary dependencies. Review Runs cover independent role identity,
 Standards/Spec context, exact original-role resume, uncapped and final-round fixes,
-strict findings validation, correction budgets, and retained Review/fix progress.
+strict findings validation, publication-driven feedback, and retained Review/fix progress.
 Publication Runs cover fixed metadata, exact PR identity, lost push/create responses,
 remote advancement, 30-second discovery, pending/passing/failed checks, timeouts,
 retention, cancellation, and the GitHub adapter through scripted command I/O.

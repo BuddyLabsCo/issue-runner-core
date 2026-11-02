@@ -9,7 +9,6 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import { validConfig } from "../support/cli-project.ts";
 import {
   committed,
   implementationRun,
@@ -28,7 +27,6 @@ await test("a final published before observation wins over temporary and unrelat
   const saved = await fixture.snapshot();
   assert.equal(saved.phase, "implementation_completed");
   assert.equal(saved.result?.summary, "Assigned final.");
-  assert.equal(saved.corrections, 0);
   assert.deepEqual(
     fixture.state.sleeps.filter((ms) => ms !== 30_000),
     [10_000],
@@ -56,7 +54,6 @@ await test("polling finds an atomic publication without any filesystem notificat
     const saved = await fixture.snapshot();
     assert.equal(saved.phase, "implementing");
     assert.equal(saved.result, undefined);
-    assert.equal(saved.corrections, 0);
     assert.equal(fixture.state.closedTabs.length, 0);
     if (polls === 2)
       await rename(
@@ -74,8 +71,8 @@ await test("polling finds an atomic publication without any filesystem notificat
   assert.equal(fixture.state.submissions.length, 3);
 });
 
-await test("partial and same-size manual replacements remain active with colliding modification times", async (t) => {
-  const fixture = await implementationRun(t, { ...validConfig, agentRetry: 0 });
+await test("partial and same-size replacements with colliding timestamps receive feedback once per publication", async (t) => {
+  const fixture = await implementationRun(t);
   const timestamp = new Date("2026-10-30T00:00:00.000Z");
   const invalid = { ...committed(), outcome: "no_change" };
   assert.equal(
@@ -87,16 +84,10 @@ await test("partial and same-size manual replacements remain active with collidi
     await writeFile(file, "{");
     await utimes(file, timestamp, timestamp);
   };
-  let polls = 0;
-  fixture.state.onSleep = async (ms) => {
-    if (ms !== 250) return;
-    assert.ok(++polls <= 3);
-    assert.equal((await fixture.snapshot()).phase, "implementing");
-    assert.equal(fixture.state.closedTabs.length, 0);
-    const file = fixture.state.expectedPath;
-    if (polls === 1) await writeFile(file, JSON.stringify(invalid));
-    else if (polls === 2) await publish(file, invalid);
-    else await publish(file, committed());
+  let corrections = 0;
+  fixture.state.onCorrection = async (file) => {
+    assert.ok(++corrections <= 3);
+    await publish(file, corrections < 3 ? invalid : committed());
     await utimes(file, timestamp, timestamp);
     assert.equal((await stat(file)).mtimeMs, timestamp.getTime());
   };
@@ -104,26 +95,22 @@ await test("partial and same-size manual replacements remain active with collidi
   const saved = await fixture.snapshot();
   assert.equal(saved.phase, "implementation_completed");
   assert.equal(saved.invocation?.path, fixture.state.expectedPath);
-  assert.equal(saved.corrections, 0);
-  assert.deepEqual(saved.superseded, []);
-  assert.equal(polls, 3);
-  assert.equal(fixture.state.submissions.length, 3);
+  assert.equal(saved.superseded.length, 3);
+  assert.equal(corrections, 3);
+  assert.equal(fixture.state.submissions.length, 6);
 });
 
-await test("an identical handoff can be resubmitted after correcting independent Git evidence", async (t) => {
-  const fixture = await implementationRun(t, { ...validConfig, agentRetry: 0 });
+await test("identical output is accepted after feedback corrects independent Git evidence", async (t) => {
+  const fixture = await implementationRun(t);
   fixture.state.onTask = async (file) => {
     fixture.state.evidence.commits = committed().commits;
     fixture.state.evidence.clean = false;
     await publish(file, committed());
   };
-  let polls = 0;
-  fixture.state.onSleep = async (ms) => {
-    if (ms !== 250) return;
-    assert.equal(++polls, 1);
+  fixture.state.onCorrection = async (file) => {
     assert.equal((await fixture.snapshot()).result, undefined);
     fixture.state.evidence.clean = true;
-    await publish(fixture.state.expectedPath, committed());
+    await publish(file, committed());
   };
   assert.equal((await fixture.run()).summary.outcome, "incomplete");
   assert.equal((await fixture.snapshot()).phase, "implementation_completed");
@@ -131,7 +118,40 @@ await test("an identical handoff can be resubmitted after correcting independent
     fixture.dependencies.messages.join("\n"),
     /Worktree must be clean/,
   );
-  assert.equal(fixture.state.submissions.length, 3);
+  assert.equal(fixture.state.submissions.length, 4);
+});
+
+await test("missing corrections and unchanged invalid evidence produce no repeated feedback", async (t) => {
+  const fixture = await implementationRun(t);
+  let invalidPath = "";
+  fixture.state.onTask = async (file) => {
+    invalidPath = file;
+    fixture.state.evidence.commits = committed().commits;
+    await publish(file, {});
+  };
+  fixture.state.onCorrection = async () => {
+    /* Wait for the assigned correction. */
+  };
+  let polls = 0;
+  fixture.state.onSleep = async (ms) => {
+    if (ms !== 250) return;
+    assert.ok(++polls <= 4);
+    assert.equal(fixture.state.submissions.length, 4);
+    const saved = await fixture.snapshot();
+    assert.deepEqual(saved.superseded, [invalidPath]);
+    assert.equal(saved.result, undefined);
+    if (polls === 2) await publish(invalidPath, {});
+    if (polls === 4) await publish(saved.invocation!.path, committed());
+  };
+  assert.equal((await fixture.run()).summary.outcome, "incomplete");
+  assert.equal(polls, 4);
+  assert.equal(fixture.state.submissions.length, 4);
+  assert.equal(
+    fixture.dependencies.messages.filter((message) =>
+      message.startsWith("Invalid implementation handoff:"),
+    ).length,
+    1,
+  );
 });
 
 await test("a superseded final cannot satisfy a correction while its active result is temporary", async (t) => {
@@ -160,7 +180,6 @@ await test("a superseded final cannot satisfy a correction while its active resu
     const saved = await fixture.snapshot();
     assert.equal(saved.phase, "implementing");
     assert.equal(saved.result, undefined);
-    assert.equal(saved.corrections, 1);
     assert.deepEqual(saved.superseded, [superseded]);
     await rename(
       `${fixture.state.expectedPath}.tmp`,
@@ -258,7 +277,6 @@ await test("concurrent executions with the same timestamp cannot consume each ot
       const saved = await fixture.snapshot();
       assert.equal(saved.phase, "implementing");
       assert.equal(saved.result, undefined);
-      assert.equal(saved.corrections, 0);
       await publish(fixture.state.expectedPath, {
         ...committed(),
         summary: `Execution ${index}.`,

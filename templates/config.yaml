@@ -10,12 +10,10 @@ issueList: []
 maxBatchSize: 2
 # Omit targetBranch to use the repository's default branch.
 targetBranch: main
-# Retry counts are additional attempts; positive delays are in seconds.
+# Non-Agent operation retries are additional attempts; delays are in seconds.
 # The last delay repeats when the budget exceeds the schedule.
 operationRetry: 4
-agentRetry: 2
 operationRetryDelay: [10, 20, 40, 80]
-agentRetryDelay: [300, 300]
 ticketClosure: runner
 maintenanceTicket:
   title: Maintain project documentation

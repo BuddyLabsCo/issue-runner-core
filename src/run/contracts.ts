@@ -166,7 +166,5 @@ export interface OperatorIO {
 
 export interface RetryPolicy {
   operationRetry: number;
-  agentRetry: number;
   operationRetryDelay: number[];
-  agentRetryDelay: number[];
 }

@@ -76,19 +76,17 @@ await test("an execution checkpoint from another input scope cannot resume or ov
 });
 
 for (const change of ["arguments", "configuration"] as const) {
-  await test(`changed ${change} ignore old counts and preserve ambiguous retained work`, async (t) => {
-    const fixture = await implementationRun(t, {
-      ...validConfig,
-      agentRetry: 1,
-    });
+  await test(`changed ${change} ignore old progress and preserve ambiguous retained work`, async (t) => {
+    const fixture = await implementationRun(t);
     fixture.state.onTask = (file) => publish(file, {});
-    fixture.state.onCorrection = (file) => publish(file, {});
+    fixture.state.onCorrection = async () => {
+      /* Wait for the assigned correction. */
+    };
     fixture.state.onSleep = async (ms) => {
       if (ms === 250) fixture.controller.abort();
     };
     assert.equal((await fixture.run()).summary.outcome, "cancelled");
     const saved = await fixture.snapshot();
-    assert.equal(saved.corrections, 1);
     const recovery = path.join(fixture.directory, "recovery");
     const oldFile = path.join(recovery, (await readdir(recovery))[0]!);
     const oldText = await readFile(oldFile, "utf8");
@@ -134,13 +132,12 @@ for (const change of ["arguments", "configuration"] as const) {
     assert.notEqual(current.worktree, saved.worktree);
     assert.notEqual(current.input_hash, saved.input_hash);
     assert.deepEqual(current.run_arguments, command);
-    assert.equal(current.corrections, 0);
     assert.deepEqual(current.roles, {});
     assert.equal(submitted[0], validConfig.agents.implement.start);
     assert.equal(await readFile(oldFile, "utf8"), oldText);
     await access(saved.worktree);
     await access(saved.probe!.path);
-    await access(saved.invocation!.path);
+    await access(saved.superseded[0]!);
     assert.deepEqual(fixture.state.cleanup, []);
   });
 }

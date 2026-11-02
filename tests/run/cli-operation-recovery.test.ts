@@ -10,7 +10,13 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
-import { implementationRun } from "../support/implementation-run.ts";
+import {
+  committed,
+  implementationCommand,
+  implementationRun,
+  publish,
+} from "../support/implementation-run.ts";
+import { executeCli } from "../../src/cli.ts";
 import { deferred } from "../support/implementation-run.ts";
 import { child, parentRun } from "../support/parent-run.ts";
 import { validConfig } from "../support/cli-project.ts";
@@ -107,6 +113,80 @@ await test("a rejected substantive prompt is audited without replay, redirection
     /submitText response lost after delivery/,
   );
 });
+
+for (const feedback of ["Probe", "handoff"] as const) {
+  await test(`uncertain ${feedback} feedback delivery is never replayed`, async (t) => {
+    const fixture = await implementationRun(t);
+    if (feedback === "Probe")
+      fixture.state.onProbe = async (assignment) => {
+        if (fixture.state.probeCount === 1)
+          await publish(String(assignment.path), {});
+      };
+    else {
+      fixture.state.onTask = async (file) => {
+        fixture.state.evidence.commits = committed().commits;
+        await publish(file, {});
+      };
+      fixture.state.onCorrection = async () => {
+        /* No result from the uncertain submission yet. */
+      };
+    }
+    const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+      fixture.dependencies.terminalPlugin,
+    );
+    fixture.dependencies.terminalPlugin.submitText = async (
+      tab,
+      text,
+      chord,
+    ) => {
+      await submit(tab, text, chord);
+      if (
+        text.startsWith("Correct the") ||
+        (text.startsWith("Session Probe\n") && fixture.state.probeCount === 2)
+      )
+        throw new Error("feedback response lost after delivery");
+    };
+    const result = await fixture.run();
+    assert.equal(result.summary.outcome, "failed", JSON.stringify(result));
+    assert.deepEqual(fixture.dependencies.pauses, []);
+    assert.equal(
+      fixture.state.submissions.length,
+      feedback === "Probe" ? 3 : 4,
+    );
+    const saved = await fixture.snapshot();
+    assert.equal(saved.pendingPrompt, undefined);
+    assert.equal(saved.superseded.length, 1);
+    assert.equal(saved.result, undefined);
+    assert.match(
+      await readFile(result.logPath!, "utf8"),
+      /feedback response lost after delivery/,
+    );
+    if (feedback === "handoff") {
+      const before = fixture.state.submissions.length;
+      fixture.dependencies.terminalPlugin.submitText = async (
+        tab,
+        text,
+        chord,
+      ) => {
+        assert.ok(!text.startsWith("Correct the"));
+        await submit(tab, text, chord);
+        if (text === "continue")
+          await publish(saved.invocation!.path, committed());
+      };
+      assert.match(
+        (
+          await executeCli(implementationCommand, fixture.dependencies)
+        ).summary.reasons.join(" "),
+        /CI-ready/u,
+      );
+      assert.deepEqual(
+        fixture.state.submissions.slice(before).map(({ text }) => text),
+        ['any-cli --resume "native/$&/$`/$\'/session"', "continue"],
+      );
+      assert.deepEqual((await fixture.snapshot()).invocation, saved.invocation);
+    }
+  });
+}
 
 for (const operation of ["createTab", "submitText", "closeTab"] as const) {
   await test(`cancelling unresolved ${operation} stops the Run without waiting for the I/O bound`, async (t) => {

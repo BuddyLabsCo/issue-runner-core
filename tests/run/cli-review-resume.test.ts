@@ -26,6 +26,23 @@ await test("an interrupted later Review resumes the original reviewer with its p
   };
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   const saved = await fixture.snapshot();
+  for (const stage of [
+    saved,
+    ...saved.reviews!.flatMap((round) => [
+      round,
+      ...(round.fix ? [round.fix] : []),
+    ]),
+  ])
+    Object.assign(stage, {
+      corrections: "obsolete",
+      probeRetries: -1,
+      correctionNotBefore: "ignored",
+      correctionExhausted: true,
+    });
+  await writeFile(
+    path.join(fixture.directory, "recovery", `${saved.input_hash}-50.json`),
+    JSON.stringify(saved),
+  );
   assert.equal(saved.reviews![1]!.base, "b".repeat(40));
   assert.equal(saved.reviews![1]!.head, fixCommit.sha);
   await access(saved.reviews![0]!.findings);
@@ -46,6 +63,21 @@ await test("an interrupted later Review resumes the original reviewer with its p
   assert.equal(fixture.reviewState.reviews.length, 2);
   assert.equal(fixture.reviewState.fixes.length, 1);
   assert.equal(fixture.state.probeCount, 2);
+  const current = await fixture.snapshot();
+  for (const stage of [
+    current,
+    ...current.reviews!.flatMap((round) => [
+      round,
+      ...(round.fix ? [round.fix] : []),
+    ]),
+  ])
+    for (const key of [
+      "corrections",
+      "probeRetries",
+      "correctionNotBefore",
+      "correctionExhausted",
+    ])
+      assert.equal(Object.hasOwn(stage, key), false);
 });
 
 for (const stage of ["review", "fix"] as const) {
@@ -134,7 +166,7 @@ for (const missing of [
   "reviewer identity",
   "findings ownership",
   "Review base",
-  "fix budget",
+  "fix path",
 ] as const) {
   await test(`an invalid retained ${missing} is rejected before native dispatch`, async (t) => {
     const fixture = await reviewRun(t, 1);
@@ -154,7 +186,8 @@ for (const missing of [
         "unowned-report.md",
       );
     if (missing === "Review base") saved.reviews![0]!.base = "f".repeat(40);
-    if (missing === "fix budget") saved.reviews![0]!.fix!.corrections = -1;
+    if (missing === "fix path")
+      saved.reviews![0]!.fix!.invocation!.path = "/unowned.json";
     const recovery = path.join(fixture.directory, "recovery");
     const [file] = await readdir(recovery);
     await writeFile(path.join(recovery, file!), JSON.stringify(saved));
@@ -175,46 +208,6 @@ for (const missing of [
     assert.equal(fixture.state.submissions.length, before);
   });
 }
-
-await test("Review correction exhaustion survives restart and accepts manual overwrite without opening a tab", async (t) => {
-  const fixture = await reviewRun(t, 1, { agentRetry: 1 });
-  fixture.reviewState.onReview = async (round) => {
-    await publish(round.invocation!.path, {
-      ...passed(),
-      outcome: "no_change",
-    });
-  };
-  fixture.reviewState.onCorrection = async (round) => {
-    await publish(round.invocation!.path, { ...passed(), checks: [] });
-  };
-  fixture.state.onSleep = async (ms) => {
-    if (ms === 250) fixture.controller.abort();
-  };
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  const saved = await fixture.snapshot();
-  const round = saved.reviews![0]!;
-  assert.equal(round.corrections, 1);
-  assert.equal(round.superseded.length, 1);
-  const before = fixture.state.submissions.length;
-  fixture.state.onSleep = async (ms) => {
-    if (ms === 30_000) return;
-    assert.equal(ms, 250);
-    await publish(round.invocation!.path, passed());
-  };
-  const result = await executeCli(implementationCommand, {
-    ...fixture.dependencies,
-    signal: new AbortController().signal,
-    terminalPlugin: {
-      ...fixture.dependencies.terminalPlugin,
-      async createTab() {
-        assert.fail("exhausted corrections cannot reopen a conversation");
-      },
-    },
-  });
-  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
-  assert.equal(fixture.state.submissions.length, before);
-  assert.equal((await fixture.snapshot()).reviews![0]!.corrections, 1);
-});
 
 await test("a withheld Review assignment retains its invocation and resumes only its reviewer when eligibility returns", async (t) => {
   const fixture = await reviewRun(t, 1);

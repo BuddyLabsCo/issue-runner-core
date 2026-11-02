@@ -24,7 +24,6 @@ await test("explicit whole-Issue restart retains failed resources and resets onl
   fixture.state.onCorrection = async () => fixture.controller.abort();
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   const saved = await fixture.snapshot();
-  assert.ok(saved.corrections > 0);
   const recovery = path.join(fixture.directory, "recovery");
   const file = path.join(recovery, `${saved.input_hash}-50.json`);
   // A missing required native role is an established recovery failure.
@@ -32,10 +31,7 @@ await test("explicit whole-Issue restart retains failed resources and resets onl
   const failed = {
     ...saved,
     roles: {},
-    corrections: validConfig.agentRetry,
-    correctionExhausted: true,
     pendingPrompt: undefined,
-    correctionNotBefore: undefined,
     operations: {
       ...saved.operations,
       exhausted: {
@@ -68,8 +64,6 @@ await test("explicit whole-Issue restart retains failed resources and resets onl
     assert.equal(fresh.publication, undefined);
     assert.equal(fresh.reviews, undefined);
     assert.equal(fresh.operations?.exhausted, undefined);
-    assert.equal(fresh.correctionNotBefore, undefined);
-    assert.equal(fresh.correctionExhausted, undefined);
     fixture.state.evidence.commits = committed().commits;
     await publish(output, committed());
   };
@@ -93,8 +87,6 @@ await test("explicit whole-Issue restart retains failed resources and resets onl
   ] as const)
     assert.notDeepEqual(current[key], saved[key]);
   assert.equal(current.phase, "implementation_completed");
-  assert.equal(current.corrections, 0);
-  assert.equal(current.probeRetries, 0);
   assert.deepEqual(current.superseded, []);
   assert.equal(current.reviews, undefined);
   assert.equal(current.roles.implement?.sessionid, "new-native-context");
@@ -224,8 +216,6 @@ for (const missing of [
     assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
     const old = await implementationProgress(fixture.directory, 51);
     const other = await implementationProgress(fixture.directory, 52);
-    other.corrections = 2;
-    other.probeRetries = 1;
     const recovery = path.join(fixture.directory, "recovery");
     if (missing === "implementation identity") delete old.roles.implement;
     if (missing === "reviewer identity") delete old.roles.review;
@@ -263,7 +253,6 @@ for (const missing of [
     );
     const current = await implementationProgress(fixture.directory, 51);
     assert.notEqual(current.execution_id, old.execution_id);
-    assert.equal(current.corrections, 0);
     assert.deepEqual([...fixture.dispatched].sort(), [51, 51, 52]);
     // Subsequent matching recovery restores both executions without a new restart.
     assert.equal((await run()).summary.outcome, "incomplete");

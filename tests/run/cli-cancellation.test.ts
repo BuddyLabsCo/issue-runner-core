@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { access, readFile } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import { validConfig } from "../support/cli-project.ts";
 import {
-  committed,
   deferred,
   implementationRun,
   implementationProgress,
@@ -13,10 +12,8 @@ import { child, parentRun } from "../support/parent-run.ts";
 
 for (const boundary of [
   "startup",
-  "Probe retry",
   "Probe polling",
   "handoff polling",
-  "correction",
   "operation backoff",
 ] as const) {
   await test(`cancellation interrupts unresolved ${boundary} without later input or owned resources`, async (t) => {
@@ -31,15 +28,10 @@ for (const boundary of [
       waitSignal = signal;
       return sleep(ms);
     };
-    if (boundary === "Probe retry")
-      fixture.state.onProbe = (assignment) =>
-        publish(String(assignment.path), {});
     if (boundary === "Probe polling")
       fixture.state.onProbe = () => Promise.resolve();
     if (boundary === "handoff polling")
       fixture.state.onTask = () => Promise.resolve();
-    if (boundary === "correction")
-      fixture.state.onTask = (file) => publish(file, {});
     let operationAttempts = 0;
     if (boundary === "operation backoff")
       fixture.dependencies.gitWorkspace.inspect = () => {
@@ -72,17 +64,7 @@ for (const boundary of [
       assert.equal(result.summary.outcome, "cancelled");
       assert.equal(result.exitCode, 1);
       assert.equal(waitSignal?.aborted, true);
-      const saved = await fixture.snapshot();
-      assert.equal(saved.corrections, boundary === "correction" ? 1 : 0);
-      assert.equal(saved.probeRetries ?? 0, boundary === "Probe retry" ? 1 : 0);
       assert.deepEqual(fixture.dependencies.pauses, []);
-      if (boundary === "Probe retry") {
-        assert.equal(saved.superseded.length, 1);
-        assert.ok(await readFile(saved.superseded[0]!, "utf8"));
-        assert.notEqual(saved.probe?.path, saved.superseded[0]);
-        assert.equal(saved.roles.implement, undefined);
-        assert.equal(fixture.state.probeCount, 1);
-      }
     } finally {
       clearTimeout(deadline);
       release.resolve();
@@ -160,49 +142,28 @@ await test("q in a sibling's non-Agent pause cancels startup without waiting for
   assert.deepEqual(fixture.dispatched, []);
 });
 
-await test("an explicit matching rerun preserves a cancelled correction's consumed budget and assignment", async (t) => {
-  const fixture = await implementationRun(t, { ...validConfig, agentRetry: 1 });
-  fixture.state.onTask = (file) => {
-    fixture.state.evidence.commits = committed().commits;
-    return publish(file, {});
-  };
-  fixture.state.onSleep = (ms) => {
-    if (ms === 2_000) fixture.controller.abort();
-    return Promise.resolve();
-  };
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  const saved = await fixture.snapshot();
-  assert.equal(saved.corrections, 1);
-  assert.ok(saved.pendingPrompt);
-  const before = fixture.state.submissions.length;
-  fixture.dependencies.signal = new AbortController().signal;
-  fixture.state.onCorrection = (file) => publish(file, {});
-  fixture.state.onSleep = (ms) =>
-    ms === 250
-      ? publish(saved.invocation!.path, committed())
-      : Promise.resolve();
-  assert.equal((await fixture.run()).summary.outcome, "incomplete");
-  const resumed = fixture.state.submissions.slice(before);
-  assert.match(resumed[0]!.text, /--resume/);
-  assert.deepEqual(
-    resumed.slice(1).map(({ text }) => text),
-    [saved.pendingPrompt],
-  );
-  const accepted = await fixture.snapshot();
-  assert.equal(accepted.phase, "implementation_completed");
-  assert.equal(accepted.execution_id, saved.execution_id);
-  assert.equal(accepted.worktree, saved.worktree);
-  assert.equal(accepted.pr_body, saved.pr_body);
-  assert.equal(accepted.corrections, 1);
-  assert.deepEqual(accepted.invocation, saved.invocation);
-  assert.deepEqual(accepted.superseded, saved.superseded);
-  assert.equal(fixture.state.taskCount, 1);
-  assert.equal(fixture.state.probeCount, 1);
-  assert.equal(
-    fixture.state.events.filter((event) => event === "worktree").length,
-    1,
-  );
-});
+for (const boundary of ["Probe", "handoff"] as const) {
+  await test(`cancellation after invalid ${boundary} publication prevents feedback`, async (t) => {
+    const fixture = await implementationRun(t);
+    if (boundary === "Probe")
+      fixture.state.onProbe = async (assignment) => {
+        await publish(String(assignment.path), {});
+        fixture.controller.abort();
+      };
+    else
+      fixture.state.onTask = async (file) => {
+        await publish(file, {});
+        fixture.controller.abort();
+      };
+    assert.equal((await fixture.run()).summary.outcome, "cancelled");
+    assert.equal(
+      fixture.state.submissions.length,
+      boundary === "Probe" ? 2 : 3,
+    );
+    assert.deepEqual((await fixture.snapshot()).superseded, []);
+    assert.equal(fixture.state.closedTabs.length, 0);
+  });
+}
 
 await test("cancellation after accepted implementation retains completion for a matching rerun", async (t) => {
   const fixture = await implementationRun(t, {

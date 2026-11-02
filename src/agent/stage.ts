@@ -128,7 +128,6 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
       stage.probe ??= {
         path: assignment(`${purpose}-probe`),
       };
-      stage.probeRetries ??= 0;
       if (generatesMetadata) progress.phase = "probing";
     }
     await persist();
@@ -184,13 +183,10 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
         !(await readHandoff(stage.probe!.path))
       )
         await conversations.submit(await open(), prompt(), profile.submitKey);
-      let previous = "";
       for (;;) {
         signal?.throwIfAborted();
         const observed = await readHandoff(stage.probe!.path);
-        if (observed !== undefined && observed.revision !== previous) {
-          previous = observed.revision;
-          let accepted = false;
+        if (observed !== undefined) {
           try {
             const probe = object(JSON.parse(observed.text) as unknown);
             if (
@@ -219,7 +215,6 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
               progress.pr_title = probe.pr_title as string;
               progress.pr_body = probe.pr_body as string;
             }
-            accepted = true;
           } catch (error) {
             const reason =
               error instanceof Error ? error.message : String(error);
@@ -231,37 +226,21 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
             operator.write(
               `Invalid Probe: ${reason}. Correct the displayed Probe file in the native conversation.`,
             );
-            const retries: number = stage.probeRetries ?? 0;
-            if (retries < loaded.config.operationRetry) {
-              stage.superseded.push(stage.probe!.path);
-              stage.probeRetries = retries + 1;
-              stage.probe = {
-                path: assignment(`${purpose}-probe`),
-              };
-              await persist();
-              show(stage.probe.path);
-              await sleep(
-                1000 *
-                  loaded.config.operationRetryDelay[
-                    Math.min(
-                      retries,
-                      loaded.config.operationRetryDelay.length - 1,
-                    )
-                  ]!,
-              );
-              await conversations.submit(
-                await open(),
-                prompt(reason),
-                profile.submitKey,
-              );
-              previous = "";
-              continue;
-            }
-          }
-          if (accepted) {
+            stage.superseded.push(stage.probe!.path);
+            stage.probe = {
+              path: assignment(`${purpose}-probe`),
+            };
             await persist();
-            break;
+            show(stage.probe.path);
+            await conversations.submit(
+              await open(),
+              prompt(reason),
+              profile.submitKey,
+            );
+            continue;
           }
+          await persist();
+          break;
         }
         await sleep(250);
       }
@@ -277,25 +256,10 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
     progress.phase = phase;
     await persist();
     show(stage.invocation.path);
-    const manualCorrection = () => {
-      operator.write(
-        "Automatic correction budget exhausted. Correct the work and manually invoke issue-runner-handoff at the current handoff path; Runner will keep watching it.",
-      );
-      show(stage.invocation!.path);
-    };
-    if (stage.correctionExhausted) manualCorrection();
-    let previous = "";
     for (;;) {
       signal?.throwIfAborted();
       const observed = await readHandoff(stage.invocation.path);
       if (observed === undefined && stage.pendingPrompt !== undefined) {
-        if (stage.correctionNotBefore !== undefined) {
-          const remaining = stage.correctionNotBefore - clock.now().getTime();
-          if (remaining > 0) await sleep(remaining);
-          delete stage.correctionNotBefore;
-          await persist();
-          continue;
-        }
         if (!(await submitWork(stage.pendingPrompt))) return;
         resumeIfMissing = false;
         continue;
@@ -307,8 +271,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
       )
         return;
       resumeIfMissing = false;
-      if (observed !== undefined && observed.revision !== previous) {
-        previous = observed.revision;
+      if (observed !== undefined) {
         let result;
         try {
           result = await input.accept(observed.text);
@@ -322,51 +285,22 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
             throw error;
           const reason = error instanceof Error ? error.message : String(error);
           operator.write(`Invalid ${name} handoff: ${reason}`);
-          // Missing output never spends this budget or generates reminders.
-          if (
-            !stage.correctionExhausted &&
-            stage.corrections < loaded.config.agentRetry
-          ) {
-            stage.superseded.push(stage.invocation.path);
-            stage.corrections += 1;
-            stage.invocation = {
-              invocation_id: randomUUID(),
-              path: assignment(purpose),
-            };
-            const values = {
-              name,
-              reason,
-              path: JSON.stringify(stage.invocation.path),
-            };
-            stage.pendingPrompt = renderPrompt(
-              handoffCorrectionInstructions,
-              values,
-            );
-            stage.correctionNotBefore =
-              clock.now().getTime() +
-              1000 *
-                loaded.config.agentRetryDelay[
-                  Math.min(
-                    stage.corrections - 1,
-                    loaded.config.agentRetryDelay.length - 1,
-                  )
-                ]!;
-            await persist();
-            show(stage.invocation.path);
-            previous = "";
-            continue;
-          }
-          stage.correctionExhausted = true;
-          delete stage.pendingPrompt;
-          delete stage.correctionNotBefore;
+          stage.superseded.push(stage.invocation.path);
+          stage.invocation = {
+            invocation_id: randomUUID(),
+            path: assignment(purpose),
+          };
+          stage.pendingPrompt = renderPrompt(handoffCorrectionInstructions, {
+            name,
+            reason,
+            path: JSON.stringify(stage.invocation.path),
+          });
           await persist();
-          manualCorrection();
-          await sleep(250);
+          show(stage.invocation.path);
           continue;
         }
         stage.result = result;
         delete stage.pendingPrompt;
-        delete stage.correctionNotBefore;
         progress.phase = completed;
         await persist();
         signal?.throwIfAborted();

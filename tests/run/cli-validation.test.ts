@@ -22,9 +22,7 @@ await test("invalid configuration fails before any external reads or delivery re
     [{ maxBatchSize: 1.5 }, /maxBatchSize/],
     [{ targetBranch: " " }, /targetBranch/],
     [{ operationRetry: -1 }, /operationRetry/],
-    [{ agentRetry: 0.5 }, /agentRetry/],
     [{ operationRetryDelay: [] }, /operationRetryDelay/],
-    [{ agentRetryDelay: [0] }, /agentRetryDelay/],
     [{ ticketClosure: "agent" }, /ticketClosure/],
     [{ workflow: { review: "false" } }, /workflow.review/],
     [{ workflow: { maxReviewRounds: 0 } }, /maxReviewRounds/],
@@ -361,4 +359,13 @@ await test("ineligible Issue scopes do not dispatch and documentation requires c
     (await executeCli(document, createCliDependencies(root))).summary.outcome,
     "failed",
   );
+});
+
+await test("Agent retry settings are optional and legacy values are ignored", async (t) => {
+  const config = validConfig;
+  for (const legacy of [{}, { agentRetry: 0.5, agentRetryDelay: [0] }]) {
+    const { root } = await createProject(t, { ...config, ...legacy });
+    const result = await executeCli(run, createCliDependencies(root));
+    assert.equal(result.summary.outcome, "no_work", JSON.stringify(result));
+  }
 });

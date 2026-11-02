@@ -28,22 +28,13 @@ await test("execution findings receive a specific correction in the original con
   assert.equal((await fixture.snapshot()).phase, "implementation_completed");
   assert.deepEqual(
     fixture.state.sleeps.filter((ms) => ms !== 30_000),
-    [10_000, 2_000],
+    [10_000],
   );
 });
 
-await test("additional corrections persist unique assignments, reuse the final seconds delay, and stay exhausted during manual recovery", async (t) => {
-  const fixture = await implementationRun(t, {
-    ...validConfig,
-    agentRetry: 3,
-    agentRetryDelay: [0.5, 0.75],
-  });
-  const probe = fixture.state.onProbe;
-  fixture.state.onProbe = async (assignment) => {
-    if (fixture.state.probeCount === 1)
-      await publish(String(assignment.path), { ...assignment, sessionid: "" });
-    else await probe(assignment);
-  };
+await test("each invalid publication receives immediate feedback at a fresh path without exhaustion", async (t) => {
+  const legacy = { agentRetry: 0, agentRetryDelay: [300, 300] };
+  const fixture = await implementationRun(t, { ...validConfig, ...legacy });
   const paths: string[] = [];
   const invocations: string[] = [];
   fixture.state.onTask = async (file) => {
@@ -54,65 +45,31 @@ await test("additional corrections persist unique assignments, reuse the final s
   };
   fixture.state.onCorrection = async (file) => {
     const saved = await fixture.snapshot();
-    assert.equal(saved.corrections, paths.length);
-    assert.equal(saved.probeRetries, 1);
+    assert.deepEqual(saved.superseded, paths);
     assert.equal(saved.phase, "implementing");
-    assert.deepEqual(saved.superseded.slice(1), paths);
-    assert.ok(
-      fixture.dependencies.messages.some((line) => line.includes(file)),
-    );
     const correction = fixture.state.submissions.at(-1)!;
     assert.equal(correction.tab, fixture.state.submissions[0]!.tab);
     assert.equal(correction.chord, "Shift+Enter");
     assert.equal(fixture.state.closedTabs.length, 0);
     paths.push(file);
     invocations.push(saved.invocation!.invocation_id);
-    // Superseded valid files cannot satisfy the active assignment.
+    assert.ok(paths.length <= 6);
     await publish(paths[0]!, committed());
-    await publish(file, { ...committed(), outcome: "blocked" });
+    await publish(file, paths.length < 6 ? {} : committed());
   };
-  let manualWrites = 0;
-  fixture.state.onSleep = async (ms) => {
-    if (ms === 500 || ms === 750) {
-      const saved = await fixture.snapshot();
-      assert.equal(saved.corrections, paths.length);
-      assert.ok(!paths.includes(saved.invocation!.path));
-      assert.ok(!invocations.includes(saved.invocation!.invocation_id));
-      assert.equal(saved.phase, "implementing");
-    }
-    if (ms !== 250) return;
-    const saved = await fixture.snapshot();
-    assert.equal(saved.corrections, 3);
-    assert.equal(saved.invocation!.path, paths[3]);
-    assert.equal(saved.phase, "implementing");
-    assert.equal(fixture.state.closedTabs.length, 0);
-    assert.match(
-      fixture.dependencies.messages.join("\n"),
-      /Automatic correction budget exhausted.*manually.*current handoff path/u,
-    );
-    assert.ok(++manualWrites <= 3);
-    await publish(
-      paths[3]!,
-      manualWrites < 3 ? { ...committed(), summary: "" } : committed(),
-    );
+  fixture.state.onSleep = (ms) => {
+    assert.ok(ms === 10_000 || ms === 30_000, `unexpected wait: ${ms}`);
+    return Promise.resolve();
   };
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
   const saved = await fixture.snapshot();
   assert.equal(saved.phase, "implementation_completed");
-  assert.equal(saved.corrections, 3);
-  assert.equal(saved.probeRetries, 1);
-  assert.equal(paths.length, 4);
-  assert.equal(new Set(paths).size, 4);
-  assert.equal(new Set(invocations).size, 4);
-  assert.equal(manualWrites, 3);
-  assert.deepEqual(
-    fixture.state.sleeps.filter((ms) => ms !== 30_000),
-    [10_000, 1_000, 500, 750, 750, 250, 250, 250],
-  );
-  assert.equal(fixture.state.submissions.length, 7);
+  assert.equal(paths.length, 6);
+  assert.equal(new Set(paths).size, 6);
+  assert.equal(new Set(invocations).size, 6);
+  assert.equal(fixture.state.submissions.length, 8);
   assert.equal(fixture.state.taskCount, 1);
-  assert.equal(fixture.state.probeCount, 2);
   assert.equal(fixture.state.closedTabs.length, 1);
 });
 
@@ -147,6 +104,5 @@ for (const [mismatch, reason] of [
     const result = await fixture.run();
     assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
     assert.equal((await fixture.snapshot()).phase, "implementation_completed");
-    assert.equal((await fixture.snapshot()).corrections, 1);
   });
 }

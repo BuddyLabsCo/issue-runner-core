@@ -140,7 +140,6 @@ await test("restart ignores a superseded final and an active temporary file unti
   };
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   const saved = await fixture.snapshot();
-  assert.equal(saved.corrections, 1);
   assert.equal(saved.superseded.length, 1);
   await publish(saved.superseded[0]!, committed());
   const before = fixture.state.submissions.length;
@@ -168,6 +167,5 @@ await test("restart ignores a superseded final and an active temporary file unti
   );
   assert.deepEqual(recovered.invocation, saved.invocation);
   assert.deepEqual(recovered.superseded, saved.superseded);
-  assert.equal(recovered.corrections, 1);
   assert.equal(recovered.execution_id, saved.execution_id);
 });

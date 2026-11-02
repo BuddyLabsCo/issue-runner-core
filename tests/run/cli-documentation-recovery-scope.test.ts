@@ -105,7 +105,6 @@ await test("restarted automatic documentation keeps its Batch association throug
   assert.deepEqual(restarted.roles, {
     documentation: { sessionid: "native-101" },
   });
-  assert.equal(restarted.corrections, 0);
   assert.deepEqual(restarted.superseded, []);
   fixture.dependencies.operator.pause = async () => {
     assert.fail(

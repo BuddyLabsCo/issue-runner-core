@@ -43,10 +43,6 @@ export interface StageProgress<R> {
   invocation?: Invocation;
   pendingPrompt?: string;
   result?: R;
-  corrections: number;
-  correctionNotBefore?: number;
-  correctionExhausted?: true;
-  probeRetries?: number;
   superseded: string[];
 }
 

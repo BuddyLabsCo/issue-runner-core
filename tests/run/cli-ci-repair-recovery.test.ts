@@ -111,7 +111,6 @@ await test("restarting an unrecoverable repair replaces the whole Issue and reta
   assert.notDeepEqual(after.probe, before.probe);
   assert.notDeepEqual(after.invocation, before.invocation);
   assert.equal(after.publication, undefined);
-  assert.equal(after.corrections, 0);
   assert.equal(fixture.state.taskCount, 2);
   assert.equal(fixture.repairs.tasks.length, 1);
   assert.equal(fixture.publicationState.creations, 1);
@@ -293,7 +292,6 @@ await test("blocked repair output is corrected in the same native stage rather t
   const budget = (await fixture.snapshot()).publication!.ciRepair!;
   assert.equal(budget.consumed, 1);
   assert.equal(budget.attempts.length, 1);
-  assert.equal(budget.attempts[0]!.corrections, 1);
   assert.equal(fixture.repairs.probes.length, 1);
   assert.equal(fixture.state.closedTabs.length, 2);
 });

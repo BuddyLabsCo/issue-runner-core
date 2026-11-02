@@ -5,7 +5,6 @@ import { readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { child, parentRun } from "../support/parent-run.ts";
-import { validConfig } from "../support/cli-project.ts";
 import {
   committed,
   publish,
@@ -52,16 +51,12 @@ await test("a withheld initial assignment is submitted in its original conversat
   assert.deepEqual(after.invocation, before.invocation);
   assert.deepEqual(after.roles, before.roles);
   assert.equal(after.pr_body, before.pr_body);
-  assert.equal(after.corrections, 0);
   assert.equal(after.pendingPrompt, undefined);
 });
 
-await test("a withheld correction retains its prompt, path and spent budget until eligibility returns", async (t) => {
+await test("a withheld correction retains its prompt, path and native context until eligibility returns", async (t) => {
   const ticket = child(51);
-  const fixture = await parentRun(t, [ticket], {
-    ...validConfig,
-    agentRetry: 1,
-  });
+  const fixture = await parentRun(t, [ticket]);
   const submitted: string[] = [];
   const submitText = fixture.dependencies.terminalPlugin.submitText.bind(
     fixture.dependencies.terminalPlugin,
@@ -83,18 +78,14 @@ await test("a withheld correction retains its prompt, path and spent budget unti
     if (text.startsWith("Implementation assignment\n")) {
       const invocation = promptAssignment(text) as { path: string };
       await publish(invocation.path, {});
+      ticket.labels = ["sandcastle:reserved"];
     }
   };
   fixture.dependencies.clock.sleep = async (ms) => {
-    assert.equal(
-      ms === 10_000 || ms === 1000 || ms === 2000 || ms === 30_000,
-      true,
-    );
-    if (ms === 2000) ticket.labels = ["sandcastle:reserved"];
+    assert.equal(ms === 10_000 || ms === 1000 || ms === 30_000, true);
   };
   assert.equal((await fixture.run()).summary.outcome, "incomplete");
   const before = await implementationProgress(fixture.directory, 51);
-  assert.equal(before.corrections, 1);
   assert.equal(before.superseded.length, 1);
   assert.match(before.pendingPrompt!, /^Correct the implementation handoff:/u);
   const resumedAt = submitted.length;
@@ -115,7 +106,6 @@ await test("a withheld correction retains its prompt, path and spent budget unti
   assert.deepEqual(after.invocation, before.invocation);
   assert.deepEqual(after.roles, before.roles);
   assert.equal(after.pr_body, before.pr_body);
-  assert.equal(after.corrections, before.corrections);
   assert.deepEqual(after.superseded, before.superseded);
   assert.equal(after.pendingPrompt, undefined);
 });

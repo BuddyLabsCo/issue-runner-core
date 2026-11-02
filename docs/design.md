@@ -70,7 +70,7 @@ Preserve:
   Documentation Maintenance.
 - Pull Request publication, required-check handling, integration policy,
   completion verification, and ticket closure.
-- Prompt construction, result schemas, automatic retry budgets and delays,
+- Prompt construction, result schemas, non-Agent retry budgets and delays,
   structured-output correction, and required same-conversation continuation.
 - Audit records, Recovery Snapshots, cancellation, and every non-Agent
   Operator Pause.
@@ -239,7 +239,7 @@ task is complete. Its sole argument is the assigned absolute
 final JSON output path. Result schema instructions live in the skill rather
 than being repeated in each task prompt.
 
-For each substantive invocation, automatic correction, or retry, Core assigns
+For each substantive invocation or validation correction, Core assigns
 a fresh unique path under
 `<runner-working-directory>/<project-name>/handoffs/<issue-number>-<phase>-<timestamp>.json`.
 The skill writes exactly `outcome`, `summary`, `commits`, and `findings_file`.
