@@ -46,6 +46,18 @@ if (/cli-(batch|cancellation)\.test\.ts$/u.test(process.argv[1] ?? "")) {
         path: String(args[0]),
         start: performance.now(),
       };
+      if (
+        name === "appendFile" &&
+        typeof args[1] === "string" &&
+        args[1].startsWith("{")
+      ) {
+        const audit = JSON.parse(args[1]);
+        entry.audit = {
+          phase: audit.phase,
+          operation: audit.operation,
+          result: audit.result,
+        };
+      }
       active.set(entry.id, entry);
       try {
         return await Reflect.apply(original, fs, args);
@@ -68,6 +80,8 @@ if (/cli-(batch|cancellation)\.test\.ts$/u.test(process.argv[1] ?? "")) {
       file: process.argv[1],
       pid: process.pid,
       version: process.version,
+      timeOrigin: performance.timeOrigin,
+      pressure: process.env.I178_PRESSURE ?? "0",
       platform: process.platform,
       mode: process.env.I178_OBSERVE ?? "original",
       loopMaxMs: loop.max / 1e6,
@@ -78,7 +92,7 @@ if (/cli-(batch|cancellation)\.test\.ts$/u.test(process.argv[1] ?? "")) {
     writeFileSync(
       path.join(
         directory,
-        `${path.basename(process.argv[1])}-${process.pid}.json`,
+        `${path.basename(process.argv[1])}-${process.pid}-${Date.now()}.json`,
       ),
       JSON.stringify(trace),
     );
