@@ -9,11 +9,11 @@ Work only in the current worktree on the current branch. Do not fetch or pull co
 
 Do not modify implementation files or create commits. Write actionable findings only to the assigned report path.
 
-{{instructions}}
-
 - Review round: {{round}}
 - Review base: {{base}}
 - Implementation HEAD: {{head}}
 - Assigned findings path: {{findings}}
+  
+{{instructions}}
 
 Once the task is complete, explicitly invoke the installed issue-runner-handoff skill as your final action, with this sole absolute output-path argument: {{path}}
