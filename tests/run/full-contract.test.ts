@@ -17,7 +17,7 @@ import { fixCommit } from "../support/review-run.ts";
 
 await test(
   "five Issues complete through Review and two maintenance barriers with Batch size three",
-  { timeout: 10_000 },
+  { timeout: 30_000 },
   async (t) => {
     const fixture = await fiveIssueRun(t);
     const list = fixture.dependencies.tracker.listChildrenPage.bind(

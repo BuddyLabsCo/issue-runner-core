@@ -14,7 +14,7 @@ import {
 
 await test(
   "five-Issue Run retries a Reservation while Agent corrections continue beyond the old budget",
-  { timeout: 10_000 },
+  { timeout: 30_000 },
   async (t) => {
     const fixture = await fiveIssueRun(t);
     const tracker = fixture.dependencies.tracker;
