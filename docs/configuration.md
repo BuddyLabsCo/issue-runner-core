@@ -369,7 +369,7 @@ With a numbered `--issue` or `--document`, the CLI accepts `--no-auto-merge`:
 issue-runner run --project my-project --env herdr --issue 50 --no-auto-merge
 ```
 
-With `--no-auto-merge`, a CI-ready unmerged PR retains its remote branch, original Worktree, Probe/handoff files, Reservation, and recovery evidence. The summary reports the PR URL and retained paths with outcome `incomplete` and nonzero exit. It grants no successful-delivery credit, performs no success cleanup, closes no Issue, and triggers no documentation maintenance.
+With `--no-auto-merge`, a CI-ready unmerged PR retains its remote branch, original Worktree, Probe/handoff files, Reservation, and recovery evidence. The terminal report shows the PR link and retained Worktree paths with outcome `incomplete` and nonzero exit. It grants no successful-delivery credit, performs no success cleanup, closes no Issue, and triggers no documentation maintenance.
 
 ### Confirmed integration and Issue delivery
 
@@ -548,12 +548,15 @@ Run startup displays `sessionid=n/a` for workflow work without an Agent conversa
 Each Agent stage identifies its Issue and purpose, with `sessionid=pending` before its Probe.
 After the Probe, progress shows the actual native identity and absolute active handoff path.
 Corrections update that path; resumed work displays its saved identity and assignment.
+Review and fix progress show `review round N` and `fix review round N`, including during recovery and corrections.
 
 The final report lists Issues in selection order, even when concurrent work finishes in another order.
 Documentation appears as maintenance work after its triggering Batch.
 Each structured CLI result includes `exitCode`, `logPath`, and a `summary` with the Run outcome and reasons.
 For a started Run, `summary.tickets` contains ordered records with Issue number, kind, status, PR number/URL, detail, and retained Worktrees.
 Failures and cancellation retain these records and resource details already observed by Runner.
+The terminal report shows failure details, retained Worktrees, and cancellation, but omits recovery-file and historical-branch lists.
+Recovery records remain on disk and in the structured result after successful cleanup.
 An abrupt termination can prevent a final report.
 
 `completed` requires confirmed merge and completed tracker state.

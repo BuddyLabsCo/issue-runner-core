@@ -160,6 +160,7 @@ export async function reviewImplementation(
         ...input,
         stage: round,
         purpose: "review",
+        progressLabel: `review round ${round.round}`,
         task: async (handoffPath) =>
           renderPrompt(reviewInstructions, {
             issue: String(progress.ticket),
@@ -209,6 +210,7 @@ export async function reviewImplementation(
         ...input,
         stage: round.fix,
         purpose: "fix_review",
+        progressLabel: `fix review round ${round.round}`,
         task: (handoffPath) =>
           renderPrompt(reviewFixInstructions, {
             findings: JSON.stringify(round.findings),

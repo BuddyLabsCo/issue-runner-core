@@ -65,6 +65,7 @@ for (const stage of ["review", "fix"] as const) {
       });
     };
     const before = fixture.state.submissions.length;
+    const messagesBefore = fixture.dependencies.messages.length;
     const result = await executeCli(implementationCommand, {
       ...fixture.dependencies,
       signal: new AbortController().signal,
@@ -77,6 +78,24 @@ for (const stage of ["review", "fix"] as const) {
     assert.equal(resumed.pr_title, saved.pr_title);
     assert.equal(resumed.pr_body, saved.pr_body);
     assert.equal(resumed.reviews!.length, 1);
+    const label = stage === "review" ? "review" : "fix review";
+    const sessionid =
+      stage === "review"
+        ? saved.roles.review!.sessionid
+        : saved.roles.implement!.sessionid;
+    const messages = fixture.dependencies.messages.slice(messagesBefore);
+    const corrected =
+      stage === "review" ? resumed.reviews![0]! : resumed.reviews![0]!.fix!;
+    assert.ok(
+      messages.includes(
+        `Issue #50 ${label} round 1 sessionid=${sessionid} handoff=${active.invocation!.path}`,
+      ),
+    );
+    assert.ok(
+      messages.includes(
+        `Issue #50 ${label} round 1 sessionid=${sessionid} handoff=${corrected.invocation!.path}`,
+      ),
+    );
     assert.equal(fixture.state.probeCount, 2);
     const submissions = fixture.state.submissions.slice(before);
     assert.equal(

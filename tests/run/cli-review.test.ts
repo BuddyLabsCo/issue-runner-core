@@ -130,6 +130,21 @@ await test("with no default cap, every findings round receives a fix and later R
   assert.match(result.summary.reasons.join(" "), /CI-ready/u);
   assert.equal(fixture.reviewState.reviews.length, 4);
   assert.equal(fixture.reviewState.fixes.length, 3);
+  assert.deepEqual(
+    fixture.dependencies.messages
+      .filter((message) => /^Issue #50 (?:review|fix review)/u.test(message))
+      .map((message) => message.split(" sessionid=")[0]),
+    [
+      "Issue #50 review round 1",
+      "Issue #50 review round 1",
+      "Issue #50 fix review round 1",
+      "Issue #50 review round 2",
+      "Issue #50 fix review round 2",
+      "Issue #50 review round 3",
+      "Issue #50 fix review round 3",
+      "Issue #50 review round 4",
+    ],
+  );
   assert.equal(fixture.state.probeCount, 2);
   assert.equal(fixture.state.closedTabs.length, 8);
   assert.deepEqual(
