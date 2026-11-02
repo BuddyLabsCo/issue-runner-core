@@ -217,7 +217,13 @@ export function renderRunReport(summary: RunSummary): string {
   const tickets = summary.tickets ?? [];
   const lines =
     tickets.length === 0 ? ["No issues processed."] : table(tickets);
-  if (summary.outcome === "failed")
+  const reported = new Set(
+    tickets.flatMap((ticket) => [
+      ticket.detail,
+      `Issue #${ticket.ticket}: ${ticket.detail}`,
+    ]),
+  );
+  if (summary.outcome === "failed") {
     lines.push(
       "",
       "Run failed:",
@@ -226,13 +232,8 @@ export function renderRunReport(summary: RunSummary): string {
         .filter((line) => line.trim())
         .map((line) => `- ${line}`),
     );
-  const reported = new Set([
-    summary.failure,
-    ...tickets.flatMap((ticket) => [
-      ticket.detail,
-      `Issue #${ticket.ticket}: ${ticket.detail}`,
-    ]),
-  ]);
+    reported.add(summary.failure ?? "Unknown failure");
+  }
   const reasons = [...new Set(summary.reasons)].filter(
     (reason) =>
       !reported.has(reason) &&

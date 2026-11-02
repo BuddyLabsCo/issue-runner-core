@@ -409,3 +409,20 @@ await test("documentation no_change renders a labelled maintenance row", async (
     /^50\s+no_change\s+-\s+Documentation: Completed Maintenance Ticket 50 with no changes$/mu,
   );
 });
+
+await test("cancellation before ticket dispatch reports why the Run stopped", async (t) => {
+  const fixture = await parentRun(t, []);
+  fixture.dependencies.tracker.getParent = async () =>
+    child(48, { state: "closed", stateReason: "not_planned" });
+  const result = await fixture.run();
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.summary.outcome, "cancelled");
+  assert.equal(result.summary.failure, "Parent Ticket is cancelled");
+  assert.ok(result.summary.reasons.includes("Parent Ticket is cancelled"));
+  assert.deepEqual(result.summary.tickets, []);
+  assert.deepEqual(fixture.dispatched, []);
+  assert.equal(
+    fixture.dependencies.messages.at(-1),
+    "No issues processed.\n\nReasons:\n- Parent Ticket is cancelled\n\nRun cancelled.",
+  );
+});
