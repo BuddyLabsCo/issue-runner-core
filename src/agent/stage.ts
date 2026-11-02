@@ -116,7 +116,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
     );
   const show = (file: string) =>
     operator.write(
-      `Issue #${progress.ticket} ${input.progressLabel ?? purpose} sessionid=${sessionid() ?? "pending"} handoff=${file}`,
+      `Issue #${progress.ticket} ${input.progressLabel ?? purpose} sessionid=${sessionid()} handoff=${file}`,
     );
   const sleep = async (ms: number) => {
     signal?.throwIfAborted();
@@ -132,15 +132,13 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
       if (generatesMetadata) progress.phase = "probing";
     }
     await persist();
-    if (stage.invocation || stage.probe)
-      show(stage.invocation?.path ?? stage.probe!.path);
     let tab: TabHandle | undefined;
     const open = async () =>
       (tab ??= await conversations.open(
         {
           cwd: input.worktree ?? progress.worktree,
           env,
-          label: `Issue #${progress.ticket} ${purpose}`,
+          label: `issue-${progress.ticket} ${(input.progressLabel ?? purpose).replace(/_/gu, " ").replace(/ round /u, " r")}`,
         },
         profile,
         sessionid(),
@@ -225,14 +223,13 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
                 { cause: error },
               );
             operator.write(
-              `Invalid Probe: ${reason}. Correct the displayed Probe file in the native conversation.`,
+              `Invalid Probe: ${reason}. Correct the Probe in the native conversation; rejected handoff=${stage.probe!.path}`,
             );
             stage.superseded.push(stage.probe!.path);
             stage.probe = {
               path: assignment(`${purpose}-probe`),
             };
             await persist();
-            show(stage.probe.path);
             await conversations.submit(
               await open(),
               prompt(reason),

@@ -167,12 +167,12 @@ await test(
     assert.equal(fixture.active.size, 0);
     assert.equal(fixture.closed.length, 14);
     assert.deepEqual(
-      fixture.closed.filter((label) => label.startsWith("Issue #51 ")),
+      fixture.closed.filter((label) => label.startsWith("issue-51 ")),
       [
-        "Issue #51 implement",
-        "Issue #51 review",
-        "Issue #51 fix_review",
-        "Issue #51 review",
+        "issue-51 implement",
+        "issue-51 review r1",
+        "issue-51 fix review r1",
+        "issue-51 review r2",
       ],
     );
     const issue51 = fixture.submissions.filter((submission) =>

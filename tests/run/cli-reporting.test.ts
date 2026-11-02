@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import { renderRunReport } from "../../src/run/report.ts";
 import { promptAssignment } from "../support/prompt-assignment.ts";
 import assert from "node:assert/strict";
 import {
@@ -163,7 +164,14 @@ await test("a CI-ready unmerged PR has a structured report without successful de
   );
   const output = fixture.dependencies.messages.at(-1)!;
   const worktree = (await fixture.snapshot()).worktree;
-  assert.match(output, /CI-ready, awaiting manual merge/u);
+  assert.match(
+    output,
+    /^50\s+PR ready\s+.*feat: \[issue-50\] implement the Issue$/mu,
+  );
+  assert.equal(
+    result.summary.tickets[0]!.pullRequestTitle,
+    "feat: [issue-50] implement the Issue",
+  );
   assert.ok(!output.split("\n\n")[0]!.includes(worktree));
   assert.equal(output.split(worktree).length - 1, 1);
   assert.equal(fixture.state.ticket.state, "open");
@@ -207,16 +215,19 @@ await test("an ordinary no_change handoff reports no delivery credit", async (t)
   assert.equal(fixture.state.ticket.state, "open");
 });
 
-await test("progress identifies pending Probes, native identity, and each current absolute correction path", async (t) => {
+await test("progress stays silent during Probes and reports native identity and task correction paths", async (t) => {
   const fixture = await implementationRun(t);
   const probe = fixture.state.onProbe;
   fixture.state.onProbe = async (assignment) => {
-    assert.ok(
-      fixture.dependencies.messages.includes(
-        `Issue #50 implement sessionid=pending handoff=${String(assignment.path)}`,
+    assert.equal(
+      fixture.dependencies.messages.some((message) =>
+        message.startsWith("Issue #50 implement sessionid="),
       ),
+      false,
     );
-    await probe(assignment);
+    if (fixture.state.probeCount === 1)
+      await publish(String(assignment.path), { sessionid: "latest" });
+    else await probe(assignment);
   };
   let original = "";
   fixture.state.onTask = async (file) => {
@@ -239,7 +250,15 @@ await test("progress identifies pending Probes, native identity, and each curren
     await publish(file, committed());
   };
   assert.equal((await fixture.run()).summary.outcome, "incomplete");
-  assert.deepEqual((await fixture.snapshot()).superseded, [original]);
+  const saved = await fixture.snapshot();
+  assert.equal(fixture.state.probeCount, 2);
+  assert.equal(saved.superseded.length, 2);
+  assert.equal(saved.superseded[1], original);
+  assert.match(fixture.dependencies.messages.join("\n"), /Invalid Probe:/u);
+  assert.doesNotMatch(
+    fixture.dependencies.messages.join("\n"),
+    /sessionid=pending|^Issue #50 .*handoff=.*-probe-/mu,
+  );
 });
 
 await test("cancelling the final audit write retains completed ticket evidence without replaying delivery", async (t) => {
@@ -325,11 +344,13 @@ await test("five completed Issues print one aligned report with visible PR links
     [51, 52, 53, 54, 55],
   );
   assert.ok(
-    rows.every((row) => row.endsWith("Squash merged and Issue closed")),
+    rows.every((row, index) =>
+      row.endsWith(`feat: [issue-${index + 51}] implement`),
+    ),
   );
   assert.ok(rows.every((row) => row.length < 80));
   assert.ok(
-    rows.every((row) => row.indexOf("Squash") === rows[0]!.indexOf("Squash")),
+    rows.every((row) => row.indexOf("feat:") === rows[0]!.indexOf("feat:")),
   );
   assert.deepEqual(rows.map((row) => /#\d+/u.exec(row)![0]).sort(), [
     "#1",
@@ -434,4 +455,46 @@ await test("cancellation before ticket dispatch reports why the Run stopped", as
     fixture.dependencies.messages.at(-1),
     "No issues processed.\n\nReasons:\n- Parent Ticket is cancelled\n\nRun cancelled.",
   );
+});
+
+await test("PR #170 keeps its title across report statuses without hiding diagnostics", () => {
+  for (const status of [
+    "completed",
+    "PR ready",
+    "incomplete",
+    "failed",
+    "cancelled",
+  ] as const) {
+    const output = renderRunReport({
+      outcome: status === "failed" ? "failed" : "incomplete",
+      project: "project",
+      parentTicket: 37,
+      targetBranch: "main",
+      reasons: ["Issue #37: Delivery interrupted"],
+      ...(status === "failed" ? { failure: "Delivery interrupted" } : {}),
+      tickets: [
+        {
+          ticket: 37,
+          kind: "delivery",
+          status,
+          pullRequest: 170,
+          pullRequestUrl:
+            "https://github.com/BuddyLabsCo/issue-runner-core/pull/170",
+          pullRequestTitle:
+            "docs: [issue-37] add Linux standalone delivery fixture",
+          detail: "Delivery interrupted",
+          retainedWorktrees: [],
+        },
+      ],
+    });
+    assert.match(
+      output.split("\n")[2]!,
+      /docs: \[issue-37\] add Linux standalone delivery fixture$/u,
+    );
+    if (["failed", "cancelled", "incomplete"].includes(status))
+      assert.equal(
+        output.split("Issue #37: Delivery interrupted").length - 1,
+        1,
+      );
+  }
 });

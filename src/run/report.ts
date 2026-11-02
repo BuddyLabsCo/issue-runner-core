@@ -16,6 +16,7 @@ export interface TicketReport {
     | "failed";
   pullRequest: number | null;
   pullRequestUrl: string | null;
+  pullRequestTitle: string | null;
   detail: string;
   retainedWorktrees: string[];
 }
@@ -38,6 +39,7 @@ export async function reportTicket(
     status: "incomplete",
     pullRequest: null,
     pullRequestUrl: null,
+    pullRequestTitle: null,
     detail: "Delivery remains incomplete",
     retainedWorktrees: [],
   };
@@ -68,6 +70,9 @@ export async function reportTicket(
       const publication = progress?.publication;
       report.pullRequest = publication?.pullRequest?.number ?? null;
       report.pullRequestUrl = publication?.pullRequest?.url ?? null;
+      report.pullRequestTitle = publication?.pullRequest
+        ? publication.title
+        : null;
       const resources = progress
         ? [
             progress,
@@ -176,18 +181,15 @@ function pullRequestCell(ticket: TicketReport): {
 function table(tickets: TicketReport[]): string[] {
   const rows = tickets.map((ticket) => {
     const pullRequest = pullRequestCell(ticket);
-    const detail =
-      ticket.status === "PR ready"
-        ? "CI-ready, awaiting manual merge"
-        : ticket.status === "completed" && ticket.kind === "delivery"
-          ? "Squash merged and Issue closed"
-          : oneLine(ticket.detail);
+    const detail = oneLine(ticket.pullRequestTitle ?? ticket.detail);
     return {
       cells: [
         String(ticket.ticket),
         ticket.status,
         pullRequest.text,
-        ticket.kind === "maintenance" ? `Documentation: ${detail}` : detail,
+        ticket.kind === "maintenance" && ticket.pullRequest === null
+          ? `Documentation: ${detail}`
+          : detail,
       ] as const,
       pullRequestTarget: pullRequest.target,
     };
@@ -234,13 +236,23 @@ export function renderRunReport(summary: RunSummary): string {
     );
     reported.add(summary.failure ?? "Unknown failure");
   }
-  const reasons = [...new Set(summary.reasons)].filter(
-    (reason) =>
-      !reported.has(reason) &&
-      !/^(?:selected Delivery Tickets:|Retained |Completed Maintenance Ticket )/u.test(
-        reason,
+  const reasons = [
+    ...new Set([
+      ...summary.reasons.filter(
+        (reason) =>
+          !reported.has(reason) &&
+          !/^(?:selected Delivery Tickets:|Retained |Completed Maintenance Ticket )/u.test(
+            reason,
+          ),
       ),
-  );
+      ...tickets.flatMap((ticket) =>
+        ticket.pullRequestTitle &&
+        ["failed", "cancelled", "incomplete"].includes(ticket.status)
+          ? [`Issue #${ticket.ticket}: ${ticket.detail}`]
+          : [],
+      ),
+    ]),
+  ];
   if (reasons.length > 0)
     lines.push(
       "",

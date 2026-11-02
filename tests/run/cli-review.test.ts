@@ -85,12 +85,36 @@ await test("verified implementation starts an independent Standards/Spec Review 
 
 await test("with no default cap, every findings round receives a fix and later Reviews resume the original reviewer from the previous reviewed HEAD", async (t) => {
   const fixture = await reviewRun(t);
+  const labels: string[] = [];
+  const createTab = fixture.dependencies.terminalPlugin.createTab.bind(
+    fixture.dependencies.terminalPlugin,
+  );
+  fixture.dependencies.terminalPlugin.createTab = async (options) => {
+    labels.push(options.label);
+    return createTab(options);
+  };
+  const probe = fixture.state.onProbe;
+  fixture.state.onProbe = async (assignment) => {
+    if (assignment.role === "review")
+      assert.equal(
+        fixture.dependencies.messages.some((message) =>
+          message.startsWith("Issue #50 review round"),
+        ),
+        false,
+      );
+    await probe(assignment);
+  };
   const fixes = [
     fixCommit,
     { sha: "d".repeat(40), message: "fix: resolve second Review" },
     { sha: "e".repeat(40), message: "fix: resolve third Review" },
   ];
   fixture.reviewState.onReview = async (round) => {
+    assert.ok(
+      fixture.dependencies.messages.includes(
+        `Issue #50 review round ${round.round} sessionid=review-native/$& handoff=${round.invocation!.path}`,
+      ),
+    );
     const prompt = fixture.state.submissions.at(-1)!.text;
     assert.equal(
       prompt,
@@ -117,6 +141,11 @@ await test("with no default cap, every findings round receives a fix and later R
     else await publish(round.invocation!.path, passed());
   };
   fixture.reviewState.onFix = async (round) => {
+    assert.ok(
+      fixture.dependencies.messages.includes(
+        `Issue #50 fix review round ${round.round} sessionid=native/$&/$\u0060/$'/session handoff=${round.fix!.invocation!.path}`,
+      ),
+    );
     const commit = fixes[round.round - 1]!;
     fixture.state.evidence.commits.push(commit);
     await publish(round.fix!.invocation!.path, {
@@ -130,12 +159,21 @@ await test("with no default cap, every findings round receives a fix and later R
   assert.match(result.summary.reasons.join(" "), /CI-ready/u);
   assert.equal(fixture.reviewState.reviews.length, 4);
   assert.equal(fixture.reviewState.fixes.length, 3);
+  assert.deepEqual(labels, [
+    "issue-50 implement",
+    "issue-50 review r1",
+    "issue-50 fix review r1",
+    "issue-50 review r2",
+    "issue-50 fix review r2",
+    "issue-50 review r3",
+    "issue-50 fix review r3",
+    "issue-50 review r4",
+  ]);
   assert.deepEqual(
     fixture.dependencies.messages
       .filter((message) => /^Issue #50 (?:review|fix review)/u.test(message))
       .map((message) => message.split(" sessionid=")[0]),
     [
-      "Issue #50 review round 1",
       "Issue #50 review round 1",
       "Issue #50 fix review round 1",
       "Issue #50 review round 2",

@@ -38,7 +38,7 @@ for (const selector of ["parent", "issue"] as const) {
     );
     fixture.dependencies.terminalPlugin.createTab = async (options) => {
       const number = Number(/ticket-(\d+)$/u.exec(options.cwd)![1]);
-      const review = options.label === `Issue #${number} review`;
+      const review = options.label === `issue-${number} review r1`;
       if (review) assert.ok(closed.includes(`${number}:implement`));
       const tab = await createTab(options);
       tabs.set(tab, { number, review, options });
