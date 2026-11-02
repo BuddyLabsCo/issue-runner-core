@@ -41,6 +41,7 @@ codeHost:
 # Increase it if your Agent needs more time after start or resume before input.
 agents:
   implement:
+    # Windows PowerShell: start/resume use $env:CODEBUDDY_IS_SANDBOX="1"; codebuddy ...
     start: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --model deepseek-v4.1-flash --effort max --dangerously-skip-permissions'
     resume: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --resume "{sessionref}" --model deepseek-v4.1-flash --effort max --dangerously-skip-permissions'
     submitKey: Enter
@@ -51,11 +52,13 @@ agents:
     submitKey: Enter
     startupDelaySeconds: 10
   ciRepair:
+    # Windows PowerShell: start/resume use $env:CODEBUDDY_IS_SANDBOX="1"; codebuddy ...
     start: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --model deepseek-v4.1-flash --effort max --dangerously-skip-permissions'
     resume: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --resume "{sessionref}" --model deepseek-v4.1-flash --effort max --dangerously-skip-permissions'
     submitKey: Enter
     startupDelaySeconds: 10
   conflictRepair:
+    # Windows PowerShell: start/resume use $env:CODEBUDDY_IS_SANDBOX="1"; codebuddy ...
     start: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --model deepseek-v4.1-flash --effort max --dangerously-skip-permissions'
     resume: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --resume "{sessionref}" --model deepseek-v4.1-flash --effort max --dangerously-skip-permissions'
     submitKey: Enter
