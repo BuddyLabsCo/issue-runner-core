@@ -44,7 +44,12 @@ codeHost:
 # Keep one pair per purpose; purposes may use different CLIs.
 # POSIX shell examples; adapt quoting and environment assignment for other shells.
 # Both examples bypass approvals; use only in an externally isolated environment.
-# Verified versions and native CLI references: docs/configuration.md, Agent command examples.
+# Verified 2026-11-02 with each CLI's --version/--help and codex resume --help.
+# All four commands accept an appended --help; live model sessions were not tested.
+# Codex flags: https://developers.openai.com/codex/cli/reference
+# Effort: https://developers.openai.com/codex/config-reference
+# Model: https://developers.openai.com/api/docs/models/gpt-6.1-sol
+# CodeBuddy flags and full bypass: https://www.codebuddy.ai/docs/cli/cli-reference
 # Codex (0.166.0):
 # start: 'codex --model gpt-6.1-sol -c model_reasoning_effort="max" --dangerously-bypass-approvals-and-sandbox'
 # resume: 'codex resume "{sessionref}" --model gpt-6.1-sol -c model_reasoning_effort="max" --dangerously-bypass-approvals-and-sandbox'
