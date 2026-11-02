@@ -47,9 +47,7 @@ await test("cancellation reports and retains original working changes, partial f
     await readFile(path.join(saved.worktree, "unfinished.txt"), "utf8"),
     "original work\n",
   );
-  const report = fixture.dependencies.messages
-    .filter((message) => message.startsWith("Retained "))
-    .join("\n");
+  const report = fixture.dependencies.messages.at(-1)!;
   for (const file of [
     saved.worktree,
     saved.probe!.path,
@@ -111,7 +109,7 @@ for (const changed of ["arguments", "configuration"] as const) {
     assert.equal(await readFile(unrelated, "utf8"), "unrelated handoff");
     assert.equal(
       fixture.dependencies.messages.some((message) =>
-        message.startsWith("Retained "),
+        /Retained (?:Worktrees|recovery evidence):/u.test(message),
       ),
       false,
     );
@@ -203,9 +201,7 @@ await test("a failed execution reports its resources without deleting diagnostic
   assert.equal(result.summary.outcome, "failed");
   assert.match(result.summary.reasons.join(" "), /terminal transport failed/u);
   const saved = await fixture.snapshot();
-  const report = fixture.dependencies.messages
-    .filter((message) => message.startsWith("Retained "))
-    .join("\n");
+  const report = fixture.dependencies.messages.at(-1)!;
   for (const file of [
     saved.worktree,
     saved.probe!.path,
@@ -274,9 +270,7 @@ await test("cancellation during a Review fix retains and reports necessary findi
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   const saved = await fixture.snapshot();
   const round = saved.reviews![0]!;
-  const report = fixture.dependencies.messages
-    .filter((message) => message.startsWith("Retained "))
-    .join("\n");
+  const report = fixture.dependencies.messages.at(-1)!;
   for (const file of [
     round.findings,
     round.probe!.path,
@@ -303,9 +297,7 @@ await test("cancelled documentation reports its Maintenance Ticket checkpoint an
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   assert.equal(fixture.maintenance.cleanup.length, 0);
   const saved = await fixture.snapshot();
-  const report = fixture.dependencies.messages
-    .filter((message) => message.startsWith("Retained "))
-    .join("\n");
+  const report = fixture.dependencies.messages.at(-1)!;
   assert.match(report, /-document\.json/u);
   assert.match(report, /-document-50\.json/u);
   for (const file of [

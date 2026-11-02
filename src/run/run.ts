@@ -1,4 +1,8 @@
-import { reportRetained, type TicketReport } from "./report.ts";
+import {
+  reportRetained,
+  type TicketReport,
+  type RetainedEvidence,
+} from "./report.ts";
 import type { LoadedProject } from "../config.ts";
 import type {
   Tracker,
@@ -46,6 +50,8 @@ export interface RunSummary {
   targetBranch: string;
   reasons: string[];
   tickets?: TicketReport[];
+  failure?: string;
+  retainedEvidence?: RetainedEvidence[];
 }
 
 export interface RunOptions {
@@ -93,9 +99,7 @@ export async function runProject(
         : "failed";
     const reason = error instanceof Error ? error.message : String(error);
     summary.reasons.push(reason);
-    context.operator.write(
-      `Run ${summary.outcome}: ${reason.replace(/\s+/gu, " ").trim()}`,
-    );
+    summary.failure = reason;
     return summary;
   } finally {
     reportRetained({ ...context, retained }, summary);

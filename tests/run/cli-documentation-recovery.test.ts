@@ -53,9 +53,7 @@ await test("cancelled documentation cleanup retries report the retained executio
     const executionFile = (await readdir(recovery)).find((name) =>
       name.endsWith("-document-50.json"),
     )!;
-    const report = fixture.dependencies.messages
-      .filter((message) => message.startsWith("Retained "))
-      .join("\n");
+    const report = fixture.dependencies.messages.at(-1)!;
     for (const file of [
       path.join(recovery, executionFile),
       saved.worktree,
@@ -87,7 +85,7 @@ await test("cancelled documentation cleanup retries report the retained executio
   assert.deepEqual(result.summary.tickets[0]!.retainedWorktrees, []);
   assert.ok(
     fixture.dependencies.messages.some((message) =>
-      message.startsWith("Issue #50 maintenance: no_change"),
+      /^50\s+no_change\s+-\s+Documentation:/mu.test(message),
     ),
   );
   assert.equal(fixture.state.taskCount, 1);
@@ -140,7 +138,7 @@ await test("delivered documentation cleanup recovery restores its PR report with
   assert.match(detail, /Completed Maintenance Ticket/u);
   assert.ok(
     fixture.dependencies.messages.some((message) =>
-      message.startsWith("Issue #50 maintenance: completed PR=#81"),
+      /^50\s+completed\s+.*#81.*Documentation:/mu.test(message),
     ),
   );
   assert.equal(fixture.state.taskCount, 1);

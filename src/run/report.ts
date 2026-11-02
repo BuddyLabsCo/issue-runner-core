@@ -20,6 +20,14 @@ export interface TicketReport {
   retainedWorktrees: string[];
 }
 
+export interface RetainedEvidence {
+  ticket?: number;
+  executionId?: string;
+  recordedBranches: string[];
+  worktrees: string[];
+  paths: string[];
+}
+
 export async function reportTicket(
   input: Parameters<typeof runStandalone>[0],
   execute: (input: Parameters<typeof runStandalone>[0]) => Promise<RunSummary>,
@@ -128,7 +136,145 @@ export function reportRetained(context: RunContext, summary: RunSummary): void {
       ? `Retained Issue #${progress.ticket} execution=${progress.execution_id}; recorded branches: ${resources.map((resource) => resource.branch).join(", ")}; resources: ${paths.join(", ")}`
       : `Retained recovery evidence: ${paths.join(", ")}`;
     summary.reasons.push(report);
-    if (summary.outcome === "failed" || summary.outcome === "cancelled")
-      context.operator.write(report);
+    (summary.retainedEvidence ??= []).push({
+      ...(progress
+        ? { ticket: progress.ticket, executionId: progress.execution_id }
+        : {}),
+      recordedBranches: resources.map((resource) => resource.branch),
+      worktrees: resources
+        .map((resource) => resource.worktree)
+        .filter(existsSync),
+      paths: paths.filter(
+        (file) => !resources.some((resource) => resource.worktree === file),
+      ),
+    });
   }
+}
+
+function oneLine(value: string): string {
+  return value.replace(/\s+/gu, " ").trim();
+}
+
+// Align the visible PR text before wrapping it in an OSC 8 hyperlink.
+function hyperlink(target: string, text: string): string {
+  return `\u001b]8;;${target}\u001b\\${text}\u001b]8;;\u001b\\`;
+}
+
+function pullRequestCell(ticket: TicketReport): {
+  text: string;
+  target?: string;
+} {
+  if (ticket.pullRequest === null) return { text: "-" };
+  return {
+    text: `#${ticket.pullRequest}`,
+    ...(ticket.pullRequestUrl === null
+      ? {}
+      : { target: ticket.pullRequestUrl }),
+  };
+}
+
+function table(tickets: TicketReport[]): string[] {
+  const rows = tickets.map((ticket) => {
+    const pullRequest = pullRequestCell(ticket);
+    const detail =
+      ticket.status === "PR ready"
+        ? "CI-ready, awaiting manual merge"
+        : ticket.status === "completed" && ticket.kind === "delivery"
+          ? "Squash merged and Issue closed"
+          : oneLine(ticket.detail);
+    return {
+      cells: [
+        String(ticket.ticket),
+        ticket.status,
+        pullRequest.text,
+        ticket.kind === "maintenance" ? `Documentation: ${detail}` : detail,
+      ] as const,
+      pullRequestTarget: pullRequest.target,
+    };
+  });
+  const headings = ["Issue", "Status", "PR", "Detail"];
+  const widths = headings.map((heading, column) =>
+    Math.max(heading.length, ...rows.map((row) => row.cells[column]!.length)),
+  );
+  const render = (cells: readonly string[], target?: string) =>
+    cells
+      .map((value, column) => {
+        const padded =
+          column === cells.length - 1 ? value : value.padEnd(widths[column]!);
+        return column === 2 && target !== undefined
+          ? hyperlink(target, padded)
+          : padded;
+      })
+      .join("  ");
+  return [
+    render(headings),
+    render(widths.map((width) => "-".repeat(width))),
+    ...rows.map((row) => render(row.cells, row.pullRequestTarget)),
+  ];
+}
+
+export function renderRunReport(summary: RunSummary): string {
+  const tickets = summary.tickets ?? [];
+  const lines =
+    tickets.length === 0 ? ["No issues processed."] : table(tickets);
+  if (summary.outcome === "failed")
+    lines.push(
+      "",
+      "Run failed:",
+      ...(summary.failure ?? "Unknown failure")
+        .split("\n")
+        .filter((line) => line.trim())
+        .map((line) => `- ${line}`),
+    );
+  const reported = new Set([
+    summary.failure,
+    ...tickets.flatMap((ticket) => [
+      ticket.detail,
+      `Issue #${ticket.ticket}: ${ticket.detail}`,
+    ]),
+  ]);
+  const reasons = [...new Set(summary.reasons)].filter(
+    (reason) =>
+      !reported.has(reason) &&
+      !/^(?:selected Delivery Tickets:|Retained |Completed Maintenance Ticket )/u.test(
+        reason,
+      ),
+  );
+  if (reasons.length > 0)
+    lines.push(
+      "",
+      "Reasons:",
+      ...reasons.map((reason) => `- ${oneLine(reason)}`),
+    );
+  const evidence = summary.retainedEvidence ?? [];
+  const worktrees = [
+    ...new Set([
+      ...tickets.flatMap((ticket) => ticket.retainedWorktrees),
+      ...evidence.flatMap((entry) => entry.worktrees),
+    ]),
+  ];
+  if (worktrees.length > 0)
+    lines.push(
+      "",
+      "Retained Worktrees:",
+      ...worktrees.map((file) => `- ${file}`),
+    );
+  if (evidence.length > 0) {
+    lines.push("", "Retained recovery evidence:");
+    for (const entry of evidence) {
+      if (entry.ticket !== undefined)
+        lines.push(`Issue #${entry.ticket} execution=${entry.executionId!}`);
+      if (entry.recordedBranches.length > 0)
+        lines.push(
+          "Recorded branches (historical references):",
+          ...entry.recordedBranches.map((branch) => `- ${branch}`),
+        );
+      lines.push(
+        "Surviving recovery/diagnostic files:",
+        ...entry.paths.map((file) => `- ${file}`),
+      );
+    }
+  }
+  if (summary.outcome === "cancelled") lines.push("", "Run cancelled.");
+  return lines.join("\n");
 }
