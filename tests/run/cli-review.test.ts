@@ -105,7 +105,7 @@ await test("with no default cap, every findings round receives a fix and later R
         path: JSON.stringify(round.invocation!.path),
       }),
     );
-    assert.ok(prompt.includes(`\nReview round: ${round.round}\n`));
+    assert.ok(prompt.includes(`\n- Review round: ${round.round}\n`));
     assert.ok(
       prompt.includes(
         `Review base: ${round.round === 1 ? "a".repeat(40) : ["b", "c", "d"][round.round - 2]!.repeat(40)}`,

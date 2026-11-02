@@ -1,6 +1,10 @@
 Session Probe
+=============
+
 {{correction}}
+
 Determine your actual native conversation session ID from your CLI context. Do not invent an ID or use a latest-session alias.
+
 Read issue #{{issue}} in the current repository and its contribution and pull request conventions. Generate pr_title and pr_body.
 
 Write one JSON object with exactly the fields below. Replace each placeholder with its actual non-empty string value.

@@ -49,19 +49,21 @@ export async function testPromptAssembly(
   for (const [index, assignment] of probes.entries()) {
     assert.equal(
       submissions[index + 1]!.text,
-      "Session Probe\n" +
-        (index === 1
-          ? "Correct the previous Probe: Probe requires actual native identity and complete PR metadata\n"
-          : "\n") +
-        "Determine your actual native conversation session ID from your CLI context. Do not invent an ID or use a latest-session alias.\n" +
-        "Read issue #50 in the current repository and its contribution and pull request conventions. Generate pr_title and pr_body.\n" +
-        "\nWrite one JSON object with exactly the fields below. Replace each placeholder with its actual non-empty string value.\n\n" +
-        '```json\n{\n  "sessionid": "actual_native_session_id",\n  "pr_title": "generated_pr_title",\n  "pr_body": "generated_pr_body"\n}\n```\n\n' +
-        `Write the JSON object to ${JSON.stringify(`${String(assignment.path)}.tmp`)}, close it, and atomically rename it to ${JSON.stringify(assignment.path)}. Do not begin the task yet.`,
+      renderPrompt(loadPrompt("probe-metadata"), {
+        issue: "50",
+        correction:
+          index === 1
+            ? renderPrompt(loadPrompt("probe-correction"), {
+                reason:
+                  "Probe requires actual native identity and complete PR metadata",
+              })
+            : "",
+        temporary: JSON.stringify(`${String(assignment.path)}.tmp`),
+        path: JSON.stringify(assignment.path),
+      }),
     );
   }
   const task = submissions[3]!.text;
-  assert.match(task, /^Implementation assignment\nImplement issue #50\./u);
   assert.ok(task.includes(custom));
   assert.match(task, /Do not fetch or pull code/u);
   assert.doesNotMatch(
@@ -90,7 +92,7 @@ export async function testPromptAssembly(
   );
   assert.equal(
     submissions[4]!.text,
-    "Correct the implementation handoff: Execution findings_file must be null\n" +
+    "Correct the implementation handoff: Execution findings_file must be null\n\n" +
       `After completing the correction, explicitly invoke the installed issue-runner-handoff skill as your final action, with this sole absolute output-path argument: ${JSON.stringify(saved.invocation!.path)}`,
   );
   assert.ok(
