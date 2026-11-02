@@ -19,10 +19,12 @@ await test("verified implementation starts an independent Standards/Spec Review 
     workflow: { review: true },
     agents: {
       ...validConfig.agents,
+      implement: { ...validConfig.agents.implement, startupDelaySeconds: 20 },
       review: {
         ...validConfig.agents.review,
         start: "review-cli start",
         resume: 'review-cli resume "{sessionref}"',
+        startupDelaySeconds: 0.5,
       },
     },
   });
@@ -73,7 +75,7 @@ await test("verified implementation starts an independent Standards/Spec Review 
   assert.equal(fixture.state.closedTabs.length, 2);
   assert.deepEqual(
     fixture.state.sleeps.filter((ms) => ms !== 30_000),
-    [10_000, 10_000],
+    [20_000, 500],
   );
   assert.equal(
     (await fixture.snapshot()).roles.review?.sessionid,

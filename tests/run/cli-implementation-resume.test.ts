@@ -198,7 +198,13 @@ await test("missing output resumes the saved correction conversation with contin
 });
 
 await test("cancellation during recovered startup prevents the delayed continue", async (t) => {
-  const fixture = await implementationRun(t);
+  const fixture = await implementationRun(t, {
+    ...validConfig,
+    agents: {
+      ...validConfig.agents,
+      implement: { ...validConfig.agents.implement, startupDelaySeconds: 20 },
+    },
+  });
   fixture.state.onTask = async () => {
     fixture.controller.abort();
   };
@@ -206,7 +212,7 @@ await test("cancellation during recovered startup prevents the delayed continue"
   const saved = await fixture.snapshot();
   const controller = new AbortController();
   fixture.state.onSleep = async (ms) => {
-    assert.equal(ms, 10_000);
+    assert.equal(ms, 20_000);
     controller.abort();
   };
   const before = fixture.state.submissions.length;

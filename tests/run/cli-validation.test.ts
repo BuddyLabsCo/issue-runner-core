@@ -6,10 +6,47 @@ import test from "node:test";
 import { stringify } from "yaml";
 
 import { executeCli } from "../../src/cli.ts";
+import { loadProject } from "../../src/config.ts";
 import { agent, createProject, validConfig } from "../support/cli-project.ts";
 import { createCliDependencies } from "../support/cli-dependencies.ts";
 
 const run = ["run", "--project", "demo", "--env", "fake", "--parent", "48"];
+
+await test("Agent startup delays default to ten seconds and accept independent per-profile overrides", async (t) => {
+  const profiles = { ...validConfig.agents, documentation: agent };
+  const { root, directory } = await createProject(t, {
+    ...validConfig,
+    agents: profiles,
+  });
+  const env = { TRACKER_TOKEN: "tracker", HOST_TOKEN: "host" };
+  const defaults = await loadProject(root, "demo", env);
+  assert.deepEqual(
+    Object.values(defaults.config.agents).map(
+      (profile) => profile.startupDelaySeconds,
+    ),
+    [10, 10, 10, 10, 10],
+  );
+  await writeFile(
+    path.join(directory, "config.yaml"),
+    stringify({
+      ...validConfig,
+      agents: {
+        implement: { ...agent, startupDelaySeconds: 20 },
+        review: { ...agent, startupDelaySeconds: 0.5 },
+        ciRepair: { ...agent, startupDelaySeconds: 15 },
+        conflictRepair: { ...agent, startupDelaySeconds: 30 },
+        documentation: { ...agent, startupDelaySeconds: 12 },
+      },
+    }),
+  );
+  const configured = await loadProject(root, "demo", env);
+  assert.deepEqual(
+    Object.values(configured.config.agents).map(
+      (profile) => profile.startupDelaySeconds,
+    ),
+    [20, 0.5, 15, 30, 12],
+  );
+});
 
 await test("invalid configuration fails before any external reads or delivery resources", async (t) => {
   const cases: [object, RegExp][] = [
@@ -147,6 +184,36 @@ await test("invalid configuration fails before any external reads or delivery re
     ],
     [{ maintenanceTicket: { obsolete: true } }, /unknown field obsolete/],
   ];
+  for (const purpose of [
+    "implement",
+    "review",
+    "ciRepair",
+    "conflictRepair",
+    "documentation",
+  ]) {
+    for (const startupDelaySeconds of [
+      0,
+      -1,
+      "20",
+      null,
+      true,
+      NaN,
+      Infinity,
+      -Infinity,
+    ]) {
+      cases.push([
+        {
+          agents: {
+            ...validConfig.agents,
+            [purpose]: { ...agent, startupDelaySeconds },
+          },
+        },
+        new RegExp(
+          `agents\\.${purpose}\\.startupDelaySeconds must be a positive number`,
+        ),
+      ]);
+    }
+  }
   const { root, directory } = await createProject(t);
   for (const [patch, expected] of cases) {
     await writeFile(
