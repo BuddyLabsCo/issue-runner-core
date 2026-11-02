@@ -160,7 +160,7 @@ await test(
       .slice(previousSubmissions)
       .filter(
         (submission) =>
-          fixture.tabs.get(submission.tab)!.label === "Issue #53 implement",
+          fixture.tabs.get(submission.tab)!.label === "issue-53 implement",
       );
     assert.deepEqual(
       resumed.map((submission) => submission.text),

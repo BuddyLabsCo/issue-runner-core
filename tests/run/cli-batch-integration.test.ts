@@ -281,7 +281,7 @@ await test("one failed required check holds the entire Batch while CI repair is 
   );
   fixture.dependencies.terminalPlugin.createTab = async (options) => {
     const tab = await create(options);
-    if (options.label.endsWith(" ci_repair")) {
+    if (options.label.endsWith(" ci repair")) {
       repairStarted = true;
       fixture.controller.abort();
     }

@@ -64,6 +64,14 @@ for (const stage of ["review", "fix"] as const) {
         commits: [fixCommit],
       });
     };
+    const labels: string[] = [];
+    const createTab = fixture.dependencies.terminalPlugin.createTab.bind(
+      fixture.dependencies.terminalPlugin,
+    );
+    fixture.dependencies.terminalPlugin.createTab = async (options) => {
+      labels.push(options.label);
+      return createTab(options);
+    };
     const before = fixture.state.submissions.length;
     const messagesBefore = fixture.dependencies.messages.length;
     const result = await executeCli(implementationCommand, {
@@ -79,6 +87,7 @@ for (const stage of ["review", "fix"] as const) {
     assert.equal(resumed.pr_body, saved.pr_body);
     assert.equal(resumed.reviews!.length, 1);
     const label = stage === "review" ? "review" : "fix review";
+    assert.equal(labels[0], `issue-50 ${label} r1`);
     const sessionid =
       stage === "review"
         ? saved.roles.review!.sessionid

@@ -178,8 +178,9 @@ await test("one standalone implementation persists verified completion before cl
     "close",
   ]);
   assert.ok(await readFile(handoff, "utf8"));
-  assert.ok(
+  assert.equal(
     deps.messages.some((message) => message.includes("sessionid=pending")),
+    false,
   );
   assert.ok(
     deps.messages.some(

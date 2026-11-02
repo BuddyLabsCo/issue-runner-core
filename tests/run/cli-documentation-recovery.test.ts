@@ -46,6 +46,7 @@ await test("cancelled documentation cleanup retries retain execution resources i
       status: "no_change",
       pullRequest: null,
       pullRequestUrl: null,
+      pullRequestTitle: null,
       retainedWorktrees: [saved.worktree],
     });
     assert.match(detail, /Completed Maintenance Ticket/u);
@@ -133,12 +134,15 @@ await test("delivered documentation cleanup recovery restores its PR report with
     status: "completed",
     pullRequest: 81,
     pullRequestUrl: "https://github.com/owner/repo/pull/81",
+    pullRequestTitle: "feat: [issue-50] implement the Issue",
     retainedWorktrees: [],
   });
   assert.match(detail, /Completed Maintenance Ticket/u);
   assert.ok(
     fixture.dependencies.messages.some((message) =>
-      /^50\s+completed\s+.*#81.*Documentation:/mu.test(message),
+      /^50\s+completed\s+.*#81.*feat: \[issue-50\] implement the Issue$/mu.test(
+        message,
+      ),
     ),
   );
   assert.equal(fixture.state.taskCount, 1);

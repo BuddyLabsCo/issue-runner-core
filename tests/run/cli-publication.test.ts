@@ -234,7 +234,7 @@ for (const bucket of ["fail", "cancel"] as const) {
       fixture.dependencies.terminalPlugin,
     );
     fixture.dependencies.terminalPlugin.createTab = async (options) => {
-      if (options.label.includes("ci_repair")) fixture.controller.abort();
+      if (options.label.includes("ci repair")) fixture.controller.abort();
       return open(options);
     };
     const result = await fixture.run();

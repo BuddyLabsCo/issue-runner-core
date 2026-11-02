@@ -16,6 +16,7 @@ export interface TicketReport {
     | "failed";
   pullRequest: number | null;
   pullRequestUrl: string | null;
+  pullRequestTitle: string | null;
   detail: string;
   retainedWorktrees: string[];
 }
@@ -38,6 +39,7 @@ export async function reportTicket(
     status: "incomplete",
     pullRequest: null,
     pullRequestUrl: null,
+    pullRequestTitle: null,
     detail: "Delivery remains incomplete",
     retainedWorktrees: [],
   };
@@ -68,6 +70,9 @@ export async function reportTicket(
       const publication = progress?.publication;
       report.pullRequest = publication?.pullRequest?.number ?? null;
       report.pullRequestUrl = publication?.pullRequest?.url ?? null;
+      report.pullRequestTitle = publication?.pullRequest
+        ? publication.title
+        : null;
       const resources = progress
         ? [
             progress,
@@ -176,18 +181,15 @@ function pullRequestCell(ticket: TicketReport): {
 function table(tickets: TicketReport[]): string[] {
   const rows = tickets.map((ticket) => {
     const pullRequest = pullRequestCell(ticket);
-    const detail =
-      ticket.status === "PR ready"
-        ? "CI-ready, awaiting manual merge"
-        : ticket.status === "completed" && ticket.kind === "delivery"
-          ? "Squash merged and Issue closed"
-          : oneLine(ticket.detail);
+    const detail = oneLine(ticket.pullRequestTitle ?? ticket.detail);
     return {
       cells: [
         String(ticket.ticket),
         ticket.status,
         pullRequest.text,
-        ticket.kind === "maintenance" ? `Documentation: ${detail}` : detail,
+        ticket.kind === "maintenance" && ticket.pullRequest === null
+          ? `Documentation: ${detail}`
+          : detail,
       ] as const,
       pullRequestTarget: pullRequest.target,
     };
@@ -218,10 +220,12 @@ export function renderRunReport(summary: RunSummary): string {
   const lines =
     tickets.length === 0 ? ["No issues processed."] : table(tickets);
   const reported = new Set(
-    tickets.flatMap((ticket) => [
-      ticket.detail,
-      `Issue #${ticket.ticket}: ${ticket.detail}`,
-    ]),
+    tickets.flatMap((ticket) =>
+      ticket.pullRequestTitle &&
+      ["failed", "cancelled", "incomplete"].includes(ticket.status)
+        ? []
+        : [ticket.detail, `Issue #${ticket.ticket}: ${ticket.detail}`],
+    ),
   );
   if (summary.outcome === "failed") {
     lines.push(

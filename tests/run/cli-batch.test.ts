@@ -41,7 +41,7 @@ for (const selector of ["parent", "issue"] as const) {
       options: CreateTabOptions,
     ) => {
       const number = Number(/ticket-(\d+)$/u.exec(options.cwd)![1]);
-      assert.equal(options.label, `Issue #${number} implement`);
+      assert.equal(options.label, `issue-${number} implement`);
       const tab = await createTab(options);
       tabs.set(tab, { number, options });
       return tab;
