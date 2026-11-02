@@ -17,6 +17,7 @@ import type {
 import type { LoadedProject } from "../config.ts";
 import { conflictRepairInstructions } from "../prompts/conflict-repair.ts";
 import { ciRepairInstructions } from "../prompts/ci-repair.ts";
+import { renderPrompt } from "../prompts/load.ts";
 import type { GitWorkspace, WorkspaceEvidence } from "./contracts.ts";
 import type { ReadOperation } from "./discovery.ts";
 import { verifyWorkspace } from "./verification.ts";
@@ -307,11 +308,25 @@ export async function repairPullRequest(
       stage: repair,
       purpose: kind === "ci" ? "ci_repair" : "conflict_repair",
       worktree: repair.worktree,
-      task: () =>
-        `${(kind === "ci" ? ciRepairInstructions : conflictRepairInstructions).replace("{{issue}}", () => String(progress.ticket))}\n\nPR: ${publication.pullRequest!.url}\n` +
-        (kind === "ci"
-          ? `Failed checks: ${JSON.stringify(repair.failedChecks.map(({ name, state, link }) => ({ name, state, link })))}`
-          : `Base SHA: ${repair.base}\nTarget Branch SHA: ${repair.targetBase}\nMerge conflict: ${repair.conflict}`),
+      task: (handoffPath) =>
+        renderPrompt(
+          kind === "ci" ? ciRepairInstructions : conflictRepairInstructions,
+          {
+            issue: String(progress.ticket),
+            pr: publication.pullRequest!.url,
+            checks: JSON.stringify(
+              repair.failedChecks.map(({ name, state, link }) => ({
+                name,
+                state,
+                link,
+              })),
+            ),
+            base: repair.base,
+            target_base: repair.targetBase,
+            conflict: repair.conflict,
+            path: JSON.stringify(handoffPath),
+          },
+        ),
       accept: async (text) => {
         const result = parseExecution(text);
         const { evidence, ancestry } = await read(

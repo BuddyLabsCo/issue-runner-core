@@ -11,6 +11,7 @@ import {
 } from "../support/review-run.ts";
 import { access, readFile } from "node:fs/promises";
 import { implementationCommit } from "../support/implementation-run.ts";
+import { loadPrompt, renderPrompt } from "../../src/prompts/load.ts";
 
 await test("verified implementation starts an independent Standards/Spec Review and becomes eligible for publication on passed", async (t) => {
   const fixture = await implementationRun(t, {
@@ -89,6 +90,21 @@ await test("with no default cap, every findings round receives a fix and later R
   ];
   fixture.reviewState.onReview = async (round) => {
     const prompt = fixture.state.submissions.at(-1)!.text;
+    assert.equal(
+      prompt,
+      renderPrompt(loadPrompt("review"), {
+        issue: "50",
+        instructions: await readFile(
+          `${fixture.directory}/prompts/review.md`,
+          "utf8",
+        ),
+        round: String(round.round),
+        base: round.base,
+        head: round.head,
+        findings: JSON.stringify(round.findings),
+        path: JSON.stringify(round.invocation!.path),
+      }),
+    );
     assert.ok(prompt.includes(`\nReview round: ${round.round}\n`));
     assert.ok(
       prompt.includes(

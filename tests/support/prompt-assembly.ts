@@ -4,6 +4,7 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { TestContext } from "node:test";
 import type { executeCli } from "../../src/cli.ts";
+import { loadPrompt, renderPrompt } from "../../src/prompts/load.ts";
 import { validConfig } from "./cli-project.ts";
 import {
   committed,
@@ -51,7 +52,7 @@ export async function testPromptAssembly(
       "Session Probe\n" +
         (index === 1
           ? "Correct the previous Probe: Probe requires actual native identity and complete PR metadata\n"
-          : "") +
+          : "\n") +
         "Determine your actual native conversation session ID from your CLI context. Do not invent an ID or use a latest-session alias.\n" +
         "Read issue #50 in the current repository and its contribution and pull request conventions. Generate pr_title and pr_body.\n" +
         "\nWrite one JSON object with exactly the fields below. Replace each placeholder with its actual non-empty string value.\n\n" +
@@ -74,6 +75,14 @@ export async function testPromptAssembly(
       /probe_id|run_id|execution_id|owner\/repo|Implement the Issue|Accepted scope/u,
     );
   const saved = await fixture.snapshot();
+  assert.equal(
+    task,
+    renderPrompt(loadPrompt("implement"), {
+      issue: "50",
+      instructions: custom,
+      path: JSON.stringify(saved.superseded[1]),
+    }),
+  );
   assert.ok(
     task.endsWith(
       `Once the task is complete, explicitly invoke the installed issue-runner-handoff skill as your final action, with this sole absolute output-path argument: ${JSON.stringify(saved.superseded[1])}`,

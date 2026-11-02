@@ -68,7 +68,7 @@ await test("built artifacts work in isolated consumer and npm global installatio
     "prompts/probe.md",
     "prompts/probe-metadata.md",
     "prompts/probe-correction.md",
-    "prompts/handoff-invocation.md",
+    "prompts/resume.md",
     "prompts/handoff-correction.md",
   ])
     assert.ok(files.includes(file), file);

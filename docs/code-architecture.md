@@ -54,3 +54,6 @@ tests/
   adapters/plugins and agent-specific start/resume commands in configuration.
 - `recovery.ts` owns persistence; `run/` and `agent/` own restored behavior.
 - Keep helpers in their owning module; extract shared code only for actual callers.
+- Built-in Markdown templates own complete Agent messages, including headings,
+  context labels, project-instruction placement, and handoff instructions. Code
+  loads templates and substitutes values once; it does not append prompt text.
