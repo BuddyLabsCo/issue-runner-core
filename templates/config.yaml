@@ -39,6 +39,19 @@ codeHost:
 # submitKey is a Runner setting alongside start/resume, outside native options.
 # startupDelaySeconds is also a Runner setting: positive seconds, default 10.
 # Increase it if your Agent needs more time after start or resume before input.
+# Choose one pair below and replace start/resume in each purpose you use:
+# implement, review (including Review fixes), ciRepair, conflictRepair, documentation.
+# Keep one pair per purpose; purposes may use different CLIs.
+# POSIX shell examples; adapt quoting and environment assignment for other shells.
+# Both examples bypass approvals; use only in an externally isolated environment.
+# Verified versions and native CLI references: docs/configuration.md, Agent command examples.
+# Codex (0.166.0):
+# start: 'codex --model gpt-6.1-sol -c model_reasoning_effort="max" --dangerously-bypass-approvals-and-sandbox'
+# resume: 'codex resume "{sessionref}" --model gpt-6.1-sol -c model_reasoning_effort="max" --dangerously-bypass-approvals-and-sandbox'
+# CodeBuddy (2.179.0):
+# start: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --model deepseek-v4.1-flash --effort max --dangerously-skip-permissions'
+# resume: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --resume "{sessionref}" --model deepseek-v4.1-flash --effort max --dangerously-skip-permissions'
+# CodeBuddy needs this process environment variable to skip HIGH/CRITICAL confirmations too.
 agents:
   implement:
     start: my-agent

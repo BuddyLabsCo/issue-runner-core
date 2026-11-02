@@ -680,6 +680,38 @@ this premise nor adopts surviving handles. Mismatched inputs ignore old progress
 and do not adopt its Reservation. Unfinished and locally completed checkpoint
 files/Worktrees are retained; only per-call Git configuration is removed.
 
+## Agent command examples
+
+The [init template](../templates/config.yaml) includes commented Codex and
+CodeBuddy command pairs. Copy one pair into each Agent purpose you use, replacing
+its existing `start` and `resume` values. Keep one pair per purpose. The `review`
+profile also runs Review fixes. Keep `submitKey` and `startupDelaySeconds` beside
+the commands; they are Runner settings, not native CLI flags.
+
+Syntax was checked on 2026-11-02 with Codex CLI 0.166.0 (`codex --version`,
+`codex --help`, `codex resume --help`) and CodeBuddy CLI 2.179.0
+(`codebuddy --version`, `codebuddy --help`). Both start and resume examples
+repeat their model, effort, and permission settings. All four complete commands
+also passed local option parsing with `--help` appended:
+
+- Codex uses `--model gpt-6.1-sol`, `-c model_reasoning_effort="max"`, and
+  `--dangerously-bypass-approvals-and-sandbox`. The [CLI reference](https://developers.openai.com/codex/cli/reference)
+  documents model selection, TOML configuration overrides, bypass, and session
+  resume. The [configuration reference](https://developers.openai.com/codex/config-reference)
+  defines `model_reasoning_effort`; the [model reference](https://developers.openai.com/api/docs/models/gpt-6.1-sol)
+  confirms `max` support.
+- CodeBuddy 2.179.0 help lists `deepseek-v4.1-flash`, `--effort` with `max`,
+  `--resume [sessionId]`, and `--dangerously-skip-permissions`. Its [CLI reference](https://www.codebuddy.ai/docs/cli/cli-reference)
+  requires the process environment variable `CODEBUDDY_IS_SANDBOX=1` alongside
+  bypass to suppress HIGH/CRITICAL confirmations. The flag alone still prompts.
+
+These are POSIX shell commands. Adapt shell quoting and environment assignment
+for other shells, preserving the quoted `"{sessionref}"` placeholder. Use bypass
+only in an externally isolated environment. These settings do not override
+enforced administrator policies or explicit permission-deny rules.
+Verification covers CLI syntax, Core configuration validation, and packaged init
+assets; it does not establish account access or successful live model sessions.
+
 ## Configuration rules
 
 Use [the init template](../templates/config.yaml) as the complete example.

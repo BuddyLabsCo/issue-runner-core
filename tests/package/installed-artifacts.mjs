@@ -45,11 +45,16 @@ export async function testInstalledArtifacts(
         "prompts/implement.md",
         "prompts/review.md",
         "prompts/documentation.md",
-      ])
+      ]) {
         assert.deepEqual(
           readFileSync(join(launch, "demo", file)),
           readFileSync(join(core, "templates", file)),
         );
+        assert.deepEqual(
+          readFileSync(join(core, "templates", file)),
+          readFileSync(new URL(`../../templates/${file}`, import.meta.url)),
+        );
+      }
     },
   );
   await t.test(

@@ -1,12 +1,13 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external contracts retain asynchronous signatures. */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import { executeCli } from "../../src/cli.ts";
+import { loadProject } from "../../src/config.ts";
 import { createCliDependencies } from "../support/cli-dependencies.ts";
 import { createProject, validConfig } from "../support/cli-project.ts";
 
@@ -98,6 +99,50 @@ await test("init creates a Project without credentials and refuses to overwrite 
       (await executeCli(["init", "--project", project], dependencies)).exitCode,
       1,
     );
+  }
+  for (const [brand, model, effort, bypass] of [
+    [
+      "Codex",
+      "gpt-6.1-sol",
+      'model_reasoning_effort="max"',
+      "--dangerously-bypass-approvals-and-sandbox",
+    ],
+    [
+      "CodeBuddy",
+      "deepseek-v4.1-flash",
+      "--effort max",
+      "--dangerously-skip-permissions",
+    ],
+  ] as const) {
+    const example = new RegExp(
+      `# ${brand} \\([^\\n]+\\):\\n# start: ([^\\n]+)\\n# resume: ([^\\n]+)`,
+    ).exec(config);
+    assert.ok(example, `${brand} command pair is included by init`);
+    const selected = config
+      .replace(/^ {4}start:.*$/gm, `    start: ${example[1]}`)
+      .replace(/^ {4}resume:.*$/gm, `    resume: ${example[2]}`);
+    await writeFile(path.join(launchDirectory, "demo/config.yaml"), selected);
+    const { config: loaded } = await loadProject(
+      launchDirectory,
+      "demo",
+      { GH_TOKEN: "test" },
+      { requireDocumentationMaintenance: true },
+    );
+    assert.equal(Object.values(loaded.agents).length, 5);
+    for (const profile of Object.values(loaded.agents)) {
+      assert.ok(profile);
+      for (const command of [profile.start, profile.resume]) {
+        assert.ok(command.includes(`--model ${model}`));
+        assert.ok(command.includes(effort));
+        assert.ok(command.includes(bypass));
+        assert.ok(!command.includes("--no-daemon"));
+        if (brand === "CodeBuddy")
+          assert.ok(command.startsWith("CODEBUDDY_IS_SANDBOX=1 codebuddy "));
+      }
+      assert.ok(profile.resume.includes('"{sessionref}"'));
+      assert.equal(profile.submitKey, "Enter");
+      assert.equal(profile.startupDelaySeconds, 10);
+    }
   }
 });
 
