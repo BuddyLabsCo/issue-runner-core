@@ -492,6 +492,9 @@ await test("PR #170 keeps its title across report statuses without hiding diagno
       /docs: \[issue-37\] add Linux standalone delivery fixture$/u,
     );
     if (["failed", "cancelled", "incomplete"].includes(status))
-      assert.match(output, /Delivery interrupted/u);
+      assert.equal(
+        output.split("Issue #37: Delivery interrupted").length - 1,
+        1,
+      );
   }
 });

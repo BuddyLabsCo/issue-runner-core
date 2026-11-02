@@ -220,12 +220,10 @@ export function renderRunReport(summary: RunSummary): string {
   const lines =
     tickets.length === 0 ? ["No issues processed."] : table(tickets);
   const reported = new Set(
-    tickets.flatMap((ticket) =>
-      ticket.pullRequestTitle &&
-      ["failed", "cancelled", "incomplete"].includes(ticket.status)
-        ? []
-        : [ticket.detail, `Issue #${ticket.ticket}: ${ticket.detail}`],
-    ),
+    tickets.flatMap((ticket) => [
+      ticket.detail,
+      `Issue #${ticket.ticket}: ${ticket.detail}`,
+    ]),
   );
   if (summary.outcome === "failed") {
     lines.push(
@@ -238,13 +236,23 @@ export function renderRunReport(summary: RunSummary): string {
     );
     reported.add(summary.failure ?? "Unknown failure");
   }
-  const reasons = [...new Set(summary.reasons)].filter(
-    (reason) =>
-      !reported.has(reason) &&
-      !/^(?:selected Delivery Tickets:|Retained |Completed Maintenance Ticket )/u.test(
-        reason,
+  const reasons = [
+    ...new Set([
+      ...summary.reasons.filter(
+        (reason) =>
+          !reported.has(reason) &&
+          !/^(?:selected Delivery Tickets:|Retained |Completed Maintenance Ticket )/u.test(
+            reason,
+          ),
       ),
-  );
+      ...tickets.flatMap((ticket) =>
+        ticket.pullRequestTitle &&
+        ["failed", "cancelled", "incomplete"].includes(ticket.status)
+          ? [`Issue #${ticket.ticket}: ${ticket.detail}`]
+          : [],
+      ),
+    ]),
+  ];
   if (reasons.length > 0)
     lines.push(
       "",

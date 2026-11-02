@@ -395,3 +395,55 @@ for (const failure of ["rejected", "conflict"] as const) {
     }
   });
 }
+
+await test("an incomplete PR keeps its ownership diagnostic when a sibling later fails", async (t) => {
+  const fixture = await parentDeliveryRun(t, [child(51), child(52)], {
+    ...validConfig,
+    operationRetry: 0,
+  });
+  const ownershipObserved = deferred<void>();
+  const getTicket = fixture.dependencies.tracker.getTicket.bind(
+    fixture.dependencies.tracker,
+  );
+  fixture.dependencies.tracker.getTicket = async (repository, number) => {
+    const ticket = await getTicket(repository, number);
+    if (number === 51 && ticket.assignees?.includes("outside-owner"))
+      ownershipObserved.resolve();
+    return ticket;
+  };
+  Object.assign(fixture.dependencies.codeHost, {
+    async getRequiredChecks(
+      _repository: string,
+      number: number,
+    ): Promise<RequiredCheck[]> {
+      const pr = (await fixture.dependencies.codeHost.listPullRequests()).find(
+        (pr) => pr.number === number,
+      )!;
+      if (pr.branch.endsWith("/ticket-51")) {
+        fixture.children[0]!.assignees = ["outside-owner"];
+        return [
+          { name: "test", state: "PENDING", link: "", bucket: "pending" },
+        ];
+      }
+      await ownershipObserved.promise;
+      throw new Error("Issue 52 check lookup failed");
+    },
+  });
+  fixture.dependencies.operator.pause = async (message) => {
+    assert.match(message, /Issue 52 check lookup failed/u);
+    throw new Error("Issue 52 check lookup failed");
+  };
+  const result = await fixture.run();
+  assert.equal(result.summary.outcome, "failed");
+  assert.equal(result.summary.tickets?.[0]?.status, "incomplete");
+  assert.equal(result.summary.tickets[0].detail, "Issue is externally owned");
+  assert.ok(
+    !result.summary.reasons.some((reason) =>
+      reason.includes("externally owned"),
+    ),
+  );
+  const output = fixture.dependencies.messages.at(-1)!;
+  assert.match(output, /^51\s+incomplete\s+.*feat: \[issue-51\] implement$/mu);
+  assert.match(output, /^- Issue #51: Issue is externally owned$/mu);
+  assert.match(output, /Issue 52 check lookup failed/u);
+});
