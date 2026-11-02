@@ -13,7 +13,7 @@ const noChange = {
   findings_file: null,
 };
 
-await test("cancelled documentation cleanup retries report the retained execution resources", async (t) => {
+await test("cancelled documentation cleanup retries retain execution resources in structured results", async (t) => {
   const fixture = await documentationRun(t);
   const cleanup = fixture.dependencies.gitWorkspace.cleanupWorktree.bind(
     fixture.dependencies.gitWorkspace,
@@ -53,7 +53,7 @@ await test("cancelled documentation cleanup retries report the retained executio
     const executionFile = (await readdir(recovery)).find((name) =>
       name.endsWith("-document-50.json"),
     )!;
-    const report = fixture.dependencies.messages.at(-1)!;
+    const report = result.summary.reasons.join("\n");
     for (const file of [
       path.join(recovery, executionFile),
       saved.worktree,

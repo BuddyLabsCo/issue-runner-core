@@ -260,22 +260,6 @@ export function renderRunReport(summary: RunSummary): string {
       "Retained Worktrees:",
       ...worktrees.map((file) => `- ${file}`),
     );
-  if (evidence.length > 0) {
-    lines.push("", "Retained recovery evidence:");
-    for (const entry of evidence) {
-      if (entry.ticket !== undefined)
-        lines.push(`Issue #${entry.ticket} execution=${entry.executionId!}`);
-      if (entry.recordedBranches.length > 0)
-        lines.push(
-          "Recorded branches (historical references):",
-          ...entry.recordedBranches.map((branch) => `- ${branch}`),
-        );
-      lines.push(
-        "Surviving recovery/diagnostic files:",
-        ...entry.paths.map((file) => `- ${file}`),
-      );
-    }
-  }
   if (summary.outcome === "cancelled") lines.push("", "Run cancelled.");
   return lines.join("\n");
 }

@@ -299,11 +299,13 @@ Keep the existing per-Issue stage output and add the native conversation
 reference as `sessionid`, for example:
 
 ```text
-issue-43: implement sessionid=<implementation-native-session-ref>
-issue-43: review sessionid=<review-native-session-ref>
-issue-43: implement sessionid=<implementation-native-session-ref>
+Issue #43 implement sessionid=<implementation-ref> handoff=<implement-path>
+Issue #43 review round 1 sessionid=<review-ref> handoff=<review-path>
+Issue #43 fix review round 1 sessionid=<implementation-ref> handoff=<fix-path>
+Issue #43 review round 2 sessionid=<review-ref> handoff=<next-review-path>
 ```
 
+Review and fix progress identify the round, including during recovery and handoff corrections.
 The fix round reports the same implementation reference even if it resumes in
 a new tab. Use the validated opaque `session_ref`, not a terminal handle,
 application ID, or an ambiguous latest-session reference. While

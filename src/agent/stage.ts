@@ -82,6 +82,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
       | "ci_repair"
       | "conflict_repair";
     worktree?: string;
+    progressLabel?: string;
     task: (handoffPath: string) => string | Promise<string>;
     accept: (text: string) => Promise<R>;
   },
@@ -115,7 +116,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
     );
   const show = (file: string) =>
     operator.write(
-      `Issue #${progress.ticket} ${purpose} sessionid=${sessionid() ?? "pending"} handoff=${file}`,
+      `Issue #${progress.ticket} ${input.progressLabel ?? purpose} sessionid=${sessionid() ?? "pending"} handoff=${file}`,
     );
   const sleep = async (ms: number) => {
     signal?.throwIfAborted();

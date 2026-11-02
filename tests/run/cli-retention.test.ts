@@ -22,7 +22,7 @@ import { ciRepairRun } from "../support/ci-repair-run.ts";
 import { findings, reviewRun } from "../support/review-run.ts";
 import { documentationRun } from "../support/documentation-run.ts";
 
-await test("cancellation reports and retains original working changes, partial files and superseded handoffs", async (t) => {
+await test("cancellation retains original working changes, partial files and superseded handoffs in structured results", async (t) => {
   const fixture = await implementationRun(t);
   fixture.state.onTask = async (file) => {
     const saved = await fixture.snapshot();
@@ -47,7 +47,7 @@ await test("cancellation reports and retains original working changes, partial f
     await readFile(path.join(saved.worktree, "unfinished.txt"), "utf8"),
     "original work\n",
   );
-  const report = fixture.dependencies.messages.at(-1)!;
+  const report = result.summary.reasons.join("\n");
   for (const file of [
     saved.worktree,
     saved.probe!.path,
@@ -191,7 +191,7 @@ await test(
   },
 );
 
-await test("a failed execution reports its resources without deleting diagnostic files", async (t) => {
+await test("a failed execution retains its resources in structured results without deleting diagnostic files", async (t) => {
   const fixture = await implementationRun(t);
   fixture.state.onTask = async (file) => {
     await writeFile(`${file}.tmp`, "unfinished result");
@@ -201,7 +201,7 @@ await test("a failed execution reports its resources without deleting diagnostic
   assert.equal(result.summary.outcome, "failed");
   assert.match(result.summary.reasons.join(" "), /terminal transport failed/u);
   const saved = await fixture.snapshot();
-  const report = fixture.dependencies.messages.at(-1)!;
+  const report = result.summary.reasons.join("\n");
   for (const file of [
     saved.worktree,
     saved.probe!.path,
@@ -260,17 +260,18 @@ await test("no-auto-merge retains and reports failed and replacement repair exec
     await assert.rejects(access(file));
 });
 
-await test("cancellation during a Review fix retains and reports necessary findings and both role assignments", async (t) => {
+await test("cancellation during a Review fix retains necessary findings and both role assignments in structured results", async (t) => {
   const fixture = await reviewRun(t, 1);
   fixture.reviewState.onReview = findings;
   fixture.reviewState.onFix = async (round) => {
     await writeFile(`${round.fix!.invocation!.path}.tmp`, "unfinished fix");
     fixture.controller.abort();
   };
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  const result = await fixture.run();
+  assert.equal(result.summary.outcome, "cancelled");
   const saved = await fixture.snapshot();
   const round = saved.reviews![0]!;
-  const report = fixture.dependencies.messages.at(-1)!;
+  const report = result.summary.reasons.join("\n");
   for (const file of [
     round.findings,
     round.probe!.path,
@@ -288,16 +289,17 @@ await test("cancellation during a Review fix retains and reports necessary findi
   assert.equal(saved.roles.review!.sessionid, "review-native/$&");
 });
 
-await test("cancelled documentation reports its Maintenance Ticket checkpoint and execution artifacts", async (t) => {
+await test("cancelled documentation retains its Maintenance Ticket checkpoint and execution artifacts in structured results", async (t) => {
   const fixture = await documentationRun(t);
   fixture.state.onTask = async (file) => {
     await writeFile(`${file}.tmp`, "unfinished documentation");
     fixture.controller.abort();
   };
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  const result = await fixture.run();
+  assert.equal(result.summary.outcome, "cancelled");
   assert.equal(fixture.maintenance.cleanup.length, 0);
   const saved = await fixture.snapshot();
-  const report = fixture.dependencies.messages.at(-1)!;
+  const report = result.summary.reasons.join("\n");
   assert.match(report, /-document\.json/u);
   assert.match(report, /-document-50\.json/u);
   for (const file of [

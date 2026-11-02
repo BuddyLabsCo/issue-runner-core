@@ -85,9 +85,13 @@ for (const outcome of ["failed", "cancelled"] as const) {
     const output = fixture.dependencies.messages.at(-1)!;
     assert.match(output, new RegExp(`^50\\s+${outcome}\\s+-\\s+`, "mu"));
     assert.match(output, /^Retained Worktrees:$/mu);
-    assert.match(output, /^Retained recovery evidence:$/mu);
-    assert.ok(output.includes(saved.invocation!.path));
-    assert.ok(output.includes(`Recorded branches (historical references):`));
+    assert.doesNotMatch(
+      output,
+      /Retained recovery evidence:|Recorded branches|Surviving recovery/u,
+    );
+    assert.ok(output.includes(saved.worktree));
+    assert.ok(!output.includes(saved.invocation!.path));
+    assert.ok(!output.includes(saved.branch));
     assert.match(
       output,
       outcome === "cancelled" ? /^Run cancelled\.$/mu : /^Run failed:$/mu,
@@ -373,7 +377,7 @@ await test("actionable selection reasons stay separate from completed rows", asy
   assert.doesNotMatch(output, /selected Delivery Tickets|Issue #51: Issue/u);
 });
 
-await test("completed cleanup labels surviving checkpoints as evidence, not live Worktrees", async (t) => {
+await test("completed cleanup keeps recovery records without printing their paths or historical branches", async (t) => {
   const fixture = await integrationRun(t);
   fixture.dependencies.gitWorkspace.cleanupWorktree = async ({ worktree }) =>
     rm(worktree, { recursive: true });
@@ -383,10 +387,15 @@ await test("completed cleanup labels surviving checkpoints as evidence, not live
   const saved = await fixture.snapshot();
   const output = fixture.dependencies.messages.at(-1)!;
   assert.doesNotMatch(output, /Retained Worktrees:|selected Delivery Tickets/u);
-  assert.match(output, /^Retained recovery evidence:$/mu);
-  assert.match(output, /^Recorded branches \(historical references\):$/mu);
-  assert.ok(output.includes(saved.branch));
-  assert.ok(output.includes(path.join(fixture.directory, "recovery")));
+  assert.doesNotMatch(
+    output,
+    /Retained recovery evidence:|Recorded branches|Surviving recovery/u,
+  );
+  assert.ok(result.summary.retainedEvidence!.length > 0);
+  for (const evidence of result.summary.retainedEvidence!)
+    for (const file of evidence.paths) assert.ok(existsSync(file));
+  assert.ok(!output.includes(saved.branch));
+  assert.ok(!output.includes(path.join(fixture.directory, "recovery")));
   assert.ok(!output.includes(saved.worktree));
 });
 
