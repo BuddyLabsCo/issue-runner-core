@@ -3,3 +3,5 @@
 Acceptance case: 21.
 Platform: Windows.
 Requirement: task-1 delivered.
+
+Review fix verified.
