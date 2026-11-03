@@ -1,12 +1,25 @@
 ---
 name: issue-runner-handoff
-description: Write the current task's JSON handoff.
-disable-model-invocation: true
+description: Use only when the user or task prompt explicitly requests the issue-runner-handoff skill. Report task completion or a pause requiring user action.
 argument-hint: "<absolute-handoff-json-path>"
 ---
 
-Invoke this skill only after the assigned task is complete.
-Use the argument as the absolute path of the final JSON handoff file.
+Invoke this skill only when explicitly requested by name.
+Use the supplied Handoff path or explicit argument as the absolute path of the final JSON handoff file.
+This explicit-only restriction is model-followed guidance, not client-enforced protection.
+
+## Human action required
+
+Use this branch only when user action is required and no independent work can continue.
+Do not create the handoff file.
+
+Your final response starts with literal `[action required]`, with no preceding heading, list marker, or formatting.
+Explain the blocker and required action, then wait.
+After the blocker is resolved, resume work and publish a handoff only on completion.
+
+## Task complete
+
+Only after the assigned work is complete, write the applicable final JSON schema below.
 
 For implementation and documentation assignments, include the nonempty `pr_title`
 and `pr_body` strings generated from the completed work and repository Pull Request
@@ -57,7 +70,7 @@ and relevant limitations. Report only work and checks actually performed.
 otherwise `null`.
 
 Write the JSON to `<handoff-path>.tmp` in the final file's directory.
-Validate the JSON and close the temporary file.
+Validate the JSON against the applicable schema and close the temporary file.
 
 As the final step, atomically rename the temporary file to the final path,
 replacing the existing final file if present.

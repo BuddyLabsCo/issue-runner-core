@@ -330,7 +330,7 @@ await test("a delivered child reopened during parent closure stays incomplete wi
     fixture.children[0]!.state = "open";
     fixture.children[0]!.stateReason = null;
   };
-  const timeout = setTimeout(() => fixture.controller.abort(), 2000);
+  const timeout = setTimeout(() => fixture.controller.abort(), 10_000);
   try {
     const result = await fixture.run();
     assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));

@@ -36,15 +36,22 @@ await test("each task template includes its complete assignment and handoff", ()
   }
 });
 
-await test("recovery continues unfinished work and requests a handoff only after completion", () => {
+await test("recovery continues unfinished work with completion or human-action reporting", () => {
   const file = "/worktree/unfinished $&.json";
   const prompt = renderPrompt(loadPrompt("recovery"), {
     name: "Review fix",
     path: JSON.stringify(file),
   });
   assert.match(prompt, /continue unfinished work/iu);
-  assert.match(prompt, /after.*(?:complet|finish).*issue-runner-handoff/isu);
-  assert.doesNotMatch(prompt, /pause|user action/iu);
+  assert.ok(
+    prompt.includes(
+      "Use the issue-runner-handoff skill to report task completion or a pause requiring user action.",
+    ),
+  );
+  assert.doesNotMatch(
+    prompt,
+    /\[action required\]|Do not create the handoff file/u,
+  );
   assert.ok(prompt.endsWith(JSON.stringify(file)));
 });
 

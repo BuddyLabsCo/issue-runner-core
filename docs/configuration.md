@@ -252,10 +252,14 @@ sent back to the Agent.
 Core persists a fresh invocation and absolute handoff path before task submission.
 Tasks include built-in instructions, any applicable
 Project prompt, and only the context needed for that stage. They omit internal
-assignment JSON and redundant Worktree/branch details. The final instruction
-explicitly invokes the installed handoff skill after the assigned task is complete.
-The skill defines the result schema and requires all work to stop after atomic
-publication. The temporary Git configuration is removed when the call finishes.
+assignment JSON and redundant Worktree/branch details. The final instructions
+explicitly request the installed handoff skill for completion or a pause requiring
+user action and supply the absolute `Handoff path:`. The skill defines the result
+schema and requires all work to stop after atomic publication. During a human-action
+pause, it leaves the handoff unwritten and responds with `[action required]` before
+waiting. After the blocker is resolved, work resumes and a handoff is published only
+on completion. Explicit-only invocation is model-followed guidance, not client-enforced
+protection. The temporary Git configuration is removed when the call finishes.
 
 Built-in instructions live in the package's `prompts/*.md` assets, covering
 implementation, Review, Review fixes, documentation, repairs, Probe and handoff
