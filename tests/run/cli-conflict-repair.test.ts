@@ -15,11 +15,36 @@ import {
 } from "../support/implementation-run.ts";
 
 await test("explicit merge conflict repairs the existing PR and waits for checks before integrating its verified head", async (t) => {
-  const fixture = await conflictRepairRun(t);
+  const fixture = await conflictRepairRun(t, {
+    ...validConfig,
+    agents: {
+      ...validConfig.agents,
+      conflictRepair: {
+        agent: "conflict-agent",
+        start: "repair start",
+        resume: "repair {sessionref}",
+      },
+    },
+  });
   const result = await executeCli(implementationCommand, fixture.dependencies);
   assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
   const saved = await fixture.snapshot();
   assert.equal(saved.publication!.conflictRepair!.consumed, 1);
+  assert.deepEqual(
+    fixture.state.tabOptions.map(({ agent, submitKey }) => ({
+      agent,
+      submitKey,
+    })),
+    [
+      { agent: "custom-agent", submitKey: "Shift+Enter" },
+      { agent: "conflict-agent", submitKey: "Enter" },
+    ],
+  );
+  assert.ok(
+    fixture.state.tabOptions.every(
+      ({ signal }) => signal instanceof AbortSignal,
+    ),
+  );
   assert.deepEqual(
     fixture.conflictState.requests.map(({ headSha }) => headSha),
     [implementationCommit.sha, repairCommit.sha],

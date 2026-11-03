@@ -86,7 +86,13 @@ export async function batchDocumentationRun(
   const submit = fixture.dependencies.terminalPlugin.submitText.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+  fixture.dependencies.terminalPlugin.submitText = async (
+    tab,
+    text,
+    chord,
+    expectedFile,
+    recoveryText,
+  ) => {
     if (text.startsWith("Documentation assignment\n")) {
       const assignment = promptAssignment(text) as { path: string };
       events.push("document");
@@ -97,12 +103,15 @@ export async function batchDocumentationRun(
             /^Documentation assignment\n/u,
             "Implementation assignment\n",
           ),
+          chord,
+          expectedFile,
+          recoveryText,
         ),
       );
     } else {
       if (text.startsWith("Implementation assignment\n"))
         events.push("implement");
-      await submit(tab, text);
+      await submit(tab, text, chord, expectedFile, recoveryText);
     }
   };
   return { ...fixture, maintenance, events, cleanup, state };

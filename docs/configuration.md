@@ -36,8 +36,9 @@ copying fails. Edit its placeholders before running.
 
 `--env <name>` accepts lowercase letters, digits, and separating hyphens.
 Core loads only `issue-runner-<name>` through its public import entry, beside the
-executing Core package. It checks contract version 1, the zero-argument factory,
-initialization, and all three methods before workflow reads or mutations.
+executing Core package. It checks contract version 1, the `createTerminalPlugin(config)` factory,
+initialization, and all five terminal methods before workflow reads or mutations.
+The factory currently receives `{}`; configured forwarding remains separate work.
 Project-local packages, other global prefixes, and caches cannot substitute for
 a missing sibling. No automatic installation or backend fallback occurs.
 
@@ -692,13 +693,17 @@ Unknown or obsolete fields are rejected at every Runner-owned object.
 - `maxBatchSize` is a positive safe integer that bounds both Batch membership
   and concurrent Issue execution. `targetBranch`, when supplied, is
   nonempty; omission selects the repository default.
+- Each configured Agent profile requires a nonempty opaque `agent` string. Core
+  preserves it unchanged, without defaults, brand inference, command parsing, or
+  enhancement installation checks. Every role passes it, the effective submit key,
+  and the Run signal to `createTab`.
 - Each Agent purpose has complete nonempty `start` and `resume` shell-command
   strings. `resume` must contain exactly spelled `{sessionref}` at least once.
   Authors supply shell quoting and all native flags. Core does not choose a
   brand, reconstruct argv, translate options, or edit keymaps.
 - Optional `submitKey` is a nonempty Runner setting beside `start`/`resume`,
   outside the optional opaque native `options` object. Omission uses Enter.
-  Old `agent`, `model`, and `reasoningEffort` profile fields are rejected.
+  The obsolete `model` and `reasoningEffort` profile fields are rejected.
 - Optional `startupDelaySeconds` is a positive finite number of seconds, defaulting to 10.
   Set it beside `start`, `resume`, and `submitKey`, outside native `options`.
   Each profile (`implement`, `review`, `ciRepair`, `conflictRepair`, and `documentation`) uses its own value.

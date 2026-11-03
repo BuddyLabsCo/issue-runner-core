@@ -15,8 +15,8 @@ results return through file handoffs.
 The development package includes the single `issue-runner` executable,
 help/version/init, strict Project and Run-scope validation, global terminal
 plugin loading, and an empty-parent Run that returns `no_work` without closing
-the parent. It exports the runtime constant and TypeScript declarations at
-`issue-runner-core/terminal`. The accepted
+the parent. It exports both v1 runtime constants and the complete Terminal and
+Enhancement TypeScript contracts at `issue-runner-core/terminal`. The accepted
 [handoff skill](skills/issue-runner-handoff/SKILL.md) is available for manual
 installation and is included in the tarball. A numbered standalone `--issue`
 can reserve eligible work, create a fresh Target Branch Worktree, start a native
@@ -62,6 +62,10 @@ Set `workflow.docMaintainTriggerLabel` to run this document workflow once after
 each successful Batch with a matching delivery-time label. Matching is exact and
 case-sensitive. Pending maintenance blocks later Batch discovery and parent closure,
 including after interruption; verified `no_change` satisfies the barrier.
+The [contract milestone](docs/terminal-contract.md) requires each Agent profile's
+opaque `agent` identifier and exposes composite startup and enhancement hosting
+contracts. Workflow startup still uses shell submission, startup delay, and Probe;
+composite startup and monitoring integration remain separate work.
 No npm package has been published.
 
 Non-Agent failures retain bounded safe retries and Operator Pause. Enter retries;

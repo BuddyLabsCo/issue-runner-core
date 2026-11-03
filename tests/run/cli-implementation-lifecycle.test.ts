@@ -64,14 +64,17 @@ await test("independent handles can complete while another handle's command tran
       routes.set(tab, target);
       return tab;
     },
-    async submitText(tab, text, chord) {
+    start: (tab, command) => routes.get(tab)!.start(tab, command),
+    resume: (tab, command, sessionref) =>
+      routes.get(tab)!.resume(tab, command, sessionref),
+    async submitText(tab, text, chord, expectedFile, recoveryText) {
       const target = routes.get(tab)!;
       if (target === first.dependencies.terminalPlugin && !held) {
         held = true;
         entered();
         await pending;
       }
-      await target.submitText(tab, text, chord);
+      await target.submitText(tab, text, chord, expectedFile, recoveryText);
     },
     async closeTab(tab) {
       await routes.get(tab)!.closeTab(tab);

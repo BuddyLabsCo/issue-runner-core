@@ -86,7 +86,13 @@ export async function fiveIssueRun(t: TestContext) {
     }
     return evidence;
   };
-  terminal.submitText = async (tab, text, chord = "Enter") => {
+  terminal.submitText = async (
+    tab,
+    text,
+    chord = "Enter",
+    expectedFile,
+    recoveryText,
+  ) => {
     assert.ok(active.has(tab), "submit only to an active owned Runner Tab");
     submissions.push({ tab, text, chord });
     const number = Number(/ticket-(\d+)$/u.exec(tabs.get(tab)!.cwd)![1]);
@@ -112,7 +118,7 @@ export async function fiveIssueRun(t: TestContext) {
         commits: [fixCommit],
         findings_file: null,
       });
-    } else await submit(tab, text);
+    } else await submit(tab, text, chord, expectedFile, recoveryText);
   };
   // Bound missing scripted responses so regressions fail instead of polling forever.
   let polls = 0;

@@ -12,6 +12,7 @@ const reviewConfigurationError =
   "Review is enabled; supply agents.review and prompts/review.md";
 
 export interface AgentConfig {
+  agent: string;
   start: string;
   resume: string;
   submitKey?: string;
@@ -141,9 +142,10 @@ function agent(value: unknown, name: string): AgentConfig {
   const input = record(value, name);
   knownFields(
     input,
-    ["start", "resume", "submitKey", "startupDelaySeconds", "options"],
+    ["agent", "start", "resume", "submitKey", "startupDelaySeconds", "options"],
     name,
   );
+  const agent = text(input.agent, `${name}.agent`);
   const start = text(input.start, `${name}.start`);
   const resume = text(input.resume, `${name}.resume`);
   if (!resume.includes("{sessionref}"))
@@ -161,6 +163,7 @@ function agent(value: unknown, name: string): AgentConfig {
   if (options && "submitKey" in options)
     throw new Error(`${name}.submitKey belongs outside options`);
   return {
+    agent,
     start,
     resume,
     startupDelaySeconds: positive(

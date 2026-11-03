@@ -6,7 +6,7 @@ import path from "node:path";
 import type { TestContext } from "node:test";
 import { executeCli } from "../../src/cli.ts";
 import type { ImplementationProgress } from "../../src/recovery.ts";
-import type { TerminalPlugin } from "../../src/terminal.ts";
+import type { CreateTabOptions, TerminalPlugin } from "../../src/terminal.ts";
 import type {
   GitWorkspace,
   Ticket,
@@ -89,6 +89,7 @@ export async function implementationRun(
     } as WorkspaceEvidence,
     expectedPath: "",
     gitConfigs: [] as string[],
+    tabOptions: [] as CreateTabOptions[],
     closedTabs: [] as object[],
     sleeps: [] as number[],
     taskCount: 0,
@@ -117,8 +118,10 @@ export async function implementationRun(
   };
   const snapshot = () => implementationProgress(directory, state.ticket.number);
   const terminal: TerminalPlugin = {
+    ...deps.terminalPlugin,
     async createTab(options) {
       state.events.push("open");
+      state.tabOptions.push(options);
       state.gitConfigs.push(options.env.GIT_CONFIG_GLOBAL!);
       return {};
     },

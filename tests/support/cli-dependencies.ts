@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external contracts retain asynchronous signatures. */
 import assert from "node:assert/strict";
+import type { TerminalPlugin } from "../../src/terminal.ts";
 import { LocalGitWorkspace } from "../../src/adapters/git-workspace.ts";
 import type {
   CodeHost,
@@ -17,6 +18,26 @@ export function createCliDependencies(launchDirectory: string) {
   const pauses: string[] = [];
   const remoteBranches = new Map<string, string>();
   const pullRequests: PullRequestRecord[] = [];
+  const terminalPlugin: TerminalPlugin = {
+    async createTab() {
+      effects.push("dispatch");
+      return {};
+    },
+    async start(tab, command) {
+      await this.submitText(tab, command, "Enter");
+      return undefined;
+    },
+    async resume(tab, command, sessionref) {
+      await this.submitText(tab, command, "Enter");
+      return sessionref;
+    },
+    async submitText() {
+      effects.push("submit");
+    },
+    async closeTab() {
+      effects.push("close_tab");
+    },
+  };
   return {
     launchDirectory,
     env: { TRACKER_TOKEN: "tracker-secret", HOST_TOKEN: "host-secret" },
@@ -154,18 +175,7 @@ export function createCliDependencies(launchDirectory: string) {
         effects.push("worktree");
       },
     },
-    terminalPlugin: {
-      async createTab() {
-        effects.push("dispatch");
-        return {};
-      },
-      async submitText() {
-        effects.push("submit");
-      },
-      async closeTab() {
-        effects.push("close_tab");
-      },
-    },
+    terminalPlugin,
     clock: {
       now() {
         return new Date("2026-10-30T00:00:00.000Z");

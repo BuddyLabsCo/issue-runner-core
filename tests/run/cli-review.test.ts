@@ -258,6 +258,23 @@ await test("cap=1 still fixes final findings in the exact implementation convers
   assert.equal(fixture.reviewState.fixes.length, 1);
   assert.equal(fixture.state.closedTabs.length, 3);
   assert.deepEqual(
+    fixture.state.tabOptions.map(({ agent, submitKey }) => ({
+      agent,
+      submitKey,
+    })),
+    [
+      { agent: "custom-agent", submitKey: "Shift+Enter" },
+      { agent: "review-agent", submitKey: "Shift+Enter" },
+      { agent: "custom-agent", submitKey: "Shift+Enter" },
+    ],
+  );
+  assert.ok(
+    fixture.state.tabOptions.every(
+      ({ signal }) => signal instanceof AbortSignal && !signal.aborted,
+    ),
+  );
+
+  assert.deepEqual(
     fixture.state.sleeps.filter((ms) => ms !== 30_000),
     [10_000, 10_000, 10_000],
   );
@@ -286,4 +303,6 @@ await test("cap=1 still fixes final findings in the exact implementation convers
   const submissions = fixture.state.submissions.length;
   assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/u);
   assert.equal(fixture.state.submissions.length, submissions);
+  fixture.controller.abort();
+  assert.ok(fixture.state.tabOptions.every(({ signal }) => signal?.aborted));
 });

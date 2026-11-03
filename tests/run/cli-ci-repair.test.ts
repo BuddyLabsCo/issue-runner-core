@@ -80,6 +80,7 @@ await test("failed required checks receive a verified fresh repair on the same P
     agents: {
       ...validConfig.agents,
       ciRepair: {
+        agent: "ci-agent",
         start: "ci-cli",
         resume: "ci-cli {sessionref}",
         submitKey: "Shift+Enter",
@@ -112,6 +113,21 @@ await test("failed required checks receive a verified fresh repair on the same P
   assert.equal(
     saved.publication!.ciRepair!.attempts[0]!.failedChecks[0]!.link,
     "https://checks/build/1",
+  );
+  assert.deepEqual(
+    fixture.state.tabOptions.map(({ agent, submitKey }) => ({
+      agent,
+      submitKey,
+    })),
+    [
+      { agent: "custom-agent", submitKey: "Shift+Enter" },
+      { agent: "ci-agent", submitKey: "Shift+Enter" },
+    ],
+  );
+  assert.ok(
+    fixture.state.tabOptions.every(
+      ({ signal }) => signal instanceof AbortSignal,
+    ),
   );
   const repairWorkspace = [...fixture.workspaces.values()][0]!;
   assert.notEqual(repairWorkspace.worktree, saved.worktree);

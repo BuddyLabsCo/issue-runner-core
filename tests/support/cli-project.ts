@@ -6,6 +6,7 @@ import { stringify } from "yaml";
 import type { AgentConfig } from "../../src/config.ts";
 
 export const agent: AgentConfig = {
+  agent: "custom-agent",
   start: 'any-cli --model "my model" --native-option',
   resume: 'any-cli --resume "{sessionref}"',
   submitKey: "Shift+Enter",

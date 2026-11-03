@@ -117,8 +117,9 @@ await test("built artifacts work in isolated consumer and npm global installatio
       "--eval",
       `import assert from "node:assert/strict";
        const contract = await import("issue-runner-core/terminal");
-       assert.deepEqual(Object.keys(contract), ["terminalContractVersion"]);
+       assert.deepEqual(Object.keys(contract), ["enhancementContractVersion", "terminalContractVersion"]);
        assert.equal(contract.terminalContractVersion, 1);
+       assert.equal(contract.enhancementContractVersion, 1);
        await assert.rejects(import("issue-runner-core/terminal/testing"),
          { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
        console.log("terminal contract v1");`,

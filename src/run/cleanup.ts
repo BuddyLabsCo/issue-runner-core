@@ -27,11 +27,14 @@ export function executionTerminal(input: {
         },
         { retry: "manual" },
       ),
-    submitText: (tab, text, chord) =>
+    start: (tab, command) => plugin.start(tab, command),
+    resume: (tab, command, sessionref) =>
+      plugin.resume(tab, command, sessionref),
+    submitText: (tab, text, chord, expectedFile, recoveryText) =>
       read(
         "submit_text",
         `ticket:${progress.ticket}:${progress.phase}`,
-        () => plugin.submitText(tab, text, chord),
+        () => plugin.submitText(tab, text, chord, expectedFile, recoveryText),
         { retry: "never" },
       ),
     async closeTab(tab) {

@@ -58,6 +58,7 @@ await test("restart reprocesses a verified handoff when completion persistence f
     ...fixture.dependencies,
     signal: new AbortController().signal,
     terminalPlugin: {
+      ...fixture.dependencies.terminalPlugin,
       async createTab() {
         assert.fail(
           "the retained final must be verified before native dispatch",

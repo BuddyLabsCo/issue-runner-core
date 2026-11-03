@@ -43,26 +43,31 @@ export async function loadTerminalPlugin(
       );
     if (
       !("createTerminalPlugin" in module) ||
-      typeof module.createTerminalPlugin !== "function" ||
-      module.createTerminalPlugin.length !== 0
+      typeof module.createTerminalPlugin !== "function"
     )
       throw new Error(
-        "plugin must export a zero-argument createTerminalPlugin factory",
+        "plugin must export a createTerminalPlugin(config) factory",
       );
-    const factory = module.createTerminalPlugin as () => Promise<unknown>;
-    const plugin = await factory();
+    const factory = module.createTerminalPlugin as (
+      config: unknown,
+    ) => Promise<unknown>;
+    const plugin = await factory({});
     if (
       typeof plugin !== "object" ||
       plugin === null ||
       !("createTab" in plugin) ||
       typeof plugin.createTab !== "function" ||
+      !("start" in plugin) ||
+      typeof plugin.start !== "function" ||
+      !("resume" in plugin) ||
+      typeof plugin.resume !== "function" ||
       !("submitText" in plugin) ||
       typeof plugin.submitText !== "function" ||
       !("closeTab" in plugin) ||
       typeof plugin.closeTab !== "function"
     )
       throw new Error(
-        "factory must return createTab, submitText, and closeTab methods",
+        "factory must return createTab, start, resume, submitText, and closeTab methods",
       );
     return plugin as TerminalPlugin;
   } catch (error) {
