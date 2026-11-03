@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external contracts retain asynchronous signatures. */
 import assert from "node:assert/strict";
-import { readdir, rm, writeFile, readFile } from "node:fs/promises";
+import { appendFile, readdir, rm, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { stringify } from "yaml";
@@ -11,6 +11,77 @@ import { agent, createProject, validConfig } from "../support/cli-project.ts";
 import { createCliDependencies } from "../support/cli-dependencies.ts";
 
 const run = ["run", "--project", "demo", "--env", "fake", "--parent", "48"];
+
+await test("omitted terminalPlugins supplies an empty object", async (t) => {
+  const { root } = await createProject(t);
+  const loaded = await loadProject(root, "demo", {
+    TRACKER_TOKEN: "tracker",
+    HOST_TOKEN: "host",
+  });
+  assert.deepEqual(loaded.config.terminalPlugins, {});
+});
+
+await test("tagged terminalPlugins containers fail before external access", async (t) => {
+  const { root, directory } = await createProject(t);
+  for (const container of [
+    "!!timestamp 2002-12-14",
+    "!!binary YWJj",
+    "!!set { key: null }",
+  ]) {
+    await writeFile(
+      path.join(directory, "config.yaml"),
+      `${stringify(validConfig)}\nterminalPlugins: ${container}\n`,
+    );
+    const deps = createCliDependencies(root);
+    await assert.rejects(
+      loadProject(root, "demo", deps.env),
+      /terminalPlugins/,
+    );
+    const result = await executeCli(run, deps);
+    assert.equal(result.exitCode, 1, container);
+    assert.equal(result.logPath, null);
+    assert.deepEqual(deps.reads, []);
+    assert.deepEqual(deps.effects, []);
+  }
+});
+
+await test("terminalPlugins preserves plugin-owned nested values without installation checks", async (t) => {
+  const terminalPlugins = {
+    fake: {
+      enhancement: "not-installed",
+      options: [null, false, 0, "  native  "],
+    },
+    other: { nested: { enabled: true, entries: [] } },
+  };
+  const { root, directory } = await createProject(t, {
+    ...validConfig,
+    terminalPlugins,
+  });
+  await appendFile(
+    path.join(directory, "config.yaml"),
+    `  tagged:
+    timestamp: !!timestamp 2002-12-14
+    binary: !!binary YWJj
+    set: !!set { key: null }
+`,
+  );
+  const loaded = await loadProject(root, "demo", {
+    TRACKER_TOKEN: "tracker",
+    HOST_TOKEN: "host",
+  });
+  assert.deepEqual(loaded.config.terminalPlugins, {
+    ...terminalPlugins,
+    tagged: {
+      timestamp: new Date("2002-12-14T00:00:00.000Z"),
+      binary: Buffer.from("abc"),
+      set: new Set(["key"]),
+    },
+  });
+  assert.equal(
+    (await executeCli(run, createCliDependencies(root))).summary.outcome,
+    "no_work",
+  );
+});
 
 await test("Agent startup delays default to ten seconds and accept independent per-profile overrides", async (t) => {
   const profiles = { ...validConfig.agents, documentation: agent };
@@ -58,6 +129,12 @@ await test("invalid configuration fails before any external reads or delivery re
     [{ maxBatchSize: 0 }, /maxBatchSize/],
     [{ maxBatchSize: 1.5 }, /maxBatchSize/],
     [{ targetBranch: " " }, /targetBranch/],
+    ...[null, [], "plugin", 1, false].map(
+      (terminalPlugins): [object, RegExp] => [
+        { terminalPlugins },
+        /terminalPlugins must be an object/,
+      ],
+    ),
     [{ operationRetry: -1 }, /operationRetry/],
     [{ operationRetryDelay: [] }, /operationRetryDelay/],
     [{ ticketClosure: "agent" }, /ticketClosure/],

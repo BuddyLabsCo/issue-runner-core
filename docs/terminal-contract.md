@@ -15,7 +15,7 @@ arguments. Core does not load enhancements or expose their installation/error st
 Workflow startup still submits the configured shell command through `submitText`,
 waits for `startupDelaySeconds`, and uses Probe for native identity and PR metadata.
 Selecting composite startup, skipping Probe, removing that delay, generating
-assignment recovery metadata, forwarding configured terminal options, and moving
+assignment recovery metadata, and moving
 PR metadata to business handoffs remain separate delivery work. No registry
 publication or real Core/Herdr acceptance is implied.
 
@@ -147,8 +147,11 @@ export interface EnhancementModule {
 ```
 
 A terminal plugin's public module exports `contractVersion = 1` and an
-asynchronous `createTerminalPlugin(config: unknown)` factory. Core currently
-passes a fresh empty object. Configured forwarding is separate work. The loader
+asynchronous `createTerminalPlugin(config: unknown)` factory. Core passes the complete
+`terminalPlugins` object unchanged, regardless of `--env`, or `{}` when omitted.
+Core validates the container without interpreting plugin-owned values or checking enhancement installation.
+See [plugin configuration](configuration.md#installation-and-project-selection) for startup validation and recovery hashing.
+The loader
 accepts factories with default parameters; it does not inspect function arity.
 Initialization errors reject startup. Same-prefix containment checks still apply.
 

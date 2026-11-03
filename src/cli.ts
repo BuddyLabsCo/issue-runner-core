@@ -255,7 +255,10 @@ export async function executeRun(
     targetBranch = loaded.config.targetBranch ?? "unresolved";
     const terminalPlugin =
       dependencies.terminalPlugin ??
-      (await loadTerminalPlugin(options.environment));
+      (await loadTerminalPlugin(
+        options.environment,
+        loaded.config.terminalPlugins,
+      ));
     if (
       typeof terminalPlugin.createTab !== "function" ||
       typeof terminalPlugin.start !== "function" ||

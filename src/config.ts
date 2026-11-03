@@ -26,6 +26,7 @@ export interface ProjectConfig {
   issueList: number[];
   maxBatchSize: number;
   targetBranch?: string;
+  terminalPlugins: Record<string, unknown>;
   tracker: {
     tokenEnv: string;
     runnerAccount: string;
@@ -180,6 +181,9 @@ function parseConfig(
   options: { requireDocumentationMaintenance?: boolean } = {},
 ): ProjectConfig {
   const input = record(value, "config");
+  const { terminalPlugins = {} } = input;
+  if (Object.getPrototypeOf(terminalPlugins ?? {}) !== Object.prototype)
+    throw new Error("terminalPlugins must be an object mapping");
   knownFields(
     input,
     [
@@ -188,6 +192,7 @@ function parseConfig(
       "issueList",
       "maxBatchSize",
       "targetBranch",
+      "terminalPlugins",
       "tracker",
       "codeHost",
       "workflow",
@@ -219,13 +224,11 @@ function parseConfig(
   );
   const workflow =
     input.workflow === undefined ? {} : record(input.workflow, "workflow");
-  const unknownWorkflowField = Object.keys(workflow).find(
-    (name) =>
-      !["review", "maxReviewRounds", "docMaintainTriggerLabel"].includes(name),
+  knownFields(
+    workflow,
+    ["review", "maxReviewRounds", "docMaintainTriggerLabel"],
+    "workflow",
   );
-  if (unknownWorkflowField) {
-    throw new Error(`workflow contains unknown field ${unknownWorkflowField}`);
-  }
   const maxReviewRounds = workflow.maxReviewRounds;
   if (
     maxReviewRounds !== undefined &&
@@ -315,6 +318,7 @@ function parseConfig(
     checkout,
     issueList: configuredIssueList,
     maxBatchSize,
+    terminalPlugins: record(terminalPlugins, "terminalPlugins"),
     ...(input.targetBranch === undefined
       ? {}
       : { targetBranch: text(input.targetBranch, "targetBranch") }),

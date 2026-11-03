@@ -12,7 +12,10 @@ import { basename, delimiter, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { stringify } from "yaml";
 import { validConfig } from "../support/cli-project.ts";
-import { testInstalledArtifacts } from "./installed-artifacts.mjs";
+import {
+  testInstalledArtifacts,
+  testPluginConfiguration,
+} from "./installed-artifacts.mjs";
 
 /**
  * @param {import("node:test").TestContext} t
@@ -279,16 +282,13 @@ export async function testGlobalPluginLoading(
   assert.equal(missing.exitCode, 1);
   assert.match(missing.summary.reasons.join(" "), /issue-runner-missing/);
   assert.equal(missing.reads, 0);
-  await t.test(
-    "environment selection accepts names beyond built-in terminal brands",
-    () => {
-      writePlugin(
-        join(globalRoot, "issue-runner-custom-2"),
-        validPlugin.replace("(config)", "(config = { defaulted: true })"),
-      );
-      assert.equal(runInstalled("custom-2").summary.outcome, "no_work");
-    },
-  );
+  await testPluginConfiguration(t, {
+    globalRoot,
+    launch,
+    validPlugin,
+    writePlugin,
+    runInstalled,
+  });
   for (const [source, reason] of [
     ["export const contractVersion = 2;", /contractVersion 1/],
     ["export const contractVersion = '1';", /contractVersion 1/],

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { access, readFile, rm } from "node:fs/promises";
+import { access, appendFile, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { executeCli } from "../../src/cli.ts";
@@ -60,7 +60,7 @@ await test("missing original Worktree offers only restart or exit before creatin
   await assert.rejects(access(saved.worktree));
 });
 
-await test("a retained implementation resumes only its saved role with literal all-occurrence session substitution", async (t) => {
+await test("unchanged plugin configuration resumes only the saved role with literal all-occurrence session substitution", async (t) => {
   const fixture = await implementationRun(t, {
     ...validConfig,
     agents: {
@@ -71,6 +71,10 @@ await test("a retained implementation resumes only its saved role with literal a
       },
     },
   });
+  await appendFile(
+    path.join(fixture.directory, "config.yaml"),
+    "\nterminalPlugins: { fake: { enhancement: not-installed } }\n",
+  );
   fixture.state.onTask = async () => {
     /* Leave the invocation unfinished. */
   };

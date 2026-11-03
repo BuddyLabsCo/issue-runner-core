@@ -27,6 +27,7 @@ import {
 await test("the recovery hash uses the configuration bytes validated at startup", async (t) => {
   const fixture = await implementationRun(t);
   const file = path.join(fixture.directory, "config.yaml");
+  await appendFile(file, "\nterminalPlugins: { fake: { enabled: true } }\n");
   const config = await readFile(file);
   const write = fixture.dependencies.operator.write.bind(
     fixture.dependencies.operator,
@@ -75,9 +76,16 @@ await test("an execution checkpoint from another input scope cannot resume or ov
   }
 });
 
-for (const change of ["arguments", "configuration"] as const) {
+for (const change of [
+  "arguments",
+  "configuration",
+  "terminalPlugins",
+] as const) {
   await test(`changed ${change} ignore old progress and preserve ambiguous retained work`, async (t) => {
     const fixture = await implementationRun(t);
+    const configFile = path.join(fixture.directory, "config.yaml");
+    if (change === "terminalPlugins")
+      await appendFile(configFile, "\nterminalPlugins: { enabled: true }\n");
     fixture.state.onTask = (file) => publish(file, {});
     fixture.state.onCorrection = async () => {
       /* Wait for the assigned correction. */
@@ -92,6 +100,14 @@ for (const change of ["arguments", "configuration"] as const) {
     const oldText = await readFile(oldFile, "utf8");
     const command = [...implementationCommand];
     if (change === "arguments") command[4] = "alternate";
+    else if (change === "terminalPlugins")
+      await writeFile(
+        configFile,
+        (await readFile(configFile, "utf8")).replace(
+          "terminalPlugins: { enabled: true }",
+          "terminalPlugins: { enabled: false }",
+        ),
+      );
     else
       await appendFile(
         path.join(fixture.directory, "config.yaml"),
