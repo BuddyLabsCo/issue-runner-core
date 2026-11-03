@@ -9,6 +9,7 @@ import {
   documentationRun,
 } from "../support/documentation-run.ts";
 import { committed, publish } from "../support/implementation-run.ts";
+import { assertBusinessAssignment } from "../support/prompt-assignment.ts";
 
 const noChange = {
   outcome: "no_change",
@@ -31,6 +32,20 @@ for (const outcome of ["committed", "no_change"] as const) {
     };
     assert.equal((await fixture.run()).summary.outcome, "cancelled");
     const saved = await fixture.snapshot();
+    const initial = fixture.state.submissions.find(({ text }) =>
+      text.startsWith("Implementation assignment\n"),
+    )!;
+    const correction = fixture.state.submissions.at(-1)!;
+    assertBusinessAssignment(initial, saved.superseded[0]!, "documentation");
+    assertBusinessAssignment(
+      correction,
+      saved.invocation!.path,
+      "documentation",
+    );
+    assert.equal(initial.tab, correction.tab);
+    assert.equal(initial.chord, "Shift+Enter");
+    assert.equal(correction.chord, "Shift+Enter");
+    assert.notEqual(initial.expectedFile, correction.expectedFile);
     assert.equal(fixture.maintenance.cleanup.length, 0);
     for (const file of saved.superseded) await publish(file, noChange);
     const recovery = path.join(fixture.directory, "recovery");
@@ -58,8 +73,10 @@ for (const outcome of ["committed", "no_change"] as const) {
       tab,
       text,
       chord,
+      expectedFile,
+      recoveryText,
     ) => {
-      await submit(tab, text, chord);
+      await submit(tab, text, chord, expectedFile, recoveryText);
       if (text === "continue") await publish(saved.invocation!.path, result);
     };
     fixture.state.onSleep = async (ms) => assert.ok(ms > 0);
@@ -72,6 +89,14 @@ for (const outcome of ["committed", "no_change"] as const) {
       fixture.state.submissions.slice(submitted).map(({ text }) => text),
       ['document-cli --resume "native/$&/$`/$\'/session"', "continue"],
     );
+    const continuation = fixture.state.submissions.at(-1)!;
+    assertBusinessAssignment(
+      continuation,
+      saved.invocation!.path,
+      "documentation",
+    );
+    assert.equal(continuation.chord, "Shift+Enter");
+    assert.equal(continuation.tab, fixture.state.submissions[submitted]!.tab);
     assert.deepEqual(
       fixture.state.sleeps.slice(sleeps).filter((ms) => ms !== 30_000),
       [250],

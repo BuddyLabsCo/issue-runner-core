@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { access, rm, writeFile } from "node:fs/promises";
 import test from "node:test";
 import { executeCli } from "../../src/cli.ts";
+import { assertBusinessAssignment } from "../support/prompt-assignment.ts";
 import {
   execution as committed,
   implementationCommand,
@@ -35,6 +36,14 @@ for (const stage of ["review", "fix"] as const) {
     const saved = await fixture.snapshot();
     const round = saved.reviews![0]!;
     const active = stage === "review" ? round : round.fix!;
+    const initial = fixture.state.submissions.at(-1)!;
+    const name = stage === "review" ? "Review" : "Review fix";
+    assertBusinessAssignment(initial, active.invocation!.path, name);
+    assert.match(
+      initial.text,
+      stage === "review" ? /^Review assignment\n/u : /^Fix assignment\n/u,
+    );
+    assert.equal(initial.chord, "Shift+Enter");
     await publish(active.invocation!.path, {
       outcome: "no_change",
       summary: "Nothing changed.",
@@ -119,6 +128,10 @@ for (const stage of ["review", "fix"] as const) {
         ? /^Correct the Review handoff:/u
         : /no_change cannot satisfy findings/u,
     );
+    assertBusinessAssignment(submissions[1]!, corrected.invocation!.path, name);
+    assert.equal(submissions[1]!.tab, submissions[0]!.tab);
+    assert.equal(submissions[1]!.chord, "Shift+Enter");
+    assert.notEqual(submissions[1]!.expectedFile, initial.expectedFile);
     assert.equal(
       submissions.some(({ text }) => text === "continue"),
       false,

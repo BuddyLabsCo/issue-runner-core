@@ -9,6 +9,7 @@ import { repairCommit, failedCheck } from "../support/ci-repair-run.ts";
 import { validConfig } from "../support/cli-project.ts";
 import { conflictRepairRun } from "../support/conflict-repair-run.ts";
 import { publish } from "../support/implementation-run.ts";
+import { assertBusinessAssignment } from "../support/prompt-assignment.ts";
 import {
   deliveryCommand as implementationCommand,
   implementationCommit,
@@ -29,6 +30,16 @@ await test("explicit merge conflict repairs the existing PR and waits for checks
   const result = await executeCli(implementationCommand, fixture.dependencies);
   assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
   const saved = await fixture.snapshot();
+  const task = fixture.state.submissions.find(({ text }) =>
+    text.startsWith("Conflict repair assignment\n"),
+  )!;
+  assertBusinessAssignment(
+    task,
+    saved.publication!.conflictRepair!.attempts[0]!.invocation!.path,
+    "Conflict repair",
+  );
+  assert.equal(task.chord, "Enter");
+  assert.equal(task.tab, fixture.state.closedTabs[1]);
   assert.equal(saved.publication!.conflictRepair!.consumed, 1);
   assert.deepEqual(
     fixture.state.tabOptions.map(({ agent, submitKey }) => ({

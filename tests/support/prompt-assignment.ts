@@ -1,5 +1,22 @@
 import assert from "node:assert/strict";
 import path from "node:path";
+import { loadPrompt, renderPrompt } from "../../src/prompts/load.ts";
+
+export function assertBusinessAssignment(
+  submission: { expectedFile?: string; recoveryText?: string },
+  file: string,
+  name: string,
+) {
+  assert.equal(submission.expectedFile, file);
+  assert.equal(path.isAbsolute(file), true);
+  assert.equal(
+    submission.recoveryText,
+    renderPrompt(loadPrompt("recovery"), {
+      name,
+      path: JSON.stringify(file),
+    }),
+  );
+}
 
 // Scripted agents read the same quoted output path as the real agent.
 export function promptAssignment(text: string) {
