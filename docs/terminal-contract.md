@@ -19,8 +19,8 @@ Readiness failures retain the Runner Tab for an operator-authorized retry on the
 same handle. Cancellation reaches the plugin through the Run signal and retains
 the Tab and Agent. Core adds no startup delay or readiness timeout.
 Implementation and documentation handoffs supply `pr_title` and `pr_body`;
-Review and repair schemas remain unchanged. Assignment recovery metadata remains
-separate delivery work. No registry publication or real Core/Herdr acceptance is implied.
+Review and repair schemas remain unchanged. No registry publication or real
+Core/Herdr acceptance is implied.
 
 ## Build and identify a development artifact
 
@@ -194,6 +194,13 @@ Agent to continue unfinished work and use the assigned handoff protocol without
 replaying the task. Plugins retain the current message for optional recovery.
 Core still validates Agent-written handoffs and independent Git evidence;
 assignment metadata and monitoring events cannot establish completion.
+
+For every fallback Probe and Probe correction, Core also supplies the exact
+assigned absolute Probe path and a recovery message from `prompts/probe-recovery.md`.
+A correction uses the newly persisted path, replacing the superseded assignment.
+The recovery message asks the Agent to continue the unfinished identity exchange
+and write through its assigned Probe protocol. It forbids replaying the business
+task or reporting business completion. Core does not request enhancement recovery.
 
 `EnhancementHost` is bound to one tab: `read` reads terminal text, `submitText`
 uses its Agent submit key, and `sendKeys` sends logical keys in order.

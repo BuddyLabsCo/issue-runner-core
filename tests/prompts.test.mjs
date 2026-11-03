@@ -47,3 +47,22 @@ await test("recovery continues unfinished work and requests a handoff only after
   assert.doesNotMatch(prompt, /pause|user action/iu);
   assert.ok(prompt.endsWith(JSON.stringify(file)));
 });
+
+await test("Probe recovery continues the identity exchange through its exact assigned protocol", () => {
+  const file = '/worktree/Probe "quoted" $&.json';
+  const prompt = renderPrompt(loadPrompt("probe-recovery"), {
+    temporary: JSON.stringify(`${file}.tmp`),
+    path: JSON.stringify(file),
+  });
+  assert.match(prompt, /continue the unfinished Session Probe/iu);
+  assert.match(prompt, /actual native conversation session ID/u);
+  assert.match(prompt, /assigned Probe protocol/u);
+  assert.ok(prompt.includes(JSON.stringify(`${file}.tmp`)));
+  assert.ok(prompt.includes(JSON.stringify(file)));
+  assert.match(prompt, /atomically rename/u);
+  assert.match(
+    prompt,
+    /Do not begin or replay the business task, or report business completion/u,
+  );
+  assert.doesNotMatch(prompt, /issue-runner-handoff|\{\{\w+\}\}/u);
+});
