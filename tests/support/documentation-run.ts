@@ -26,6 +26,7 @@ export async function documentationRun(
       ...validConfig.agents,
       documentation: {
         ...agent,
+        agent: "document-agent",
         start: "document-cli",
         resume: 'document-cli --resume "{sessionref}"',
       },
@@ -89,7 +90,13 @@ export async function documentationRun(
   const submit = fixture.dependencies.terminalPlugin.submitText.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.submitText = (tab, text, chord) =>
+  fixture.dependencies.terminalPlugin.submitText = (
+    tab,
+    text,
+    chord,
+    expectedFile,
+    recoveryText,
+  ) =>
     submit(
       tab,
       text
@@ -99,6 +106,8 @@ export async function documentationRun(
           "Correct the implementation handoff:",
         ),
       chord,
+      expectedFile,
+      recoveryText,
     );
   return {
     ...fixture,

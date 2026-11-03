@@ -102,12 +102,15 @@ export async function testGlobalPluginLoading(
     assert.equal(terminalContractVersion, 1);
     appendFileSync(${JSON.stringify(events)}, "module\\n");
     export const contractVersion = 1;
-    export async function createTerminalPlugin() {
-      if (arguments.length) throw new Error("factory must receive no arguments");
+    export async function createTerminalPlugin(config) {
+      assert.equal(arguments.length, 1);
+      assert.deepEqual(config, {});
       await Promise.resolve();
       appendFileSync(${JSON.stringify(events)}, "initialized\\n");
       return {
         async createTab() { throw new Error("empty parent must not dispatch"); },
+        async start() { throw new Error("empty parent must not start"); },
+        async resume() { throw new Error("empty parent must not resume"); },
         async submitText() { throw new Error("empty parent must not submit"); },
         async closeTab() { throw new Error("empty parent must not close"); }
       };
@@ -279,7 +282,10 @@ export async function testGlobalPluginLoading(
   await t.test(
     "environment selection accepts names beyond built-in terminal brands",
     () => {
-      writePlugin(join(globalRoot, "issue-runner-custom-2"));
+      writePlugin(
+        join(globalRoot, "issue-runner-custom-2"),
+        validPlugin.replace("(config)", "(config = { defaulted: true })"),
+      );
       assert.equal(runInstalled("custom-2").summary.outcome, "no_work");
     },
   );
@@ -290,14 +296,10 @@ export async function testGlobalPluginLoading(
       "export default { contractVersion: 1, createTerminalPlugin() {} };",
       /contractVersion 1/,
     ],
-    ["export const contractVersion = 1;", /zero-argument createTerminalPlugin/],
+    ["export const contractVersion = 1;", /createTerminalPlugin\(config\)/],
     [
       "export const contractVersion = 1; export const createTerminalPlugin = {};",
-      /zero-argument createTerminalPlugin/,
-    ],
-    [
-      "export const contractVersion = 1; export async function createTerminalPlugin(options) { throw new Error('must not call'); }",
-      /zero-argument createTerminalPlugin/,
+      /createTerminalPlugin\(config\)/,
     ],
     [
       "export const contractVersion = 1; export async function createTerminalPlugin() { throw new Error('host context unavailable'); }",
@@ -334,17 +336,23 @@ export async function testGlobalPluginLoading(
   await t.test(
     "each returned method must be callable before workflow startup",
     () => {
-      for (const method of ["createTab", "submitText", "closeTab"]) {
+      for (const method of [
+        "createTab",
+        "start",
+        "resume",
+        "submitText",
+        "closeTab",
+      ]) {
         writePlugin(
           plugin,
           `export const contractVersion = 1;
         export async function createTerminalPlugin() {
-          return { createTab() {}, submitText() {}, closeTab() {}, ${method}: false };
+          return { createTab() {}, start() {}, resume() {}, submitText() {}, closeTab() {}, ${method}: false };
         }`,
         );
         assert.match(
           runInstalled("scripted").summary.reasons.join(" "),
-          /factory must return createTab, submitText, and closeTab methods/,
+          /factory must return createTab, start, resume, submitText, and closeTab methods/,
         );
       }
     },

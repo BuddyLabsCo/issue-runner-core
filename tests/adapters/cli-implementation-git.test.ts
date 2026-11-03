@@ -251,6 +251,7 @@ for (const scenario of [
         signal: controller.signal,
         gitWorkspace: new LocalGitWorkspace("unused-local-test-token"),
         terminalPlugin: {
+          ...fixture.dependencies.terminalPlugin,
           async createTab(options) {
             assert.equal(options.cwd, progress.worktree);
             const config = options.env.GIT_CONFIG_GLOBAL!;
@@ -329,6 +330,7 @@ for (const scenario of [
         signal: new AbortController().signal,
         gitWorkspace: new LocalGitWorkspace("unused-local-test-token"),
         terminalPlugin: {
+          ...fixture.dependencies.terminalPlugin,
           async createTab() {
             assert.fail("a valid result produced while stopped needs no tab");
           },
@@ -416,6 +418,7 @@ await test("a concurrent Batch uses a fresh fetched base and isolated real Git W
       ...fixture.dependencies,
       gitWorkspace: new LocalGitWorkspace("unused-local-test-token"),
       terminalPlugin: {
+        ...fixture.dependencies.terminalPlugin,
         async createTab(options) {
           const tab = {};
           tabs.set(tab, options);
@@ -479,11 +482,7 @@ await test("a concurrent Batch uses a fresh fetched base and isolated real Git W
       },
     },
   );
-  assert.equal(
-    result.summary.outcome,
-    "incomplete",
-    JSON.stringify(result.summary),
-  );
+  assert.equal(result.summary.outcome, "incomplete");
   assert.equal(tasks, 2);
   assert.equal(closed.size, 2);
   assert.equal(new Set(configs).size, 2);

@@ -165,10 +165,15 @@ async function executeProject(
             signal,
           ),
         ),
-      submitText: (tab, text, chord) =>
+      start: (tab, command) =>
+        operator.advance(() => terminal.start(tab, command)),
+      resume: (tab, command, sessionref) =>
+        operator.advance(() => terminal.resume(tab, command, sessionref)),
+      submitText: (tab, text, chord, expectedFile, recoveryText) =>
         operator.advance(() =>
           boundedOperation(
-            () => terminal.submitText(tab, text, chord),
+            () =>
+              terminal.submitText(tab, text, chord, expectedFile, recoveryText),
             "terminal submitText; delivery is uncertain",
             signal,
           ),

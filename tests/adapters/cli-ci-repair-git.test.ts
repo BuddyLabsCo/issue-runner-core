@@ -116,6 +116,7 @@ for (const kind of ["ci", "conflict"] as const) {
       const configs: string[] = [];
       let repairs = 0;
       fixture.dependencies.terminalPlugin = {
+        ...fixture.dependencies.terminalPlugin,
         async createTab(options) {
           const tab = {};
           tabs.set(tab, options);

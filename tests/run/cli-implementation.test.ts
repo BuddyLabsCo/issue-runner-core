@@ -93,6 +93,7 @@ await test("one standalone implementation persists verified completion before cl
       },
     },
     terminalPlugin: {
+      ...deps.terminalPlugin,
       async createTab(options: {
         cwd: string;
         env: Readonly<Record<string, string>>;

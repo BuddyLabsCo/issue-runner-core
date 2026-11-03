@@ -25,6 +25,7 @@ export async function reviewRun(
       ...validConfig.agents,
       review: {
         ...validConfig.agents.review,
+        agent: "review-agent",
         start: "review-cli start",
         resume: 'review-cli resume "{sessionref}"',
       },
@@ -61,8 +62,14 @@ export async function reviewRun(
   const submit = fixture.dependencies.terminalPlugin.submitText.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.submitText = async (tab, text, chord) => {
-    await submit(tab, text, chord);
+  fixture.dependencies.terminalPlugin.submitText = async (
+    tab,
+    text,
+    chord,
+    expectedFile,
+    recoveryText,
+  ) => {
+    await submit(tab, text, chord, expectedFile, recoveryText);
     const round = (await fixture.snapshot()).reviews?.at(-1);
     if (text.startsWith("Review assignment\n")) {
       state.reviews.push(round!);

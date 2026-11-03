@@ -258,11 +258,13 @@ export async function executeRun(
       (await loadTerminalPlugin(options.environment));
     if (
       typeof terminalPlugin.createTab !== "function" ||
+      typeof terminalPlugin.start !== "function" ||
+      typeof terminalPlugin.resume !== "function" ||
       typeof terminalPlugin.submitText !== "function" ||
       typeof terminalPlugin.closeTab !== "function"
     )
       throw new Error(
-        "Terminal plugin must implement createTab, submitText, and closeTab",
+        "Terminal plugin must implement createTab, start, resume, submitText, and closeTab",
       );
     dependencies.signal?.throwIfAborted();
     const clock = dependencies.clock ?? {

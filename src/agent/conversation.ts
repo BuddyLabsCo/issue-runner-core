@@ -45,9 +45,21 @@ export class NativeConversations {
     return tab;
   }
 
-  submit(tab: TabHandle, text: string, chord = "Enter"): Promise<void> {
+  submit(
+    tab: TabHandle,
+    text: string,
+    chord = "Enter",
+    expectedFile?: string,
+    recoveryText?: string,
+  ): Promise<void> {
     return this.enqueue(tab, () =>
-      this.plugin.submitText(tab, text.replace(/\r\n?/gu, "\n"), chord),
+      this.plugin.submitText(
+        tab,
+        text.replace(/\r\n?/gu, "\n"),
+        chord,
+        expectedFile,
+        recoveryText,
+      ),
     );
   }
 

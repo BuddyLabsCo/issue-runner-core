@@ -79,9 +79,15 @@ export async function ciRepairRun(
     return tab;
   };
   const submit = terminal.submitText.bind(terminal);
-  terminal.submitText = async (tab, text, chord) => {
+  terminal.submitText = async (
+    tab,
+    text,
+    chord,
+    expectedFile,
+    recoveryText,
+  ) => {
     const evidence = workspaces.get(tabs.get(tab)!);
-    if (!evidence) return submit(tab, text, chord);
+    if (!evidence) return submit(tab, text, chord, expectedFile, recoveryText);
     const kind = evidence.branch.includes("conflict-repair")
       ? "conflict"
       : "ci";

@@ -77,7 +77,7 @@ await test("invalid configuration fails before any external reads or delivery re
           implement: { agent: "codex", model: "model" },
         },
       },
-      /unknown field agent/,
+      /unknown field model/,
     ],
     [
       { agents: { ...validConfig.agents, implement: { ...agent, start: "" } } },

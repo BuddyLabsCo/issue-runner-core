@@ -5,7 +5,55 @@ import { NativeConversations } from "../../src/agent/conversation.ts";
 import type { AgentConfig } from "../../src/config.ts";
 import type { TerminalPlugin } from "../../src/terminal.ts";
 import { deferred } from "../support/implementation-run.ts";
+import { createCliDependencies } from "../support/cli-dependencies.ts";
 import { agent } from "../support/cli-project.ts";
+
+await test("conversation submissions forward the current assignment and recovery text positionally", async () => {
+  const calls: Parameters<TerminalPlugin["submitText"]>[] = [];
+  const conversations = new NativeConversations(
+    {
+      ...createCliDependencies(".").terminalPlugin,
+      async submitText(...args) {
+        calls.push(args);
+      },
+    },
+    {
+      now: () => new Date(),
+      async sleep(ms) {
+        assert.equal(ms, 10_000);
+      },
+    },
+  );
+  const tab = await conversations.open(
+    {
+      cwd: "/worktree",
+      env: {},
+      label: "Agent",
+      agent: agent.agent,
+      submitKey: "Shift+Enter",
+    },
+    agent,
+  );
+  calls.length = 0;
+  await conversations.submit(
+    tab,
+    "task\r\n  你好 $&",
+    "Shift+Enter",
+    "/assigned.json",
+    "continue unfinished work $&",
+  );
+  await conversations.submit(tab, "continue");
+  assert.deepEqual(calls, [
+    [
+      tab,
+      "task\n  你好 $&",
+      "Shift+Enter",
+      "/assigned.json",
+      "continue unfinished work $&",
+    ],
+    [tab, "continue", "Enter", undefined, undefined],
+  ]);
+});
 
 for (const sessionid of [undefined, "saved-session"]) {
   for (const [startupDelaySeconds, expectedDelay] of [
@@ -25,6 +73,7 @@ for (const sessionid of [undefined, "saved-session"]) {
       const sleeping = deferred<void>();
       const tab = {};
       const plugin: TerminalPlugin = {
+        ...createCliDependencies(".").terminalPlugin,
         async createTab() {
           return tab;
         },
@@ -55,7 +104,17 @@ for (const sessionid of [undefined, "saved-session"]) {
       const firstPrompt =
         sessionid === undefined ? "Session Probe" : "continue";
       const opening = conversations
-        .open({ cwd: "/worktree", env: {}, label: "Agent" }, profile, sessionid)
+        .open(
+          {
+            cwd: "/worktree",
+            env: {},
+            label: "Agent",
+            agent: agent.agent,
+            submitKey: agent.submitKey ?? "Enter",
+          },
+          profile,
+          sessionid,
+        )
         .then((handle) => conversations.submit(handle, firstPrompt));
       await submitted.promise;
       assert.deepEqual(events, [command]);
@@ -81,6 +140,7 @@ for (const sessionid of [undefined, "saved-session"]) {
       const events: string[] = [];
       const conversations = new NativeConversations(
         {
+          ...createCliDependencies(".").terminalPlugin,
           async createTab() {
             return {};
           },
@@ -105,7 +165,13 @@ for (const sessionid of [undefined, "saved-session"]) {
       );
       const opening = conversations
         .open(
-          { cwd: "/worktree", env: {}, label: "Agent" },
+          {
+            cwd: "/worktree",
+            env: {},
+            label: "Agent",
+            agent: agent.agent,
+            submitKey: agent.submitKey ?? "Enter",
+          },
           { ...agent, startupDelaySeconds: 20 },
           sessionid,
         )

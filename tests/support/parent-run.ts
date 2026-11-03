@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import type { TestContext } from "node:test";
 import { executeCli } from "../../src/cli.ts";
-import type { CreateTabOptions } from "../../src/terminal.ts";
+import type { CreateTabOptions, TerminalPlugin } from "../../src/terminal.ts";
 import type {
   CodeHost,
   GitWorkspace,
@@ -67,6 +67,38 @@ export async function parentRun(
         .assignees!.push(account);
     },
   };
+  const terminalPlugin: TerminalPlugin = {
+    ...deps.terminalPlugin,
+    async createTab(options: CreateTabOptions) {
+      const tab = {};
+      tabs.set(tab, worktrees.get(options.cwd)!);
+      return tab;
+    },
+    async submitText(tab: object, text: string) {
+      if (text.startsWith("Session Probe\n")) {
+        const assignment = promptAssignment(text) as Record<string, unknown>;
+        await publish(String(assignment.path), {
+          sessionid: `native-${String(assignment.ticket)}`,
+          pr_title: `feat: [issue-${String(assignment.ticket)}] implement`,
+          pr_body: `Implement.\n\nCloses #${String(assignment.ticket)}`,
+        });
+      } else if (text.startsWith("Implementation assignment\n")) {
+        const assignment = promptAssignment(text) as {
+          path: string;
+        };
+        const evidence = tabs.get(tab)!;
+        evidence.changed = true;
+        const number = Number(/ticket-(\d+)$/u.exec(evidence.worktree)![1]);
+        const result = committed(number);
+        evidence.commits = result.commits;
+        dispatched.push(number);
+        await publish(assignment.path, result);
+      }
+    },
+    async closeTab(tab: object) {
+      assert.ok(tabs.has(tab));
+    },
+  };
   const dependencies = {
     ...deps,
     tracker,
@@ -95,37 +127,7 @@ export async function parentRun(
         return structuredClone(worktrees.get(input.worktree)!);
       },
     },
-    terminalPlugin: {
-      async createTab(options: CreateTabOptions) {
-        const tab = {};
-        tabs.set(tab, worktrees.get(options.cwd)!);
-        return tab;
-      },
-      async submitText(tab: object, text: string) {
-        if (text.startsWith("Session Probe\n")) {
-          const assignment = promptAssignment(text) as Record<string, unknown>;
-          await publish(String(assignment.path), {
-            sessionid: `native-${String(assignment.ticket)}`,
-            pr_title: `feat: [issue-${String(assignment.ticket)}] implement`,
-            pr_body: `Implement.\n\nCloses #${String(assignment.ticket)}`,
-          });
-        } else if (text.startsWith("Implementation assignment\n")) {
-          const assignment = promptAssignment(text) as {
-            path: string;
-          };
-          const evidence = tabs.get(tab)!;
-          evidence.changed = true;
-          const number = Number(/ticket-(\d+)$/u.exec(evidence.worktree)![1]);
-          const result = committed(number);
-          evidence.commits = result.commits;
-          dispatched.push(number);
-          await publish(assignment.path, result);
-        }
-      },
-      async closeTab(tab: object) {
-        assert.ok(tabs.has(tab));
-      },
-    },
+    terminalPlugin,
   };
   return {
     directory,
