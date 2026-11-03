@@ -14,4 +14,5 @@ Do not fetch or pull code, switch branches, push, create or modify a pull reques
 - Findings report: {{findings}}
 - Base SHA: {{base}}
 
-Once the task is complete, explicitly invoke the installed issue-runner-handoff skill as your final action, with this sole absolute output-path argument: {{path}}
+Use the issue-runner-handoff skill to report task completion or a pause requiring user action.
+Handoff path: {{path}}

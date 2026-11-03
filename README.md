@@ -121,13 +121,13 @@ Review, or documentation before running Runner:
 3. Reload skills or restart the Agent CLI as its documentation requires, and
    verify that `issue-runner-handoff` is available for explicit invocation.
 
-Runner does not install the skill automatically. Use an Agent CLI that supports
-the skill's explicit-only invocation metadata.
+Runner does not install the skill automatically. The skill's explicit-only restriction
+is model-followed guidance, not client-enforced protection.
 
 ## Invoke or correct a handoff
 
-Runner's task prompts explicitly name `issue-runner-handoff` and supply one
-argument: the assigned absolute final JSON output path. Runner displays that
+Runner's task prompts explicitly name `issue-runner-handoff` and supply the assigned
+absolute final JSON output path on a `Handoff path:` line. Runner displays that
 path with the current stage and actual native session identity.
 
 In that native Agent conversation, explicitly invoke the installed skill with
@@ -146,6 +146,11 @@ original conversation with that same path. It validates and closes the
 temporary sibling `<handoff-path>.tmp`, then atomically replaces the final
 file as its last step. A different invocation, automatic correction, or retry
 gets a fresh Runner-assigned path.
+
+When user action is required and no independent work can continue, the skill leaves
+the handoff unwritten and starts its response with `[action required]`. Resolve the
+blocker in that conversation; the Agent resumes work and publishes a handoff only
+on completion.
 
 The skill's [accepted content](https://github.com/BuddyLabsCo/issue-runner-core/issues/5#issuecomment-6497094791)
 defines exactly `outcome`, `summary`, `commits`, and `findings_file`. Execution

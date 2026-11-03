@@ -68,10 +68,8 @@ await test("a withheld correction retains its prompt, path and native context un
       return;
     }
     if (text.startsWith("Correct the implementation handoff:")) {
-      const file = JSON.parse(
-        text.slice(text.lastIndexOf("argument: ") + 10),
-      ) as string;
-      await publish(file, committed(51));
+      const assignment = promptAssignment(text);
+      await publish(assignment.path, committed(51));
       return;
     }
     await submitText(tab, text);

@@ -1,3 +1,4 @@
 Correct the {{name}} handoff: {{reason}}
 
-After completing the correction, explicitly invoke the installed issue-runner-handoff skill as your final action, with this sole absolute output-path argument: {{path}}
+Use the issue-runner-handoff skill to report task completion or a pause requiring user action.
+Handoff path: {{path}}

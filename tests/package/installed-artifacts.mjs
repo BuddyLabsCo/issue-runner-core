@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
   copyFileSync,
+  existsSync,
   readFileSync,
   readdirSync,
   renameSync,
@@ -10,8 +11,75 @@ import {
 import { createRequire } from "node:module";
 import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { stringify } from "yaml";
+import { parse, stringify } from "yaml";
 import { validConfig } from "../support/cli-project.ts";
+
+/** @param {string} core */
+function assertHandoffSkill(core) {
+  const skillDirectory = join(core, "skills/issue-runner-handoff");
+  assert.equal(existsSync(join(skillDirectory, "agents/openai.yaml")), false);
+  const skill = readFileSync(join(skillDirectory, "SKILL.md"), "utf8");
+  const [, frontmatter, body] = skill.split("---");
+  assert.ok(frontmatter && body);
+  /** @type {unknown} */
+  const metadata = parse(frontmatter);
+  assert.ok(
+    metadata && typeof metadata === "object" && "description" in metadata,
+  );
+  assert.equal(
+    metadata.description,
+    "Use only when the user or task prompt explicitly requests the issue-runner-handoff skill. Report task completion or a pause requiring user action.",
+  );
+  assert.ok(
+    body
+      .trimStart()
+      .startsWith(
+        "Invoke this skill only when explicitly requested by name.\n",
+      ),
+  );
+  assert.doesNotMatch(skill, /disable-model-invocation/u);
+  assert.match(body, /model-followed guidance/u);
+  const [beforeCompletion, completion] = body.split("## Task complete");
+  assert.ok(beforeCompletion && completion);
+  const pause = beforeCompletion.split("## Human action required")[1];
+  assert.ok(pause);
+  assert.match(pause, /no independent work can continue/u);
+  assert.match(pause, /Do not create the handoff file\./u);
+  assert.match(pause, /starts with literal `\[action required\]`/u);
+  assert.match(pause, /no preceding heading, list marker, or formatting/u);
+  assert.match(pause, /Explain the blocker and required action, then wait/u);
+  assert.match(
+    pause,
+    /After the blocker is resolved, resume work and publish a handoff only on completion/u,
+  );
+  assert.match(completion, /Only after the assigned work is complete/u);
+  assert.match(
+    completion,
+    /Validate the JSON against the applicable schema and close the temporary file/u,
+  );
+  assert.match(
+    completion,
+    /atomically rename the temporary file to the final path/u,
+  );
+  assert.match(completion, /After publishing the final file, stop/u);
+  assert.match(
+    completion,
+    /Review, Review-fix, CI-repair, and conflict-repair assignments use only `outcome`,\n`summary`, `commits`, and `findings_file`; omit PR metadata/u,
+  );
+  const example = /```json\n([\s\S]*?)```/u.exec(completion)?.[1];
+  assert.ok(example);
+  /** @type {unknown} */
+  const result = JSON.parse(example);
+  assert.ok(result && typeof result === "object");
+  assert.deepEqual(Object.keys(result), [
+    "outcome",
+    "summary",
+    "commits",
+    "findings_file",
+    "pr_title",
+    "pr_body",
+  ]);
+}
 
 /**
  * @param {import("node:test").TestContext} t
@@ -164,7 +232,7 @@ export async function testInstalledArtifacts(
     },
   );
   await t.test(
-    "installed purpose prompts load and the manual handoff asset matches exactly",
+    "installed prompts and handoff skill preserve explicit completion and pause instructions",
     () => {
       runNode(
         [
@@ -176,6 +244,7 @@ export async function testInstalledArtifacts(
       import { join } from "node:path";
       import { pathToFileURL } from "node:url";
       const core = ${JSON.stringify(core)};
+      const { renderPrompt } = await import(pathToFileURL(join(core, "dist/prompts/load.js")).href);
       for (const [file, name, asset, expected] of [
         ["implement", "implementationInstructions", "implement", "Implement issue #{{issue}}"],
         ["review", "reviewInstructions", "review", "issue requirements"],
@@ -198,6 +267,18 @@ export async function testInstalledArtifacts(
           readFileSync(join(core, "prompts", asset + ".md")),
           readFileSync(new URL("../../prompts/" + asset + ".md", ${JSON.stringify(import.meta.url)}))
         );
+        if (["implement", "documentation", "review", "review-fix", "ci-repair", "conflict-repair", "handoff-correction", "recovery"].includes(asset)) {
+          const handoff = join(core, "handoff with spaces.json");
+          const rendered = renderPrompt(prompts[name], {
+            issue: "210", instructions: "Project instructions", round: "1", base: "base", head: "head",
+            findings: "findings.md", pr: "PR", checks: "Failed checks", target_base: "target",
+            conflict: "Merge conflict", name: "implementation", reason: "Invalid handoff", path: JSON.stringify(handoff)
+          });
+          const instruction = "Use the issue-runner-handoff skill to report task completion or a pause requiring user action.";
+          assert.ok(rendered.endsWith(instruction + "\\nHandoff path: " + JSON.stringify(handoff)), name);
+          assert.equal(rendered.split(instruction).length, 2, name);
+          assert.doesNotMatch(rendered, /\\[action required\\]|Do not create the handoff file/);
+        }
       }
     `,
         ],
@@ -212,6 +293,7 @@ export async function testInstalledArtifacts(
           ),
         ),
       );
+      assertHandoffSkill(core);
     },
   );
   await t.test("installed prompts cannot fall back to the checkout", () => {

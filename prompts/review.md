@@ -16,4 +16,5 @@ Do not modify implementation files or create commits. Write actionable findings 
   
 {{instructions}}
 
-Once the task is complete, explicitly invoke the installed issue-runner-handoff skill as your final action, with this sole absolute output-path argument: {{path}}
+Use the issue-runner-handoff skill to report task completion or a pause requiring user action.
+Handoff path: {{path}}

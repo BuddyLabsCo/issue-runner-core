@@ -86,13 +86,15 @@ export async function testPromptAssembly(
   );
   assert.ok(
     task.endsWith(
-      `Once the task is complete, explicitly invoke the installed issue-runner-handoff skill as your final action, with this sole absolute output-path argument: ${JSON.stringify(saved.superseded[1])}`,
+      "Use the issue-runner-handoff skill to report task completion or a pause requiring user action.\n" +
+        `Handoff path: ${JSON.stringify(saved.superseded[1])}`,
     ),
   );
   assert.equal(
     submissions[4]!.text,
     "Correct the implementation handoff: Execution findings_file must be null\n\n" +
-      `After completing the correction, explicitly invoke the installed issue-runner-handoff skill as your final action, with this sole absolute output-path argument: ${JSON.stringify(saved.invocation!.path)}`,
+      "Use the issue-runner-handoff skill to report task completion or a pause requiring user action.\n" +
+      `Handoff path: ${JSON.stringify(saved.invocation!.path)}`,
   );
   assert.ok(
     submissions

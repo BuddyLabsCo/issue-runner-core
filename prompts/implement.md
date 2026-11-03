@@ -15,4 +15,5 @@ Run relevant checks, commit the complete change locally, and leave the working t
 
 {{instructions}}
 
-Once the task is complete, explicitly invoke the installed issue-runner-handoff skill as your final action, with this sole absolute output-path argument: {{path}}
+Use the issue-runner-handoff skill to report task completion or a pause requiring user action.
+Handoff path: {{path}}
