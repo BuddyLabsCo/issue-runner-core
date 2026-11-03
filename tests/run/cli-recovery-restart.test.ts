@@ -55,8 +55,6 @@ await test("explicit whole-Issue restart retains failed resources and resets onl
   fixture.state.onProbe = async (assignment) => {
     await publish(String(assignment.path), {
       sessionid: "new-native-context",
-      pr_title: "fix: [issue-50] restart the Issue",
-      pr_body: "New execution metadata.\n\nCloses #50",
     });
   };
   fixture.state.onTask = async (output) => {
@@ -65,7 +63,11 @@ await test("explicit whole-Issue restart retains failed resources and resets onl
     assert.equal(fresh.reviews, undefined);
     assert.equal(fresh.operations?.exhausted, undefined);
     fixture.state.evidence.commits = committed().commits;
-    await publish(output, committed());
+    await publish(output, {
+      ...committed(),
+      pr_title: "fix: [issue-50] restart the Issue",
+      pr_body: "New execution metadata.\n\nCloses #50",
+    });
   };
   const before = fixture.state.submissions.length;
   const result = await executeCli(implementationCommand, fixture.dependencies);
@@ -114,7 +116,7 @@ await test("explicit whole-Issue restart retains failed resources and resets onl
   assert.deepEqual(fixture.state.cleanup, []);
 });
 
-await test("an explicit native resume failure offers restart or exit without inferring Agent liveness", async (t) => {
+await test("a native resume readiness failure offers same-Tab retry, skip or exit", async (t) => {
   const fixture = await implementationRun(t);
   fixture.state.onTask = async () => fixture.controller.abort();
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
@@ -122,9 +124,9 @@ await test("an explicit native resume failure offers restart or exit without inf
   fixture.dependencies.signal = new AbortController().signal;
   let pauses = 0;
   fixture.dependencies.operator.pause = async (message) => {
-    assert.equal(
+    assert.match(
       message,
-      "Enter to restart the entire Issue #50, or q to exit Runner.",
+      /Operation failed: native context unavailable.*Enter to retry, s to skip Issue #50, q\/EOF to cancel/u,
     );
     pauses += 1;
     return "q";
@@ -140,8 +142,8 @@ await test("an explicit native resume failure offers restart or exit without inf
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "cancelled", JSON.stringify(result));
   assert.equal(pauses, 1);
-  assert.ok(fixture.dependencies.messages.includes("unable to recover"));
-  assert.deepEqual(await fixture.snapshot(), saved);
+  assert.ok(!fixture.dependencies.messages.includes("unable to recover"));
+  assert.deepEqual((await fixture.snapshot()).roles, saved.roles);
   assert.equal(fixture.state.probeCount, 1);
   assert.equal(fixture.state.taskCount, 1);
   assert.deepEqual(fixture.state.cleanup, []);

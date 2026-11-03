@@ -119,8 +119,13 @@ for (const change of [
 await test("parent cancellation during native startup prevents implementation dispatch", async (t) => {
   const fixture = await parentRun(t, [child(51)]);
   let cancelled = false;
-  fixture.dependencies.clock.sleep = async (ms) => {
-    if (ms === 10_000) cancelled = true;
+  const start = fixture.dependencies.terminalPlugin.start.bind(
+    fixture.dependencies.terminalPlugin,
+  );
+  fixture.dependencies.terminalPlugin.start = async (tab, command) => {
+    await start(tab, command);
+    cancelled = true;
+    return undefined;
   };
   fixture.dependencies.tracker.getParent = async () => ({
     number: 48,
@@ -228,8 +233,13 @@ await test("parent cancellation during recovery startup prevents continue in the
   controller = new AbortController();
   fixture.dependencies.signal = controller.signal;
   let cancelled = false;
-  fixture.dependencies.clock.sleep = async (ms) => {
-    if (ms === 10_000) cancelled = true;
+  const resume = fixture.dependencies.terminalPlugin.resume.bind(
+    fixture.dependencies.terminalPlugin,
+  );
+  fixture.dependencies.terminalPlugin.resume = async (tab, command, ref) => {
+    await resume(tab, command, ref);
+    cancelled = true;
+    return ref;
   };
   fixture.dependencies.tracker.getParent = async () => ({
     number: 48,

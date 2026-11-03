@@ -29,7 +29,7 @@ await test("a final published before observation wins over temporary and unrelat
   assert.equal(saved.result?.summary, "Assigned final.");
   assert.deepEqual(
     fixture.state.sleeps.filter((ms) => ms !== 30_000),
-    [10_000],
+    [],
   );
   assert.equal(fixture.state.closedTabs.length, 1);
 });
@@ -226,7 +226,7 @@ await test("overwrites during validation and after acceptance cannot change the 
   assert.equal(fixture.state.closedTabs.length, 1);
   assert.deepEqual(
     fixture.state.sleeps.filter((ms) => ms !== 30_000),
-    [10_000],
+    [],
   );
   assert.equal(await readFile(fixture.state.expectedPath, "utf8"), "{");
   assert.deepEqual(
@@ -242,7 +242,7 @@ await test("overwrites during validation and after acceptance cannot change the 
   assert.equal(fixture.state.closedTabs.length, 1);
   assert.deepEqual(
     fixture.state.sleeps.filter((ms) => ms !== 30_000),
-    [10_000],
+    [],
   );
 });
 

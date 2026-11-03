@@ -67,6 +67,8 @@ await test("GitHub documentation scans label pages, reconciles label creation, a
     fixture.state.evidence.changed = false;
     await publish(file, {
       outcome: "no_change",
+      pr_title: "docs: maintain documentation",
+      pr_body: "Documentation is current. Closes #50",
       summary: "Current",
       commits: [],
       findings_file: null,

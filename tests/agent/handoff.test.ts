@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 import { parseExecution, parseReview } from "../../src/agent/handoff.ts";
-import { committed } from "../support/implementation-run.ts";
+import { execution as committed } from "../support/implementation-run.ts";
 
 for (const [name, output, reason] of [
   ["invalid JSON", "{", /JSON|Unexpected/u],

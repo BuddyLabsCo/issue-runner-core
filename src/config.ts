@@ -16,7 +16,6 @@ export interface AgentConfig {
   start: string;
   resume: string;
   submitKey?: string;
-  startupDelaySeconds?: number;
   options?: Record<string, unknown>;
 }
 
@@ -143,7 +142,7 @@ function agent(value: unknown, name: string): AgentConfig {
   const input = record(value, name);
   knownFields(
     input,
-    ["agent", "start", "resume", "submitKey", "startupDelaySeconds", "options"],
+    ["agent", "start", "resume", "submitKey", "options"],
     name,
   );
   const agent = text(input.agent, `${name}.agent`);
@@ -167,10 +166,6 @@ function agent(value: unknown, name: string): AgentConfig {
     agent,
     start,
     resume,
-    startupDelaySeconds: positive(
-      input.startupDelaySeconds === undefined ? 10 : input.startupDelaySeconds,
-      `${name}.startupDelaySeconds`,
-    ),
     ...(submitKey === undefined ? {} : { submitKey }),
     ...(options === undefined ? {} : { options }),
   };

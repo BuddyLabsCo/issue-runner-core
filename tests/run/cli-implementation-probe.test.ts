@@ -5,7 +5,7 @@ import test from "node:test";
 import { implementationRun, publish } from "../support/implementation-run.ts";
 import { validConfig } from "../support/cli-project.ts";
 
-await test("Probe output contains only discovered identity and metadata", async (t) => {
+await test("Probe output contains only discovered identity", async (t) => {
   const fixture = await implementationRun(t);
   const nativeProbe = fixture.state.onProbe;
   fixture.state.onProbe = async (assignment) => {
@@ -21,11 +21,7 @@ await test("Probe output contains only discovered identity and metadata", async 
   const result = JSON.parse(
     await readFile(saved.probe!.path, "utf8"),
   ) as Record<string, unknown>;
-  assert.deepEqual(Object.keys(result).sort(), [
-    "pr_body",
-    "pr_title",
-    "sessionid",
-  ]);
+  assert.deepEqual(Object.keys(result).sort(), ["sessionid"]);
   assert.deepEqual(Object.keys(saved.probe!), ["path"]);
 });
 
@@ -36,8 +32,6 @@ await test("superseded Probe output cannot satisfy the active path", async (t) =
     paths.push(String(assignment.path));
     await publish(paths[0]!, {
       sessionid: paths.length === 1 ? "latest" : "actual-native-session",
-      pr_title: "Title",
-      pr_body: "Body",
     });
   };
   fixture.state.onSleep = async (ms) => {
@@ -64,8 +58,6 @@ await test("invalid Probes receive immediate feedback beyond the Operator retry 
     assert.equal(progress.probe?.path, assignment.path);
     await publish(String(assignment.path), {
       sessionid: assignments.length < 5 ? "latest" : "actual-native-session",
-      pr_title: "feat: [issue-50] implement the Issue",
-      pr_body: "Implement the Issue.\n\nCloses #50",
     });
   };
   fixture.state.onSleep = async (ms) => {
@@ -77,7 +69,7 @@ await test("invalid Probes receive immediate feedback beyond the Operator retry 
   assert.equal(fixture.state.taskCount, 1);
   assert.deepEqual(
     fixture.state.sleeps.filter((ms) => ms !== 30_000),
-    [10_000],
+    [],
   );
   assert.equal(
     new Set(assignments.map((assignment) => assignment.path)).size,

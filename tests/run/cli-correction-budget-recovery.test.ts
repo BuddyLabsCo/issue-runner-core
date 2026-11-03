@@ -82,14 +82,17 @@ for (const purpose of ["implementation", "Review"] as const) {
       );
       assert.deepEqual(
         fixture.state.sleeps.slice(sleeps).filter((ms) => ms !== 30_000),
-        [10_000],
+        [],
       );
       const recovered = await fixture.snapshot();
       const current = purpose === "Review" ? recovered.reviews![0]! : recovered;
       assert.deepEqual(recovered.roles, saved.roles);
       assert.equal(recovered.execution_id, saved.execution_id);
       assert.equal(recovered.worktree, saved.worktree);
-      assert.equal(recovered.pr_body, saved.pr_body);
+      assert.equal(
+        recovered.pr_body,
+        purpose === "implementation" ? committed().pr_body : saved.pr_body,
+      );
       if (legacy === "delay") assert.deepEqual(current.invocation, active);
       else
         assert.deepEqual(current.superseded, [

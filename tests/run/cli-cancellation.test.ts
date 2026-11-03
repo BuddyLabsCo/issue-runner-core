@@ -43,6 +43,18 @@ for (const boundary of [
       entered.resolve();
       return release.promise;
     };
+    if (boundary === "startup") {
+      const start = fixture.dependencies.terminalPlugin.start.bind(
+        fixture.dependencies.terminalPlugin,
+      );
+      fixture.dependencies.terminalPlugin.start = async (tab, command) => {
+        await start(tab, command);
+        waitSignal = fixture.state.tabOptions[0]!.signal;
+        entered.resolve();
+        await release.promise;
+        return undefined;
+      };
+    }
     const running = fixture.run();
     let deadline: ReturnType<typeof setTimeout> | undefined;
     let submissions: number;
@@ -78,7 +90,7 @@ for (const boundary of [
   });
 }
 
-await test("q in a sibling's non-Agent pause cancels startup without waiting for its delay", async (t) => {
+await test("q in a sibling's non-Agent pause cancels pending readiness", async (t) => {
   const fixture = await parentRun(t, [child(51), child(52)], {
     ...validConfig,
     operationRetry: 0,
@@ -86,9 +98,14 @@ await test("q in a sibling's non-Agent pause cancels startup without waiting for
   const entered = deferred<void>();
   const paused = deferred<void>();
   const release = deferred<void>();
-  fixture.dependencies.clock.sleep = () => {
+  const start = fixture.dependencies.terminalPlugin.start.bind(
+    fixture.dependencies.terminalPlugin,
+  );
+  fixture.dependencies.terminalPlugin.start = async (tab, command) => {
+    await start(tab, command);
     entered.resolve();
-    return release.promise;
+    await release.promise;
+    return undefined;
   };
   const inspect = fixture.dependencies.gitWorkspace.inspect.bind(
     fixture.dependencies.gitWorkspace,
@@ -137,7 +154,7 @@ await test("q in a sibling's non-Agent pause cancels startup without waiting for
     );
     assert.equal(
       (await implementationProgress(fixture.directory, 52)).phase,
-      "probing",
+      "worktree_created",
     );
   } finally {
     clearTimeout(deadline);

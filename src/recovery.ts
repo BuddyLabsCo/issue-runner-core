@@ -25,6 +25,11 @@ export interface ExecutionResult {
   findings_file: null;
 }
 
+export interface PRExecutionResult extends ExecutionResult {
+  pr_title: string;
+  pr_body: string;
+}
+
 export interface Invocation {
   invocation_id: string;
   path: string;
@@ -60,7 +65,7 @@ export interface OperationProgress {
   notBefore?: number;
 }
 
-export interface ImplementationProgress extends StageProgress<ExecutionResult> {
+export interface ImplementationProgress extends StageProgress<PRExecutionResult> {
   operations?: Record<string, OperationProgress>;
   purpose?: "documentation";
   noChangeClosure?: "pending" | "completed";

@@ -3,7 +3,7 @@ import { mkdir, rmdir, writeFile } from "node:fs/promises";
 import test from "node:test";
 import { validConfig } from "../support/cli-project.ts";
 import {
-  committed,
+  execution as committed,
   implementationCommit,
   publish,
 } from "../support/implementation-run.ts";
@@ -61,7 +61,7 @@ for (const scenario of [
     assert.equal(fixture.state.closedTabs.length, 2);
     assert.deepEqual(
       fixture.state.sleeps.filter((ms) => ms !== 30_000),
-      [10_000, 10_000],
+      [],
     );
     const prompts = fixture.state.submissions.filter(
       (item) =>
@@ -106,7 +106,7 @@ for (const scenario of [
     assert.equal((await fixture.snapshot()).reviews![0]!.superseded.length, 1);
     assert.deepEqual(
       fixture.state.sleeps.filter((ms) => ms !== 30_000),
-      [10_000, 10_000],
+      [],
     );
   });
 }
@@ -140,7 +140,7 @@ await test("no_change cannot satisfy findings; the correction remains in the fix
   assert.equal(fixture.reviewState.fixes.length, 1);
   assert.deepEqual(
     fixture.state.sleeps.filter((ms) => ms !== 30_000),
-    [10_000, 10_000, 10_000],
+    [],
   );
   const prompts = fixture.state.submissions.filter(
     (item) =>
@@ -227,7 +227,7 @@ await test("Review handoffs containing commits receive immediate feedback for ev
   assert.equal(new Set(submissions.map(({ tab }) => tab)).size, 1);
   assert.deepEqual(
     fixture.state.sleeps.filter((ms) => ms !== 30_000),
-    [10_000, 10_000],
+    [],
   );
   assert.equal((await fixture.snapshot()).reviews!.length, 1);
 });

@@ -225,24 +225,32 @@ eligibility/ownership, fetches the Target Branch, and creates an isolated
 Worktree and branch from that exact base. Partial writes remain retained.
 The Reservation label must already exist in the repository.
 
-Core opens a tab with an absolute cwd and a unique temporary `GIT_CONFIG_GLOBAL`
-overlay. It submits the full configured start command with Enter, waits for the
-profile's `startupDelaySeconds` (default 10 seconds), then separately submits a
-Session Probe with the Agent chord. The
-persisted unique output path associates the response with its execution and stage;
-the Agent does not receive or echo internal correlation fields. Implementation
-and documentation Probes return exactly `sessionid`, `pr_title`, and `pr_body`.
-Reviewer and repair Probes return only `sessionid`.
+Core awaits tab creation with an absolute cwd and a unique temporary
+`GIT_CONFIG_GLOBAL` overlay, then calls composite `start` with the unchanged
+configured command. A valid returned native ref is saved before business dispatch.
+Only `undefined` from a new start selects a Session Probe, using the Agent chord.
+Every fallback Probe returns exactly `sessionid`; its persisted unique output path
+associates the response with the execution and stage. Core rejects empty refs,
+`latest`/`last`, and Runner Run/execution IDs. Composite resume receives the exact
+saved opaque ref and must return that ref, without another identity Probe.
+
+Startup/readiness failures retain the created Runner Tab. Enter retries the
+composite operation on that same handle; the plugin must not launch another Agent.
+Issue-scoped pauses also allow skip, and q/EOF cancels. Core forwards cancellation
+through the Run signal and retains the Tab and Agent. Readiness has no Core timeout
+or startup sleep; create, submit, and close operations keep their existing bounds.
 
 The Agent reads the Issue by number and the repository's contribution/PR
 conventions from its current Worktree context. Configure `repository` and
 `checkout` to identify the same repository as the checkout's Git remote;
 Core does not validate that agreement. Issue titles and bodies are not copied
-into prompts. Accepted PR metadata stays fixed in application state and is not
+into prompts. Implementation and documentation handoffs supply PR metadata after completion.
+In-progress recovery does not require metadata before that handoff. Accepted PR
+metadata stays fixed in application state and is not
 sent back to the Agent.
 
-A fresh invocation and absolute handoff path are persisted before task submission,
-without another startup delay. Tasks include built-in instructions, any applicable
+Core persists a fresh invocation and absolute handoff path before task submission.
+Tasks include built-in instructions, any applicable
 Project prompt, and only the context needed for that stage. They omit internal
 assignment JSON and redundant Worktree/branch details. The final instruction
 explicitly invokes the installed handoff skill after the assigned task is complete.
@@ -264,11 +272,13 @@ apply only to non-Agent operation failures.
 Probe IDs are not generated. Responses require nonempty native session identity;
 Run/execution IDs and latest-session aliases are rejected. Only the active path
 can establish identity; superseded output cannot satisfy a later attempt.
-Unaccepted Probe responses from the earlier echo-field protocol must be rewritten
-with the current fields, or the affected Issue must be restarted. Accepted native
-identities and the four-field task handoff schema are unchanged.
+Probe responses containing PR metadata are rejected. Obtain that metadata through
+the business handoff instead.
 
-Only the exact four-field execution schema is accepted, after independent
+Implementation and documentation handoffs require exactly `outcome`, `summary`,
+`commits`, `findings_file`, `pr_title`, and `pr_body`. Both metadata fields must be
+nonempty strings for `committed` and `no_change`. Review-fix and repair executions
+keep their four-field schema. Core accepts results only after independent
 Worktree, branch, base, clean-state and full commit/message checks. A `committed`
 result must also contain real changes relative to the base. Accepted facts and
 stage completion are saved before targeted tab closure. A local implementation
@@ -283,9 +293,8 @@ Verified commits proceed to publication after enabled Review/fixes.
 
 When Review is enabled (the default), only a verified `committed` implementation
 starts it. A separate reviewer starts in a fresh Runner Tab in the original
-Worktree with its own per-call Git configuration. Core waits for
-`agents.review.startupDelaySeconds` (default 10 seconds), Probes
-only the reviewer's native identity, and saves that role reference before the
+Worktree with its own per-call Git configuration. Core awaits composite startup,
+uses an identity-only Probe if no ref is returned, and saves the role reference before the
 Review assignment. Review receives the Issue number, repository/spec review
 instructions, the Project review prompt, Review base, implementation HEAD,
 and an assigned absolute findings path outside the Worktree.
@@ -300,14 +309,13 @@ implementation edits or commits.
 
 After accepted findings, Core saves the Review result and closes its tab before
 opening a fresh tab that resumes the exact original implementation conversation.
-After waiting for `agents.implement.startupDelaySeconds` (default 10 seconds),
-the fix receives the findings report, reviewed HEAD as
+After composite resume readiness, the fix receives the findings report, reviewed HEAD as
 its Base SHA, and a fresh handoff path. It must produce verified new commits and
 a clean Worktree. `no_change` cannot satisfy findings. Core verifies both this
 turn's commits relative to the reviewed HEAD and the complete accumulated history
 relative to the initial base. The original implementation result and each round's
 verified fix commits remain recorded separately; their ordered combination is
-the implementation eligible for publication. Initial Probe PR metadata remains
+the implementation eligible for publication. Accepted implementation handoff PR metadata remains
 fixed throughout.
 
 Each Review assignment includes `Review round: N`, starting at 1. Your
@@ -320,7 +328,7 @@ Core substitutes named placeholders once. Project prompt contents are inserted
 as literal text through `{{instructions}}`; their own placeholders are not expanded.
 
 Later Reviews resume the exact original reviewer in fresh tabs, with the
-review profile's startup delay and fresh invocation/path. The previous reviewed HEAD becomes the
+review profile's composite readiness and a fresh invocation/path. The previous reviewed HEAD becomes the
 next Review base; the implementation HEAD includes the latest fixes.
 `workflow.maxReviewRounds` has no default cap. With a cap, every allowed findings
 round still receives its fix before the loop exits. For example:
@@ -334,7 +342,7 @@ workflow:
 This allows implementation -> Review findings -> verified fix -> publication
 eligibility, with no second Review. Validation corrections stay in their current
 stage tab, use fresh handoff paths without backoff, and do not
-spend another Review round or startup wait. Setting `workflow.review: false`
+spend another Review round. Setting `workflow.review: false`
 skips Review and fixes. Initial `no_change` also skips Review.
 
 Snapshots preserve both role references, each round's base/HEAD/findings,
@@ -355,13 +363,13 @@ confirmed tracker completion can receive successful-delivery credit.
 
 ### Publication and CI-ready retention
 
-Runner owns pushes, PR creation, integration, and tracker writes. Agents only inspect, edit, check, and commit locally. Before pushing, Runner revalidates eligibility and verifies the original Worktree, delivery branch, base, cleanliness, and accumulated implementation/fix commits. It pushes the exact verified HEAD without force and creates a non-draft PR with the accepted Probe title and body. Probe metadata remains fixed even when fixes change the final implementation.
+Runner owns pushes, PR creation, integration, and tracker writes. Agents only inspect, edit, check, and commit locally. Before pushing, Runner revalidates eligibility and verifies the original Worktree, delivery branch, base, cleanliness, and accumulated implementation/fix commits. It pushes the exact verified HEAD without force and creates a non-draft PR with the accepted business handoff title and body. Accepted metadata remains fixed even when fixes change the final implementation.
 
 Publication intent is saved before pushing or attempting PR creation. Checkpoints record the branch, Target Branch, intended HEAD, fixed metadata, verified commits, PR number/URL, discovery deadline, check deadline, and observed checks.
 
 A lost push response is reconciled against the intended remote HEAD. A lost PR response is reconciled against all PR pages using the exact branch, Target Branch, and HEAD. Multiple matches, conflicting identity, closed/draft PRs, or unexpected remote advancement enter ordinary non-Agent Operator Pause; Runner never force-pushes or creates a replacement automatically.
 
-With matching Run inputs, recovery uses the saved publication intent and original Probe metadata. An absent remote branch can receive the verified push only while that push remains pending. An exact remote HEAD confirms the push without repeating it. A missing branch after a confirmed push requires Operator Pause. Recovery creates an absent PR without a pause only when no creation was attempted; an uncertain creation follows the authorization rule below.
+With matching Run inputs, recovery uses the saved publication intent and original business handoff metadata. An absent remote branch can receive the verified push only while that push remains pending. An exact remote HEAD confirms the push without repeating it. A missing branch after a confirmed push requires Operator Pause. Recovery creates an absent PR without a pause only when no creation was attempted; an uncertain creation follows the authorization rule below.
 
 An uncertain creation with no exact match requires explicit operator authorization before another creation attempt. Audit retries repeat only the audit action.
 
@@ -369,7 +377,7 @@ Recovery can adopt an exact merged PR and skip required-check discovery. If the 
 
 Runner waits 30 seconds before required-check discovery. Empty checks or checks with no pending, failed, or cancelled entries establish readiness, preserving the source treatment of skipped checks. Pending checks are polled every 10 seconds, bounded by `timeouts.requiredChecksMinutes`. A timeout enters Operator Pause; Enter starts another configured wait window and q/EOF cancels.
 
-Failed or cancelled required checks start CI repair using `agents.ciRepair`. Each attempt uses a fresh native conversation and a separate repair Worktree and local branch based on the recorded PR head. Its assignment includes the Issue number, PR URL, and failed check names/states/links. The Agent reads the check logs; log bodies are not embedded in the prompt. The original PR and remote branch remain unchanged in identity. Repair Probes establish only native session identity; they never regenerate publication metadata. Each start or exact resume waits for the selected profile's `startupDelaySeconds` (default 10 seconds), and each completed stage closes its own Runner Tab.
+Failed or cancelled required checks start CI repair using `agents.ciRepair`. Each attempt uses a fresh native conversation and a separate repair Worktree and local branch based on the recorded PR head. Its assignment includes the Issue number, PR URL, and failed check names/states/links. The Agent reads the check logs; log bodies are not embedded in the prompt. The original PR and remote branch remain unchanged in identity. Repair Probes establish only native session identity; they never regenerate publication metadata. Each start or exact resume awaits composite readiness, and each completed stage closes its own Runner Tab.
 
 Runner verifies the repair Worktree, local branch, base, cleanliness, actual changes, and exact commit claims before pushing the verified HEAD to the original remote branch. It never force-pushes. Lost push responses reconcile against persisted pending-push evidence; unexpected remote advancement or PR identity changes require ordinary operation recovery. Each repair push restarts the 30-second discovery delay and required-check timeout window. CI repair does not enter ordinary Review.
 
@@ -456,8 +464,8 @@ is optional for `--document`; no delivery or matching business-Issue label is re
 The current startup rules still require the implementation profile and prompt.
 
 Runner ensures the maintenance label exists and creates an ordinary, unassigned
-Maintenance Ticket. It uses a separate documentation execution, Worktree, Session
-Probe, native conversation, fixed PR metadata, and handoff assignments. It does not
+Maintenance Ticket. It uses a separate documentation execution, Worktree, optional identity-only
+Probe, native conversation, business handoff PR metadata, and handoff assignments. It does not
 read a parent, select from `issueList`, reserve a business Issue, or run ordinary Review.
 New assignees, missing maintenance markers, Reservation markers, or open blockers
 stop advancement and retain the occurrence's resources.
@@ -474,8 +482,8 @@ Recovery stores the maintenance occurrence in `recovery/<input-hash>-document.js
 and its execution in `recovery/<input-hash>-document-<ticket>.json`. Matching interrupted
 Runs reuse the original ticket, native conversation, paths, PR metadata, and consumed
 budgets. Completed document stages skip Agent work. Existing output is verified before
-opening a tab; missing output resumes the saved documentation conversation, waits
-for `agents.documentation.startupDelaySeconds` (default 10 seconds), and sends only `continue`. Superseded handoffs cannot replace the current assignment. Close leftover Agent
+opening a tab; missing output awaits composite resume of the saved documentation
+conversation and sends only `continue`. Superseded handoffs cannot replace the current assignment. Close leftover Agent
 tabs and stop their execution before recovery, retaining native history and Worktrees.
 Runner does not adopt live tabs. If the original context cannot be recovered, Runner
 prints `unable to recover` and offers an entire documentation-occurrence restart or exit.
@@ -498,7 +506,7 @@ its resources; native histories and unrelated tabs remain untouched.
 ### Cancellation and explicit reruns
 
 Press Ctrl+C to cancel Runner, or enter `q`/EOF at a non-Agent Operator Pause.
-Cancellation interrupts startup waits, polling, and retry delays, including waits
+Cancellation interrupts composite readiness, polling, and retry delays, including waits
 in sibling Batch executions. Runner stops subsequent dispatch, terminal input,
 and resource creation, reports `cancelled`, and exits nonzero.
 Input already queued in a terminal can still execute; cancellation does not undo
@@ -523,7 +531,7 @@ Changed arguments or configuration ignore old progress without authorizing its d
 Invalid JSON, wrong fields or outcomes, invalid execution findings, and false
 Git claims leave the implementation incomplete. Core sends the validation error
 and a fresh absolute handoff path to the current tab and native conversation,
-using the configured Agent chord without another startup wait. Each correction's
+using the configured Agent chord. Each correction's
 unique invocation/path and superseded path are saved before its prompt. Superseded files cannot satisfy the active assignment.
 
 Core reads only the active assigned final path immediately and every 250 ms
@@ -585,7 +593,7 @@ Workflow observations and outcomes have JSONL audits under the Project's
 They record workflow operations and diagnostics, without Agent output or conversation transcripts.
 Cancellation stops audit retries; the final outcome event may be absent when the cancellation signal is already set.
 Implementation snapshots under
-`recovery/` record execution/Run identities, role references, Probe metadata,
+`recovery/` record execution/Run identities, role references, business handoff metadata,
 invocation/path, superseded paths, a known unsent assignment or correction prompt,
 result facts and stage completion. Execution, Batch, and maintenance snapshots
 store `run_arguments` and `input_hash` in their existing atomic checkpoints.
@@ -617,11 +625,9 @@ active invocation and superseded paths. Cancellation during the dispatch gate al
 Core processes a valid expected result before sending a pending prompt. Once a
 dispatch attempt begins, the checkpoint no longer classifies the prompt as known
 unsent; a rejected eligibility check restores that evidence. If an attempted
-assignment has no expected result, recovery sends only `continue` after the resume
-wait. Runner opens a fresh Runner Tab in the original Worktree, recreates its
-per-call Git configuration, submits the exact saved role's resume command with
-Enter, waits for that profile's `startupDelaySeconds` (default 10 seconds), then
-submits the literal `continue` with that Agent's
+assignment has no expected result, recovery sends only `continue` after composite resume readiness. Runner opens a fresh Runner Tab in the original Worktree, recreates its
+per-call Git configuration, passes the configured resume command and exact saved
+role ref to composite resume, then submits the literal `continue` with that Agent's
 configured `submitKey`. It sends no task, path reminder, context message, or new
 Probe. The invocation, active output path, and fixed PR metadata remain unchanged.
 Staged, unstaged, and untracked work remain in the original Worktree.
@@ -677,7 +683,7 @@ availability from terminal activity; successful command submission cannot prove
 that the native CLI restored its history.
 
 An explicit restart creates a new execution, branch, Worktree, conversations,
-Probe/handoff assignments, and Probe-generated PR metadata. Execution correction
+Probe/handoff assignments, and business handoff PR metadata. Execution correction
 and repair counts start fresh. Other Issues keep their progress and counts.
 Runner archives the failed checkpoint as `<checkpoint>.<id>.retained` before
 starting replacement work. It keeps the active failed checkpoint until replacement
@@ -717,13 +723,9 @@ Unknown or obsolete fields are rejected at every Runner-owned object.
 - Optional `submitKey` is a nonempty Runner setting beside `start`/`resume`,
   outside the optional opaque native `options` object. Omission uses Enter.
   The obsolete `model` and `reasoningEffort` profile fields are rejected.
-- Optional `startupDelaySeconds` is a positive finite number of seconds, defaulting to 10.
-  Set it beside `start`, `resume`, and `submitKey`, outside native `options`.
-  Each profile (`implement`, `review`, `ciRepair`, `conflictRepair`, and `documentation`) uses its own value.
-  After successful start or resume submission, Runner waits before sending the first Probe, continuation, or task prompt.
-  This includes recovery and later stage openings; ordinary prompts within an open session add no startup delay.
-  Fractions are accepted; zero, negative, nonnumeric, and non-finite values are rejected.
-  The delay does not guarantee Agent readiness or retry missing output.
+- Core has no startup delay setting. Terminal plugins own command launch and readiness.
+  Remove obsolete `startupDelaySeconds` entries; configuration validation rejects them.
+
 - `implement`, `ciRepair`, and `conflictRepair` profiles are required. Review
   defaults enabled, requiring its profile and nonempty `prompts/review.md`.
   Setting `workflow.review: false` removes that requirement. An optional

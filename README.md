@@ -7,8 +7,8 @@ The project will reuse the workflow behavior of
 [sandcastle-runner](https://github.com/BuddyLabsCo/sandcastle-runner), excluding
 Agent-session Operator Pause and Runner-recorded Agent conversation logs.
 Interactive Agent CLIs run in terminals owned by the selected environment,
-where operators can intervene directly. Native session references and task
-results return through file handoffs.
+where operators can intervene directly. Native session references return through composite startup or a fallback file Probe;
+task results return through file handoffs.
 
 ## Status
 
@@ -25,7 +25,7 @@ completion before closing the owned tab. Enabled Review starts an independent
 reviewer, verifies its report and unchanged Git state, and resumes the original
 implementation conversation for every findings round. Later Reviews resume the
 original reviewer. The final allowed findings round also receives a verified fix.
-Runner pushes the verified HEAD and creates a non-draft PR using the fixed Probe
+Runner pushes the verified HEAD and creates a non-draft PR using the accepted implementation handoff
 title and body. It waits 30 seconds before discovering required checks.
 Failed required checks start a fresh CI-repair conversation and Worktree, verify
 the repair, and push to the same remote branch and PR. Two consumed CI attempts
@@ -64,8 +64,9 @@ case-sensitive. Pending maintenance blocks later Batch discovery and parent clos
 including after interruption; verified `no_change` satisfies the barrier.
 The [contract milestone](docs/terminal-contract.md) requires each Agent profile's
 opaque `agent` identifier and exposes composite startup and enhancement hosting
-contracts. Workflow startup still uses shell submission, startup delay, and Probe;
-composite startup and monitoring integration remain separate work.
+contracts. Core awaits composite start/resume readiness and saves a returned native
+identity before dispatch. Only a new start returning undefined uses an identity-only
+Probe. Implementation and documentation handoffs supply PR metadata.
 No npm package has been published.
 
 Non-Agent failures retain bounded safe retries and Operator Pause. Enter retries;
@@ -155,17 +156,16 @@ post-handoff work restrictions, and remote-operation ownership. Runner owns
 push, PR, integration, and tracker operations. The skill only submits the
 handoff; submission alone does not establish successful delivery.
 
-Numbered Issue Runs display `sessionid=pending`, then the Probe-validated native
-identity and the active handoff path. Commands use Enter; after one 10-second
-startup wait, Probe and task use the configured Agent chord as separate
-submissions. Approvals, questions, native errors, and missing output require
+Numbered Issue Runs display the validated native identity and active handoff path.
+Core passes configured commands unchanged to composite start/resume and awaits
+readiness without a timeout. Fallback Probe and task submissions use the configured Agent chord. Approvals, questions, native errors, and missing output require
 direct handling in that native conversation. Runner sends no missing-output
 reminders. Invalid results get specific corrections in the same tab at new paths,
-without another startup wait or correction backoff. Each newly published invalid
+without correction backoff. Each newly published invalid
 result receives feedback; missing output and unchanged invalid files cause no reminders.
 See [correction behavior](docs/configuration.md#rejected-handoffs-and-correction).
 
-Recovery Snapshots retain role identity, fixed Probe PR metadata, invocation,
+Recovery Snapshots retain role identity, accepted business handoff PR metadata, invocation,
 Worktree/branch/base, accepted commits, and stage
 completion under the Project's `recovery/`. Matching arguments and configuration
 can continue assigned implementation, Review, and fixes using each role's exact
@@ -175,7 +175,7 @@ handoff files remain until successful Issue cleanup.
 A known unsent assignment or correction remains pending when eligibility stops
 dispatch and is submitted when eligibility returns, retaining its path. Missing output from an attempted assignment opens a fresh Runner Tab
 in the original Worktree with recreated per-call Git configuration. Runner submits
-the saved role's exact resume command with Enter, waits 10 seconds, then sends only
+the saved role's exact ref to composite resume, awaits readiness, then sends only
 `continue` with the configured Agent chord. It preserves the invocation, active
 handoff path, uncommitted work, and metadata without another
 Probe or task prompt.

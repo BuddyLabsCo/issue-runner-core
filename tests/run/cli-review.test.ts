@@ -19,12 +19,11 @@ await test("verified implementation starts an independent Standards/Spec Review 
     workflow: { review: true },
     agents: {
       ...validConfig.agents,
-      implement: { ...validConfig.agents.implement, startupDelaySeconds: 20 },
+      implement: { ...validConfig.agents.implement },
       review: {
         ...validConfig.agents.review,
         start: "review-cli start",
         resume: 'review-cli resume "{sessionref}"',
-        startupDelaySeconds: 0.5,
       },
     },
   });
@@ -75,7 +74,7 @@ await test("verified implementation starts an independent Standards/Spec Review 
   assert.equal(fixture.state.closedTabs.length, 2);
   assert.deepEqual(
     fixture.state.sleeps.filter((ms) => ms !== 30_000),
-    [20_000, 500],
+    [],
   );
   assert.equal(
     (await fixture.snapshot()).roles.review?.sessionid,
@@ -187,7 +186,7 @@ await test("with no default cap, every findings round receives a fix and later R
   assert.equal(fixture.state.closedTabs.length, 8);
   assert.deepEqual(
     fixture.state.sleeps.filter((ms) => ms !== 30_000),
-    Array<number>(8).fill(10_000),
+    [],
   );
   const reviewerCommands = fixture.state.submissions.filter((item) =>
     item.text.startsWith("review-cli"),
@@ -222,6 +221,8 @@ await test("disabled Review and initial no_change never start a reviewer", async
     await publish(file, {
       outcome: "no_change",
       summary: "Nothing to implement.",
+      pr_title: "feat: implement",
+      pr_body: "Closes #50",
       commits: [],
       findings_file: null,
     });
@@ -276,7 +277,7 @@ await test("cap=1 still fixes final findings in the exact implementation convers
 
   assert.deepEqual(
     fixture.state.sleeps.filter((ms) => ms !== 30_000),
-    [10_000, 10_000, 10_000],
+    [],
   );
   const commands = fixture.state.submissions.filter(
     (item) => item.chord === "Enter",

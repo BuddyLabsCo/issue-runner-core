@@ -188,7 +188,7 @@ await test(
       assert.equal(saved.execution_id, original.execution_id);
       assert.deepEqual(saved.invocation, original.invocation);
       assert.deepEqual(saved.roles.implement, original.roles.implement);
-      assert.equal(saved.pr_body, original.pr_body);
+      assert.equal(saved.pr_body, saved.result!.pr_body);
       assert.equal(saved.publication?.phase, "delivered");
       await assert.rejects(access(saved.worktree), { code: "ENOENT" });
     }

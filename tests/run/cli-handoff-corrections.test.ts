@@ -28,7 +28,7 @@ await test("execution findings receive a specific correction in the original con
   assert.equal((await fixture.snapshot()).phase, "implementation_completed");
   assert.deepEqual(
     fixture.state.sleeps.filter((ms) => ms !== 30_000),
-    [10_000],
+    [],
   );
 });
 

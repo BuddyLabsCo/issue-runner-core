@@ -6,6 +6,7 @@ import type {
 import type { CodeHost, PullRequestRecord } from "./contracts.ts";
 import type { ReadOperation } from "./discovery.ts";
 import type { RunContext } from "./run.ts";
+import { nonempty } from "../agent/handoff.ts";
 import { verifiedImplementation } from "./review.ts";
 import { verifyWorkspace } from "./verification.ts";
 import { OperationStopped, pauseForOperator } from "./operations.ts";
@@ -35,9 +36,9 @@ export async function publishImplementation(input: {
   const target = `ticket:${progress.ticket}`;
   const result = verifiedImplementation(progress);
   const head = result.commits.at(-1)?.sha;
-  if (!head || !progress.pr_title || !progress.pr_body)
+  if (!head || !nonempty(progress.pr_title) || !nonempty(progress.pr_body))
     throw new Error(
-      "Publication requires verified commits and accepted Probe metadata",
+      "Publication requires verified commits and accepted business handoff metadata",
     );
   const verify = async (requireEligibility = true) => {
     if (requireEligibility && !(await beforeDispatch()))

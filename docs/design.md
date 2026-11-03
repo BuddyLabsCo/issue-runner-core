@@ -160,12 +160,9 @@ Configure how to start and resume a native interactive CLI. Example shape only:
 ```yaml
 agents:
   implement:
-    start:
-      - my-agent
-    resume:
-      - my-agent
-      - "--resume"
-      - "{session_ref}"
+    agent: my-agent
+    start: 'my-agent --interactive'
+    resume: 'my-agent --resume "{sessionref}"'
 ```
 
 `my-agent` and its arguments are illustrative. Users supply the real command,
@@ -178,14 +175,12 @@ resume commands are not required to accept a `{prompt}` argument. Core builds
 the prompt and submits it through the terminal interface after startup
 readiness has been established.
 
-Before continuing a conversation, Core checks whether its assigned terminal
-still exists and hosts that conversation. If it does, Core submits the next
-prompt directly there without running the resume command. If the operator has
-closed the terminal, Core creates a new one, executes the configured resume
-command with the saved native reference, establishes readiness, and submits the
-next prompt. The new terminal replaces the saved terminal association.
-Terminal existence alone does not prove that the original Agent is still
-running; Core must not submit a task prompt into a shell after the Agent exits.
+Within one stage, Core submits further prompts to its owned Runner Tab. Recovery
+and later stages open a fresh Runner Tab, then await composite resume with the
+exact saved native ref. Core does not adopt surviving live tabs. Startup and
+readiness retries reuse the created handle; plugins must avoid launching an
+Agent twice. Cancellation retains the Tab and Agent. Other terminal operations
+remain bounded, while composite readiness has no Core timeout or startup sleep.
 
 ## Session Probe file handoff
 
@@ -209,11 +204,11 @@ Example payload:
 
 Core associates the response with its execution and conversation role through the
 persisted unique output path. The response does not echo application IDs or its
-own path. Implementation and documentation Probes also return `pr_title` and
-`pr_body`, generated after reading the Issue by number and the repository's PR
-conventions. Reviewer and repair Probes return only `sessionid`.
+own path. All fallback Probes return only `sessionid`. Implementation and
+documentation business handoffs supply `pr_title` and `pr_body`, generated after
+reading the Issue and repository PR conventions. Review and repair handoffs omit them.
 
-Core validates the response and saves the native identity and any PR metadata.
+Core validates the response and saves the native identity before business dispatch.
 `sessionid` is opaque: Core does not parse a particular vendor's ID format.
 Subsequent resume commands receive that saved value.
 
@@ -287,7 +282,7 @@ Keep native conversation identity and terminal identity separate. The terminal
 is a UI/process location; the native reference identifies context that may be
 resumed elsewhere.
 
-Preserve the original implementation and Review conversations across the rounds that need them. Close each accepted stage's Runner Tab before its successor starts. A later fix or Review opens a new tab and resumes the exact saved conversation after the startup delay.
+Preserve the original implementation and Review conversations across the rounds that need them. Close each accepted stage's Runner Tab before its successor starts. A later fix or Review opens a new tab and resumes the exact saved conversation after composite resume readiness.
 
 When an Issue completes successfully, close its residual owned Runner Tabs and remove its owned Worktrees, local branches, and assigned Probe/handoff final and temporary files, including superseded corrections. Stage completion alone never deletes these files. Retain unfinished execution resources and native conversation histories. Keep workflow audit and recovery records. Checkpoint completed cleanup actions so recovery retries only unfinished actions.
 

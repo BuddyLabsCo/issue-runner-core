@@ -20,6 +20,8 @@ export const batchDocumentationConfig = {
 
 export const documentationNoChange = {
   outcome: "no_change",
+  pr_title: "docs: maintain documentation",
+  pr_body: "Maintain documentation.",
   summary: "Documentation is current",
   commits: [],
   findings_file: null,

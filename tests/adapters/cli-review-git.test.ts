@@ -73,6 +73,8 @@ await test("real Git rejects reviewer edits and recovers a final-round fix with 
     await publish(file, {
       outcome: "committed",
       summary: "Implemented locally.",
+      pr_title: "feat: implement",
+      pr_body: "Implement. Closes #50",
       commits: [{ sha: implementationHead, message: "feat: implement" }],
       findings_file: null,
     });

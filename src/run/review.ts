@@ -6,6 +6,7 @@ import {
   nonempty,
   object,
   parseExecution,
+  parsePRExecution,
   parseReview,
   readHandoff,
 } from "../agent/handoff.ts";
@@ -41,6 +42,7 @@ export function validateReviewContext(
   if (progress.reviews === undefined) {
     if (
       ![
+        "worktree_created",
         "implementing",
         "implementation_completed",
         "repairing_ci",
@@ -82,7 +84,7 @@ export function validateReviewContext(
     !nonempty(progress.roles.review?.sessionid)
   )
     throw invalid();
-  let handoff = parseExecution(JSON.stringify(progress.result));
+  let handoff = parsePRExecution(JSON.stringify(progress.result));
   if (handoff.outcome !== "committed") throw invalid();
   for (const [index, round] of progress.reviews.entries()) {
     object(round);

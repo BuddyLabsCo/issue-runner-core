@@ -12,6 +12,7 @@ import { executeCli } from "../../src/cli.ts";
 import type { CreateTabOptions } from "../../src/terminal.ts";
 import { child, parentRun } from "../support/parent-run.ts";
 import {
+  committed,
   implementationCommand,
   implementationRun,
   publish,
@@ -119,7 +120,7 @@ for (const scenario of [
         "feat: implement the Issue",
       );
       await publish(file, {
-        outcome: "committed",
+        ...committed(),
         summary: "Implemented the Issue.",
         commits: [
           {
@@ -314,7 +315,7 @@ for (const scenario of [
         "feat: finish retained work",
       );
       const handoff = {
-        outcome: "committed",
+        ...committed(),
         summary: "Finished preserved local work while Runner was stopped.",
         commits: [
           {
@@ -347,8 +348,8 @@ for (const scenario of [
       assert.deepEqual(completed.result, handoff);
       assert.equal(completed.execution_id, progress.execution_id);
       assert.equal(completed.worktree, progress.worktree);
-      assert.equal(completed.pr_title, progress.pr_title);
-      assert.equal(completed.pr_body, progress.pr_body);
+      assert.equal(completed.pr_title, handoff.pr_title);
+      assert.equal(completed.pr_body, handoff.pr_body);
       assert.deepEqual(completed.invocation, progress.invocation);
       assert.deepEqual(completed.roles, progress.roles);
       assert.equal(fixture.state.taskCount, 1);
@@ -446,8 +447,6 @@ await test("a concurrent Batch uses a fresh fetched base and isolated real Git W
             assert.equal(assignment.ticket, number);
             await publish(assignment.path, {
               sessionid: `native-${number}`,
-              pr_title: `feat: [issue-${number}] implement`,
-              pr_body: `Implement.\n\nCloses #${number}`,
             });
           } else if (text.startsWith("Implementation assignment\n")) {
             const assignment = promptAssignment(text) as {
@@ -465,7 +464,7 @@ await test("a concurrent Batch uses a fresh fetched base and isolated real Git W
             const message = `feat: implement Issue #${number}`;
             await git(options.cwd, "commit", "-m", message);
             await publish(assignment.path, {
-              outcome: "committed",
+              ...committed(number),
               summary: `Implemented #${number}`,
               commits: [
                 { sha: await git(options.cwd, "rev-parse", "HEAD"), message },

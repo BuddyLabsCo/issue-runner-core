@@ -11,6 +11,13 @@ export async function cancellableSleep(
   milliseconds: number,
   signal: AbortSignal,
 ): Promise<void> {
+  return cancellableOperation(() => clock.sleep(milliseconds, signal), signal);
+}
+
+export async function cancellableOperation<T>(
+  action: () => Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
   signal.throwIfAborted();
   let abort!: () => void;
   const cancelled = new Promise<never>((_resolve, reject) => {
@@ -21,8 +28,9 @@ export async function cancellableSleep(
     signal.addEventListener("abort", abort, { once: true });
   });
   try {
-    await Promise.race([clock.sleep(milliseconds, signal), cancelled]);
+    const result = await Promise.race([action(), cancelled]);
     signal.throwIfAborted();
+    return result;
   } finally {
     signal.removeEventListener("abort", abort);
   }

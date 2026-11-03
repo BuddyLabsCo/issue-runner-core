@@ -49,13 +49,12 @@ export async function testPromptAssembly(
   for (const [index, assignment] of probes.entries()) {
     assert.equal(
       submissions[index + 1]!.text,
-      renderPrompt(loadPrompt("probe-metadata"), {
+      renderPrompt(loadPrompt("probe"), {
         issue: "50",
         correction:
           index === 1
             ? renderPrompt(loadPrompt("probe-correction"), {
-                reason:
-                  "Probe requires actual native identity and complete PR metadata",
+                reason: "Probe requires actual native identity only",
               })
             : "",
         temporary: JSON.stringify(`${String(assignment.path)}.tmp`),
@@ -105,7 +104,7 @@ export async function testPromptAssembly(
   );
   assert.deepEqual(
     fixture.state.sleeps.filter((ms) => ms !== 30_000),
-    [10_000],
+    [],
   );
 }
 
@@ -147,7 +146,7 @@ export async function testPromptContinuation(
     ],
   );
   assert.deepEqual(
-    fixture.state.sleeps.slice(1).filter((ms) => ms !== 30_000),
-    [10_000, 250],
+    fixture.state.sleeps.filter((ms) => ms !== 30_000),
+    [250],
   );
 }

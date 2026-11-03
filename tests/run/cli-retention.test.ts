@@ -40,8 +40,8 @@ await test("cancellation retains original working changes, partial files and sup
   assert.equal(result.summary.outcome, "cancelled");
   assert.equal(result.exitCode, 1);
   const saved = await fixture.snapshot();
-  assert.equal(saved.pr_title, "feat: [issue-50] implement the Issue");
-  assert.equal(saved.pr_body, "Implement the Issue.\n\nCloses #50");
+  assert.equal(saved.pr_title, undefined);
+  assert.equal(saved.pr_body, undefined);
   assert.equal(saved.roles.implement?.sessionid, "native/$&/$`/$'/session");
   assert.equal(
     await readFile(path.join(saved.worktree, "unfinished.txt"), "utf8"),
@@ -178,7 +178,7 @@ await test(
       progress,
     );
     assert.equal(progress.phase, "implementing");
-    assert.equal(progress.pr_title, "feat: [issue-50] implement the Issue");
+    assert.equal(progress.pr_title, undefined);
     await access(progress.probe!.path);
     assert.equal(
       await readFile(`${progress.invocation!.path}.tmp`, "utf8"),

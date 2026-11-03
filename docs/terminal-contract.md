@@ -12,12 +12,15 @@ and Run signal when creating tabs for every role. Wrappers forward composite
 startup without a Core readiness timeout and preserve all five submission
 arguments. Core does not load enhancements or expose their installation/error state.
 
-Workflow startup still submits the configured shell command through `submitText`,
-waits for `startupDelaySeconds`, and uses Probe for native identity and PR metadata.
-Selecting composite startup, skipping Probe, removing that delay, generating
-assignment recovery metadata, and moving
-PR metadata to business handoffs remain separate delivery work. No registry
-publication or real Core/Herdr acceptance is implied.
+Core awaits `createTab` before composite `start` or `resume`. It saves a valid
+returned native ref before dispatching business work. Only `undefined` from a new
+start selects an identity-only Probe; resume must return the exact saved ref.
+Readiness failures retain the Runner Tab for an operator-authorized retry on the
+same handle. Cancellation reaches the plugin through the Run signal and retains
+the Tab and Agent. Core adds no startup delay or readiness timeout.
+Implementation and documentation handoffs supply `pr_title` and `pr_body`;
+Review and repair schemas remain unchanged. Assignment recovery metadata remains
+separate delivery work. No registry publication or real Core/Herdr acceptance is implied.
 
 ## Build and identify a development artifact
 

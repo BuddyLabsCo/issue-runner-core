@@ -117,6 +117,8 @@ for (const scenario of [
       await publish(file, {
         outcome: commits.length ? "committed" : "no_change",
         summary: "Documentation checked",
+        pr_title: "docs: maintain documentation",
+        pr_body: "Maintain documentation. Closes #50",
         commits,
         findings_file: null,
       });
@@ -238,6 +240,8 @@ for (const scenario of [
         await publish(saved.invocation!.path, {
           outcome: "committed",
           summary: "Recovered documentation",
+          pr_title: "docs: complete interrupted maintenance",
+          pr_body: "Complete maintenance. Closes #50",
           commits: [{ sha, message }],
           findings_file: null,
         });
