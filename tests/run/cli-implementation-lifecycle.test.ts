@@ -11,7 +11,7 @@ import {
 } from "../support/implementation-run.ts";
 import { validConfig } from "../support/cli-project.ts";
 
-await test("configured commands and prompts use canonical LF while preserving literal Unicode and quotes", async (t) => {
+await test("configured commands stay unchanged and prompts use canonical LF while preserving Unicode and quotes", async (t) => {
   const fixture = await implementationRun(t, {
     ...validConfig,
     agents: {
@@ -29,12 +29,12 @@ await test("configured commands and prompts use canonical LF while preserving li
   assert.equal((await fixture.run()).summary.outcome, "incomplete");
   assert.equal(
     fixture.state.submissions[0]?.text,
-    'arbitrary-cli "\u4f60\u597d" "$&" \n  --literal \'abc\'\n',
+    'arbitrary-cli "\u4f60\u597d" "$&" \r\n  --literal \'abc\'\r',
   );
   assert.ok(
-    fixture.state.submissions.every(
-      (submission) => !submission.text.includes("\r"),
-    ),
+    fixture.state.submissions
+      .slice(1)
+      .every((submission) => !submission.text.includes("\r")),
   );
   assert.match(
     fixture.state.submissions[2]!.text,
@@ -112,7 +112,7 @@ await test("a transient close failure retries the same owned handle after the op
   assert.equal(fixture.state.closedTabs[0], fixture.state.closedTabs[1]);
   assert.deepEqual(
     fixture.state.sleeps.filter((ms) => ms !== 30_000),
-    [10_000, 1_000],
+    [1_000],
   );
   assert.equal(fixture.state.taskCount, 1);
   assert.equal((await fixture.snapshot()).phase, "implementation_completed");

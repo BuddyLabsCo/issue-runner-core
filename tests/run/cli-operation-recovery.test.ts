@@ -305,7 +305,7 @@ for (const operation of ["addLabel", "addAssignee"] as const) {
     assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
     assert.equal(mutations, 1);
     assert.deepEqual(fixture.dependencies.pauses, []);
-    assert.deepEqual(fixture.state.sleeps, [10_000, 30_000]);
+    assert.deepEqual(fixture.state.sleeps, [30_000]);
     assert.equal(fixture.state.taskCount, 1);
   });
 }
@@ -316,6 +316,8 @@ for (const operation of ["createTab", "submitText", "closeTab"] as const) {
       ...validConfig,
       operationRetry: 0,
     });
+    if (operation === "submitText")
+      fixture.dependencies.terminalPlugin.start = async () => "native-ready";
     const entered = deferred<void>();
     let calls = 0;
     fixture.dependencies.terminalPlugin[operation] = () => {

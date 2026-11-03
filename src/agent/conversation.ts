@@ -4,45 +4,38 @@ import type {
   TabHandle,
   TerminalPlugin,
 } from "../terminal.ts";
-import type { Clock } from "../run/contracts.ts";
 
 export class NativeConversations {
   private readonly queues = new Map<TabHandle, Promise<void>>();
   private readonly plugin: TerminalPlugin;
-  private readonly clock: Clock;
   private readonly signal: AbortSignal | undefined;
 
-  constructor(plugin: TerminalPlugin, clock: Clock, signal?: AbortSignal) {
+  constructor(plugin: TerminalPlugin, signal?: AbortSignal) {
     this.plugin = plugin;
-    this.clock = clock;
     this.signal = signal;
   }
 
-  async open(
-    options: CreateTabOptions,
-    profile: AgentConfig,
-    sessionid?: string,
-  ): Promise<TabHandle> {
+  async create(options: CreateTabOptions): Promise<TabHandle> {
     this.signal?.throwIfAborted();
     const tab = await this.plugin.createTab(options);
     this.queues.set(tab, Promise.resolve());
-    const command =
-      sessionid === undefined
-        ? profile.start
-        : profile.resume.replaceAll("{sessionref}", () => sessionid);
-    try {
-      await this.submit(tab, command, "Enter");
-    } catch (error) {
-      this.signal?.throwIfAborted();
-      if (sessionid === undefined) throw error;
-      throw new Error("unable to recover: native conversation resume failed", {
-        cause: error,
-      });
-    }
-    this.signal?.throwIfAborted();
-    await this.clock.sleep((profile.startupDelaySeconds ?? 10) * 1_000);
-    this.signal?.throwIfAborted();
     return tab;
+  }
+
+  start(
+    tab: TabHandle,
+    profile: AgentConfig,
+    sessionid?: string,
+  ): Promise<string | undefined> {
+    return this.enqueue(tab, () =>
+      sessionid === undefined
+        ? this.plugin.start(tab, profile.start)
+        : this.plugin.resume(
+            tab,
+            profile.resume.replaceAll("{sessionref}", () => sessionid),
+            sessionid,
+          ),
+    );
   }
 
   submit(
@@ -68,7 +61,7 @@ export class NativeConversations {
     this.queues.delete(tab);
   }
 
-  private enqueue(tab: TabHandle, action: () => Promise<void>): Promise<void> {
+  private enqueue<T>(tab: TabHandle, action: () => Promise<T>): Promise<T> {
     const previous = this.queues.get(tab);
     if (!previous) throw new Error("Unknown Runner Tab");
     const next = previous.then(() => {
@@ -78,7 +71,10 @@ export class NativeConversations {
     // Preserve ordering after a failure; the caller decides whether to retry.
     this.queues.set(
       tab,
-      next.catch(() => undefined),
+      next.then(
+        () => undefined,
+        () => undefined,
+      ),
     );
     return next;
   }

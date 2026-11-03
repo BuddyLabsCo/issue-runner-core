@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
-import type { ExecutionResult, ReviewResult } from "../recovery.ts";
+import type {
+  ExecutionResult,
+  PRExecutionResult,
+  ReviewResult,
+} from "../recovery.ts";
 import path from "node:path";
 
 export function object(value: unknown): Record<string, unknown> {
@@ -29,6 +33,21 @@ export async function readHandoff(
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
   }
+}
+
+export function parsePRExecution(text: string): PRExecutionResult {
+  const value = object(JSON.parse(text) as unknown);
+  if (
+    Object.keys(value).sort().join(",") !==
+    "commits,findings_file,outcome,pr_body,pr_title,summary"
+  )
+    throw new Error(
+      "PR execution handoff requires exactly outcome, summary, commits, findings_file, pr_title, pr_body",
+    );
+  if (!nonempty(value.pr_title) || !nonempty(value.pr_body))
+    throw new Error("PR metadata requires nonempty pr_title and pr_body");
+  const { pr_title, pr_body, ...execution } = value;
+  return { ...parseExecution(JSON.stringify(execution)), pr_title, pr_body };
 }
 
 export function parseExecution(text: string): ExecutionResult {

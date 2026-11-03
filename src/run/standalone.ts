@@ -11,7 +11,7 @@ import { runIssueStage, type IssueStageContext } from "../agent/stage.ts";
 import { executionPrompt } from "../prompts/implement.ts";
 import { reviewImplementation, verifiedImplementation } from "./review.ts";
 import { verifyWorkspace } from "./verification.ts";
-import { parseExecution } from "../agent/handoff.ts";
+import { parsePRExecution } from "../agent/handoff.ts";
 import type { CodeHost, Ticket, Tracker } from "./contracts.ts";
 import { publishImplementation } from "./publication.ts";
 import {
@@ -74,7 +74,7 @@ async function executeStandalone(
   const purpose = input.documentation ? "documentation" : "implement";
   const repository = config.repository;
   const accept = async (progress: ImplementationProgress, text: string) => {
-    const result = parseExecution(text);
+    const result = parsePRExecution(text);
     const evidence = await read(
       "inspect_implementation",
       `ticket:${number}`,
@@ -87,6 +87,8 @@ async function executeStandalone(
       evidence.changed
     )
       throw new Error("Documentation no_change requires an unchanged Worktree");
+    progress.pr_title = result.pr_title;
+    progress.pr_body = result.pr_body;
     return result;
   };
   const progressFile = path.join(
@@ -324,7 +326,7 @@ async function executeStandalone(
             `ticket:${number}`,
             () => context.git.inspect(progress),
           ),
-          parseExecution(JSON.stringify(verifiedImplementation(progress))),
+          parsePRExecution(JSON.stringify(verifiedImplementation(progress))),
         );
     } else {
       await runIssueStage({

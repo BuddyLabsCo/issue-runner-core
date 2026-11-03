@@ -125,7 +125,7 @@ export async function testInstalledArtifacts(
           ["submitText", tab, "shell command", "Enter", undefined, undefined], ["closeTab", tab]
         ]);
         await assert.rejects(terminal.closeTab(tab), /Unknown Issue Runner Tab/);
-        assert.deepEqual(policies, [["create_tab", "manual"], ["submit_text", "never"], ["submit_text", "never"]]);
+          assert.deepEqual(policies, [["create_tab", "manual"], ["start_agent", "manual"], ["resume_agent", "manual"], ["submit_text", "never"], ["submit_text", "never"]]);
         const identified = { ...options, env: { NATIVE_REF: "returned-native-ref" } };
         const identifiedTab = await terminal.createTab(identified);
         assert.equal(await terminal.start(identifiedTab, "identified start"), "returned-native-ref");
@@ -184,7 +184,6 @@ export async function testInstalledArtifacts(
         ["ci-repair", "ciRepairInstructions", "ci-repair", "Fix the failed required checks"],
         ["conflict-repair", "conflictRepairInstructions", "conflict-repair", "Resolve the pull request merge conflict"],
         ["session", "probeInstructions", "probe", "actual native conversation session ID"],
-        ["session", "probeMetadataInstructions", "probe-metadata", "Generate pr_title and pr_body"],
         ["session", "probeCorrectionInstructions", "probe-correction", "Correct the previous Probe"],
         ["session", "resumeInstructions", "resume", "continue"],
         ["session", "handoffCorrectionInstructions", "handoff-correction", "Correct the {{name}} handoff"]

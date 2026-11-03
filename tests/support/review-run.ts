@@ -1,7 +1,11 @@
 import { writeFile } from "node:fs/promises";
 import type { TestContext } from "node:test";
 import type { ReviewProgress } from "../../src/recovery.ts";
-import { committed, implementationRun, publish } from "./implementation-run.ts";
+import {
+  execution as committed,
+  implementationRun,
+  publish,
+} from "./implementation-run.ts";
 import { validConfig } from "./cli-project.ts";
 
 export const fixCommit = {

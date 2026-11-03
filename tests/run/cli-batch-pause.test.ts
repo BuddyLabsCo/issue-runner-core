@@ -128,6 +128,7 @@ for (const response of ["", "q"] as const) {
     });
     const paused = deferred<void>();
     const siblingObserved = deferred<void>();
+    const siblingInspecting = deferred<void>();
     const answer = deferred<string>();
     let waiting = false;
     let failed = false;
@@ -137,9 +138,11 @@ for (const response of ["", "q"] as const) {
     fixture.dependencies.gitWorkspace.inspect = async (input) => {
       if (input.worktree.endsWith("ticket-51") && !failed) {
         failed = true;
+        await siblingInspecting.promise;
         throw new Error("Git temporarily unavailable");
       }
       if (input.worktree.endsWith("ticket-52")) {
+        siblingInspecting.resolve();
         await paused.promise;
         siblingObserved.resolve();
       }
@@ -207,12 +210,15 @@ for (const response of ["", "q"] as const) {
       }
       return inspect(input);
     };
-    fixture.dependencies.clock.sleep = async (ms) => {
-      if (ms === 30_000) return;
-      assert.equal(ms, 10_000);
+    const start = fixture.dependencies.terminalPlugin.start.bind(
+      fixture.dependencies.terminalPlugin,
+    );
+    fixture.dependencies.terminalPlugin.start = async (tab, command) => {
+      await start(tab, command);
       starting.resolve();
       await paused.promise;
       startupFinished.resolve();
+      return undefined;
     };
     fixture.dependencies.operator.pause = async (message) => {
       if (message.includes("Integration is not scripted in this fixture"))

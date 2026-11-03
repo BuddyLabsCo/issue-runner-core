@@ -16,7 +16,6 @@ import { nonempty, object, readHandoff } from "./handoff.ts";
 import { renderPrompt } from "../prompts/load.ts";
 import {
   probeInstructions,
-  probeMetadataInstructions,
   probeCorrectionInstructions,
   handoffCorrectionInstructions,
   resumeInstructions,
@@ -94,7 +93,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
       : purpose === "documentation"
         ? "documentation"
         : "implement";
-  const generatesMetadata =
+  const primaryExecution =
     purpose === "implement" || purpose === "documentation";
   const { name, phase, completed } = stageDetails[purpose];
   const repairRole =
@@ -106,7 +105,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
   const profile = loaded.config.agents[repairRole ?? role]!;
   const sessionid = () =>
     repairRole ? stage.sessionid : progress.roles[role]?.sessionid;
-  const conversations = new NativeConversations(input.terminal, clock, signal);
+  const conversations = new NativeConversations(input.terminal, signal);
   const persist = input.persist;
   const assignment = (phase: string) =>
     path.join(
@@ -125,27 +124,46 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
   };
   await mkdir(path.join(loaded.directory, "handoffs"), { recursive: true });
   await input.withEnvironment(async (env) => {
-    if (!sessionid()) {
-      stage.probe ??= {
-        path: assignment(`${purpose}-probe`),
-      };
-      if (generatesMetadata) progress.phase = "probing";
-    }
-    await persist();
     let tab: TabHandle | undefined;
-    const open = async () =>
-      (tab ??= await conversations.open(
-        {
-          cwd: input.worktree ?? progress.worktree,
-          env,
-          label: `issue-${progress.ticket} ${(input.progressLabel ?? purpose).replace(/_/gu, " ").replace(/ round /u, " r")}`,
-          agent: profile.agent,
-          submitKey: profile.submitKey ?? "Enter",
-          ...(signal ? { signal } : {}),
-        },
-        profile,
-        sessionid(),
-      ));
+    let ready = false;
+    const saveIdentity = (ref: unknown, expected?: string) => {
+      if (
+        !nonempty(ref) ||
+        [progress.execution_id, progress.run_id, "latest", "last"].includes(
+          ref,
+        ) ||
+        (expected !== undefined && ref !== expected)
+      )
+        throw new Error(
+          "Invalid native session identity: expected the actual native ref and exact resume identity",
+        );
+      if (repairRole) stage.sessionid = ref;
+      else progress.roles[role] = { sessionid: ref };
+    };
+    const open = async () => {
+      tab ??= await conversations.create({
+        cwd: input.worktree ?? progress.worktree,
+        env,
+        label: `issue-${progress.ticket} ${(input.progressLabel ?? purpose).replace(/_/gu, " ").replace(/ round /u, " r")}`,
+        agent: profile.agent,
+        submitKey: profile.submitKey ?? "Enter",
+        ...(signal ? { signal } : {}),
+      });
+      if (!ready) {
+        const expected = sessionid();
+        const ref = await conversations.start(tab, profile, expected);
+        signal?.throwIfAborted();
+        if (ref !== undefined || expected !== undefined) {
+          saveIdentity(ref, expected);
+          await persist();
+        }
+        ready = true;
+      }
+      return tab;
+    };
+    // A retained fallback Probe can establish identity before any exact resume.
+    if (!sessionid() && !(stage.probe && (await readHandoff(stage.probe.path))))
+      await open();
     const submitWork = async (text: string) => {
       const tab = await open();
       const pending = stage.pendingPrompt;
@@ -168,54 +186,37 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
       return true;
     };
     if (!sessionid()) {
+      stage.probe ??= { path: assignment(`${purpose}-probe`) };
+      if (primaryExecution) progress.phase = "probing";
+      await persist();
       const prompt = (error?: string) =>
-        renderPrompt(
-          generatesMetadata ? probeMetadataInstructions : probeInstructions,
-          {
-            correction: error
-              ? renderPrompt(probeCorrectionInstructions, { reason: error })
-              : "",
-            issue: String(progress.ticket),
-            temporary: JSON.stringify(`${stage.probe!.path}.tmp`),
-            path: JSON.stringify(stage.probe!.path),
-          },
-        );
+        renderPrompt(probeInstructions, {
+          correction: error
+            ? renderPrompt(probeCorrectionInstructions, { reason: error })
+            : "",
+          issue: String(progress.ticket),
+          temporary: JSON.stringify(`${stage.probe!.path}.tmp`),
+          path: JSON.stringify(stage.probe!.path),
+        });
       if (
         (purpose !== "documentation" && !repairRole) ||
-        !(await readHandoff(stage.probe!.path))
+        !(await readHandoff(stage.probe.path))
       )
         await conversations.submit(await open(), prompt(), profile.submitKey);
       for (;;) {
         signal?.throwIfAborted();
-        const observed = await readHandoff(stage.probe!.path);
+        const observed = await readHandoff(stage.probe.path);
         if (observed !== undefined) {
           try {
             const probe = object(JSON.parse(observed.text) as unknown);
-            if (
-              Object.keys(probe).sort().join(",") !==
-                (generatesMetadata
-                  ? "pr_body,pr_title,sessionid"
-                  : "sessionid") ||
-              !nonempty(probe.sessionid) ||
-              (generatesMetadata &&
-                (!nonempty(probe.pr_title) || !nonempty(probe.pr_body))) ||
-              [
-                progress.execution_id,
-                progress.run_id,
-                "latest",
-                "last",
-              ].includes(probe.sessionid)
-            )
-              throw new Error(
-                generatesMetadata
-                  ? "Probe requires actual native identity and complete PR metadata"
-                  : "Probe requires actual native session identity",
-              );
-            if (repairRole) stage.sessionid = probe.sessionid;
-            else progress.roles[role] = { sessionid: probe.sessionid };
-            if (generatesMetadata) {
-              progress.pr_title = probe.pr_title as string;
-              progress.pr_body = probe.pr_body as string;
+            if (Object.keys(probe).join(",") !== "sessionid")
+              throw new Error("Probe requires actual native identity only");
+            try {
+              saveIdentity(probe.sessionid);
+            } catch (error) {
+              throw new Error("Probe requires actual native identity", {
+                cause: error,
+              });
             }
           } catch (error) {
             const reason =
@@ -226,9 +227,9 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
                 { cause: error },
               );
             operator.write(
-              `Invalid Probe: ${reason}. Correct the Probe in the native conversation; rejected handoff=${stage.probe!.path}`,
+              `Invalid Probe: ${reason}. Correct the Probe in the native conversation; rejected handoff=${stage.probe.path}`,
             );
-            stage.superseded.push(stage.probe!.path);
+            stage.superseded.push(stage.probe.path);
             stage.probe = {
               path: assignment(`${purpose}-probe`),
             };

@@ -98,8 +98,6 @@ export async function implementationRun(
     onProbe: async (assignment: Record<string, unknown>) => {
       await publish(String(assignment.path), {
         sessionid: "native/$&/$`/$'/session",
-        pr_title: "feat: [issue-50] implement the Issue",
-        pr_body: "Implement the Issue.\n\nCloses #50",
       });
     },
     onTask: async (file: string) => {
@@ -220,7 +218,7 @@ export async function implementationRun(
   };
 }
 
-export function committed(ticket = 50) {
+export function execution(ticket = 50) {
   return {
     outcome: "committed",
     summary: "Implemented and verified.",
@@ -234,6 +232,14 @@ export function committed(ticket = 50) {
       },
     ],
     findings_file: null,
+  };
+}
+
+export function committed(ticket = 50) {
+  return {
+    ...execution(ticket),
+    pr_title: `feat: [issue-${ticket}] implement${ticket === 50 ? " the Issue" : ""}`,
+    pr_body: `Implement${ticket === 50 ? " the Issue" : ""}.\n\nCloses #${ticket}`,
   };
 }
 

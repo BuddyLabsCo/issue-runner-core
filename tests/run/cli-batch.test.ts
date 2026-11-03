@@ -121,7 +121,7 @@ for (const selector of ["parent", "issue"] as const) {
       for (const item of before) {
         assert.equal(item.base, "c".repeat(40));
         assert.equal(item.roles.implement!.sessionid, `native-${item.ticket}`);
-        assert.match(item.pr_body!, new RegExp(`Closes #${item.ticket}$`, "u"));
+        assert.equal(item.pr_body, undefined);
         assert.ok(
           fixture.writes.indexOf(`label:${item.ticket}`) <
             fixture.writes.indexOf(`assignee:${item.ticket}`),
@@ -306,14 +306,18 @@ await test("a failed Issue cancels a sibling's delayed startup and waits for its
   const siblingStarted = deferred<void>();
   const releaseSibling = deferred<void>();
   let starts = 0;
-  fixture.dependencies.clock.sleep = async (ms) => {
-    assert.equal(ms, 10_000);
+  const start = fixture.dependencies.terminalPlugin.start.bind(
+    fixture.dependencies.terminalPlugin,
+  );
+  fixture.dependencies.terminalPlugin.start = async (tab, command) => {
+    await start(tab, command);
     starts += 1;
     if (starts === 1) await siblingStarted.promise;
     else {
       siblingStarted.resolve();
       await releaseSibling.promise;
     }
+    return undefined;
   };
   const submitText = fixture.dependencies.terminalPlugin.submitText.bind(
     fixture.dependencies.terminalPlugin,
@@ -322,7 +326,6 @@ await test("a failed Issue cancels a sibling's delayed startup and waits for its
   fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
     if (text.startsWith("Implementation assignment\n")) {
       failureStarted = true;
-      releaseSibling.resolve();
       throw new Error("Issue transport failed");
     }
     assert.equal(
@@ -333,6 +336,7 @@ await test("a failed Issue cancels a sibling's delayed startup and waits for its
     await submitText(tab, text);
   };
   const result = await fixture.run();
+  releaseSibling.resolve();
   assert.equal(result.summary.outcome, "failed");
   assert.match(result.summary.reasons.join("; "), /Issue transport failed/u);
   assert.deepEqual(fixture.dispatched, []);
@@ -344,7 +348,7 @@ await test("a failed Issue cancels a sibling's delayed startup and waits for its
     true,
   );
   assert.equal(
-    checkpoints.some((item) => item.phase === "probing"),
+    checkpoints.some((item) => item.phase === "worktree_created"),
     true,
   );
 });

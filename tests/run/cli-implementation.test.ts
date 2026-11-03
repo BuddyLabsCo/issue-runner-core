@@ -117,13 +117,11 @@ await test("one standalone implementation persists verified completion before cl
         if (!effects.includes("probe")) {
           effects.push("probe");
           assert.doesNotMatch(text, /Keep literal/u);
-          assert.match(text, /Read issue #50/u);
+          assert.doesNotMatch(text, /pr_title|pr_body/u);
           await writeFile(
             `${String(assignment.path)}.tmp`,
             JSON.stringify({
               sessionid: "native/$&/$`/$'/session",
-              pr_title: "feat: [issue-50] implement the Issue",
-              pr_body: "Implement the requested behavior.\n\nCloses #50",
             }),
           );
           await rename(
@@ -146,6 +144,8 @@ await test("one standalone implementation persists verified completion before cl
             `${handoff}.tmp`,
             JSON.stringify({
               outcome: "committed",
+              pr_title: "feat: [issue-50] implement the Issue",
+              pr_body: "Implement the requested behavior.\n\nCloses #50",
               summary: "Implemented and verified.",
               commits: [commit],
               findings_file: null,
@@ -172,7 +172,6 @@ await test("one standalone implementation persists verified completion before cl
     "verify",
     "open",
     "start",
-    "sleep:10000",
     "probe",
     "task",
     "verify",

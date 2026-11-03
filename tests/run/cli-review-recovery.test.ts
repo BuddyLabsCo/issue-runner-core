@@ -4,7 +4,7 @@ import { access, rm, writeFile } from "node:fs/promises";
 import test from "node:test";
 import { executeCli } from "../../src/cli.ts";
 import {
-  committed,
+  execution as committed,
   implementationCommand,
   implementationCommit,
   publish,

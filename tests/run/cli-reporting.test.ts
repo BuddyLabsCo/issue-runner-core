@@ -197,6 +197,8 @@ await test("an ordinary no_change handoff reports no delivery credit", async (t)
     fixture.state.evidence.changed = false;
     await publish(file, {
       outcome: "no_change",
+      pr_title: "docs: maintain documentation",
+      pr_body: "Maintain documentation.",
       summary: "No change needed.",
       commits: [],
       findings_file: null,
@@ -426,6 +428,8 @@ await test("documentation no_change renders a labelled maintenance row", async (
     fixture.state.evidence.changed = false;
     await publish(file, {
       outcome: "no_change",
+      pr_title: "docs: maintain documentation",
+      pr_body: "Maintain documentation.",
       summary: "Docs are current.",
       commits: [],
       findings_file: null,

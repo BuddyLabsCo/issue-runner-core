@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { executeCli } from "../../src/cli.ts";
 import {
-  committed,
+  execution as committed,
   implementationCommand,
   publish,
 } from "../support/implementation-run.ts";
@@ -240,13 +240,22 @@ for (const stage of ["review", "fix"] as const) {
   await test(`cancellation during ${stage} startup prevents its first prompt and retains context`, async (t) => {
     const fixture = await reviewRun(t, 1);
     if (stage === "fix") fixture.reviewState.onReview = findings;
-    fixture.state.onSleep = async (ms) => {
-      if (
-        ms === 10_000 &&
-        fixture.state.closedTabs.length === (stage === "review" ? 1 : 2)
-      )
+    const terminal = fixture.dependencies.terminalPlugin;
+    const method = stage === "review" ? "start" : "resume";
+    const start = terminal.start.bind(terminal);
+    const resume = terminal.resume.bind(terminal);
+    if (method === "start")
+      terminal.start = async (tab, command) => {
+        const ref = await start(tab, command);
+        if (fixture.state.closedTabs.length === 1) fixture.controller.abort();
+        return ref;
+      };
+    else
+      terminal.resume = async (tab, command, sessionref) => {
+        const ref = await resume(tab, command, sessionref);
         fixture.controller.abort();
-    };
+        return ref;
+      };
     assert.equal((await fixture.run()).summary.outcome, "cancelled");
     assert.equal(fixture.reviewState.fixes.length, 0);
     if (stage === "review") {

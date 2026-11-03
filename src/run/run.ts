@@ -17,6 +17,7 @@ import type { AuditLog } from "../audit.ts";
 import type { ImplementationProgress } from "../recovery.ts";
 import {
   boundedOperation,
+  cancellableOperation,
   cancellableSleep,
   externalRead,
   serializeOperator,
@@ -166,9 +167,16 @@ async function executeProject(
           ),
         ),
       start: (tab, command) =>
-        operator.advance(() => terminal.start(tab, command)),
+        operator.advance(() =>
+          cancellableOperation(() => terminal.start(tab, command), signal),
+        ),
       resume: (tab, command, sessionref) =>
-        operator.advance(() => terminal.resume(tab, command, sessionref)),
+        operator.advance(() =>
+          cancellableOperation(
+            () => terminal.resume(tab, command, sessionref),
+            signal,
+          ),
+        ),
       submitText: (tab, text, chord, expectedFile, recoveryText) =>
         operator.advance(() =>
           boundedOperation(

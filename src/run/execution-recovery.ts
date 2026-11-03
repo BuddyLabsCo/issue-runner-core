@@ -4,7 +4,12 @@ import { copyFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import type { LoadedProject } from "../config.ts";
 import type { ImplementationProgress } from "../recovery.ts";
-import { nonempty, object, readHandoff } from "../agent/handoff.ts";
+import {
+  nonempty,
+  object,
+  parsePRExecution,
+  readHandoff,
+} from "../agent/handoff.ts";
 import { validateReviewContext } from "./review.ts";
 import { validateRepairContext } from "./repair.ts";
 import type { OperatorIO } from "./contracts.ts";
@@ -176,7 +181,8 @@ export async function restoreExecution(input: {
         (![
           "implementing",
           "documenting",
-          ...(documentation ? ["reserved", "worktree_created", "probing"] : []),
+          "worktree_created",
+          ...(documentation ? ["reserved", "probing"] : []),
         ].includes(String(saved.phase)) &&
           saved.result === undefined) ||
         ![
@@ -184,7 +190,8 @@ export async function restoreExecution(input: {
           "implementation_completed",
           "documenting",
           "documentation_completed",
-          ...(documentation ? ["reserved", "worktree_created", "probing"] : []),
+          "worktree_created",
+          ...(documentation ? ["reserved", "probing"] : []),
           "reviewing",
           "review_completed",
           "fixing_review",
@@ -200,18 +207,17 @@ export async function restoreExecution(input: {
           "unable to recover: incomplete or invalid implementation checkpoint",
         );
       const roles = object(saved.roles);
-      const early =
-        documentation &&
-        ["reserved", "worktree_created", "probing"].includes(
-          String(saved.phase),
-        );
       const implement = object(roles[purpose] ?? {});
+      const early =
+        (documentation &&
+          ["reserved", "worktree_created", "probing"].includes(
+            String(saved.phase),
+          )) ||
+        (saved.phase === "worktree_created" && nonempty(implement.sessionid));
       const invocation = object(saved.invocation ?? {});
       if (
-        (!early &&
+        ((!early || saved.result !== undefined) &&
           (!nonempty(implement.sessionid) ||
-            !nonempty(saved.pr_title) ||
-            !nonempty(saved.pr_body) ||
             !nonempty(invocation.invocation_id) ||
             !nonempty(invocation.path) ||
             path.dirname(invocation.path) !==
@@ -223,6 +229,17 @@ export async function restoreExecution(input: {
           "unable to recover: missing native implementation context",
         );
       const restored = saved as unknown as ImplementationProgress;
+      if (restored.result !== undefined) {
+        restored.result = parsePRExecution(JSON.stringify(restored.result));
+        if (
+          restored.pr_title !== restored.result.pr_title ||
+          restored.pr_body !== restored.result.pr_body
+        )
+          throw new Error(
+            "unable to recover: PR metadata does not match the accepted business handoff",
+          );
+      }
+
       if (documentation) {
         const owned = (value: unknown): value is string =>
           nonempty(value) &&

@@ -101,7 +101,6 @@ await test("unchanged plugin configuration resumes only the saved role with lite
   const messages = fixture.dependencies.messages.length;
   const sequence: string[] = [];
   fixture.state.onSleep = async (ms) => {
-    if (ms === 10_000) sequence.push("wait 10 seconds");
     if (ms === 250) await publish(saved.invocation!.path, committed());
   };
   fixture.state.evidence.commits = committed().commits;
@@ -145,12 +144,7 @@ await test("unchanged plugin configuration resumes only the saved role with lite
     ["continue"],
   );
   assert.equal(resumed[1]?.chord, "Shift+Enter");
-  assert.deepEqual(sequence, [
-    "fresh Runner Tab",
-    "resume",
-    "wait 10 seconds",
-    "continue",
-  ]);
+  assert.deepEqual(sequence, ["fresh Runner Tab", "resume", "continue"]);
   assert.equal(fixture.state.probeCount, 1);
   assert.equal(fixture.state.taskCount, 1);
   const recovered = await fixture.snapshot();
@@ -161,8 +155,6 @@ await test("unchanged plugin configuration resumes only the saved role with lite
     "branch",
     "base",
     "roles",
-    "pr_title",
-    "pr_body",
     "superseded",
   ] as const)
     assert.deepEqual(recovered[key], saved[key]);
@@ -206,7 +198,7 @@ await test("cancellation during recovered startup prevents the delayed continue"
     ...validConfig,
     agents: {
       ...validConfig.agents,
-      implement: { ...validConfig.agents.implement, startupDelaySeconds: 20 },
+      implement: { ...validConfig.agents.implement },
     },
   });
   fixture.state.onTask = async () => {
@@ -215,9 +207,9 @@ await test("cancellation during recovered startup prevents the delayed continue"
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   const saved = await fixture.snapshot();
   const controller = new AbortController();
-  fixture.state.onSleep = async (ms) => {
-    assert.equal(ms, 20_000);
+  fixture.dependencies.terminalPlugin.resume = async () => {
     controller.abort();
+    return saved.roles.implement!.sessionid;
   };
   const before = fixture.state.submissions.length;
   assert.equal(
@@ -231,7 +223,7 @@ await test("cancellation during recovered startup prevents the delayed continue"
   );
   assert.deepEqual(
     fixture.state.submissions.slice(before).map(({ text }) => text),
-    ['any-cli --resume "native/$&/$`/$\'/session"'],
+    [],
   );
   assert.deepEqual(await fixture.snapshot(), saved);
   for (const file of fixture.state.gitConfigs)

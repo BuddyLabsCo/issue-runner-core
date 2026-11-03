@@ -79,8 +79,6 @@ export async function parentRun(
         const assignment = promptAssignment(text) as Record<string, unknown>;
         await publish(String(assignment.path), {
           sessionid: `native-${String(assignment.ticket)}`,
-          pr_title: `feat: [issue-${String(assignment.ticket)}] implement`,
-          pr_body: `Implement.\n\nCloses #${String(assignment.ticket)}`,
         });
       } else if (text.startsWith("Implementation assignment\n")) {
         const assignment = promptAssignment(text) as {

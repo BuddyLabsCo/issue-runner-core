@@ -43,8 +43,7 @@ terminalPlugins: {}
 # Core does not infer it from commands or check enhancement installation.
 # Every resume command must contain the exact {sessionref} placeholder.
 # submitKey is a Runner setting alongside start/resume, outside native options.
-# startupDelaySeconds is also a Runner setting: positive seconds, default 10.
-# Increase it if your Agent needs more time after start or resume before input.
+# The terminal plugin combines command launch and readiness; Core adds no delay.
 agents:
   implement:
     agent: codebuddy
@@ -52,33 +51,28 @@ agents:
     start: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --model deepseek-v4.1-flash --effort max --dangerously-skip-permissions'
     resume: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --resume "{sessionref}" --model deepseek-v4.1-flash --effort max --dangerously-skip-permissions'
     submitKey: Enter
-    startupDelaySeconds: 10
   review:
     agent: codex
     start: 'codex --model gpt-6.1-sol -c model_reasoning_effort="high" --dangerously-bypass-approvals-and-sandbox'
     resume: 'codex resume "{sessionref}" --model gpt-6.1-sol -c model_reasoning_effort="high" --dangerously-bypass-approvals-and-sandbox'
     submitKey: Enter
-    startupDelaySeconds: 10
   ciRepair:
     agent: codebuddy
     # Windows PowerShell: start/resume use $env:CODEBUDDY_IS_SANDBOX="1"; codebuddy ...
     start: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --model deepseek-v4.1-flash --effort max --dangerously-skip-permissions'
     resume: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --resume "{sessionref}" --model deepseek-v4.1-flash --effort max --dangerously-skip-permissions'
     submitKey: Enter
-    startupDelaySeconds: 10
   conflictRepair:
     agent: codebuddy
     # Windows PowerShell: start/resume use $env:CODEBUDDY_IS_SANDBOX="1"; codebuddy ...
     start: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --model deepseek-v4.1-flash --effort max --dangerously-skip-permissions'
     resume: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --resume "{sessionref}" --model deepseek-v4.1-flash --effort max --dangerously-skip-permissions'
     submitKey: Enter
-    startupDelaySeconds: 10
   documentation:
     agent: claude
     start: 'claude --model claude-opus-5-5 --effort high --dangerously-skip-permissions'
     resume: 'claude --resume "{sessionref}" --model claude-opus-5-5 --effort high --dangerously-skip-permissions'
     submitKey: Enter
-    startupDelaySeconds: 10
 # Positive minute thresholds retained for downstream delivery slices.
 # agentIdleMinutes is optional and defaults to 10.
 timeouts:

@@ -83,42 +83,6 @@ await test("terminalPlugins preserves plugin-owned nested values without install
   );
 });
 
-await test("Agent startup delays default to ten seconds and accept independent per-profile overrides", async (t) => {
-  const profiles = { ...validConfig.agents, documentation: agent };
-  const { root, directory } = await createProject(t, {
-    ...validConfig,
-    agents: profiles,
-  });
-  const env = { TRACKER_TOKEN: "tracker", HOST_TOKEN: "host" };
-  const defaults = await loadProject(root, "demo", env);
-  assert.deepEqual(
-    Object.values(defaults.config.agents).map(
-      (profile) => profile.startupDelaySeconds,
-    ),
-    [10, 10, 10, 10, 10],
-  );
-  await writeFile(
-    path.join(directory, "config.yaml"),
-    stringify({
-      ...validConfig,
-      agents: {
-        implement: { ...agent, startupDelaySeconds: 20 },
-        review: { ...agent, startupDelaySeconds: 0.5 },
-        ciRepair: { ...agent, startupDelaySeconds: 15 },
-        conflictRepair: { ...agent, startupDelaySeconds: 30 },
-        documentation: { ...agent, startupDelaySeconds: 12 },
-      },
-    }),
-  );
-  const configured = await loadProject(root, "demo", env);
-  assert.deepEqual(
-    Object.values(configured.config.agents).map(
-      (profile) => profile.startupDelaySeconds,
-    ),
-    [20, 0.5, 15, 30, 12],
-  );
-});
-
 await test("invalid configuration fails before any external reads or delivery resources", async (t) => {
   const cases: [object, RegExp][] = [
     [{ repository: "invalid" }, /repository/],
@@ -269,6 +233,7 @@ await test("invalid configuration fails before any external reads or delivery re
     "documentation",
   ]) {
     for (const startupDelaySeconds of [
+      10,
       0,
       -1,
       "20",
@@ -286,7 +251,7 @@ await test("invalid configuration fails before any external reads or delivery re
           },
         },
         new RegExp(
-          `agents\\.${purpose}\\.startupDelaySeconds must be a positive number`,
+          `agents\\.${purpose} contains unknown field startupDelaySeconds`,
         ),
       ]);
     }

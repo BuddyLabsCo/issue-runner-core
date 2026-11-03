@@ -79,8 +79,8 @@ await test("restart reprocesses a verified handoff when completion persistence f
   assert.deepEqual(recovered.invocation, saved.invocation);
   assert.deepEqual(recovered.roles, saved.roles);
   assert.equal(recovered.execution_id, saved.execution_id);
-  assert.equal(recovered.pr_title, saved.pr_title);
-  assert.equal(recovered.pr_body, saved.pr_body);
+  assert.equal(recovered.pr_title, committed().pr_title);
+  assert.equal(recovered.pr_body, committed().pr_body);
   assert.equal(fixture.state.probeCount, 1);
   assert.equal(fixture.state.taskCount, 1);
 });
@@ -120,8 +120,8 @@ await test("restart after durable completion skips the old stage and starts the 
   const recovered = await fixture.snapshot();
   assert.equal(recovered.phase, "publication_eligible");
   assert.deepEqual(recovered.invocation, saved.invocation);
-  assert.equal(recovered.pr_title, saved.pr_title);
-  assert.equal(recovered.pr_body, saved.pr_body);
+  assert.equal(recovered.pr_title, committed().pr_title);
+  assert.equal(recovered.pr_body, committed().pr_body);
 });
 
 await test("restart ignores a superseded final and an active temporary file until the expected final is published", async (t) => {

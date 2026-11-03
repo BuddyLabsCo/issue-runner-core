@@ -78,7 +78,7 @@ await test("queue admission receives no delivery credit before the configured me
   };
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   assert.equal(fixture.integrationState.requests.length, 1);
-  assert.deepEqual(fixture.state.sleeps, [10_000, 30_000, 10_000, 5_000]);
+  assert.deepEqual(fixture.state.sleeps, [30_000, 10_000, 5_000]);
   assert.equal(
     (await fixture.snapshot()).publication?.phase,
     "merge_requested",
@@ -254,10 +254,7 @@ await test("code_host closure that remains open pauses and observes again withou
   assert.equal((await fixture.run()).summary.outcome, "succeeded");
   assert.equal(pauses, 1);
   assert.equal(fixture.integrationState.closures, 0);
-  assert.deepEqual(
-    fixture.state.sleeps,
-    [10_000, 30_000, 10_000, 30_000, 10_000],
-  );
+  assert.deepEqual(fixture.state.sleeps, [30_000, 10_000, 30_000, 10_000]);
 });
 
 await test("an interrupted queue resumes its existing request and deadline without another Agent or merge request", async (t) => {

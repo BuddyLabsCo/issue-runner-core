@@ -50,7 +50,7 @@ await test("a withheld initial assignment is submitted in its original conversat
   assert.equal(after.run_id, before.run_id);
   assert.deepEqual(after.invocation, before.invocation);
   assert.deepEqual(after.roles, before.roles);
-  assert.equal(after.pr_body, before.pr_body);
+  assert.equal(after.pr_body, committed(51).pr_body);
   assert.equal(after.pendingPrompt, undefined);
 });
 
@@ -105,7 +105,7 @@ await test("a withheld correction retains its prompt, path and native context un
   assert.equal(after.run_id, before.run_id);
   assert.deepEqual(after.invocation, before.invocation);
   assert.deepEqual(after.roles, before.roles);
-  assert.equal(after.pr_body, before.pr_body);
+  assert.equal(after.pr_body, committed(51).pr_body);
   assert.deepEqual(after.superseded, before.superseded);
   assert.equal(after.pendingPrompt, undefined);
 });
@@ -158,6 +158,8 @@ await test("valid output at a pending assignment completes without reopening its
   const before = await implementationProgress(fixture.directory, 51);
   await publish(before.invocation!.path, {
     outcome: "no_change",
+    pr_title: "docs: maintain documentation",
+    pr_body: "Maintain documentation.",
     summary: "No changes needed.",
     commits: [],
     findings_file: null,
@@ -193,6 +195,8 @@ await test("a transport attempt is not replayed as a known unsent assignment aft
       const current = await implementationProgress(fixture.directory, 51);
       await publish(current.invocation!.path, {
         outcome: "no_change",
+        pr_title: "docs: maintain documentation",
+        pr_body: "Maintain documentation.",
         summary: "No changes needed.",
         commits: [],
         findings_file: null,

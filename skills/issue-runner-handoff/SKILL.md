@@ -8,7 +8,13 @@ argument-hint: "<absolute-handoff-json-path>"
 Invoke this skill only after the assigned task is complete.
 Use the argument as the absolute path of the final JSON handoff file.
 
-Write one JSON object with exactly these fields:
+For implementation and documentation assignments, include the nonempty `pr_title`
+and `pr_body` strings generated from the completed work and repository Pull Request
+conventions. These assignments require both fields for `committed` and `no_change`.
+Review, Review-fix, CI-repair, and conflict-repair assignments use only `outcome`,
+`summary`, `commits`, and `findings_file`; omit PR metadata for those purposes.
+
+For implementation or documentation, write one JSON object with exactly these fields:
 
 ```json
 {
@@ -20,7 +26,9 @@ Write one JSON object with exactly these fields:
       "message": "fix: handle missing configuration"
     }
   ],
-  "findings_file": null
+  "findings_file": null,
+  "pr_title": "fix: handle missing configuration",
+  "pr_body": "Explain the completed change and follow the repository's PR conventions."
 }
 ```
 

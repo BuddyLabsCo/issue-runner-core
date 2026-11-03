@@ -27,9 +27,20 @@ export function executionTerminal(input: {
         },
         { retry: "manual" },
       ),
-    start: (tab, command) => plugin.start(tab, command),
+    start: (tab, command) =>
+      read(
+        "start_agent",
+        `ticket:${progress.ticket}:${progress.phase}`,
+        () => plugin.start(tab, command),
+        { retry: "manual" },
+      ),
     resume: (tab, command, sessionref) =>
-      plugin.resume(tab, command, sessionref),
+      read(
+        "resume_agent",
+        `ticket:${progress.ticket}:${progress.phase}`,
+        () => plugin.resume(tab, command, sessionref),
+        { retry: "manual" },
+      ),
     submitText: (tab, text, chord, expectedFile, recoveryText) =>
       read(
         "submit_text",

@@ -198,8 +198,8 @@ await test("required checks wait 30 seconds for discovery, then poll pending che
   ];
   const result = await fixture.run();
   assert.match(result.summary.reasons.join(" "), /CI-ready/u);
-  assert.deepEqual(fixture.publicationState.discoveries, [40_000, 50_000]);
-  assert.deepEqual(fixture.state.sleeps, [10_000, 30_000, 10_000]);
+  assert.deepEqual(fixture.publicationState.discoveries, [30_000, 40_000]);
+  assert.deepEqual(fixture.state.sleeps, [30_000, 10_000]);
   assert.equal(
     (await fixture.snapshot()).publication?.checks?.[0]?.bucket,
     "pass",
@@ -220,7 +220,7 @@ await test("required-check timeout uses configured minutes and operator retry wi
     return "";
   };
   assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/u);
-  assert.deepEqual(fixture.state.sleeps, [10_000, 30_000, 10_000, 5_000]);
+  assert.deepEqual(fixture.state.sleeps, [30_000, 10_000, 5_000]);
   assert.equal(fixture.publicationState.creations, 1);
 });
 

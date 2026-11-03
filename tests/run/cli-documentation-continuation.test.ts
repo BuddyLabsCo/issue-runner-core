@@ -12,6 +12,8 @@ import { committed, publish } from "../support/implementation-run.ts";
 
 const noChange = {
   outcome: "no_change",
+  pr_title: "docs: maintain documentation",
+  pr_body: "Maintain documentation.",
   summary: "Documentation is current",
   commits: [],
   findings_file: null,
@@ -71,15 +73,15 @@ for (const outcome of ["committed", "no_change"] as const) {
       ['document-cli --resume "native/$&/$`/$\'/session"', "continue"],
     );
     assert.deepEqual(
-      fixture.state.sleeps.slice(sleeps, sleeps + 2),
-      [10_000, 250],
+      fixture.state.sleeps.slice(sleeps).filter((ms) => ms !== 30_000),
+      [250],
     );
     const current = await fixture.snapshot();
     assert.equal(current.execution_id, saved.execution_id);
     assert.deepEqual(current.roles, saved.roles);
     assert.deepEqual(current.invocation, saved.invocation);
-    assert.equal(current.pr_title, saved.pr_title);
-    assert.equal(current.pr_body, saved.pr_body);
+    assert.equal(current.pr_title, result.pr_title);
+    assert.equal(current.pr_body, result.pr_body);
     assert.deepEqual(current.result, result);
     assert.equal(fixture.state.probeCount, 1);
     assert.equal(fixture.state.taskCount, 1);

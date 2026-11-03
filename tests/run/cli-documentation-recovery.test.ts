@@ -8,6 +8,8 @@ import { publish } from "../support/implementation-run.ts";
 
 const noChange = {
   outcome: "no_change",
+  pr_title: "docs: maintain documentation",
+  pr_body: "Maintain documentation.",
   summary: "Already current",
   commits: [],
   findings_file: null,

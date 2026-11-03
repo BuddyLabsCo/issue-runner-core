@@ -132,12 +132,6 @@ for (const kind of ["ci", "conflict"] as const) {
             };
             await publish(assignment.path, {
               sessionid: `native-${tabs.size}`,
-              ...(assignment.role === "implement"
-                ? {
-                    pr_title: "fix: [issue-50] repair build",
-                    pr_body: "Repair.\n\nCloses #50",
-                  }
-                : {}),
             });
           } else if (
             text.startsWith("Implementation assignment\n") ||
@@ -201,6 +195,12 @@ for (const kind of ["ci", "conflict"] as const) {
                       },
                     ],
               findings_file: null,
+              ...(text.startsWith("Implementation assignment\n")
+                ? {
+                    pr_title: "fix: [issue-50] repair build",
+                    pr_body: "Repair.\n\nCloses #50",
+                  }
+                : {}),
             });
           }
         },
