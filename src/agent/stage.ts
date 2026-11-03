@@ -17,6 +17,7 @@ import { renderPrompt } from "../prompts/load.ts";
 import {
   probeInstructions,
   probeCorrectionInstructions,
+  probeRecoveryInstructions,
   handoffCorrectionInstructions,
   resumeInstructions,
   recoveryInstructions,
@@ -212,7 +213,16 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
         (purpose !== "documentation" && !repairRole) ||
         !(await readHandoff(stage.probe.path))
       )
-        await conversations.submit(await open(), prompt(), profile.submitKey);
+        await conversations.submit(
+          await open(),
+          prompt(),
+          profile.submitKey,
+          stage.probe.path,
+          renderPrompt(probeRecoveryInstructions, {
+            temporary: JSON.stringify(`${stage.probe.path}.tmp`),
+            path: JSON.stringify(stage.probe.path),
+          }),
+        );
       for (;;) {
         signal?.throwIfAborted();
         const observed = await readHandoff(stage.probe.path);
@@ -248,6 +258,11 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
               await open(),
               prompt(reason),
               profile.submitKey,
+              stage.probe.path,
+              renderPrompt(probeRecoveryInstructions, {
+                temporary: JSON.stringify(`${stage.probe.path}.tmp`),
+                path: JSON.stringify(stage.probe.path),
+              }),
             );
             continue;
           }

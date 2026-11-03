@@ -185,6 +185,7 @@ export async function testInstalledArtifacts(
         ["conflict-repair", "conflictRepairInstructions", "conflict-repair", "Resolve the pull request merge conflict"],
         ["session", "probeInstructions", "probe", "actual native conversation session ID"],
         ["session", "probeCorrectionInstructions", "probe-correction", "Correct the previous Probe"],
+        ["session", "probeRecoveryInstructions", "probe-recovery", "Continue the unfinished Session Probe"],
         ["session", "resumeInstructions", "resume", "continue"],
         ["session", "handoffCorrectionInstructions", "handoff-correction", "Correct the {{name}} handoff"],
         ["session", "recoveryInstructions", "recovery", "Continue unfinished work for the current {{name}} assignment"]
