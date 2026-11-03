@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import path from "node:path";
+import { loadPrompt, renderPrompt } from "../../src/prompts/load.ts";
 
 export function assertBusinessAssignment(
   submission: { expectedFile?: string; recoveryText?: string },
@@ -10,7 +11,10 @@ export function assertBusinessAssignment(
   assert.equal(path.isAbsolute(file), true);
   assert.equal(
     submission.recoveryText,
-    `Continue unfinished work for the current ${name} assignment in this conversation. Preserve its scope and completion requirements.\n\nUse the issue-runner-handoff skill to report task completion or a pause requiring user action.\nHandoff path: ${JSON.stringify(file)}`,
+    renderPrompt(loadPrompt("recovery"), {
+      name,
+      path: JSON.stringify(file),
+    }),
   );
 }
 

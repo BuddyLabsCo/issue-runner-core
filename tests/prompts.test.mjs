@@ -35,3 +35,15 @@ await test("each task template includes its complete assignment and handoff", ()
     assert.ok(template.endsWith("{{path}}"), asset);
   }
 });
+
+await test("recovery continues unfinished work and requests a handoff only after completion", () => {
+  const file = "/worktree/unfinished $&.json";
+  const prompt = renderPrompt(loadPrompt("recovery"), {
+    name: "Review fix",
+    path: JSON.stringify(file),
+  });
+  assert.match(prompt, /continue unfinished work/iu);
+  assert.match(prompt, /after.*(?:complet|finish).*issue-runner-handoff/isu);
+  assert.doesNotMatch(prompt, /pause|user action/iu);
+  assert.ok(prompt.endsWith(JSON.stringify(file)));
+});
