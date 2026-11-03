@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external contracts retain asynchronous signatures. */
 import assert from "node:assert/strict";
-import { readdir, rm, writeFile, readFile } from "node:fs/promises";
+import { appendFile, readdir, rm, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { stringify } from "yaml";
@@ -21,6 +21,30 @@ await test("omitted terminalPlugins supplies an empty object", async (t) => {
   assert.deepEqual(loaded.config.terminalPlugins, {});
 });
 
+await test("tagged terminalPlugins containers fail before external access", async (t) => {
+  const { root, directory } = await createProject(t);
+  for (const container of [
+    "!!timestamp 2002-12-14",
+    "!!binary YWJj",
+    "!!set { key: null }",
+  ]) {
+    await writeFile(
+      path.join(directory, "config.yaml"),
+      `${stringify(validConfig)}\nterminalPlugins: ${container}\n`,
+    );
+    const deps = createCliDependencies(root);
+    await assert.rejects(
+      loadProject(root, "demo", deps.env),
+      /terminalPlugins/,
+    );
+    const result = await executeCli(run, deps);
+    assert.equal(result.exitCode, 1, container);
+    assert.equal(result.logPath, null);
+    assert.deepEqual(deps.reads, []);
+    assert.deepEqual(deps.effects, []);
+  }
+});
+
 await test("terminalPlugins preserves plugin-owned nested values without installation checks", async (t) => {
   const terminalPlugins = {
     fake: {
@@ -29,12 +53,30 @@ await test("terminalPlugins preserves plugin-owned nested values without install
     },
     other: { nested: { enabled: true, entries: [] } },
   };
-  const { root } = await createProject(t, { ...validConfig, terminalPlugins });
+  const { root, directory } = await createProject(t, {
+    ...validConfig,
+    terminalPlugins,
+  });
+  await appendFile(
+    path.join(directory, "config.yaml"),
+    `  tagged:
+    timestamp: !!timestamp 2002-12-14
+    binary: !!binary YWJj
+    set: !!set { key: null }
+`,
+  );
   const loaded = await loadProject(root, "demo", {
     TRACKER_TOKEN: "tracker",
     HOST_TOKEN: "host",
   });
-  assert.deepEqual(loaded.config.terminalPlugins, terminalPlugins);
+  assert.deepEqual(loaded.config.terminalPlugins, {
+    ...terminalPlugins,
+    tagged: {
+      timestamp: new Date("2002-12-14T00:00:00.000Z"),
+      binary: Buffer.from("abc"),
+      set: new Set(["key"]),
+    },
+  });
   assert.equal(
     (await executeCli(run, createCliDependencies(root))).summary.outcome,
     "no_work",

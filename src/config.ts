@@ -182,6 +182,8 @@ function parseConfig(
 ): ProjectConfig {
   const input = record(value, "config");
   const { terminalPlugins = {} } = input;
+  if (Object.getPrototypeOf(terminalPlugins ?? {}) !== Object.prototype)
+    throw new Error("terminalPlugins must be an object mapping");
   knownFields(
     input,
     [
@@ -222,13 +224,11 @@ function parseConfig(
   );
   const workflow =
     input.workflow === undefined ? {} : record(input.workflow, "workflow");
-  const unknownWorkflowField = Object.keys(workflow).find(
-    (name) =>
-      !["review", "maxReviewRounds", "docMaintainTriggerLabel"].includes(name),
+  knownFields(
+    workflow,
+    ["review", "maxReviewRounds", "docMaintainTriggerLabel"],
+    "workflow",
   );
-  if (unknownWorkflowField) {
-    throw new Error(`workflow contains unknown field ${unknownWorkflowField}`);
-  }
   const maxReviewRounds = workflow.maxReviewRounds;
   if (
     maxReviewRounds !== undefined &&
