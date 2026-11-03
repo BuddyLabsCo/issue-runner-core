@@ -5,6 +5,7 @@ import { terminalContractVersion, type TerminalPlugin } from "../terminal.ts";
 
 export async function loadTerminalPlugin(
   environment: string,
+  config: unknown,
 ): Promise<TerminalPlugin> {
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(environment))
     throw new Error(
@@ -51,7 +52,7 @@ export async function loadTerminalPlugin(
     const factory = module.createTerminalPlugin as (
       config: unknown,
     ) => Promise<unknown>;
-    const plugin = await factory({});
+    const plugin = await factory(config);
     if (
       typeof plugin !== "object" ||
       plugin === null ||

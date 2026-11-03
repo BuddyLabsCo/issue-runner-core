@@ -12,6 +12,35 @@ import { createCliDependencies } from "../support/cli-dependencies.ts";
 
 const run = ["run", "--project", "demo", "--env", "fake", "--parent", "48"];
 
+await test("omitted terminalPlugins supplies an empty object", async (t) => {
+  const { root } = await createProject(t);
+  const loaded = await loadProject(root, "demo", {
+    TRACKER_TOKEN: "tracker",
+    HOST_TOKEN: "host",
+  });
+  assert.deepEqual(loaded.config.terminalPlugins, {});
+});
+
+await test("terminalPlugins preserves plugin-owned nested values without installation checks", async (t) => {
+  const terminalPlugins = {
+    fake: {
+      enhancement: "not-installed",
+      options: [null, false, 0, "  native  "],
+    },
+    other: { nested: { enabled: true, entries: [] } },
+  };
+  const { root } = await createProject(t, { ...validConfig, terminalPlugins });
+  const loaded = await loadProject(root, "demo", {
+    TRACKER_TOKEN: "tracker",
+    HOST_TOKEN: "host",
+  });
+  assert.deepEqual(loaded.config.terminalPlugins, terminalPlugins);
+  assert.equal(
+    (await executeCli(run, createCliDependencies(root))).summary.outcome,
+    "no_work",
+  );
+});
+
 await test("Agent startup delays default to ten seconds and accept independent per-profile overrides", async (t) => {
   const profiles = { ...validConfig.agents, documentation: agent };
   const { root, directory } = await createProject(t, {
@@ -58,6 +87,12 @@ await test("invalid configuration fails before any external reads or delivery re
     [{ maxBatchSize: 0 }, /maxBatchSize/],
     [{ maxBatchSize: 1.5 }, /maxBatchSize/],
     [{ targetBranch: " " }, /targetBranch/],
+    ...[null, [], "plugin", 1, false].map(
+      (terminalPlugins): [object, RegExp] => [
+        { terminalPlugins },
+        /terminalPlugins must be an object/,
+      ],
+    ),
     [{ operationRetry: -1 }, /operationRetry/],
     [{ operationRetryDelay: [] }, /operationRetryDelay/],
     [{ ticketClosure: "agent" }, /ticketClosure/],

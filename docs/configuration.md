@@ -38,9 +38,22 @@ copying fails. Edit its placeholders before running.
 Core loads only `issue-runner-<name>` through its public import entry, beside the
 executing Core package. It checks contract version 1, the `createTerminalPlugin(config)` factory,
 initialization, and all five terminal methods before workflow reads or mutations.
-The factory currently receives `{}`; configured forwarding remains separate work.
+The factory receives the complete `terminalPlugins` object from Project configuration,
+regardless of `--env`. Omission supplies `{}`. Explicit null, arrays, and scalar
+containers fail startup validation before workflow reads or mutations.
 Project-local packages, other global prefixes, and caches cannot substitute for
 a missing sibling. No automatic installation or backend fallback occurs.
+
+Configure plugin-owned fields under `terminalPlugins`, using the selected plugin's documentation:
+
+```yaml
+terminalPlugins: {}
+```
+
+Core validates only the container. It preserves nested values without normalization,
+environment-subtree selection, Agent-profile mapping, or enhancement installation checks.
+Plugin configuration remains part of the original configuration bytes hashed for recovery.
+Changing those bytes selects a new Run; unchanged arguments and bytes retain matching recovery behavior.
 
 Lookup follows the executing Core package's real location, including after
 relocating a portable installation or invoking Core through a link. It does not
