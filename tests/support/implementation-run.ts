@@ -69,7 +69,13 @@ export async function implementationRun(
   const controller = new AbortController();
   const state = {
     events: [] as string[],
-    submissions: [] as { tab: object; text: string; chord?: string }[],
+    submissions: [] as {
+      tab: object;
+      text: string;
+      chord?: string;
+      expectedFile?: string;
+      recoveryText?: string;
+    }[],
     ticket: {
       number: 50,
       state: "open",
@@ -123,8 +129,14 @@ export async function implementationRun(
       state.gitConfigs.push(options.env.GIT_CONFIG_GLOBAL!);
       return {};
     },
-    async submitText(tab, text, chord) {
-      state.submissions.push({ tab, text, ...(chord ? { chord } : {}) });
+    async submitText(tab, text, chord, expectedFile, recoveryText) {
+      state.submissions.push({
+        tab,
+        text,
+        ...(chord ? { chord } : {}),
+        ...(expectedFile === undefined ? {} : { expectedFile }),
+        ...(recoveryText === undefined ? {} : { recoveryText }),
+      });
       state.events.push("submit");
       if (text.startsWith("Session Probe\n")) {
         state.probeCount += 1;

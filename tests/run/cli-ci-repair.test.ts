@@ -15,6 +15,7 @@ import {
   publish,
 } from "../support/implementation-run.ts";
 import { passed } from "../support/review-run.ts";
+import { assertBusinessAssignment } from "../support/prompt-assignment.ts";
 
 await test("a repaired PR integrates its repaired HEAD and recovers queued and delivered checkpoints", async (t) => {
   const fixture = await ciRepairRun(t);
@@ -61,6 +62,16 @@ await test("a repaired PR integrates its repaired HEAD and recovers queued and d
   };
   assert.equal((await run()).summary.outcome, "succeeded");
   const saved = await fixture.snapshot();
+  const task = fixture.state.submissions.find(({ text }) =>
+    text.startsWith("CI repair assignment\n"),
+  )!;
+  assertBusinessAssignment(
+    task,
+    saved.publication!.ciRepair!.attempts[0]!.invocation!.path,
+    "CI repair",
+  );
+  assert.equal(task.chord, "Shift+Enter");
+  assert.equal(task.tab, fixture.state.closedTabs[1]);
   assert.equal(saved.publication!.phase, "delivered");
   assert.equal(saved.publication!.merge!.headSha, repairCommit.sha);
   assert.equal(saved.publication!.headSha, implementationCommit.sha);
@@ -233,6 +244,17 @@ for (const present of [false, true]) {
       fixture.repairs.continuations,
       present ? [] : ["continue"],
     );
+    if (!present) {
+      const continuation = fixture.state.submissions.at(-1)!;
+      assert.equal(continuation.text, "continue");
+      assert.equal(continuation.chord, "Shift+Enter");
+      assert.equal(continuation.tab, fixture.state.submissions.at(-2)!.tab);
+      assertBusinessAssignment(
+        continuation,
+        attempt.invocation!.path,
+        "CI repair",
+      );
+    }
     if (!present)
       assert.ok(
         fixture.state.submissions.some(({ text }) =>

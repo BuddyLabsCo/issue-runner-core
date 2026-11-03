@@ -85,6 +85,7 @@ await test("built artifacts work in isolated consumer and npm global installatio
     "prompts/probe.md",
     "prompts/probe-correction.md",
     "prompts/resume.md",
+    "prompts/recovery.md",
     "prompts/handoff-correction.md",
   ])
     assert.ok(statSync(join(installed, file)).isFile(), file);

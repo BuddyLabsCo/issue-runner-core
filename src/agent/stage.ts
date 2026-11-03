@@ -19,6 +19,7 @@ import {
   probeCorrectionInstructions,
   handoffCorrectionInstructions,
   resumeInstructions,
+  recoveryInstructions,
 } from "../prompts/session.ts";
 
 export interface IssueStageContext {
@@ -182,7 +183,16 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
         }
       }
       if (!allowed) return false;
-      await conversations.submit(tab, text, profile.submitKey);
+      await conversations.submit(
+        tab,
+        text,
+        profile.submitKey,
+        stage.invocation!.path,
+        renderPrompt(recoveryInstructions, {
+          name,
+          path: JSON.stringify(stage.invocation!.path),
+        }),
+      );
       return true;
     };
     if (!sessionid()) {

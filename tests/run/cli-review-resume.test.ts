@@ -4,6 +4,7 @@ import { access, mkdir, readdir, rmdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { executeCli } from "../../src/cli.ts";
+import { assertBusinessAssignment } from "../support/prompt-assignment.ts";
 import {
   execution as committed,
   implementationCommand,
@@ -60,6 +61,14 @@ await test("an interrupted later Review resumes the original reviewer with its p
     fixture.state.submissions.slice(before).map((item) => item.text),
     ['review-cli resume "review-native/$&"', "continue"],
   );
+  const continuation = fixture.state.submissions.at(-1)!;
+  assertBusinessAssignment(
+    continuation,
+    saved.reviews![1]!.invocation!.path,
+    "Review",
+  );
+  assert.equal(continuation.chord, "Shift+Enter");
+  assert.equal(continuation.tab, fixture.state.submissions[before]!.tab);
   assert.equal(fixture.reviewState.reviews.length, 2);
   assert.equal(fixture.reviewState.fixes.length, 1);
   assert.equal(fixture.state.probeCount, 2);

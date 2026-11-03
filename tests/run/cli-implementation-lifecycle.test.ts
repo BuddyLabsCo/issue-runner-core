@@ -10,6 +10,7 @@ import {
   implementationRun,
 } from "../support/implementation-run.ts";
 import { validConfig } from "../support/cli-project.ts";
+import { assertBusinessAssignment } from "../support/prompt-assignment.ts";
 
 await test("configured commands stay unchanged and prompts use canonical LF while preserving Unicode and quotes", async (t) => {
   const fixture = await implementationRun(t, {
@@ -40,6 +41,11 @@ await test("configured commands stay unchanged and prompts use canonical LF whil
     fixture.state.submissions[2]!.text,
     /Line one\n {2}\u4f60\u597d \$& '\$`'\n\nLast line/,
   );
+  const task = fixture.state.submissions[2]!;
+  const file = (await fixture.snapshot()).invocation!.path;
+  assert.equal(task.tab, fixture.state.closedTabs[0]);
+  assert.equal(task.chord, "Shift+Enter");
+  assertBusinessAssignment(task, file, "implementation");
 });
 
 await test("independent handles can complete while another handle's command transport is pending", async (t) => {

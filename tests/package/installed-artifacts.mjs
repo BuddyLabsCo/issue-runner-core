@@ -186,7 +186,8 @@ export async function testInstalledArtifacts(
         ["session", "probeInstructions", "probe", "actual native conversation session ID"],
         ["session", "probeCorrectionInstructions", "probe-correction", "Correct the previous Probe"],
         ["session", "resumeInstructions", "resume", "continue"],
-        ["session", "handoffCorrectionInstructions", "handoff-correction", "Correct the {{name}} handoff"]
+        ["session", "handoffCorrectionInstructions", "handoff-correction", "Correct the {{name}} handoff"],
+        ["session", "recoveryInstructions", "recovery", "Continue unfinished work for the current {{name}} assignment"]
       ]) {
         const prompts = await import(pathToFileURL(join(core, "dist/prompts", file + ".js")).href);
         assert.equal(typeof prompts[name], "string", name);

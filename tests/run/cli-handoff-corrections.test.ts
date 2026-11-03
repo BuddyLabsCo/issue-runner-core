@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { validConfig } from "../support/cli-project.ts";
+import { assertBusinessAssignment } from "../support/prompt-assignment.ts";
 import {
   committed,
   implementationRun,
@@ -18,6 +19,7 @@ await test("execution findings receive a specific correction in the original con
     assert.match(correction.text, /Execution findings_file must be null/);
     assert.equal(correction.tab, fixture.state.submissions[2]!.tab);
     assert.equal(correction.chord, "Shift+Enter");
+    assertBusinessAssignment(correction, file, "implementation");
     assert.ok(correction.text.includes(JSON.stringify(file)));
     assert.equal((await fixture.snapshot()).phase, "implementing");
     assert.equal(fixture.state.closedTabs.length, 0);
@@ -50,6 +52,7 @@ await test("each invalid publication receives immediate feedback at a fresh path
     const correction = fixture.state.submissions.at(-1)!;
     assert.equal(correction.tab, fixture.state.submissions[0]!.tab);
     assert.equal(correction.chord, "Shift+Enter");
+    assertBusinessAssignment(correction, file, "implementation");
     assert.equal(fixture.state.closedTabs.length, 0);
     paths.push(file);
     invocations.push(saved.invocation!.invocation_id);

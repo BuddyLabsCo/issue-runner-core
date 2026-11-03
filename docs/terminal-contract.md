@@ -185,6 +185,16 @@ exact current handoff file and Core's recovery wording. Wrappers preserve them
 positionally, including when optional preceding arguments are omitted. Transport
 success does not prove Agent acceptance or completion.
 
+For implementation, documentation, Review, Review fixes, CI repair, and conflict
+repair, Core supplies both arguments on every task, continuation, and correction.
+The exact unique absolute handoff path identifies the assignment. Continuation
+retains that path; a correction replaces it with the newly persisted path.
+Core renders a complete recovery message from a built-in template, asking the
+Agent to continue unfinished work and use the assigned handoff protocol without
+replaying the task. Plugins retain the current message for optional recovery.
+Core still validates Agent-written handoffs and independent Git evidence;
+assignment metadata and monitoring events cannot establish completion.
+
 `EnhancementHost` is bound to one tab: `read` reads terminal text, `submitText`
 uses its Agent submit key, and `sendKeys` sends logical keys in order.
 Argument-free `requestRecovery` asks the hosting plugin to submit the recovery

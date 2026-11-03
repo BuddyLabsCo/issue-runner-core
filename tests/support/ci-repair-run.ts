@@ -92,7 +92,13 @@ export async function ciRepairRun(
       ? "conflict"
       : "ci";
     const repairs = scripts[kind];
-    fixture.state.submissions.push({ tab, text, ...(chord ? { chord } : {}) });
+    fixture.state.submissions.push({
+      tab,
+      text,
+      ...(chord ? { chord } : {}),
+      ...(expectedFile === undefined ? {} : { expectedFile }),
+      ...(recoveryText === undefined ? {} : { recoveryText }),
+    });
     if (text.startsWith("Session Probe\n")) {
       repairs.probes.push(text);
       const assignment = promptAssignment(text) as { path: string };

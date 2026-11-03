@@ -12,6 +12,7 @@ import {
   publish,
 } from "../support/implementation-run.ts";
 import { validConfig } from "../support/cli-project.ts";
+import { assertBusinessAssignment } from "../support/prompt-assignment.ts";
 
 await test("missing original Worktree offers only restart or exit before creating replacement work", async (t) => {
   const fixture = await implementationRun(t);
@@ -117,7 +118,7 @@ await test("unchanged plugin configuration resumes only the saved role with lite
         sequence.push("fresh Runner Tab");
         return tab;
       },
-      async submitText(tab, text, chord) {
+      async submitText(tab, text, chord, expectedFile, recoveryText) {
         if (text === "continue") {
           assert.ok(
             fixture.dependencies.messages
@@ -128,7 +129,13 @@ await test("unchanged plugin configuration resumes only the saved role with lite
           );
         }
         sequence.push(text === "continue" ? "continue" : "resume");
-        await fixture.dependencies.terminalPlugin.submitText(tab, text, chord);
+        await fixture.dependencies.terminalPlugin.submitText(
+          tab,
+          text,
+          chord,
+          expectedFile,
+          recoveryText,
+        );
       },
     },
   });
@@ -144,6 +151,11 @@ await test("unchanged plugin configuration resumes only the saved role with lite
     ["continue"],
   );
   assert.equal(resumed[1]?.chord, "Shift+Enter");
+  assertBusinessAssignment(
+    resumed[1],
+    saved.invocation!.path,
+    "implementation",
+  );
   assert.deepEqual(sequence, ["fresh Runner Tab", "resume", "continue"]);
   assert.equal(fixture.state.probeCount, 1);
   assert.equal(fixture.state.taskCount, 1);
@@ -191,6 +203,14 @@ await test("missing output resumes the saved correction conversation with contin
     ],
   );
   assert.deepEqual(await fixture.snapshot(), saved);
+  const continuation = fixture.state.submissions.at(-1)!;
+  assertBusinessAssignment(
+    continuation,
+    saved.invocation!.path,
+    "implementation",
+  );
+  assert.equal(continuation.tab, fixture.state.submissions.at(-2)!.tab);
+  assert.notEqual(continuation.expectedFile, saved.superseded[0]);
 });
 
 await test("cancellation during recovered startup prevents the delayed continue", async (t) => {
