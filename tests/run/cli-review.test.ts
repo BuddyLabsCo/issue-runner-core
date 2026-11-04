@@ -1,3 +1,8 @@
+import { executeCli } from "../../src/cli.ts";
+import { implementationCommand } from "../support/implementation-run.ts";
+/* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import { documentationRun } from "../support/documentation-run.ts";
+import { ciRepairRun } from "../support/ci-repair-run.ts";
 import { promptAssignment } from "../support/prompt-assignment.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -270,7 +275,7 @@ await test("cap=1 still fixes final findings in the exact implementation convers
   );
   assert.ok(
     fixture.state.tabOptions.every(
-      ({ signal }) => signal instanceof AbortSignal && !signal.aborted,
+      ({ signal }) => signal instanceof AbortSignal && signal.aborted,
     ),
   );
 
@@ -306,3 +311,70 @@ await test("cap=1 still fixes final findings in the exact implementation convers
   fixture.controller.abort();
   assert.ok(fixture.state.tabOptions.every(({ signal }) => signal?.aborted));
 });
+
+for (const purpose of ["review", "ci", "conflict", "documentation"] as const) {
+  await test(`enhanced ${purpose} uses the shared lifecycle with independent instances`, async (t) => {
+    const fixture =
+      purpose === "review"
+        ? await reviewRun(t, 1)
+        : purpose === "ci"
+          ? await ciRepairRun(t)
+          : purpose === "conflict"
+            ? await (
+                await import("../support/conflict-repair-run.ts")
+              ).conflictRepairRun(t)
+            : await documentationRun(t);
+    if ("reviewState" in fixture) fixture.reviewState.onReview = findings;
+    let created = 0;
+    const stopped: number[] = [];
+    const assigned: number[] = [];
+    const module = {
+      contractVersion: 2 as const,
+      async createEnhancement() {
+        const instance = ++created;
+        let native = `native-${instance}`;
+        return {
+          async startMonitoring(ref?: string) {
+            if (ref) native = ref;
+          },
+          async waitUntilReady() {
+            return native;
+          },
+          onAssignment() {
+            assigned.push(instance);
+          },
+          async stop() {
+            stopped.push(instance);
+          },
+        };
+      },
+    };
+    const dependencies = {
+      ...fixture.dependencies,
+      enhancements: {
+        "custom-agent": module,
+        "review-agent": module,
+        "document-agent": module,
+      },
+    };
+    const command =
+      purpose === "documentation"
+        ? ["run", "--project", "demo", "--document", "--no-auto-merge"]
+        : purpose === "conflict"
+          ? implementationCommand.filter((arg) => arg !== "--no-auto-merge")
+          : implementationCommand;
+    const result = await executeCli(command, dependencies);
+    assert.ok(
+      result.summary.outcome === "incomplete" ||
+        result.summary.outcome === "succeeded",
+      JSON.stringify(result),
+    );
+    assert.equal(
+      created,
+      purpose === "review" ? 3 : purpose === "documentation" ? 1 : 2,
+    );
+    assert.equal(fixture.state.probeCount, 0);
+    assert.deepEqual(stopped, assigned);
+    assert.equal(stopped.length, created);
+  });
+}

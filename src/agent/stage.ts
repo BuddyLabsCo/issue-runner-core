@@ -9,8 +9,12 @@ import type {
   StageProgress,
 } from "../recovery.ts";
 import type { Clock, OperatorIO, Ticket } from "../run/contracts.ts";
-import { OperatorCancelled, TicketSkipped } from "../run/operations.ts";
-import type { TerminalPlugin } from "../terminal.ts";
+import {
+  OperatorCancelled,
+  TicketSkipped,
+  pauseForOperator,
+} from "../run/operations.ts";
+import type { TerminalPlugin, EnhancementModule } from "../terminal.ts";
 import { NativeConversations, type ConversationTab } from "./conversation.ts";
 import { nonempty, object, readHandoff } from "./handoff.ts";
 import { renderPrompt } from "../prompts/load.ts";
@@ -19,6 +23,8 @@ import {
   probeCorrectionInstructions,
   handoffCorrectionInstructions,
   resumeInstructions,
+  recoveryInstructions,
+  probeRecoveryInstructions,
 } from "../prompts/session.ts";
 
 export interface IssueStageContext {
@@ -32,6 +38,8 @@ export interface IssueStageContext {
     action: (env: Readonly<Record<string, string>>) => Promise<T>,
   ) => Promise<T>;
   terminal: TerminalPlugin;
+  enhancements?: Readonly<Record<string, EnhancementModule>>;
+  submitText?: (action: () => Promise<void>) => Promise<void>;
   clock: Clock;
   operator: OperatorIO;
   signal?: AbortSignal;
@@ -105,7 +113,12 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
   const profile = loaded.config.agents[repairRole ?? role]!;
   const sessionid = () =>
     repairRole ? stage.sessionid : progress.roles[role]?.sessionid;
-  const conversations = new NativeConversations(input.terminal, signal);
+  const conversations = new NativeConversations(
+    input.terminal,
+    signal,
+    (message) => operator.write(message),
+    input.submitText,
+  );
   const persist = input.persist;
   const assignment = (phase: string) =>
     path.join(
@@ -124,188 +137,238 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
   };
   await mkdir(path.join(loaded.directory, "handoffs"), { recursive: true });
   await input.withEnvironment(async (env) => {
-    let tab: ConversationTab | undefined;
-    let ready = false;
-    const saveIdentity = (ref: unknown, expected?: string) => {
-      if (
-        !nonempty(ref) ||
-        [progress.execution_id, progress.run_id, "latest", "last"].includes(
-          ref,
-        ) ||
-        (expected !== undefined && ref !== expected)
-      )
-        throw new Error(
-          "Invalid native session identity: expected the actual native ref and exact resume identity",
+    try {
+      let tab: ConversationTab | undefined;
+      const saveIdentity = (ref: unknown, expected?: string) => {
+        if (
+          !nonempty(ref) ||
+          [progress.execution_id, progress.run_id, "latest", "last"].includes(
+            ref,
+          ) ||
+          (expected !== undefined && ref !== expected)
+        )
+          throw new Error(
+            "Invalid native session identity: expected the actual native ref and exact resume identity",
+          );
+        if (repairRole) stage.sessionid = ref;
+        else progress.roles[role] = { sessionid: ref };
+      };
+      const open = async () => {
+        tab ??= await conversations.create(
+          {
+            cwd: input.worktree ?? progress.worktree,
+            env,
+            label: `issue-${progress.ticket} ${(input.progressLabel ?? purpose).replace(/_/gu, " ").replace(/ round /u, " r")}`,
+            submitKey: profile.submitKey ?? "Enter",
+            ...(signal ? { signal } : {}),
+          },
+          input.enhancements?.[profile.agent],
+          loaded.config.terminalPlugins.enhancements[profile.agent],
         );
-      if (repairRole) stage.sessionid = ref;
-      else progress.roles[role] = { sessionid: ref };
-    };
-    const open = async () => {
-      tab ??= await conversations.create({
-        cwd: input.worktree ?? progress.worktree,
-        env,
-        label: `issue-${progress.ticket} ${(input.progressLabel ?? purpose).replace(/_/gu, " ").replace(/ round /u, " r")}`,
-        submitKey: profile.submitKey ?? "Enter",
-        ...(signal ? { signal } : {}),
-      });
-      if (!ready) {
         const expected = sessionid();
         if (expected !== undefined) saveIdentity(expected, expected);
-        await conversations.start(tab, profile, expected);
-        await sleep(loaded.config.terminalPlugins.agentStartDelay * 1000);
+        let identity: string | undefined;
+        for (;;) {
+          try {
+            identity = await conversations.ready(tab, profile, expected, () =>
+              sleep(loaded.config.terminalPlugins.agentStartDelay * 1000),
+            );
+            break;
+          } catch (error) {
+            signal?.throwIfAborted();
+            if (
+              error instanceof OperatorCancelled ||
+              error instanceof TicketSkipped
+            )
+              throw error;
+            await pauseForOperator(
+              operator,
+              `Agent readiness failed: ${error instanceof Error ? error.message : String(error)}`,
+              signal,
+              true,
+            );
+          }
+        }
+        if (input.enhancements?.[profile.agent]) {
+          saveIdentity(identity, expected);
+          if (expected === undefined) await persist();
+        }
         signal?.throwIfAborted();
-        ready = true;
-      }
-      return tab;
-    };
-    // A retained fallback Probe can establish identity before any exact resume.
-    if (!sessionid() && !(stage.probe && (await readHandoff(stage.probe.path))))
-      await open();
-    const submitWork = async (text: string) => {
-      const tab = await open();
-      const pending = stage.pendingPrompt;
-      let allowed = false;
-      try {
-        if (pending !== undefined) {
-          // An interrupted transport attempt must not blindly replay the prompt.
-          delete stage.pendingPrompt;
-          await persist();
-        }
-        allowed = await input.beforeDispatch();
-      } finally {
-        if (!allowed && pending !== undefined) {
-          stage.pendingPrompt = pending;
-          await persist();
-        }
-      }
-      if (!allowed) return false;
-      await conversations.submit(tab, text);
-      return true;
-    };
-    if (!sessionid()) {
-      stage.probe ??= { path: assignment(`${purpose}-probe`) };
-      if (primaryExecution) progress.phase = "probing";
-      await persist();
-      const prompt = (error?: string) =>
-        renderPrompt(probeInstructions, {
-          correction: error
-            ? renderPrompt(probeCorrectionInstructions, { reason: error })
-            : "",
-          issue: String(progress.ticket),
-          temporary: JSON.stringify(`${stage.probe!.path}.tmp`),
-          path: JSON.stringify(stage.probe!.path),
-        });
+        return tab;
+      };
+      // A retained fallback Probe can establish identity before any exact resume.
       if (
-        (purpose !== "documentation" && !repairRole) ||
-        !(await readHandoff(stage.probe.path))
+        !sessionid() &&
+        !(stage.probe && (await readHandoff(stage.probe.path)))
       )
-        await conversations.submit(await open(), prompt());
+        await open();
+      const submitWork = async (text: string) => {
+        const tab = await open();
+        const pending = stage.pendingPrompt;
+        let allowed = false;
+        try {
+          if (pending !== undefined) {
+            // An interrupted transport attempt must not blindly replay the prompt.
+            delete stage.pendingPrompt;
+            await persist();
+          }
+          allowed = await input.beforeDispatch();
+        } finally {
+          if (!allowed && pending !== undefined) {
+            stage.pendingPrompt = pending;
+            await persist();
+          }
+        }
+        if (!allowed) return false;
+        await conversations.submit(tab, text, {
+          expectedFile: stage.invocation!.path,
+          recoveryText: renderPrompt(recoveryInstructions, {
+            name,
+            path: JSON.stringify(stage.invocation!.path),
+          }),
+        });
+        return true;
+      };
+      const submitProbe = async (text: string) =>
+        conversations.submit(await open(), text, {
+          expectedFile: stage.probe!.path,
+          recoveryText: renderPrompt(probeRecoveryInstructions, {
+            temporary: JSON.stringify(`${stage.probe!.path}.tmp`),
+            path: JSON.stringify(stage.probe!.path),
+          }),
+        });
+      if (!sessionid()) {
+        stage.probe ??= { path: assignment(`${purpose}-probe`) };
+        if (primaryExecution) progress.phase = "probing";
+        await persist();
+        const prompt = (error?: string) =>
+          renderPrompt(probeInstructions, {
+            correction: error
+              ? renderPrompt(probeCorrectionInstructions, { reason: error })
+              : "",
+            issue: String(progress.ticket),
+            temporary: JSON.stringify(`${stage.probe!.path}.tmp`),
+            path: JSON.stringify(stage.probe!.path),
+          });
+        if (
+          (purpose !== "documentation" && !repairRole) ||
+          !(await readHandoff(stage.probe.path))
+        )
+          await submitProbe(prompt());
+        for (;;) {
+          signal?.throwIfAborted();
+          if (tab) conversations.check(tab);
+          const observed = await readHandoff(stage.probe.path);
+          if (observed !== undefined) {
+            try {
+              const probe = object(JSON.parse(observed.text) as unknown);
+              if (Object.keys(probe).join(",") !== "sessionid")
+                throw new Error("Probe requires actual native identity only");
+              try {
+                saveIdentity(probe.sessionid);
+              } catch (error) {
+                throw new Error("Probe requires actual native identity", {
+                  cause: error,
+                });
+              }
+            } catch (error) {
+              const reason =
+                error instanceof Error ? error.message : String(error);
+              if (!tab)
+                throw new Error(
+                  `unable to recover: invalid native ${name} Probe: ${reason}`,
+                  { cause: error },
+                );
+              operator.write(
+                `Invalid Probe: ${reason}. Correct the Probe in the native conversation; rejected handoff=${stage.probe.path}`,
+              );
+              stage.superseded.push(stage.probe.path);
+              stage.probe = {
+                path: assignment(`${purpose}-probe`),
+              };
+              await persist();
+              await submitProbe(prompt(reason));
+              continue;
+            }
+            if (tab) await conversations.complete(tab);
+            await persist();
+            break;
+          }
+          await sleep(250);
+        }
+      }
+      let resumeIfMissing = stage.invocation !== undefined;
+      if (!stage.invocation) {
+        stage.invocation = {
+          invocation_id: randomUUID(),
+          path: assignment(purpose),
+        };
+        stage.pendingPrompt = await input.task(stage.invocation.path);
+      }
+      progress.phase = phase;
+      await persist();
+      show(stage.invocation.path);
       for (;;) {
         signal?.throwIfAborted();
-        const observed = await readHandoff(stage.probe.path);
+        if (tab) conversations.check(tab);
+        const observed = await readHandoff(stage.invocation.path);
+        if (observed === undefined && stage.pendingPrompt !== undefined) {
+          if (!(await submitWork(stage.pendingPrompt))) return;
+          resumeIfMissing = false;
+          continue;
+        }
+        if (
+          resumeIfMissing &&
+          observed === undefined &&
+          !(await submitWork(resumeInstructions))
+        )
+          return;
+        resumeIfMissing = false;
         if (observed !== undefined) {
+          let result;
           try {
-            const probe = object(JSON.parse(observed.text) as unknown);
-            if (Object.keys(probe).join(",") !== "sessionid")
-              throw new Error("Probe requires actual native identity only");
-            try {
-              saveIdentity(probe.sessionid);
-            } catch (error) {
-              throw new Error("Probe requires actual native identity", {
-                cause: error,
-              });
-            }
+            result = await input.accept(observed.text);
+            signal?.throwIfAborted();
           } catch (error) {
+            signal?.throwIfAborted();
+            if (
+              error instanceof OperatorCancelled ||
+              error instanceof TicketSkipped
+            )
+              throw error;
             const reason =
               error instanceof Error ? error.message : String(error);
-            if (!tab)
-              throw new Error(
-                `unable to recover: invalid native ${name} Probe: ${reason}`,
-                { cause: error },
-              );
-            operator.write(
-              `Invalid Probe: ${reason}. Correct the Probe in the native conversation; rejected handoff=${stage.probe.path}`,
-            );
-            stage.superseded.push(stage.probe.path);
-            stage.probe = {
-              path: assignment(`${purpose}-probe`),
+            operator.write(`Invalid ${name} handoff: ${reason}`);
+            stage.superseded.push(stage.invocation.path);
+            stage.invocation = {
+              invocation_id: randomUUID(),
+              path: assignment(purpose),
             };
+            stage.pendingPrompt = renderPrompt(handoffCorrectionInstructions, {
+              name,
+              reason,
+              path: JSON.stringify(stage.invocation.path),
+            });
             await persist();
-            await conversations.submit(await open(), prompt(reason));
+            show(stage.invocation.path);
             continue;
           }
+          if (tab) await conversations.complete(tab);
+          stage.result = result;
+          delete stage.pendingPrompt;
+          progress.phase = completed;
           await persist();
-          break;
+          signal?.throwIfAborted();
+          if (tab) {
+            const owned = tab;
+            await input.closeTab(() => conversations.close(owned));
+          }
+          return;
         }
         await sleep(250);
       }
-    }
-    let resumeIfMissing = stage.invocation !== undefined;
-    if (!stage.invocation) {
-      stage.invocation = {
-        invocation_id: randomUUID(),
-        path: assignment(purpose),
-      };
-      stage.pendingPrompt = await input.task(stage.invocation.path);
-    }
-    progress.phase = phase;
-    await persist();
-    show(stage.invocation.path);
-    for (;;) {
-      signal?.throwIfAborted();
-      const observed = await readHandoff(stage.invocation.path);
-      if (observed === undefined && stage.pendingPrompt !== undefined) {
-        if (!(await submitWork(stage.pendingPrompt))) return;
-        resumeIfMissing = false;
-        continue;
-      }
-      if (
-        resumeIfMissing &&
-        observed === undefined &&
-        !(await submitWork(resumeInstructions))
-      )
-        return;
-      resumeIfMissing = false;
-      if (observed !== undefined) {
-        let result;
-        try {
-          result = await input.accept(observed.text);
-          signal?.throwIfAborted();
-        } catch (error) {
-          signal?.throwIfAborted();
-          if (
-            error instanceof OperatorCancelled ||
-            error instanceof TicketSkipped
-          )
-            throw error;
-          const reason = error instanceof Error ? error.message : String(error);
-          operator.write(`Invalid ${name} handoff: ${reason}`);
-          stage.superseded.push(stage.invocation.path);
-          stage.invocation = {
-            invocation_id: randomUUID(),
-            path: assignment(purpose),
-          };
-          stage.pendingPrompt = renderPrompt(handoffCorrectionInstructions, {
-            name,
-            reason,
-            path: JSON.stringify(stage.invocation.path),
-          });
-          await persist();
-          show(stage.invocation.path);
-          continue;
-        }
-        stage.result = result;
-        delete stage.pendingPrompt;
-        progress.phase = completed;
-        await persist();
-        signal?.throwIfAborted();
-        if (tab) {
-          const owned = tab;
-          await input.closeTab(() => conversations.close(owned));
-        }
-        return;
-      }
-      await sleep(250);
+    } finally {
+      await conversations.stopAll();
     }
   });
 }

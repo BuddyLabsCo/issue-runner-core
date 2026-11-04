@@ -22,6 +22,9 @@ import { renderRunReport } from "./run/report.ts";
 import { OperatorCancelled, supervisedAuditWrite } from "./run/operations.ts";
 
 export interface CliDependencies extends CliOptions {
+  enhancements?: Readonly<
+    Record<string, import("./terminal.ts").EnhancementModule>
+  >;
   launchDirectory: string;
   env: Record<string, string | undefined>;
   operator: OperatorIO;
@@ -292,6 +295,9 @@ export async function executeRun(
           dependencies.gitWorkspace ??
           new LocalGitWorkspace(loaded.codeHostToken),
         terminal: terminalPlugin,
+        ...(dependencies.enhancements
+          ? { enhancements: dependencies.enhancements }
+          : {}),
         ...(dependencies.signal === undefined
           ? {}
           : { signal: dependencies.signal }),

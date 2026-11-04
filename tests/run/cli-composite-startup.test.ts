@@ -319,3 +319,160 @@ await test("base repair identity persists independently of the implementation ro
   assert.equal(fixture.state.probeCount, 1);
   assert.equal(fixture.repairs.probes.length, 1);
 });
+
+await test("enhanced startup completes preflight and monitoring before command, readiness and Assignment", async (t) => {
+  const fixture = await implementationRun(t, {
+    ...validConfig,
+    terminalPlugins: { enhancements: { "custom-agent": { custom: [1, "x"] } } },
+  });
+  const order: string[] = [];
+  let adapterIO: import("../../src/terminal.ts").TerminalIO | undefined;
+  const create = fixture.dependencies.terminalPlugin.createTab.bind(
+    fixture.dependencies.terminalPlugin,
+  );
+  fixture.dependencies.terminalPlugin.createTab = async (options) => {
+    const tab = await create(options);
+    adapterIO = tab.io;
+    return tab;
+  };
+  const dependencies = {
+    ...fixture.dependencies,
+    enhancements: {
+      "custom-agent": {
+        contractVersion: 2 as const,
+        async createEnhancement(
+          io: import("../../src/terminal.ts").TerminalIO,
+          _recover: import("../../src/terminal.ts").RequestRecovery,
+          context: import("../../src/terminal.ts").EnhancementContext,
+          options: unknown,
+        ) {
+          order.push("preflight");
+          assert.equal(io, adapterIO);
+          await _recover("no-assignment");
+          assert.equal(await io.read(), "visible screen");
+          assert.equal(context.cwd, fixture.state.evidence.worktree);
+          assert.deepEqual(context.env, fixture.state.tabOptions[0]!.env);
+          assert.deepEqual(options, { custom: [1, "x"] });
+          return {
+            async startMonitoring(ref?: string) {
+              assert.equal(ref, undefined);
+              order.push("monitor");
+            },
+            async waitUntilReady() {
+              order.push("ready");
+              return "enhanced-native";
+            },
+            onAssignment(assignment: { id: string; expectedFile: string }) {
+              assert.ok(assignment.id);
+              assert.ok(assignment.expectedFile.endsWith(".json"));
+              order.push("assignment");
+            },
+            async stop() {
+              order.push("stop");
+            },
+          };
+        },
+      },
+    },
+  };
+  fixture.dependencies.terminalPlugin.execute = async () => {
+    order.push("command");
+  };
+  const task = fixture.state.onTask;
+  fixture.state.onTask = async (file) => {
+    order.push("task");
+    assert.equal(
+      (await fixture.snapshot()).roles.implement?.sessionid,
+      "enhanced-native",
+    );
+    await task(file);
+  };
+  fixture.state.onClose = async () => {
+    order.push("close");
+  };
+  const result = await executeCli(implementationCommand, dependencies);
+  assert.match(result.summary.reasons.join(" "), /CI-ready/);
+  assert.deepEqual(order, [
+    "preflight",
+    "monitor",
+    "command",
+    "ready",
+    "assignment",
+    "task",
+    "stop",
+    "close",
+  ]);
+  assert.equal(fixture.state.probeCount, 0);
+});
+
+for (const choice of ["", "s", "q", null]) {
+  await test(`enhancement readiness pause ${String(choice)} retains completed startup and live capabilities`, async (t) => {
+    const fixture = await implementationRun(t);
+    const counts = {
+      factories: 0,
+      monitors: 0,
+      commands: 0,
+      waits: 0,
+      stops: 0,
+    };
+    let bound!: import("../../src/terminal.ts").TerminalIO;
+    const dependencies = {
+      ...fixture.dependencies,
+      enhancements: {
+        "custom-agent": {
+          contractVersion: 2 as const,
+          async createEnhancement(
+            io: import("../../src/terminal.ts").TerminalIO,
+          ) {
+            counts.factories++;
+            bound = io;
+            return {
+              async startMonitoring() {
+                counts.monitors++;
+              },
+              async waitUntilReady() {
+                if (++counts.waits === 1) throw new Error("not ready yet");
+                return "native-ready";
+              },
+              onAssignment() {
+                return;
+              },
+              async stop() {
+                counts.stops++;
+                assert.equal(
+                  fixture.state.tabOptions[0]!.signal?.aborted,
+                  true,
+                );
+              },
+            };
+          },
+        },
+      },
+    };
+    fixture.dependencies.terminalPlugin.execute = async () => {
+      counts.commands++;
+    };
+    fixture.dependencies.operator.pause = async (message) => {
+      assert.match(message, /Agent readiness failed: not ready yet/);
+      assert.equal(fixture.state.tabOptions[0]!.signal?.aborted, false);
+      assert.equal(counts.stops, 0);
+      assert.equal(fixture.state.taskCount, 0);
+      assert.equal(await bound.read(), "visible screen");
+      return choice;
+    };
+    const result = await executeCli(implementationCommand, dependencies);
+    assert.equal(
+      result.summary.outcome,
+      choice === "" || choice === "s" ? "incomplete" : "cancelled",
+    );
+    assert.deepEqual(counts, {
+      factories: 1,
+      monitors: 1,
+      commands: 1,
+      waits: choice === "" ? 2 : 1,
+      stops: 1,
+    });
+    assert.equal(fixture.state.taskCount, choice === "" ? 1 : 0);
+    assert.equal(fixture.state.closedTabs.length, choice === "" ? 1 : 0);
+  });
+}

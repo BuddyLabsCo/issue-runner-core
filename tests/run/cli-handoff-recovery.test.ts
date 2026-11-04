@@ -171,3 +171,74 @@ await test("restart ignores a superseded final and an active temporary file unti
   assert.deepEqual(recovered.superseded, saved.superseded);
   assert.equal(recovered.execution_id, saved.execution_id);
 });
+
+await test("enhancement recovery uses Core wording and correction Assignments expire on acceptance", async (t) => {
+  const fixture = await implementationRun(t);
+  const assignments: { id: string; expectedFile: string }[] = [];
+  let recover!: import("../../src/terminal.ts").RequestRecovery;
+  const texts: string[] = [];
+  let recovery: Promise<void> | undefined;
+  const submit = fixture.dependencies.terminalPlugin.onInput.bind(
+    fixture.dependencies.terminalPlugin,
+  );
+  fixture.dependencies.terminalPlugin.onInput = async (tab, text, key) => {
+    texts.push(text);
+    if (text.startsWith("Continue unfinished work")) return;
+    await submit(tab, text, key);
+  };
+  fixture.state.onTask = async (file) => {
+    recovery = recover(assignments[0]!.id);
+    await publish(file, { bad: "handoff" });
+  };
+  fixture.state.onCorrection = async (file) => {
+    await recover(assignments[0]!.id);
+    fixture.state.evidence.commits = committed().commits;
+    await publish(file, committed());
+  };
+  const dependencies = {
+    ...fixture.dependencies,
+    enhancements: {
+      "custom-agent": {
+        contractVersion: 2 as const,
+        async createEnhancement(
+          _io: import("../../src/terminal.ts").TerminalIO,
+          callback: import("../../src/terminal.ts").RequestRecovery,
+        ) {
+          recover = callback;
+          return {
+            async startMonitoring() {
+              return;
+            },
+            async waitUntilReady() {
+              return "native";
+            },
+            onAssignment(a: { id: string; expectedFile: string }) {
+              assignments.push(a);
+            },
+            async stop() {
+              await recover(assignments.at(-1)!.id);
+            },
+          };
+        },
+      },
+    },
+  };
+  assert.match(
+    (
+      await executeCli(implementationCommand, dependencies)
+    ).summary.reasons.join(" "),
+    /CI-ready/,
+  );
+  await recovery;
+  assert.equal(assignments.length, 2);
+  assert.notEqual(assignments[0]!.id, assignments[1]!.id);
+  assert.notEqual(assignments[0]!.expectedFile, assignments[1]!.expectedFile);
+  const recoveries = texts.filter((text) =>
+    text.startsWith("Continue unfinished work"),
+  );
+  assert.equal(recoveries.length, 1);
+  assert.ok(
+    recoveries[0]!.includes(JSON.stringify(assignments[0]!.expectedFile)),
+  );
+  assert.ok(!recoveries[0]!.includes(assignments[1]!.expectedFile));
+});

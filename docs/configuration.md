@@ -64,9 +64,11 @@ terminalPlugins: {}
 ```
 
 Core owns `terminalPlugins.agentStartDelay`: finite nonnegative seconds, at most
-2147483.647, default ten. It waits after command submission before Probe or task input.
+2147483.647, default ten. The base workflow waits after command submission before
+Probe or task input.
 `terminalPlugins.enhancements` is an object, default `{}`. Its Agent-specific values
-remain unknown and are reserved for enhancement validation when activation is added.
+remain unknown and pass unchanged to a resolved enhancement factory for validation.
+Installed enhancement selection remains separate work.
 Other terminal-owned values remain unchanged. No enhancement is required for base startup.
 The terminal adapter need not interpret these generic settings.
 Plugin configuration remains part of the original configuration bytes hashed for recovery.
@@ -740,7 +742,8 @@ Unknown or obsolete fields are rejected at every Runner-owned object.
 - Each configured Agent profile requires a nonempty opaque `agent` string. Core
   preserves it unchanged, without defaults, brand inference, command parsing, or
   enhancement installation checks. Agent selection stays in Core. Every role passes
-  only terminal context, the effective submit key, and Run signal to `createTab`.
+  only terminal context, the effective submit key, and a per-tab cancellation signal
+  linked to Run cancellation to `createTab`.
 - Each Agent purpose has complete nonempty `start` and `resume` shell-command
   strings. `resume` must contain exactly spelled `{sessionref}` at least once.
   Authors supply shell quoting and all native flags. Core does not choose a
@@ -749,7 +752,8 @@ Unknown or obsolete fields are rejected at every Runner-owned object.
   outside the optional opaque native `options` object. Omission uses Enter.
   The obsolete `model` and `reasoningEffort` profile fields are rejected.
 - Core owns `terminalPlugins.agentStartDelay` (ten seconds by default), applied
-  after command submission. `startupDelaySeconds` remains unsupported.
+  after command submission in the base workflow. Resolved enhancements instead
+  establish readiness through their lifecycle. `startupDelaySeconds` remains unsupported.
 
 - `implement`, `ciRepair`, and `conflictRepair` profiles are required. Review
   defaults enabled, requiring its profile and nonempty `prompts/review.md`.

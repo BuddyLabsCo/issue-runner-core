@@ -1,3 +1,6 @@
+/* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import { executeCli } from "../../src/cli.ts";
+import { implementationCommand } from "../support/implementation-run.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { access } from "node:fs/promises";
@@ -218,3 +221,151 @@ await test("cancellation after accepted implementation retains completion for a 
   assert.equal((await fixture.snapshot()).execution_id, saved.execution_id);
   assert.deepEqual((await fixture.snapshot()).result, saved.result);
 });
+
+await test("cancellation leaves a pending enhancement factory behind and cleans its eventual instance", async (t) => {
+  const fixture = await implementationRun(t);
+  const entered = deferred<void>();
+  const factory = deferred<import("../../src/terminal.ts").Enhancement>();
+  const stopped = deferred<void>();
+  const dependencies = {
+    ...fixture.dependencies,
+    enhancements: {
+      "custom-agent": {
+        contractVersion: 2 as const,
+        async createEnhancement() {
+          entered.resolve();
+          return factory.promise;
+        },
+      },
+    },
+  };
+  const running = executeCli(implementationCommand, dependencies);
+  await entered.promise;
+  fixture.controller.abort();
+  assert.equal((await running).summary.outcome, "cancelled");
+  assert.equal(fixture.state.tabOptions[0]!.signal?.aborted, true);
+  factory.resolve({
+    async startMonitoring() {
+      assert.fail("late monitoring");
+    },
+    async waitUntilReady() {
+      assert.fail("late readiness");
+    },
+    onAssignment() {
+      assert.fail("late Assignment");
+    },
+    async stop() {
+      stopped.resolve();
+    },
+  });
+  await stopped.promise;
+  assert.equal(fixture.state.submissions.length, 0);
+  assert.equal(fixture.state.closedTabs.length, 0);
+});
+
+for (const phase of ["monitoring", "readiness"] as const) {
+  await test(`cancellation during enhancement ${phase} revokes I/O before cleanup and retains the Agent`, async (t) => {
+    const fixture = await implementationRun(t);
+    const entered = deferred<void>();
+    const pending = deferred<void>();
+    let stops = 0;
+    let commands = 0;
+    fixture.dependencies.terminalPlugin.execute = async () => {
+      commands++;
+    };
+    const dependencies = {
+      ...fixture.dependencies,
+      enhancements: {
+        "custom-agent": {
+          contractVersion: 2 as const,
+          async createEnhancement() {
+            return {
+              async startMonitoring() {
+                if (phase === "monitoring") {
+                  entered.resolve();
+                  await pending.promise;
+                }
+              },
+              async waitUntilReady() {
+                entered.resolve();
+                await pending.promise;
+                return "native";
+              },
+              onAssignment() {
+                assert.fail("cancelled Assignment");
+              },
+              async stop() {
+                assert.equal(
+                  fixture.state.tabOptions[0]!.signal?.aborted,
+                  true,
+                );
+                stops++;
+              },
+            };
+          },
+        },
+      },
+    };
+    const running = executeCli(implementationCommand, dependencies);
+    await entered.promise;
+    fixture.controller.abort();
+    assert.equal((await running).summary.outcome, "cancelled");
+    pending.resolve();
+    assert.equal(stops, 1);
+    assert.equal(commands, phase === "monitoring" ? 0 : 1);
+    assert.equal(fixture.state.taskCount, 0);
+    assert.equal(fixture.state.closedTabs.length, 0);
+  });
+}
+
+for (const failure of ["factory", "cleanup"] as const) {
+  await test(`late enhancement ${failure} failure is reported after cancelled startup`, async (t) => {
+    const fixture = await implementationRun(t);
+    const entered = deferred<void>();
+    const pending = deferred<import("../../src/terminal.ts").Enhancement>();
+    const reported = deferred<void>();
+    const write = fixture.dependencies.operator.write.bind(
+      fixture.dependencies.operator,
+    );
+    fixture.dependencies.operator.write = (message) => {
+      write(message);
+      if (message.includes(`late ${failure} failure`)) reported.resolve();
+    };
+    const dependencies = {
+      ...fixture.dependencies,
+      enhancements: {
+        "custom-agent": {
+          contractVersion: 2 as const,
+          async createEnhancement() {
+            entered.resolve();
+            return pending.promise;
+          },
+        },
+      },
+    };
+    const running = executeCli(implementationCommand, dependencies);
+    await entered.promise;
+    fixture.controller.abort();
+    assert.equal((await running).summary.outcome, "cancelled");
+    if (failure === "factory")
+      pending.reject(new Error("late factory failure"));
+    else
+      pending.resolve({
+        async startMonitoring() {
+          assert.fail("late monitoring");
+        },
+        async waitUntilReady() {
+          assert.fail("late readiness");
+        },
+        onAssignment() {
+          assert.fail("late Assignment");
+        },
+        async stop() {
+          throw new Error("late cleanup failure");
+        },
+      });
+    await reported.promise;
+    assert.equal(fixture.state.submissions.length, 0);
+    assert.equal(fixture.state.closedTabs.length, 0);
+  });
+}

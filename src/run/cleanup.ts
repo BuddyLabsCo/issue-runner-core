@@ -23,20 +23,7 @@ export function executionTerminal(input: {
         async () => {
           const tab = await plugin.createTab(options);
           ownedTabs.add(tab.handle);
-          return {
-            handle: tab.handle,
-            io: {
-              read: () => tab.io.read(),
-              sendKeys: (keys) => tab.io.sendKeys(keys),
-              submitText: (text) =>
-                read(
-                  "submit_text",
-                  `ticket:${progress.ticket}:${progress.phase}`,
-                  () => tab.io.submitText(text),
-                  { retry: "never" },
-                ),
-            },
-          };
+          return tab;
         },
         { retry: "manual" },
       ),
@@ -69,6 +56,13 @@ export function executionTerminal(input: {
   };
   return {
     terminal,
+    submitText: (action: () => Promise<void>) =>
+      read(
+        "submit_text",
+        `ticket:${progress.ticket}:${progress.phase}`,
+        action,
+        { retry: "never" },
+      ),
     async closeResidual() {
       for (const tab of ownedTabs)
         await read("cleanup_tab", `ticket:${progress.ticket}`, () =>

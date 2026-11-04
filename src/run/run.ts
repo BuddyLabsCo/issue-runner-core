@@ -39,6 +39,9 @@ export interface RunContext {
   operator: OperatorIO;
   git: GitWorkspace;
   terminal: TerminalPlugin;
+  enhancements?: Readonly<
+    Record<string, import("../terminal.ts").EnhancementModule>
+  >;
   signal?: AbortSignal;
   retained?: Map<string, ImplementationProgress | undefined>;
   reports?: TicketReport[];
@@ -164,18 +167,7 @@ async function executeProject(
               const tab = await terminal.createTab(options);
               return {
                 handle: tab.handle,
-                io: {
-                  read: () => tab.io.read(),
-                  sendKeys: (keys) => tab.io.sendKeys(keys),
-                  submitText: (text) =>
-                    operator.advance(() =>
-                      boundedOperation(
-                        () => tab.io.submitText(text),
-                        "terminal submitText; delivery is uncertain",
-                        signal,
-                      ),
-                    ),
-                },
+                io: tab.io,
               };
             },
             `terminal createTab ${options.label}`,

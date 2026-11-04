@@ -30,15 +30,27 @@ tests/
 - Terminal packages own commands and terminal I/O. Core registers no executable;
   `issue-runner-core/cli` exports only `runCli` and `CliOptions`. Importing it is inert.
   `cli.ts` receives the canonical command identity and validates startup before
-  invoking the supplied lazy factory. Core owns generic enhancement configuration;
-  discovery and lifecycle activation are separate follow-up work. Terminal adapters
+  invoking the supplied lazy factory. Core owns generic enhancement configuration and
+  lifecycle orchestration; installed discovery remains follow-up work. Terminal adapters
   own terminal I/O. CLI accepts the terminal package root and CLI entry identity.
 - Dependencies: CLI wires `run/ -> agent/ -> TerminalPlugin`. Use existing
   Tracker/CodeHost/GitWorkspace/Clock/OperatorIO contracts; only entry wiring imports
   concrete adapters.
-- `agent/` submits configured commands through `execute`, waits the Core-owned base
-  delay, and establishes identity through Probe or validates saved resume identity.
-  Assignment metadata and recovery wording never enter the terminal contract.
+- `agent/conversation.ts` owns each Runner Tab's startup phases, Assignment,
+  cancellation capability, input sequencing, and enhancement cleanup. It receives
+  resolved enhancement modules through internal dependencies, never installation paths.
+  Preflight and monitoring precede command submission; readiness and native identity
+  validation precede task dispatch. Missing modules use the base delay and Probe.
+- Enhancements receive the adapter's unchanged bound I/O and a separate recovery
+  callback. Core retains Assignment IDs, expected files, and recovery wording.
+  Assignment changes and accepted recovery share a per-tab queue through actual
+  adapter submission. Stale recovery succeeds without input.
+- `agent/stage.ts` owns prompts, handoff validation, exact native resume validation,
+  and generic Operator Pause on readiness rejection. Retry retains completed startup.
+  Cancellation or terminal failure revokes automatic I/O before cleanup; failed
+  cleanup retains the interactive tab. Late factories transfer instances only for
+  cleanup. Successful cleanup is idempotent, failed cleanup is retryable, and
+  cleanup failures are reported separately from operational failures.
 - `run/` owns acceptance and remote mutations; `agent/` owns conversation mechanics.
   Adapters provide operations and facts, not workflow decisions.
 - `run/documentation.ts` owns Maintenance Ticket occurrences and their
