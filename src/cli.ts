@@ -8,6 +8,7 @@ import { hashRunInput } from "./recovery.ts";
 import { GitHubTracker } from "./adapters/github-tracker.ts";
 import { GitHubCodeHost } from "./adapters/github-code-host.ts";
 import { LocalGitWorkspace } from "./adapters/git-workspace.ts";
+import { discoverEnhancements } from "./adapters/enhancement-discovery.ts";
 import { loadTerminalPlugin } from "./adapters/terminal-plugin.ts";
 import type {
   Tracker,
@@ -248,6 +249,13 @@ export async function executeRun(
     )
       throw new Error("issueList must not be empty for value-less --issue");
     targetBranch = loaded.config.targetBranch ?? "unresolved";
+    const enhancements =
+      dependencies.enhancements ??
+      (await discoverEnhancements(
+        dependencies,
+        Object.values(loaded.config.agents).map((profile) => profile.agent),
+        (message) => dependencies.operator.write(message),
+      ));
     const terminalPlugin = await loadTerminalPlugin(
       dependencies.commandName,
       dependencies.terminal,
@@ -295,9 +303,7 @@ export async function executeRun(
           dependencies.gitWorkspace ??
           new LocalGitWorkspace(loaded.codeHostToken),
         terminal: terminalPlugin,
-        ...(dependencies.enhancements
-          ? { enhancements: dependencies.enhancements }
-          : {}),
+        enhancements,
         ...(dependencies.signal === undefined
           ? {}
           : { signal: dependencies.signal }),

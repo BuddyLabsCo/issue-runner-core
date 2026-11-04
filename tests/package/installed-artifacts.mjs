@@ -6,10 +6,13 @@ import {
   readFileSync,
   readdirSync,
   statSync,
+  rmSync,
+  writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { installEnhancement } from "../fixtures/enhancement-installation.mjs";
 
 /**
  * @param {import("node:test").TestContext} t
@@ -36,10 +39,11 @@ export async function testInstalledArtifacts(
       assert.equal(executables.length, 1);
       assert.ok(executables[0]);
       const executable = join(prefix, executables[0]);
-      /** @param {string[]} args */
-      const cli = (args) =>
+      /** @param {string[]} args @param {NodeJS.ProcessEnv} [env] */
+      const cli = (args, env = process.env) =>
         execFileSync(windows ? `"${executable}"` : executable, args, {
           cwd: launch,
+          env,
           encoding: "utf8",
           timeout: 30_000,
           // Windows needs a shell to execute npm's .cmd shim; quote paths with spaces.
@@ -64,6 +68,58 @@ export async function testInstalledArtifacts(
         "prompts/documentation.md",
       ])
         assert.ok(existsSync(join(launch, "demo", file)), file);
+
+      const terminalFile = join(plugin, "terminal.js");
+      const original = readFileSync(terminalFile, "utf8");
+      const enhancement = join(dirname(plugin), "issue-runner-agent-codebuddy");
+      try {
+        writeFileSync(
+          terminalFile,
+          'export const contractVersion = 2; export function createTerminalPlugin() { throw new Error("terminal factory reached"); }',
+        );
+        for (const mode of ["absent", "mismatch", "broken"]) {
+          if (mode !== "absent")
+            installEnhancement(
+              dirname(plugin),
+              mode === "mismatch"
+                ? 'export const contractVersion = 99; export function createEnhancement() { throw new Error("mismatched factory invoked"); }'
+                : 'throw new Error("installed import failure");',
+              "codebuddy",
+            );
+          assert.throws(
+            () =>
+              cli(["run", "--project", "demo", "--parent", "48"], {
+                ...process.env,
+                GH_TOKEN: "fixture-token",
+              }),
+            (error) => {
+              assert.ok(
+                error && typeof error === "object" && "stdout" in error,
+              );
+              const output = String(error.stdout);
+              if (mode === "broken") {
+                assert.match(
+                  output,
+                  /Unable to load issue-runner-agent-codebuddy: installed import failure/,
+                );
+                assert.doesNotMatch(output, /terminal factory reached/);
+              } else {
+                assert.match(output, /terminal factory reached/);
+                assert.doesNotMatch(output, /mismatched factory invoked/);
+                if (mode === "mismatch")
+                  assert.match(
+                    output,
+                    /Skipping issue-runner-agent-codebuddy.*contractVersion 99.*base startup/,
+                  );
+              }
+              return true;
+            },
+          );
+        }
+      } finally {
+        writeFileSync(terminalFile, original);
+        rmSync(enhancement, { recursive: true, force: true });
+      }
     },
   );
   await t.test(

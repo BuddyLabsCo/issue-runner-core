@@ -31,7 +31,9 @@ tests/
   `issue-runner-core/cli` exports only `runCli` and `CliOptions`. Importing it is inert.
   `cli.ts` receives the canonical command identity and validates startup before
   invoking the supplied lazy factory. Core owns generic enhancement configuration and
-  lifecycle orchestration; installed discovery remains follow-up work. Terminal adapters
+  lifecycle orchestration. `adapters/enhancement-discovery.ts` verifies the supplied
+  terminal installation and loads optional same-prefix modules; CLI wires them into
+  the shared Agent workflow. It never initializes enhancement instances. Terminal adapters
   own terminal I/O. CLI accepts the terminal package root and CLI entry identity.
 - Dependencies: CLI wires `run/ -> agent/ -> TerminalPlugin`. Use existing
   Tracker/CodeHost/GitWorkspace/Clock/OperatorIO contracts; only entry wiring imports

@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import { terminalInstallation } from "../fixtures/enhancement-installation.mjs";
 import { executeCli } from "../../src/cli.ts";
 import { createCliDependencies } from "../support/cli-dependencies.ts";
 import { createProject, validConfig } from "../support/cli-project.ts";
@@ -176,6 +177,7 @@ await test("public CLI import is inert and exports only runCli", () => {
 await test("public process entry handles signals after a pending factory and removes only its listeners", async (t) => {
   for (const signal of ["SIGINT", "SIGTERM"]) {
     const { root, directory } = await createProject(t);
+    const installation = terminalInstallation(path.join(root, "global prefix"));
     const child = spawnSync(
       process.execPath,
       [
@@ -196,7 +198,7 @@ await test("public process entry handles signals after a pending factory and rem
       const started = new Promise(resolve => { entered = resolve; });
       const run = runCli({
         commandName: "generic-terminal", commandVersion: "2.3.4",
-        terminalPackageRoot: process.cwd(), terminalCliEntry: process.execPath,
+        ...${JSON.stringify(installation)},
         terminal: {
           contractVersion: 2,
           async createTerminalPlugin(config) {
@@ -239,6 +241,7 @@ await test("public process entry handles signals after a pending factory and rem
 
 await test("public entry sets exitCode for success and handled failures and cleans listeners each time", async (t) => {
   const { root } = await createProject(t);
+  const installation = terminalInstallation(path.join(root, "global prefix"));
   const child = spawnSync(
     process.execPath,
     [
@@ -251,7 +254,7 @@ await test("public entry sets exitCode for success and handled failures and clea
     let calls = 0;
     const options = {
       commandName: "generic-terminal", commandVersion: "2.3.4",
-        terminalPackageRoot: process.cwd(), terminalCliEntry: process.execPath,
+        ...${JSON.stringify(installation)},
       terminal: { contractVersion: 2, async createTerminalPlugin() { calls++; throw new Error("factory rejected"); } }
     };
     for (const [args, expected, factories] of [

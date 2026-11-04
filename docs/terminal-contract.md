@@ -11,8 +11,8 @@ wait the configured delay, then establish native identity through a Session Prob
 Resume substitutes the exact saved native reference into the configured command.
 Core retains Agent selection, handoff validation, Assignment metadata, recovery
 wording, Operator Pause, and delivery policy. Terminal adapters own terminal I/O.
-Core also orchestrates resolved enhancements through internal dependencies. Installed
-selection remains follow-up work; base operation requires no enhancement.
+Core discovers optional enhancements from the executing terminal's verified global
+prefix and orchestrates them through internal dependencies. Base operation requires no enhancement.
 These repository checks do not establish native E2E acceptance.
 
 ## Build and identify a development artifact
@@ -108,7 +108,7 @@ await runCli(options);
 `terminalPackageRoot`, and `terminalCliEntry`. The last two are absolute real paths
 to the executing terminal package root and its CLI entry file. This example places
 the entry at the package root; adapt the root calculation to the package layout.
-These identities anchor later enhancement discovery, including nested Core installs.
+Core verifies these identities before enhancement discovery, including nested Core installs.
 Locations and versions remain outside the recovery input hash.
 `runCli(options)` returns `Promise<void>`.
 `executeCli`, `executeRun`, `CliDependencies`, and `CliResult` are internal and
@@ -135,8 +135,42 @@ contract and callable factory, then calls it once with the complete configured
 and missing or non-callable terminal methods. Errors identify the command and
 preserve useful causes. Validation and the cancellation checkpoint precede audit,
 Run state and workflow effects. `--env` and terminal discovery are unsupported.
-Core owns generic enhancement configuration and lifecycle orchestration. Installed
-selection follows separately, without a public module-path option.
+Core owns enhancement discovery, configuration, and lifecycle orchestration.
+There is no public module-path option.
+
+## Installed enhancement discovery
+
+For Runs, Core validates the terminal package's manifest name against its installed
+location, the `commandName` bin declaration, and the supplied real CLI entry.
+It requires a matching launcher in that prefix. Supported layouts are
+`<prefix>/lib/node_modules` with a Unix `bin/<command>` symlink and
+`<prefix>/node_modules` with npm's Windows `<command>.cmd` shim.
+The package name and executable may differ; scoped terminal packages are supported.
+Help, version, and init do not perform discovery.
+
+For each configured Agent, Core looks for `issue-runner-agent-<agent>` directly
+in the verified global modules directory. An absent package retains base startup.
+An opaque Agent identifier that cannot form this package name also retains base startup.
+Node resolves the package's import entry from that prefix, including `import` exports.
+The resolved package and entry must remain inside the expected same-prefix package;
+path traversal, symlink escapes, and dangling installations fail startup.
+Core's own installation, task cwd, project-local packages, and other npm prefixes
+are not discovery anchors. There is no configurable external package path.
+
+The imported module must export a positive safe-integer `contractVersion` and
+callable `createEnhancement`. A different valid enhancement contract emits a
+command diagnostic and skips the factory, retaining base startup. Malformed
+exports, invalid entries, and import failures remain errors. Compatibility uses
+`enhancementContractVersion`, independently of the terminal contract and npm version.
+Importing a module can execute its top-level code; validation is not a sandbox
+or a pre-import metadata check.
+
+Discovery returns modules, without creating instances. Core passes each selected
+module and `terminalPlugins.enhancements[agent]` to the shared Agent workflow.
+Factory and lifecycle failures retain the existing error reporting and tab cleanup
+rules below. Herdr supplies terminal behavior and installation identity; it does
+not discover or orchestrate enhancements. Companion contracts remain v2, with no
+publication requirement or prescribed release order.
 
 ## Public types
 
@@ -258,7 +292,8 @@ A resolved module replaces base delay/Probe with preflight, monitoring, command
 submission, and readiness. Core validates the returned native reference before
 persisting it or dispatching work; resumed references must match exactly.
 Implementation, Review, Review fixes, both repairs, and documentation share this path.
-Installed module discovery belongs outside the Agent layer and remains separate work.
+The CLI wires modules resolved by the discovery adapter into this shared path.
+Discovery does not call factories or cache instances across Runner Tabs.
 
 Readiness rejection enters generic Operator Pause. Enter retries readiness on the
 same instance and tab, preserving completed preflight, monitoring, and command
@@ -319,7 +354,10 @@ or init try to create a terminal.
 The checks compile representative CLI, Terminal and Enhancement consumers using
 public entries. They exercise opaque control, bound I/O through the installed
 execution wrapper, and the separate Assignment-aware recovery callback.
-No enhancement package is installed. They verify templates, bundled prompts,
+Enhancement package fixtures exercise both global layouts, nested Core, decoys,
+launcher/entry containment, mismatch fallback, and import/export failures. A valid
+module reaches the shared workflow with an independent instance per tab.
+The checks also verify templates, bundled prompts,
 and the manually installable `skills/issue-runner-handoff/SKILL.md` asset.
 Temporary paths include spaces and are removed after the checks.
 No registry publication, Herdr, Agent account or model call is required.
