@@ -72,7 +72,7 @@ async function globalModules(
   if (
     !contained(root, cli) ||
     !(await stat(cli)).isFile() ||
-    !contained(root, path.resolve(terminalCliEntry)) ||
+    !contained(terminalPackageRoot, path.resolve(terminalCliEntry)) ||
     (await realpath(terminalCliEntry)) !== cli
   )
     throw new Error(

@@ -200,10 +200,33 @@ export async function testEnhancements(
     });
     check(installation, `assert.deepEqual(Object.keys(await discover()), []);`);
   });
+  await t.test("terminal paths sharing a prefix alias are accepted", () => {
+    const installation = fresh();
+    installEnhancement(installation.modules);
+    const alias = `${installation.prefix}-alias`;
+    symlinkSync(
+      installation.prefix,
+      alias,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    installation.terminalPackageRoot = join(
+      alias,
+      "node_modules/generic-terminal",
+    );
+    installation.terminalCliEntry = join(
+      installation.terminalPackageRoot,
+      "command.mjs",
+    );
+    check(
+      installation,
+      `assert.deepEqual(Object.keys(await discover()), ["custom-agent"]);`,
+    );
+  });
   for (const invalid of [
     "name",
     "bin",
     "entry",
+    "external entry alias",
     "executable escape",
     "executable traversal",
     "entry symlink",
@@ -228,6 +251,14 @@ export async function testEnhancements(
       if (invalid === "bin") writeJson(manifest, { name: "generic-terminal" });
       if (invalid === "entry")
         installation.terminalCliEntry = join(outside, "index.mjs");
+      if (invalid === "external entry alias") {
+        symlinkSync(
+          installation.terminalPackageRoot,
+          join(outside, "terminal"),
+          process.platform === "win32" ? "junction" : "dir",
+        );
+        installation.terminalCliEntry = join(outside, "terminal/command.mjs");
+      }
       if (invalid === "executable traversal")
         writeJson(manifest, {
           name: "generic-terminal",
