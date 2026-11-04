@@ -40,7 +40,7 @@ function assertHandoffSkill(core) {
   assert.doesNotMatch(skill, /disable-model-invocation/u);
   assert.match(
     body,
-    /That request applies to the whole task, including continuation after a pause, unless the user cancels it\./u,
+    /That request remains active across pauses and user interruptions\.\nUse this skill when the task completes without requiring another explicit request\./u,
   );
   const [beforeCompletion, completion] = body.split("## Task complete");
   assert.ok(beforeCompletion && completion);

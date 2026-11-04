@@ -5,7 +5,8 @@ argument-hint: "<absolute-handoff-json-path>"
 ---
 
 Invoke this skill only when explicitly requested by name.
-That request applies to the whole task, including continuation after a pause, unless the user cancels it.
+That request remains active across pauses and user interruptions.
+Use this skill when the task completes without requiring another explicit request.
 Use the supplied Handoff path or explicit argument as the absolute path of the final JSON handoff file.
 
 ## Human action required
