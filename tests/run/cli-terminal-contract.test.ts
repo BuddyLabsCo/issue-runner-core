@@ -1,3 +1,8 @@
+/* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import {
+  implementationCommand,
+  implementationRun,
+} from "../support/implementation-run.ts";
 import assert from "node:assert/strict";
 import { readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -247,3 +252,101 @@ await test("generic settings retain boundary delays and unknown enhancement valu
     assert.deepEqual(deps.terminal.calls, [[terminalPlugins]]);
   }
 });
+
+for (const method of [
+  "startMonitoring",
+  "waitUntilReady",
+  "onAssignment",
+  "stop",
+]) {
+  await test(`invalid enhancement ${method} retains initialization error and reports usable cleanup failure`, async (t) => {
+    const fixture = await implementationRun(t);
+    let stops = 0;
+    const invalid: Record<string, unknown> = {
+      async startMonitoring() {
+        assert.fail("invalid monitoring");
+      },
+      async waitUntilReady() {
+        assert.fail("invalid readiness");
+      },
+      onAssignment() {
+        assert.fail("invalid Assignment");
+      },
+      async stop() {
+        stops++;
+        throw new Error("cleanup also failed");
+      },
+    };
+    invalid[method] = false;
+    const dependencies = {
+      ...fixture.dependencies,
+      enhancements: {
+        "custom-agent": {
+          contractVersion: 2 as const,
+          async createEnhancement() {
+            return invalid as unknown as import("../../src/terminal.ts").Enhancement;
+          },
+        },
+      },
+    };
+    const result = await executeCli(implementationCommand, dependencies);
+    assert.equal(result.summary.outcome, "failed");
+    assert.match(result.summary.failure!, /Invalid enhancement/);
+    assert.equal(stops, method === "stop" ? 0 : 1);
+    if (method !== "stop")
+      assert.match(
+        fixture.dependencies.messages.join(" "),
+        /Enhancement cleanup failed.*cleanup also failed/,
+      );
+    assert.equal(fixture.state.submissions.length, 0);
+    assert.equal(fixture.state.closedTabs.length, 0);
+  });
+}
+
+for (const identity of [
+  "",
+  "  ",
+  "latest",
+  "last",
+  "run_id",
+  "execution_id",
+  null,
+  42,
+]) {
+  await test(`enhancement identity ${String(identity)} cannot dispatch or persist an invalid native ref`, async (t) => {
+    const fixture = await implementationRun(t);
+    const dependencies = {
+      ...fixture.dependencies,
+      enhancements: {
+        "custom-agent": {
+          contractVersion: 2 as const,
+          async createEnhancement() {
+            return {
+              async startMonitoring() {
+                return;
+              },
+              async waitUntilReady() {
+                return (
+                  identity === "run_id" || identity === "execution_id"
+                    ? (await fixture.snapshot())[identity]
+                    : identity
+                ) as string;
+              },
+              onAssignment() {
+                assert.fail("invalid identity dispatched");
+              },
+              async stop() {
+                return;
+              },
+            };
+          },
+        },
+      },
+    };
+    fixture.dependencies.operator.pause = async () => "q";
+    await executeCli(implementationCommand, dependencies);
+    assert.equal(fixture.state.taskCount, 0);
+    assert.equal((await fixture.snapshot()).roles.implement, undefined);
+    assert.equal(fixture.state.closedTabs.length, 0);
+  });
+}

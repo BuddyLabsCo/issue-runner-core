@@ -1,3 +1,4 @@
+import { implementationRun } from "../support/implementation-run.ts";
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import assert from "node:assert/strict";
 import {
@@ -301,3 +302,43 @@ for (const document of [false, true]) {
     await assert.rejects(access(saved.invocation!.path), { code: "ENOENT" });
   });
 }
+
+await test("enhancement cleanup failure retries before closing without replaying accepted work", async (t) => {
+  const fixture = await implementationRun(t);
+  let stops = 0;
+  const dependencies = {
+    ...fixture.dependencies,
+    enhancements: {
+      "custom-agent": {
+        contractVersion: 2 as const,
+        async createEnhancement() {
+          return {
+            async startMonitoring() {
+              return;
+            },
+            async waitUntilReady() {
+              return "native-ready";
+            },
+            onAssignment() {
+              return;
+            },
+            async stop() {
+              assert.equal(fixture.state.closedTabs.length, 0);
+              assert.equal(fixture.state.tabOptions[0]!.signal?.aborted, true);
+              if (++stops === 1) throw new Error("retry cleanup");
+            },
+          };
+        },
+      },
+    },
+  };
+  assert.match(
+    (
+      await executeCli(implementationCommand, dependencies)
+    ).summary.reasons.join(" "),
+    /CI-ready/,
+  );
+  assert.equal(stops, 2);
+  assert.equal(fixture.state.taskCount, 1);
+  assert.equal(fixture.state.closedTabs.length, 1);
+});

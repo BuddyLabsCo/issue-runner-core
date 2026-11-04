@@ -27,7 +27,7 @@ The new execution path does not require Sandcastle.
 | Repository / intended package | Responsibility |
 | --- | --- |
 | `BuddyLabsCo/issue-runner-core` / `issue-runner-core` | Shared CLI/workflow policy, configuration, file handoffs, and public terminal contracts |
-| `BuddyLabsCo/issue-runner-herdr` / `issue-runner-herdr` | The `issue-runner-herdr` command, terminal I/O, and generic optional enhancement discovery |
+| `BuddyLabsCo/issue-runner-herdr` / `issue-runner-herdr` | The `issue-runner-herdr` command and terminal I/O |
 | Future environment plugins | Other multiplexer implementations, such as tmux, using the same contracts |
 
 Only the two named repositories are in the initial scope. A tmux plugin is a
@@ -109,7 +109,7 @@ Core validates run arguments and Project configuration before invoking the
 factory once with the complete `terminalPlugins` value. It validates the returned
 methods and checks cancellation before audit or workflow effects. Terminal and
 enhancement v2 contracts define opaque control and bound I/O. Core owns generic
-enhancement configuration; discovery and activation follow separately. Companion
+enhancement configuration and lifecycle orchestration; installed discovery follows separately. Companion
 packages must match the revised contracts.
 
 Recovery uses one identity for execution, Batch, and maintenance checkpoints and
@@ -317,7 +317,8 @@ associated Agent conversation report `sessionid=n/a`.
 The following must be specified and proven during implementation:
 
 - Base startup uses a configurable delay followed by Probe for new sessions.
-  Enhancement readiness and monitoring are separate follow-up work.
+  Resolved enhancements use Core-owned preflight, monitoring, readiness, and
+  Assignment recovery instead; see [orchestration rules](terminal-contract.md#enhanced-orchestration-and-recovery).
 - Input ordering when the operator is typing or has interrupted a turn, and
   when existing automatic continuation/correction becomes eligible.
 - Detecting an open terminal whose Agent has exited, and recovering without

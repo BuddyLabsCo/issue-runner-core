@@ -112,21 +112,22 @@ export async function testInstalledArtifacts(
         import { terminalModule, enhancementModule, events } from "./output/implementations.mjs";
         const { executionTerminal } = await import(${JSON.stringify(pathToFileURL(join(core, "dist/run/cleanup.js")).href)});
         const policies = [];
-        const terminal = executionTerminal({
+        const execution = executionTerminal({
           terminal: await terminalModule.createTerminalPlugin({}),
           progress: { ticket: 205, phase: "implementing" },
           async read(operation, target, action, settings) {
             policies.push([operation, settings?.retry]);
             return action();
           }
-        }).terminal;
+        });
+        const { terminal } = execution;
         const context = { cwd: process.cwd(), env: { CUSTOM: "literal $&" } };
         const options = { ...context, label: "consumer", submitKey: "Shift+Enter", signal: new AbortController().signal };
         const { handle: tab, io } = await terminal.createTab(options);
         assert.equal(await terminal.execute(tab, "configured start"), undefined);
         await terminal.execute(tab, "configured resume native/$&");
         assert.equal(await io.read(), "visible plain text");
-        await io.submitText("task");
+        await execution.submitText(() => io.submitText("task"));
         await io.sendKeys(["Control+C", "Right"]);
         await terminal.closeTab(tab);
         assert.deepEqual(events.splice(0), [

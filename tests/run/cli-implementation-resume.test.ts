@@ -266,3 +266,70 @@ await test("invalid retained output resumes only for correction and keeps its im
   assert.equal(accepted.execution_id, saved.execution_id);
   assert.equal(fixture.state.taskCount, 1);
 });
+
+for (const mismatch of [false, true]) {
+  await test(`enhanced resume ${mismatch ? "rejects mismatched" : "preserves exact"} native identity`, async (t) => {
+    const fixture = await implementationRun(t);
+    const native = "  opaque/$&/$`/$'/native  ";
+    fixture.state.onProbe = async (assignment) =>
+      publish(String(assignment.path), { sessionid: native });
+    fixture.state.onTask = async () => fixture.controller.abort();
+    await fixture.run();
+    const saved = await fixture.snapshot();
+    let commands = 0;
+    let assignments = 0;
+    let recover!: import("../../src/terminal.ts").RequestRecovery;
+    let current = "";
+    fixture.dependencies.terminalPlugin.execute = async (_tab, command) => {
+      assert.equal(command, `any-cli --resume "${native}"`);
+      commands++;
+      throw new Error("possibly delivered");
+    };
+    fixture.dependencies.operator.pause = async (message) => {
+      if (message.includes("delivery is uncertain")) return "";
+      assert.equal(mismatch, true);
+      return "q";
+    };
+    fixture.dependencies.terminalPlugin.onInput = async (_tab, text) => {
+      assert.equal(text, "continue");
+      fixture.state.evidence.commits = committed().commits;
+      await publish(saved.invocation!.path, committed());
+    };
+    const dependencies = {
+      ...fixture.dependencies,
+      signal: new AbortController().signal,
+      enhancements: {
+        "custom-agent": {
+          contractVersion: 2 as const,
+          async createEnhancement(
+            _io: import("../../src/terminal.ts").TerminalIO,
+            callback: import("../../src/terminal.ts").RequestRecovery,
+          ) {
+            recover = callback;
+            return {
+              async startMonitoring(ref?: string) {
+                assert.equal(ref, native);
+              },
+              async waitUntilReady() {
+                return mismatch ? "another-native" : native;
+              },
+              onAssignment(a: { id: string; expectedFile: string }) {
+                assignments++;
+                current = a.id;
+                assert.equal(a.expectedFile, saved.invocation!.path);
+              },
+              async stop() {
+                await recover(current);
+              },
+            };
+          },
+        },
+      },
+    };
+    const result = await executeCli(implementationCommand, dependencies);
+    assert.equal(commands, 1);
+    assert.equal(assignments, mismatch ? 0 : 1);
+    assert.equal((await fixture.snapshot()).roles.implement!.sessionid, native);
+    if (!mismatch) assert.match(result.summary.reasons.join(" "), /CI-ready/);
+  });
+}

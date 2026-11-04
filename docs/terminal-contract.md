@@ -11,8 +11,9 @@ wait the configured delay, then establish native identity through a Session Prob
 Resume substitutes the exact saved native reference into the configured command.
 Core retains Agent selection, handoff validation, Assignment metadata, recovery
 wording, Operator Pause, and delivery policy. Terminal adapters own terminal I/O.
-Enhancement discovery and activation are separate follow-up work; base operation
-requires no enhancement. These repository checks do not establish native E2E acceptance.
+Core also orchestrates resolved enhancements through internal dependencies. Installed
+selection remains follow-up work; base operation requires no enhancement.
+These repository checks do not establish native E2E acceptance.
 
 ## Build and identify a development artifact
 
@@ -118,7 +119,7 @@ no process handlers. Calling `runCli` reads process argv, cwd and environment,
 constructs the operator and AbortController, and wires SIGINT/SIGTERM to abort.
 Its `finally` removes the listeners. Success sets `process.exitCode` to 0;
 handled failures and cancellation set it to 1 without forced termination.
-A pending factory is awaited before the cancellation checkpoint.
+A pending terminal-plugin factory is awaited before the cancellation checkpoint.
 Existing reports and retained-resource behavior remain part of Core's workflow.
 
 Help, usage errors and init follow-up commands use `commandName`. Version output
@@ -134,7 +135,8 @@ contract and callable factory, then calls it once with the complete configured
 and missing or non-callable terminal methods. Errors identify the command and
 preserve useful causes. Validation and the cancellation checkpoint precede audit,
 Run state and workflow effects. `--env` and terminal discovery are unsupported.
-Core owns generic enhancement configuration; discovery and activation follow separately.
+Core owns generic enhancement configuration and lifecycle orchestration. Installed
+selection follows separately, without a public module-path option.
 
 ## Public types
 
@@ -224,8 +226,8 @@ argument, or recovery-text argument. `sendKeys` sends ordered logical chords.
 Unsupported chords reject rather than fall back. I/O alone grants neither command
 execution nor tab closure to an enhancement.
 
-After command submission, Core waits `terminalPlugins.agentStartDelay` seconds
-(default ten). New conversations use the existing identity-only Probe and correction
+Without an enhancement, Core waits `terminalPlugins.agentStartDelay` seconds
+(default ten) after command submission. New conversations use the existing identity-only Probe and correction
 flow. A retained Probe can establish identity before exact resume. Saved identities
 reject empty refs, `latest`/`last`, and Runner Run/execution IDs. Base resume uses the
 validated saved reference without a fresh Probe; the terminal cannot report identity.
@@ -243,9 +245,59 @@ The enhancement factory takes bound I/O, this callback, cwd/env context, and unk
 configuration, in that order. `startMonitoring(sessionref?)`, repeatable
 `waitUntilReady(): Promise<string>`, synchronous `onAssignment({ id, expectedFile })`,
 and asynchronous `stop()` form the lifecycle. Assignment IDs distinguish dispatches
-even when a handoff path is reused. Recovery wording stays in Core. These public
-types allow companion packages to compile; this base migration does not activate
-an enhancement or dispatch recovery callbacks.
+even when a handoff path is reused. Recovery wording stays in Core.
+
+Core creates one instance per Runner Tab, passing the adapter's unchanged bound I/O,
+the callback, cwd/env, and `terminalPlugins.enhancements[agent]` unchanged. It
+validates all four methods before use. An invalid instance's callable `stop` is
+still attempted; initialization and cleanup errors are reported separately.
+
+## Enhanced orchestration and recovery
+
+A resolved module replaces base delay/Probe with preflight, monitoring, command
+submission, and readiness. Core validates the returned native reference before
+persisting it or dispatching work; resumed references must match exactly.
+Implementation, Review, Review fixes, both repairs, and documentation share this path.
+Installed module discovery belongs outside the Agent layer and remains separate work.
+
+Readiness rejection enters generic Operator Pause. Enter retries readiness on the
+same instance and tab, preserving completed preflight, monitoring, and command
+submission. Pause alone leaves capabilities active. Uncertain command delivery is
+never replayed on continuation. Skip, exit, and cancellation retain the interactive tab.
+
+Every task, continuation, correction, and applicable Probe gets a fresh Assignment
+ID, even when its expected file repeats. Core retains its expected file and recovery
+text, and calls synchronous `onAssignment` immediately before task input. Readiness
+markers and recovery input do not allocate Assignments.
+
+`requestRecovery(id)` accepts only the current live Assignment on that instance.
+It submits the retained wording and resolves after adapter submission; real input
+errors reject. Unknown, superseded, accepted, or revoked Assignments succeed without
+input or retries. Assignment changes and recovery share Core's per-tab queue until
+actual adapter input settles, including time waiting in the adapter's own queue.
+A Core timeout cannot release that sequencing while underlying input remains pending.
+Handoff acceptance invalidates the Assignment before persistence and closure.
+
+Core gives each tab a creation-time cancellation signal combining Run cancellation
+and local revocation. Cancellation, terminal failure, and close preparation revoke
+bound automatic I/O and recovery before enhancement cleanup. Adapters must check
+this signal when queued input starts: revoked work performs no input. Cancellation
+allows an already-started complete text/key sequence to settle; subsequent input
+cannot begin. This does not roll back effects or suppress real backend failures.
+Ordinary enhancement reads and input remain adapter operations, not Core forwarding.
+
+Cancellation during a pending enhancement factory returns without waiting for it.
+Core observes late settlement, reports late failure, and stops any transferred
+instance without monitoring or executing commands. The factory remains responsible
+for resources it never transfers.
+
+Explicit close revokes capabilities, awaits successful enhancement cleanup, and
+then closes only the owned tab. Cleanup failure preserves the tab. Concurrent stops
+share one attempt; successful cleanup is idempotent and failed cleanup can retry.
+Historical readiness or input failures do not poison cleanup. Stage exits stop
+monitoring even when retaining the interactive Agent for manual takeover; residual
+tab cleanup follows successful enhancement cleanup. An instance must not terminate
+an interactive Agent, another tab, or package-owned shared infrastructure.
 
 `closeTab` targets only its owned logical tab. Foreign handles and backend errors
 reject; a target known to be absent may close successfully. Closure does not prove

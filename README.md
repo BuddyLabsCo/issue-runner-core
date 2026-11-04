@@ -66,7 +66,8 @@ The [terminal contract](docs/terminal-contract.md) exposes opaque control and bo
 Core submits configured commands, waits the base delay (ten seconds by default),
 and establishes new-session identity through Probe. Resume uses the exact saved
 reference. Agent selection, Assignment metadata, and recovery wording stay in Core.
-Enhancement discovery and activation follow separately; base startup needs no enhancement.
+Core orchestrates resolved enhancements with readiness, Assignment recovery, and
+per-tab cleanup. Installed discovery follows separately; base startup needs no enhancement.
 Implementation and documentation handoffs supply PR metadata.
 No npm package has been published.
 
@@ -100,8 +101,8 @@ issue-runner-herdr run --project my-project --issue
 The [issue-runner-herdr](https://github.com/BuddyLabsCo/issue-runner-herdr) package
 owns the command and generic Herdr terminal operations. It calls Core's shared
 CLI with its command name, version, lazy terminal module, real package root, and CLI
-entry identity. Core owns generic enhancement configuration; activation and discovery
-follow separately. Companion packages must match the revised contracts.
+entry identity. Core owns generic enhancement configuration and orchestration;
+installed discovery follows separately. Companion packages must match the revised contracts.
 Use Node.js 22.18.0 or later and npm 11 or later, including subsequent major versions.
 Project configuration stays in the selected Project's `config.yaml`.
 For unpublished development, supply the full Core tarball as Herdr's runtime
