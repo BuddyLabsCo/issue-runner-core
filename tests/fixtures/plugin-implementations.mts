@@ -24,28 +24,27 @@ export const terminalModule: TerminalPluginModule = {
         const tab = {};
         tabs.set(tab, input);
         events.push(["createTab", tab, input]);
-        return tab;
+        return {
+          handle: tab,
+          io: {
+            async read() {
+              options(tab);
+              return "visible plain text";
+            },
+            async submitText(text) {
+              const input = options(tab);
+              events.push(["submitText", tab, text, "Right", input.submitKey]);
+            },
+            async sendKeys(keys) {
+              options(tab);
+              events.push(["sendKeys", tab, keys]);
+            },
+          },
+        };
       },
-      async start(tab, command) {
-        const input = options(tab);
-        events.push(["start", tab, command]);
-        return input.env.NATIVE_REF;
-      },
-      async resume(tab, command, sessionref) {
+      async execute(tab, command) {
         options(tab);
-        events.push(["resume", tab, command, sessionref]);
-        return sessionref;
-      },
-      async submitText(tab, text, submitKey, expectedFile, recoveryText) {
-        const input = options(tab);
-        events.push([
-          "submitText",
-          tab,
-          text,
-          submitKey ?? input.submitKey,
-          expectedFile,
-          recoveryText,
-        ]);
+        events.push(["execute", tab, command, "Right", "Enter"]);
       },
       async closeTab(tab) {
         options(tab);
@@ -58,28 +57,30 @@ export const terminalModule: TerminalPluginModule = {
 
 export const enhancementModule: EnhancementModule = {
   contractVersion: enhancementContractVersion,
-  async createEnhancement(host, context, config) {
+  async createEnhancement(io, requestRecovery, context, config) {
     events.push(["enhancement factory", context, config]);
     let monitoring = false;
     let ref: string | undefined;
+    let assignmentId = "";
     return {
       async startMonitoring(sessionref) {
         ref = sessionref;
         monitoring = true;
-        await host.sendKeys(["Right", "Enter"]);
-        await host.submitText("readiness marker");
+        await io.sendKeys(["Right", "Enter"]);
+        await io.submitText("readiness marker");
       },
       async waitUntilReady() {
         if (!monitoring) throw new Error("Monitoring is stopped");
-        const observed = await host.read();
+        const observed = await io.read();
         if (!observed) {
-          await host.requestRecovery();
+          await requestRecovery(assignmentId);
           throw new Error("Not ready");
         }
         return ref ?? observed;
       },
-      onAssignment(expectedFile) {
-        events.push(["assignment", expectedFile]);
+      onAssignment(assignment) {
+        assignmentId = assignment.id;
+        events.push(["assignment", assignment]);
       },
       async stop() {
         monitoring = false;

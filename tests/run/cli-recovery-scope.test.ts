@@ -145,7 +145,7 @@ for (const change of [
       assert.ok(ms > 0);
     };
     const submitted: string[] = [];
-    fixture.dependencies.terminalPlugin.submitText = async (_tab, text) => {
+    fixture.dependencies.terminalPlugin.onInput = async (_tab, text) => {
       submitted.push(text);
       if (text.startsWith("Session Probe\n")) controller.abort();
     };

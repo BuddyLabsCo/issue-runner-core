@@ -2,8 +2,9 @@ import type {
   CreateTabOptions,
   Enhancement,
   EnhancementContext,
-  EnhancementHost,
+  TerminalIO,
   EnhancementModule,
+  RequestRecovery,
   TabHandle,
   TerminalPlugin,
   TerminalPluginModule,
@@ -19,23 +20,22 @@ export type ContractChecks = [
   Assert<
     Equal<
       typeof import("issue-runner-core/terminal").terminalContractVersion,
-      1
+      2
     >
   >,
   Assert<
     Equal<
       typeof import("issue-runner-core/terminal").enhancementContractVersion,
-      1
+      2
     >
   >,
   Assert<
     Equal<
-      EnhancementHost,
+      TerminalIO,
       {
         read(): Promise<string>;
         submitText(text: string): Promise<void>;
         sendKeys(keys: readonly string[]): Promise<void>;
-        requestRecovery(): Promise<void>;
       }
     >
   >,
@@ -54,7 +54,7 @@ export type ContractChecks = [
       {
         startMonitoring(sessionref?: string): Promise<void>;
         waitUntilReady(): Promise<string>;
-        onAssignment(expectedFile: string): void;
+        onAssignment(assignment: { id: string; expectedFile: string }): void;
         stop(): Promise<void>;
       }
     >
@@ -63,9 +63,10 @@ export type ContractChecks = [
     Equal<
       EnhancementModule,
       {
-        readonly contractVersion: 1;
+        readonly contractVersion: 2;
         createEnhancement(
-          host: EnhancementHost,
+          io: TerminalIO,
+          requestRecovery: RequestRecovery,
           context: EnhancementContext,
           config: unknown,
         ): Promise<Enhancement>;
@@ -73,6 +74,7 @@ export type ContractChecks = [
     >
   >,
   Assert<Equal<TabHandle, object>>,
+  Assert<Equal<RequestRecovery, (assignmentId: string) => Promise<void>>>,
   Assert<
     Equal<
       CreateTabOptions,
@@ -80,7 +82,6 @@ export type ContractChecks = [
         cwd: string;
         env: Readonly<Record<string, string>>;
         label: string;
-        agent: string;
         submitKey: string;
         signal?: AbortSignal;
       }
@@ -90,23 +91,10 @@ export type ContractChecks = [
     Equal<
       TerminalPlugin,
       {
-        createTab(options: CreateTabOptions): Promise<TabHandle>;
-        start(
-          tab: TabHandle,
-          startCommand: string,
-        ): Promise<string | undefined>;
-        resume(
-          tab: TabHandle,
-          resumeCommand: string,
-          sessionref: string,
-        ): Promise<string>;
-        submitText(
-          tab: TabHandle,
-          text: string,
-          submitKey?: string,
-          expectedFile?: string,
-          recoveryText?: string,
-        ): Promise<void>;
+        createTab(
+          options: CreateTabOptions,
+        ): Promise<{ handle: TabHandle; io: TerminalIO }>;
+        execute(handle: TabHandle, command: string): Promise<void>;
         closeTab(tab: TabHandle): Promise<void>;
       }
     >
@@ -115,7 +103,7 @@ export type ContractChecks = [
     Equal<
       TerminalPluginModule,
       {
-        readonly contractVersion: 1;
+        readonly contractVersion: 2;
         createTerminalPlugin(config: unknown): Promise<TerminalPlugin>;
       }
     >

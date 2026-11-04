@@ -10,15 +10,9 @@ import { createCliDependencies } from "../support/cli-dependencies.ts";
 
 const run = ["run", "--project", "demo", "--parent", "48"];
 
-await test("injected terminal plugins require all five methods before external access", async (t) => {
+await test("injected terminal plugins require all three methods before external access", async (t) => {
   const { root, directory } = await createProject(t);
-  for (const method of [
-    "createTab",
-    "start",
-    "resume",
-    "submitText",
-    "closeTab",
-  ]) {
+  for (const method of ["createTab", "execute", "closeTab"]) {
     for (const value of [undefined, false]) {
       const deps = createCliDependencies(root);
       Object.assign(deps.terminalPlugin, { [method]: value });
@@ -26,7 +20,7 @@ await test("injected terminal plugins require all five methods before external a
       assert.equal(result.exitCode, 1);
       assert.match(
         result.summary.reasons.join(" "),
-        /factory must return createTab, start, resume, submitText, and closeTab/,
+        /factory must return createTab, execute, and closeTab/,
       );
       assert.deepEqual(deps.reads, []);
       assert.deepEqual(deps.effects, []);
@@ -114,34 +108,36 @@ await test("the command's lazy factory receives the complete terminalPlugins val
       "no_work",
       result.summary.reasons.join(" "),
     );
-    assert.deepEqual(deps.terminal.calls, [[terminalPlugins ?? {}]]);
+    assert.deepEqual(deps.terminal.calls, [
+      [{ ...terminalPlugins, agentStartDelay: 10, enhancements: {} }],
+    ]);
   }
 });
 
 await test("invalid modules and factory results fail with command context before workflow effects", async (t) => {
   const { root, directory } = await createProject(t);
   const modules: [unknown, RegExp][] = [
-    ...[undefined, null, false, 1, "module", {}, { contractVersion: 2 }].map(
-      (module): [unknown, RegExp] => [module, /contractVersion 1/],
+    ...[undefined, null, false, 1, "module", {}, { contractVersion: 1 }].map(
+      (module): [unknown, RegExp] => [module, /contractVersion 2/],
     ),
     ...[undefined, null, false, "factory", {}].map(
       (factory): [unknown, RegExp] => [
-        { contractVersion: 1, createTerminalPlugin: factory },
+        { contractVersion: 2, createTerminalPlugin: factory },
         /createTerminalPlugin\(config\) factory/,
       ],
     ),
     ...[undefined, null, false, 1, "plugin", {}, () => undefined].map(
       (plugin): [unknown, RegExp] => [
         {
-          contractVersion: 1,
+          contractVersion: 2,
           createTerminalPlugin: () => Promise.resolve(plugin),
         },
-        /factory must return createTab, start, resume, submitText, and closeTab/,
+        /factory must return createTab, execute, and closeTab/,
       ],
     ),
     [
       {
-        contractVersion: 1,
+        contractVersion: 2,
         createTerminalPlugin: () =>
           Promise.reject(new Error("connection refused")),
       },
@@ -149,7 +145,7 @@ await test("invalid modules and factory results fail with command context before
     ],
     [
       {
-        contractVersion: 1,
+        contractVersion: 2,
         createTerminalPlugin() {
           throw new Error("synchronous failure");
         },
@@ -189,7 +185,7 @@ await test("cancellation during the factory is checked before audit creation", a
     ...deps,
     signal: controller.signal,
     terminal: {
-      contractVersion: 1,
+      contractVersion: 2,
       createTerminalPlugin() {
         controller.abort();
         return Promise.resolve(deps.terminalPlugin);
@@ -205,4 +201,49 @@ await test("cancellation during the factory is checked before audit creation", a
     "config.yaml",
     "prompts",
   ]);
+});
+
+await test("Core validates generic terminal settings before invoking the factory", async (t) => {
+  const { root, directory } = await createProject(t);
+  for (const terminalPlugins of [
+    { agentStartDelay: -1 },
+    { agentStartDelay: Infinity },
+    { agentStartDelay: NaN },
+    { agentStartDelay: "10" },
+    { agentStartDelay: null },
+    { agentStartDelay: 2147483.648 },
+    { enhancements: null },
+    { enhancements: [] },
+    { enhancements: "codex" },
+  ]) {
+    await writeFile(
+      path.join(directory, "config.yaml"),
+      stringify({ ...validConfig, terminalPlugins }),
+    );
+    const deps = createCliDependencies(root);
+    const result = await executeCli(run, deps);
+    assert.equal(result.exitCode, 1);
+    assert.match(
+      result.summary.reasons.join(" "),
+      /terminalPlugins\.(agentStartDelay|enhancements)/,
+    );
+    assert.deepEqual(deps.terminal.calls, []);
+  }
+});
+
+await test("generic settings retain boundary delays and unknown enhancement values", async (t) => {
+  for (const agentStartDelay of [0, 0.125, 2147483.647]) {
+    const terminalPlugins = {
+      agentStartDelay,
+      enhancements: { arbitrary: [null, false, 42, "opaque"] },
+      backend: { unchanged: true },
+    };
+    const { root } = await createProject(t, {
+      ...validConfig,
+      terminalPlugins,
+    });
+    const deps = createCliDependencies(root);
+    assert.equal((await executeCli(run, deps)).summary.outcome, "no_work");
+    assert.deepEqual(deps.terminal.calls, [[terminalPlugins]]);
+  }
 });

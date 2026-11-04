@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { access, readFile, rm, writeFile } from "node:fs/promises";
 import test from "node:test";
 import type { CodeHost } from "../../src/run/contracts.ts";
-import type { TerminalPlugin } from "../../src/terminal.ts";
+import type { TestTerminal } from "../support/cli-dependencies.ts";
 import { fiveIssueRun } from "../support/full-contract-run.ts";
 import {
   committed,
@@ -25,11 +25,11 @@ await test(
         throw new Error("Reservation unavailable");
       await reserve(repository, number, label);
     };
-    const terminal: TerminalPlugin = fixture.dependencies.terminalPlugin;
-    const submit = terminal.submitText.bind(terminal);
+    const terminal: TestTerminal = fixture.dependencies.terminalPlugin;
+    const submit = terminal.onInput.bind(terminal);
     const invalidPaths: string[] = [];
     let correctedTab: object | undefined;
-    terminal.submitText = async (tab, text, chord) => {
+    terminal.onInput = async (tab, text, chord) => {
       if (fixture.tabs.get(tab)!.cwd.endsWith("ticket-52")) {
         if (text.startsWith("Implementation assignment\n")) {
           await submit(tab, text, chord);
@@ -81,9 +81,9 @@ await test(
   { timeout: 10_000 },
   async (t) => {
     const fixture = await fiveIssueRun(t);
-    const terminal: TerminalPlugin = fixture.dependencies.terminalPlugin;
-    const submit = terminal.submitText.bind(terminal);
-    terminal.submitText = async (tab, text, chord) => {
+    const terminal: TestTerminal = fixture.dependencies.terminalPlugin;
+    const submit = terminal.onInput.bind(terminal);
+    terminal.onInput = async (tab, text, chord) => {
       await submit(tab, text, chord);
       if (
         fixture.tabs.get(tab)!.cwd.endsWith("ticket-53") &&
@@ -144,7 +144,7 @@ await test(
     for (const tab of [...fixture.active]) await terminal.closeTab(tab);
     fixture.dependencies.signal = new AbortController().signal;
     fixture.dependencies.clock.sleep = sleep;
-    terminal.submitText = async (tab, text, chord) => {
+    terminal.onInput = async (tab, text, chord) => {
       await submit(tab, text, chord);
       if (text === "continue") {
         assert.equal(fixture.tabs.get(tab)!.cwd, unfinished.worktree);

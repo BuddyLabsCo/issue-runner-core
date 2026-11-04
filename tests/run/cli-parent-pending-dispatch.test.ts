@@ -15,10 +15,10 @@ await test("a withheld initial assignment is submitted in its original conversat
   const ticket = child(51);
   const fixture = await parentRun(t, [ticket]);
   const submitted: string[] = [];
-  const submitText = fixture.dependencies.terminalPlugin.submitText.bind(
+  const submitText = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+  fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
     submitted.push(text);
     if (text === "continue") {
       fixture.controller.abort();
@@ -58,10 +58,10 @@ await test("a withheld correction retains its prompt, path and native context un
   const ticket = child(51);
   const fixture = await parentRun(t, [ticket]);
   const submitted: string[] = [];
-  const submitText = fixture.dependencies.terminalPlugin.submitText.bind(
+  const submitText = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+  fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
     submitted.push(text);
     if (text === "continue") {
       fixture.controller.abort();
@@ -111,10 +111,10 @@ await test("a withheld correction retains its prompt, path and native context un
 await test("cancellation inside the dispatch gate retains the known unsent assignment for recovery", async (t) => {
   const fixture = await parentRun(t, [child(51)]);
   let cancelAtGate = false;
-  const submitText = fixture.dependencies.terminalPlugin.submitText.bind(
+  const submitText = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+  fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
     if (text === "continue") {
       assert.fail("the withheld assignment has not been submitted");
     }
@@ -144,10 +144,10 @@ await test("cancellation inside the dispatch gate retains the known unsent assig
 await test("valid output at a pending assignment completes without reopening its conversation", async (t) => {
   const ticket = child(51);
   const fixture = await parentRun(t, [ticket]);
-  const submitText = fixture.dependencies.terminalPlugin.submitText.bind(
+  const submitText = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+  fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
     await submitText(tab, text);
     if (text.startsWith("Session Probe\n"))
       ticket.labels = ["sandcastle:reserved"];
@@ -177,10 +177,10 @@ await test("valid output at a pending assignment completes without reopening its
 await test("a transport attempt is not replayed as a known unsent assignment after interruption", async (t) => {
   const fixture = await parentRun(t, [child(51)]);
   const submitted: string[] = [];
-  const submitText = fixture.dependencies.terminalPlugin.submitText.bind(
+  const submitText = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+  fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
     submitted.push(text);
     if (text.startsWith("Implementation assignment\n")) {
       assert.equal(
@@ -221,10 +221,10 @@ await test("a transport attempt is not replayed as a known unsent assignment aft
 await test("malformed pending prompt evidence fails recovery before another Agent submission", async (t) => {
   const ticket = child(51);
   const fixture = await parentRun(t, [ticket]);
-  const submitText = fixture.dependencies.terminalPlugin.submitText.bind(
+  const submitText = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+  fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
     await submitText(tab, text);
     if (text.startsWith("Session Probe\n"))
       ticket.labels = ["sandcastle:reserved"];

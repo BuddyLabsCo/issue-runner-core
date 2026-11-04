@@ -121,39 +121,36 @@ export async function testInstalledArtifacts(
           }
         }).terminal;
         const context = { cwd: process.cwd(), env: { CUSTOM: "literal $&" } };
-        const options = { ...context, label: "consumer", agent: "opaque-agent", submitKey: "Shift+Enter", signal: new AbortController().signal };
-        const tab = await terminal.createTab(options);
-        assert.equal(await terminal.start(tab, "configured start"), undefined);
-        assert.equal(await terminal.resume(tab, "configured resume", "native/$&"), "native/$&");
-        await terminal.submitText(tab, "task", undefined, "/assigned.json", "continue unfinished work");
-        await terminal.submitText(tab, "shell command", "Enter");
+        const options = { ...context, label: "consumer", submitKey: "Shift+Enter", signal: new AbortController().signal };
+        const { handle: tab, io } = await terminal.createTab(options);
+        assert.equal(await terminal.execute(tab, "configured start"), undefined);
+        await terminal.execute(tab, "configured resume native/$&");
+        assert.equal(await io.read(), "visible plain text");
+        await io.submitText("task");
+        await io.sendKeys(["Control+C", "Right"]);
         await terminal.closeTab(tab);
         assert.deepEqual(events.splice(0), [
           ["terminal factory", {}], ["createTab", tab, options],
-          ["start", tab, "configured start"], ["resume", tab, "configured resume", "native/$&"],
-          ["submitText", tab, "task", "Shift+Enter", "/assigned.json", "continue unfinished work"],
-          ["submitText", tab, "shell command", "Enter", undefined, undefined], ["closeTab", tab]
+          ["execute", tab, "configured start", "Right", "Enter"],
+          ["execute", tab, "configured resume native/$&", "Right", "Enter"],
+          ["submitText", tab, "task", "Right", "Shift+Enter"],
+          ["sendKeys", tab, ["Control+C", "Right"]], ["closeTab", tab]
         ]);
         await assert.rejects(terminal.closeTab(tab), /Unknown Issue Runner Tab/);
-          assert.deepEqual(policies, [["create_tab", "manual"], ["start_agent", "manual"], ["resume_agent", "manual"], ["submit_text", "never"], ["submit_text", "never"]]);
-        const identified = { ...options, env: { NATIVE_REF: "returned-native-ref" } };
-        const identifiedTab = await terminal.createTab(identified);
-        assert.equal(await terminal.start(identifiedTab, "identified start"), "returned-native-ref");
-        await terminal.closeTab(identifiedTab);
-        assert.deepEqual(events.splice(0), [["createTab", identifiedTab, identified], ["start", identifiedTab, "identified start"], ["closeTab", identifiedTab]]);
+        await assert.rejects(io.read(), /Unknown Runner Tab/);
+        assert.deepEqual(policies, [["create_tab", "manual"], ["execute_agent", "manual"], ["execute_agent", "manual"], ["submit_text", "never"]]);
         const hostEvents = [];
         let output = "native-ref";
         const host = {
           async read() { return output; },
           async submitText(text) { hostEvents.push(["text", text]); },
           async sendKeys(keys) { hostEvents.push(["keys", keys]); },
-          async requestRecovery(...args) { assert.equal(args.length, 0); hostEvents.push(["recovery"]); }
         };
-        const enhancement = await enhancementModule.createEnhancement(host, context, { enabled: true });
+        const enhancement = await enhancementModule.createEnhancement(host, async (id) => { hostEvents.push(["recovery", id]); }, context, { enabled: true });
         await enhancement.startMonitoring();
         assert.equal(await enhancement.waitUntilReady(), "native-ref");
         assert.equal(await enhancement.waitUntilReady(), "native-ref");
-        assert.equal(enhancement.onAssignment("/assigned.json"), undefined);
+        assert.equal(enhancement.onAssignment({ id: "assignment-1", expectedFile: "/assigned.json" }), undefined);
         output = "";
         await assert.rejects(enhancement.waitUntilReady(), /Not ready/);
         await enhancement.stop();
@@ -162,9 +159,9 @@ export async function testInstalledArtifacts(
         await enhancement.startMonitoring("saved-ref");
         assert.equal(await enhancement.waitUntilReady(), "saved-ref");
         await enhancement.stop();
-        assert.deepEqual(events, [["enhancement factory", context, { enabled: true }], ["assignment", "/assigned.json"]]);
+        assert.deepEqual(events, [["enhancement factory", context, { enabled: true }], ["assignment", { id: "assignment-1", expectedFile: "/assigned.json" }]]);
         assert.deepEqual(hostEvents, [
-          ["keys", ["Right", "Enter"]], ["text", "readiness marker"], ["recovery"],
+          ["keys", ["Right", "Enter"]], ["text", "readiness marker"], ["recovery", "assignment-1"],
           ["keys", ["Right", "Enter"]], ["text", "readiness marker"]
         ]);
       `,

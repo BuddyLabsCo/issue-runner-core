@@ -82,7 +82,9 @@ for (const purpose of ["implementation", "Review"] as const) {
         new RegExp(`^Correct the ${purpose} handoff:`),
       );
       assert.deepEqual(
-        fixture.state.sleeps.slice(sleeps).filter((ms) => ms !== 30_000),
+        fixture.state.sleeps
+          .slice(sleeps)
+          .filter((ms) => ms !== 30_000 && ms !== 10_000),
         [],
       );
       const recovered = await fixture.snapshot();

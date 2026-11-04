@@ -126,10 +126,10 @@ await test("real Git rejects reviewer edits and recovers a final-round fix with 
   );
   await access(round.findings);
   const before = fixture.state.submissions.length;
-  const submit = dependencies.terminalPlugin.submitText.bind(
+  const submit = dependencies.terminalPlugin.onInput.bind(
     dependencies.terminalPlugin,
   );
-  dependencies.terminalPlugin.submitText = async (tab, text, chord) => {
+  dependencies.terminalPlugin.onInput = async (tab, text, chord) => {
     await submit(tab, text, chord);
     if (text !== "continue") return;
     const saved = await fixture.snapshot();

@@ -36,16 +36,12 @@ for (const outcome of ["committed", "no_change"] as const) {
       text.startsWith("Implementation assignment\n"),
     )!;
     const correction = fixture.state.submissions.at(-1)!;
-    assertBusinessAssignment(initial, saved.superseded[0]!, "documentation");
-    assertBusinessAssignment(
-      correction,
-      saved.invocation!.path,
-      "documentation",
-    );
+    assertBusinessAssignment(initial, saved.superseded[0]!);
+    assertBusinessAssignment(correction, saved.invocation!.path);
     assert.equal(initial.tab, correction.tab);
     assert.equal(initial.chord, "Shift+Enter");
     assert.equal(correction.chord, "Shift+Enter");
-    assert.notEqual(initial.expectedFile, correction.expectedFile);
+    assert.notEqual(saved.superseded[0], saved.invocation!.path);
     assert.equal(fixture.maintenance.cleanup.length, 0);
     for (const file of saved.superseded) await publish(file, noChange);
     const recovery = path.join(fixture.directory, "recovery");
@@ -66,17 +62,11 @@ for (const outcome of ["committed", "no_change"] as const) {
     fixture.state.onProbe = async () => assert.fail("metadata must stay fixed");
     fixture.state.onCorrection = async () =>
       assert.fail("resume uses continue for already submitted feedback");
-    const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+    const submit = fixture.dependencies.terminalPlugin.onInput.bind(
       fixture.dependencies.terminalPlugin,
     );
-    fixture.dependencies.terminalPlugin.submitText = async (
-      tab,
-      text,
-      chord,
-      expectedFile,
-      recoveryText,
-    ) => {
-      await submit(tab, text, chord, expectedFile, recoveryText);
+    fixture.dependencies.terminalPlugin.onInput = async (tab, text, chord) => {
+      await submit(tab, text, chord);
       if (text === "continue") await publish(saved.invocation!.path, result);
     };
     fixture.state.onSleep = async (ms) => assert.ok(ms > 0);
@@ -90,15 +80,13 @@ for (const outcome of ["committed", "no_change"] as const) {
       ['document-cli --resume "native/$&/$`/$\'/session"', "continue"],
     );
     const continuation = fixture.state.submissions.at(-1)!;
-    assertBusinessAssignment(
-      continuation,
-      saved.invocation!.path,
-      "documentation",
-    );
+    assertBusinessAssignment(continuation, saved.invocation!.path);
     assert.equal(continuation.chord, "Shift+Enter");
     assert.equal(continuation.tab, fixture.state.submissions[submitted]!.tab);
     assert.deepEqual(
-      fixture.state.sleeps.slice(sleeps).filter((ms) => ms !== 30_000),
+      fixture.state.sleeps
+        .slice(sleeps)
+        .filter((ms) => ms !== 30_000 && ms !== 10_000),
       [250],
     );
     const current = await fixture.snapshot();

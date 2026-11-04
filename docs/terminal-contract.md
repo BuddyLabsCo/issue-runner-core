@@ -1,26 +1,18 @@
-# Terminal contract v1
+# Terminal contract v2
 
-Core exports the complete Terminal and Enhancement contracts from
-`issue-runner-core/terminal`. Herdr and enhancement packages can compile against
-the same installable artifact without importing Core internals. Both contract
-versions are `1`, independent of the npm version `0.0.0-contract.1`.
+Core exports Terminal and Enhancement contracts from `issue-runner-core/terminal`.
+Both independent contract constants are `2`; neither comes from an npm version.
+Companion terminal and enhancement packages must compile against these matching
+contracts. There are no legacy overloads or supported mixed-contract combinations.
+This requirement defines no npm release numbers or release order.
 
-This is the [contract milestone (#205)](https://github.com/BuddyLabsCo/issue-runner-core/issues/205)
-within the [startup and monitoring delivery (#204)](https://github.com/BuddyLabsCo/issue-runner-core/issues/204).
-Core validates all five terminal methods and passes the Agent identifier, submit key,
-and Run signal when creating tabs for every role. Wrappers forward composite
-startup without a Core readiness timeout and preserve all five submission
-arguments. Core does not load enhancements or expose their installation/error state.
-
-Core awaits `createTab` before composite `start` or `resume`. It saves a valid
-returned native ref before dispatching business work. Only `undefined` from a new
-start selects an identity-only Probe; resume must return the exact saved ref.
-Readiness failures retain the Runner Tab for an operator-authorized retry on the
-same handle. Cancellation reaches the plugin through the Run signal and retains
-the Tab and Agent. Core adds no startup delay or readiness timeout.
-Implementation and documentation handoffs supply `pr_title` and `pr_body`;
-Review and repair schemas remain unchanged. No registry publication or real
-Core/Herdr acceptance is implied.
+Core owns base Agent startup: create a Runner Tab, execute the configured command,
+wait the configured delay, then establish native identity through a Session Probe.
+Resume substitutes the exact saved native reference into the configured command.
+Core retains Agent selection, handoff validation, Assignment metadata, recovery
+wording, Operator Pause, and delivery policy. Terminal adapters own terminal I/O.
+Enhancement discovery and activation are separate follow-up work; base operation
+requires no enhancement. These repository checks do not establish native E2E acceptance.
 
 ## Build and identify a development artifact
 
@@ -30,7 +22,7 @@ The CLI uses the source's `cac` and `yaml` parsers.
 From the Core checkout:
 
 ```sh
-npm ci
+npm ci --ignore-scripts
 npm run typecheck
 npm test
 npm pack --json --pack-destination artifacts
@@ -39,8 +31,8 @@ npm pack --json --pack-destination artifacts
 `npm pack` builds the JavaScript and declarations through `prepack`. Its JSON
 output records the filename, version, SHA-1 `shasum`, SHA-512 `integrity`, and
 packaged files. Save that output alongside the tarball when handing it to Herdr;
-the repository records the initial artifact in
-`artifacts/terminal-contract-v1.json`. The tarball itself is a local build
+the repository records the historical v1 artifact in
+`artifacts/terminal-contract-v1.json`, which does not identify this v2 build. The tarball itself is a local build
 output, not a published package. Repacking unchanged package contents with the
 same toolchain reproduces its identity. Git attributes and compiler output use
 LF line endings so Windows checkout defaults do not change packaged bytes.
@@ -96,6 +88,8 @@ owns shared CLI and workflow policy. A command imports its existing lazy module
 and calls the public entry once:
 
 ```typescript
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { runCli, type CliOptions } from "issue-runner-core/cli";
 import * as terminal from "./terminal.js";
 
@@ -103,12 +97,19 @@ const options: CliOptions = {
   commandName: "generic-terminal",
   commandVersion: "1.0.0",
   terminal,
+  terminalPackageRoot: realpathSync(fileURLToPath(new URL(".", import.meta.url))),
+  terminalCliEntry: realpathSync(fileURLToPath(import.meta.url)),
 };
 await runCli(options);
 ```
 
-`CliOptions` contains exactly `commandName: string`, `commandVersion: string`,
-and `terminal: TerminalPluginModule`. `runCli(options)` returns `Promise<void>`.
+`CliOptions` requires `commandName`, `commandVersion`, `terminal`,
+`terminalPackageRoot`, and `terminalCliEntry`. The last two are absolute real paths
+to the executing terminal package root and its CLI entry file. This example places
+the entry at the package root; adapt the root calculation to the package layout.
+These identities anchor later enhancement discovery, including nested Core installs.
+Locations and versions remain outside the recovery input hash.
+`runCli(options)` returns `Promise<void>`.
 `executeCli`, `executeRun`, `CliDependencies`, and `CliResult` are internal and
 are not exported by this subpath. There is no public testing entry.
 
@@ -127,19 +128,19 @@ configuration credentials or terminal factory call. Init still creates Project
 files and refuses overwrite.
 
 For Runs, argument, selector, Project/configuration/credential and empty Issue
-List validation precedes terminal creation. Core validates the module's v1
+List validation precedes terminal creation. Core validates the module's v2
 contract and callable factory, then calls it once with the complete configured
-`terminalPlugins` value, or `{}` when omitted. It rejects non-object results
+`terminalPlugins` value with Core defaults applied. It rejects non-object results
 and missing or non-callable terminal methods. Errors identify the command and
 preserve useful causes. Validation and the cancellation checkpoint precede audit,
 Run state and workflow effects. `--env` and terminal discovery are unsupported.
-Herdr owns generic optional enhancement discovery; Codex remains optional.
+Core owns generic enhancement configuration; discovery and activation follow separately.
 
 ## Public types
 
 ```typescript
-export const terminalContractVersion = 1 as const;
-export const enhancementContractVersion = 1 as const;
+export const terminalContractVersion = 2 as const;
+export const enhancementContractVersion = 2 as const;
 
 // Opaque, plugin-instance-owned reference; Core must not inspect or persist it.
 export type TabHandle = object;
@@ -148,26 +149,13 @@ export interface CreateTabOptions {
   cwd: string;
   env: Readonly<Record<string, string>>;
   label: string;
-  agent: string;
   submitKey: string;
   signal?: AbortSignal;
 }
 
 export interface TerminalPlugin {
-  createTab(options: CreateTabOptions): Promise<TabHandle>;
-  start(tab: TabHandle, startCommand: string): Promise<string | undefined>;
-  resume(
-    tab: TabHandle,
-    resumeCommand: string,
-    sessionref: string,
-  ): Promise<string>;
-  submitText(
-    tab: TabHandle,
-    text: string,
-    submitKey?: string,
-    expectedFile?: string,
-    recoveryText?: string,
-  ): Promise<void>;
+  createTab(options: CreateTabOptions): Promise<{ handle: TabHandle; io: TerminalIO }>;
+  execute(handle: TabHandle, command: string): Promise<void>;
   closeTab(tab: TabHandle): Promise<void>;
 }
 
@@ -176,12 +164,13 @@ export interface TerminalPluginModule {
   createTerminalPlugin(config: unknown): Promise<TerminalPlugin>;
 }
 
-export interface EnhancementHost {
+export interface TerminalIO {
   read(): Promise<string>;
   submitText(text: string): Promise<void>;
   sendKeys(keys: readonly string[]): Promise<void>;
-  requestRecovery(): Promise<void>;
 }
+
+export type RequestRecovery = (assignmentId: string) => Promise<void>;
 
 export interface EnhancementContext {
   readonly cwd: string;
@@ -191,101 +180,78 @@ export interface EnhancementContext {
 export interface Enhancement {
   startMonitoring(sessionref?: string): Promise<void>;
   waitUntilReady(): Promise<string>;
-  onAssignment(expectedFile: string): void;
+  onAssignment(assignment: { id: string; expectedFile: string }): void;
   stop(): Promise<void>;
 }
 
 export interface EnhancementModule {
   readonly contractVersion: typeof enhancementContractVersion;
   createEnhancement(
-    host: EnhancementHost,
+    io: TerminalIO,
+    requestRecovery: RequestRecovery,
     context: EnhancementContext,
     config: unknown,
   ): Promise<Enhancement>;
 }
 ```
 
-A terminal plugin's public module exports `contractVersion = 1` and an
-asynchronous `createTerminalPlugin(config: unknown)` factory. Core passes the complete
-`terminalPlugins` object unchanged, or `{}` when omitted.
-Core validates the container without interpreting plugin-owned values or checking enhancement installation.
-See [plugin configuration](configuration.md#installation-and-project-selection) for startup validation and recovery hashing.
-The loader
-accepts factories with default parameters; it does not inspect function arity.
-Initialization errors reject startup. Core does not discover terminal packages.
+A terminal module exports `contractVersion = 2` and an asynchronous
+`createTerminalPlugin(config: unknown)` factory. Core validates all three methods
+before workflow reads or mutations. Missing methods, mismatched versions, and
+factory failures fail startup with command context. Core preserves terminal-owned
+configuration values and validates its generic settings before calling the factory.
+Factories with default parameters are supported; Core does not inspect arity.
 
-`TabHandle` is an opaque capability owned by one initialized plugin instance.
-Core must not inspect, serialize, persist, or reconstruct it. It is distinct
-from the native Agent conversation reference.
+`createTab` creates an owned Runner Tab in absolute `cwd`, overlays readonly `env`
+on the inherited environment, and displays `label`. It binds `submitKey` (default
+`Enter`) and accepts the Run cancellation `signal`. Invalid context or unsupported
+environment application must fail rather than redirect silently. Creation does not
+start an Agent. Its `handle` is plugin-instance-owned: Core never inspects, persists,
+serializes, or reconstructs it. Native conversation identity is separate.
 
-`createTab` creates an owned Runner Tab in the absolute `cwd`, applies `env`
-as a readonly overlay on the inherited environment, and uses `label` for display.
-It receives the profile's unchanged opaque `agent`, effective configured
-`submitKey` (default `Enter`), and optional Run `signal`. Invalid context or
-unsupported environment application must fail rather than redirect silently.
-Creating a tab does not start an Agent or prove readiness.
+`execute(handle, command)` inputs the complete opaque command, then Right and Enter.
+Resolution means command input was submitted, not command exit or Agent readiness.
+Core supplies the configured start text unchanged. For resume, it substitutes every
+literal `{sessionref}` with the exact saved reference, preserving whitespace and
+replacement characters. The terminal receives neither an Agent selector nor a
+separate native reference.
 
-The final `start` and `resume` operations combine command execution with readiness.
-`start` returns a native string ref when available, or `undefined` for Probe
-fallback. `resume` receives the exact saved native ref and returns that ref.
-Plugins must retain startup state so a readiness retry in the same tab does not
-execute the command twice. Core wrappers impose no readiness timeout on these
-operations; create, submission, and close bounds remain in place.
+Bound `TerminalIO.read()` returns the current visible plain-text screen.
+`submitText(text)` inputs the whole body, then Right and the creation-time submit key.
+Core normalizes task text to LF while preserving Unicode, indentation, blank lines,
+quotes, and literal characters. There is no per-call key override, expected-file
+argument, or recovery-text argument. `sendKeys` sends ordered logical chords.
+Unsupported chords reject rather than fall back. I/O alone grants neither command
+execution nor tab closure to an enhancement.
 
-`submitText` transports complete canonical-LF text, preserving Unicode, blank
-lines, indentation, quotes, and literal characters. Each call inputs the whole
-body, sends mandatory Right, then sends the requested logical submit chord.
-Enter is the default; Shift+Enter is also required. Unsupported chords reject
-rather than fall back. The optional fourth and fifth arguments identify the
-exact current handoff file and Core's recovery wording. Wrappers preserve them
-positionally, including when optional preceding arguments are omitted. Transport
-success does not prove Agent acceptance or completion.
+After command submission, Core waits `terminalPlugins.agentStartDelay` seconds
+(default ten). New conversations use the existing identity-only Probe and correction
+flow. A retained Probe can establish identity before exact resume. Saved identities
+reject empty refs, `latest`/`last`, and Runner Run/execution IDs. Base resume uses the
+validated saved reference without a fresh Probe; the terminal cannot report identity.
+Only native identity is persisted. All six purposes use the same stage coordinator.
 
-For implementation, documentation, Review, Review fixes, CI repair, and conflict
-repair, Core supplies both arguments on every task, continuation, and correction.
-The exact unique absolute handoff path identifies the assignment. Continuation
-retains that path; a correction replaces it with the newly persisted path.
-Core renders a complete recovery message from a built-in template, asking the
-Agent to continue unfinished work and use the assigned handoff protocol without
-replaying the task. Plugins retain the current message for optional recovery.
-Core still validates Agent-written handoffs and independent Git evidence;
-assignment metadata and monitoring events cannot establish completion.
+Command failure can mean partial delivery. Core enters generic Operator Pause and
+retains the tab. The operator must inspect it before continuing; Core will proceed
+without replaying the uncertain command. Skip and cancellation retain resources.
+Cancellation interrupts command and delay waits and prevents subsequent dispatch.
+Create, task submission, and closure retain their existing bounds. No startup
+readiness timeout or second pause mechanism is introduced.
 
-For every fallback Probe and Probe correction, Core also supplies the exact
-assigned absolute Probe path and a recovery message from `prompts/probe-recovery.md`.
-A correction uses the newly persisted path, replacing the superseded assignment.
-The recovery message asks the Agent to continue the unfinished identity exchange
-and write through its assigned Probe protocol. It forbids replaying the business
-task or reporting business completion. Core does not request enhancement recovery.
+`RequestRecovery` is a separate `(assignmentId: string) => Promise<void>` capability.
+The enhancement factory takes bound I/O, this callback, cwd/env context, and unknown
+configuration, in that order. `startMonitoring(sessionref?)`, repeatable
+`waitUntilReady(): Promise<string>`, synchronous `onAssignment({ id, expectedFile })`,
+and asynchronous `stop()` form the lifecycle. Assignment IDs distinguish dispatches
+even when a handoff path is reused. Recovery wording stays in Core. These public
+types allow companion packages to compile; this base migration does not activate
+an enhancement or dispatch recovery callbacks.
 
-`EnhancementHost` is bound to one tab: `read` reads terminal text, `submitText`
-uses its Agent submit key, and `sendKeys` sends logical keys in order.
-Argument-free `requestRecovery` asks the hosting plugin to submit the recovery
-text retained for the current assignment. Core never calls it directly.
-`EnhancementContext` supplies the tab's `cwd` and readonly `env`; the asynchronous
-factory also receives opaque enhancement configuration.
-
-`startMonitoring` optionally binds monitoring to a known native ref.
-`waitUntilReady` is repeatable and returns the observed native string ref.
-Synchronous `onAssignment(expectedFile)` replaces the active assignment.
-Asynchronous `stop` must finish enhancement activity before the plugin closes
-the owned tab. Run abort stops enhancement activity while preserving the tab
-and Agent process. Core owns handoff validation and acceptance independently of
-monitoring.
-
-`closeTab` targets only the owned logical tab. Foreign handles, unknown targets,
-and backend errors reject; a target known to be absent may close successfully.
-Closing does not establish process or descendant settlement. Plugins use finite
-backend I/O bounds and report actionable errors. They do not silently replay
-input or select replacement targets. Core serializes operations on each handle
-and may use independent handles concurrently.
-
-The loader and injected-dependency boundary validate all five terminal methods
-before workflow reads or mutations. Default-only exports, incorrect versions,
-missing/non-callable methods, and factory rejection fail startup. The error names
-the selected plugin and preserves its installation, import, compatibility, or
-host-context failure. Core neither initializes unrelated plugins nor installs a
-replacement.
+`closeTab` targets only its owned logical tab. Foreign handles and backend errors
+reject; a target known to be absent may close successfully. Closure does not prove
+process or descendant settlement. Adapters use finite backend I/O bounds and do
+not replay input or select replacement targets. Core queues its operations per
+handle, checks cancellation when queued input begins, and permits independent tabs.
 
 ## Verification limits and global installation
 
@@ -299,8 +265,8 @@ Core must register no executable. The factory throws if informational commands
 or init try to create a terminal.
 
 The checks compile representative CLI, Terminal and Enhancement consumers using
-public entries. They exercise all terminal operations, five-argument forwarding
-through the installed execution wrapper, and bound enhancement host methods.
+public entries. They exercise opaque control, bound I/O through the installed
+execution wrapper, and the separate Assignment-aware recovery callback.
 No enhancement package is installed. They verify templates, bundled prompts,
 and the manually installable `skills/issue-runner-handoff/SKILL.md` asset.
 Temporary paths include spaces and are removed after the checks.

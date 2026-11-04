@@ -33,7 +33,7 @@ for (const selector of ["parent", "issue"] as const) {
     const createTab = fixture.dependencies.terminalPlugin.createTab.bind(
       fixture.dependencies.terminalPlugin,
     );
-    const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+    const submit = fixture.dependencies.terminalPlugin.onInput.bind(
       fixture.dependencies.terminalPlugin,
     );
     fixture.dependencies.terminalPlugin.createTab = async (options) => {
@@ -41,10 +41,10 @@ for (const selector of ["parent", "issue"] as const) {
       const review = options.label === `issue-${number} review r1`;
       if (review) assert.ok(closed.includes(`${number}:implement`));
       const tab = await createTab(options);
-      tabs.set(tab, { number, review, options });
+      tabs.set(tab.handle, { number, review, options });
       return tab;
     };
-    fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+    fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
       const { number, review } = tabs.get(tab)!;
       if (review && text.startsWith("Session Probe\n")) {
         const assignment = promptAssignment(text) as {

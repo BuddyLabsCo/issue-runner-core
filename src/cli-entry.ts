@@ -6,6 +6,8 @@ export interface CliOptions {
   commandName: string;
   commandVersion: string;
   terminal: TerminalPluginModule;
+  terminalPackageRoot: string;
+  terminalCliEntry: string;
 }
 
 export async function runCli(options: CliOptions): Promise<void> {

@@ -116,7 +116,7 @@ await test("explicit whole-Issue restart retains failed resources and resets onl
   assert.deepEqual(fixture.state.cleanup, []);
 });
 
-await test("a native resume readiness failure offers same-Tab retry, skip or exit", async (t) => {
+await test("uncertain native resume delivery offers same-tab continuation, skip or exit", async (t) => {
   const fixture = await implementationRun(t);
   fixture.state.onTask = async () => fixture.controller.abort();
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
@@ -126,15 +126,15 @@ await test("a native resume readiness failure offers same-Tab retry, skip or exi
   fixture.dependencies.operator.pause = async (message) => {
     assert.match(
       message,
-      /Operation failed: native context unavailable.*Enter to retry, s to skip Issue #50, q\/EOF to cancel/u,
+      /Operation failed: .*delivery is uncertain.*will not be replayed: native context unavailable.*Enter to retry, s to skip Issue #50, q\/EOF to cancel/u,
     );
     pauses += 1;
     return "q";
   };
-  const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+  const submit = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.submitText = async (tab, text, chord) => {
+  fixture.dependencies.terminalPlugin.onInput = async (tab, text, chord) => {
     if (text.startsWith("any-cli --resume"))
       throw new Error("native context unavailable");
     await submit(tab, text, chord);
@@ -190,10 +190,10 @@ for (const missing of [
       issueList: [51, 52],
       workflow: { review: missing !== "implementation identity" },
     });
-    const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+    const submit = fixture.dependencies.terminalPlugin.onInput.bind(
       fixture.dependencies.terminalPlugin,
     );
-    fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+    fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
       if (
         text.startsWith("Session Probe\n") &&
         text.includes("-review-probe-")

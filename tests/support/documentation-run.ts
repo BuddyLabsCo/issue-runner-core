@@ -80,16 +80,10 @@ export async function documentationRun(
       await rm(input.worktree, { recursive: true });
     },
   });
-  const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+  const submit = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.submitText = (
-    tab,
-    text,
-    chord,
-    expectedFile,
-    recoveryText,
-  ) =>
+  fixture.dependencies.terminalPlugin.onInput = (tab, text, chord) =>
     submit(
       tab,
       text
@@ -99,8 +93,6 @@ export async function documentationRun(
           "Correct the implementation handoff:",
         ),
       chord,
-      expectedFile,
-      recoveryText,
     );
   return {
     ...fixture,

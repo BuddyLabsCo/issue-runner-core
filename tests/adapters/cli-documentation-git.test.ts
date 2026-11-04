@@ -128,8 +128,8 @@ for (const scenario of [
       fixture.publicationState.onChecks = async () =>
         repairs < 2 ? [failedCheck] : [];
       const terminal = fixture.dependencies.terminalPlugin;
-      const submit = terminal.submitText.bind(terminal);
-      terminal.submitText = async (tab, text, chord) => {
+      const submit = terminal.onInput.bind(terminal);
+      terminal.onInput = async (tab, text, chord) => {
         if (text.startsWith("Session Probe\n")) {
           const assignment = promptAssignment(text) as {
             role: string;
@@ -211,10 +211,10 @@ for (const scenario of [
       const saved = await fixture.snapshot();
       const oldConfig = fixture.state.gitConfigs[0]!;
       await assert.rejects(access(oldConfig), { code: "ENOENT" });
-      const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+      const submit = fixture.dependencies.terminalPlugin.onInput.bind(
         fixture.dependencies.terminalPlugin,
       );
-      fixture.dependencies.terminalPlugin.submitText = async (
+      fixture.dependencies.terminalPlugin.onInput = async (
         tab,
         text,
         chord,

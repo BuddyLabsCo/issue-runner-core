@@ -12,13 +12,16 @@ import { createCliDependencies } from "../support/cli-dependencies.ts";
 
 const run = ["run", "--project", "demo", "--parent", "48"];
 
-await test("omitted terminalPlugins supplies an empty object", async (t) => {
+await test("omitted terminalPlugins supplies Core defaults", async (t) => {
   const { root } = await createProject(t);
   const loaded = await loadProject(root, "demo", {
     TRACKER_TOKEN: "tracker",
     HOST_TOKEN: "host",
   });
-  assert.deepEqual(loaded.config.terminalPlugins, {});
+  assert.deepEqual(loaded.config.terminalPlugins, {
+    agentStartDelay: 10,
+    enhancements: {},
+  });
 });
 
 await test("tagged terminalPlugins containers fail before external access", async (t) => {
@@ -72,6 +75,8 @@ await test("terminalPlugins preserves plugin-owned nested values without install
   });
   assert.deepEqual(loaded.config.terminalPlugins, {
     ...terminalPlugins,
+    agentStartDelay: 10,
+    enhancements: {},
     tagged: {
       timestamp: new Date("2002-12-14T00:00:00.000Z"),
       binary: Buffer.from("abc"),

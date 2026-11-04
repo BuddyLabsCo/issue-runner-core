@@ -68,7 +68,6 @@ await test("a repaired PR integrates its repaired HEAD and recovers queued and d
   assertBusinessAssignment(
     task,
     saved.publication!.ciRepair!.attempts[0]!.invocation!.path,
-    "CI repair",
   );
   assert.equal(task.chord, "Shift+Enter");
   assert.equal(task.tab, fixture.state.closedTabs[1]);
@@ -77,7 +76,7 @@ await test("a repaired PR integrates its repaired HEAD and recovers queued and d
   assert.equal(saved.publication!.headSha, implementationCommit.sha);
   assert.equal(saved.publication!.title, saved.pr_title);
   assert.equal(saved.publication!.body, saved.pr_body);
-  assert.deepEqual(fixture.publicationState.discoveries, [30_000, 60_000]);
+  assert.deepEqual(fixture.publicationState.discoveries, [40_000, 80_000]);
   assert.equal((await run()).summary.outcome, "succeeded");
   assert.equal(requests, 1);
   assert.equal(fixture.publicationState.creations, 1);
@@ -119,21 +118,17 @@ await test("failed required checks receive a verified fresh repair on the same P
     fixture.state.submissions.filter(({ text }) => text === "ci-cli").length,
     1,
   );
-  assert.deepEqual(fixture.state.sleeps, [30_000, 30_000]);
+  assert.deepEqual(fixture.state.sleeps, [10_000, 30_000, 10_000, 30_000]);
   assert.equal(fixture.workspaces.size, 1);
   assert.equal(
     saved.publication!.ciRepair!.attempts[0]!.failedChecks[0]!.link,
     "https://checks/build/1",
   );
   assert.deepEqual(
-    fixture.state.tabOptions.map(({ agent, submitKey }) => ({
-      agent,
+    fixture.state.tabOptions.map(({ submitKey }) => ({
       submitKey,
     })),
-    [
-      { agent: "custom-agent", submitKey: "Shift+Enter" },
-      { agent: "ci-agent", submitKey: "Shift+Enter" },
-    ],
+    [{ submitKey: "Shift+Enter" }, { submitKey: "Shift+Enter" }],
   );
   assert.ok(
     fixture.state.tabOptions.every(
@@ -171,7 +166,7 @@ await test("a second CI repair starts fresh from the first repaired remote head"
   assert.notEqual(budget.attempts[0]!.sessionid, budget.attempts[1]!.sessionid);
   assert.deepEqual(
     fixture.publicationState.discoveries,
-    [30_000, 60_000, 90_000],
+    [40_000, 80_000, 120_000],
   );
   assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/u);
   assert.equal(fixture.publicationState.pushes, 3);
@@ -191,10 +186,10 @@ await test("CI repair never enters ordinary Review, including after matching-inp
     else await probe(assignment);
   };
   let reviews = 0;
-  const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+  const submit = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.submitText = async (tab, text, chord) => {
+  fixture.dependencies.terminalPlugin.onInput = async (tab, text, chord) => {
     await submit(tab, text, chord);
     if (text.startsWith("Review assignment\n")) {
       reviews++;
@@ -249,11 +244,7 @@ for (const present of [false, true]) {
       assert.equal(continuation.text, "continue");
       assert.equal(continuation.chord, "Shift+Enter");
       assert.equal(continuation.tab, fixture.state.submissions.at(-2)!.tab);
-      assertBusinessAssignment(
-        continuation,
-        attempt.invocation!.path,
-        "CI repair",
-      );
+      assertBusinessAssignment(continuation, attempt.invocation!.path);
     }
     if (!present)
       assert.ok(

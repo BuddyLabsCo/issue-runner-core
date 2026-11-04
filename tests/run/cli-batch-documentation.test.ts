@@ -161,10 +161,10 @@ await test("ordinary implementation no_change earns no delivery trigger", async 
   const fixture = await batchDocumentationRun(t, [
     child(51, { labels: ["ready-for-agent", "Docs"] }),
   ]);
-  const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+  const submit = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+  fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
     if (text.startsWith("Implementation assignment\n")) {
       const assignment = promptAssignment(text) as { path: string };
       await publish(assignment.path, documentationNoChange);
@@ -239,11 +239,11 @@ await test("a command version upgrade recovers pending documentation before pare
     discovery++;
     return parent(...args);
   };
-  const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+  const submit = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
   const resumed: string[] = [];
-  fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+  fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
     resumed.push(text);
     await submit(tab, text);
     if (text === "continue")

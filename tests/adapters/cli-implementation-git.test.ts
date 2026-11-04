@@ -281,9 +281,10 @@ for (const scenario of [
               await readFile(path.join(options.cwd, "untracked.txt"), "utf8"),
               "unfinished work\n",
             );
-            return terminal.createTab(options);
+            const tab = await terminal.createTab(options);
+            return this.bindTab(tab.handle, options);
           },
-          async submitText(_tab, text, chord) {
+          async onInput(_tab, text, chord) {
             submissions.push({ text, ...(chord ? { chord } : {}) });
             if (text === "continue") controller.abort();
           },
@@ -336,7 +337,7 @@ for (const scenario of [
           async createTab() {
             assert.fail("a valid result produced while stopped needs no tab");
           },
-          async submitText() {
+          async onInput() {
             assert.fail("the completed assignment must not be replayed");
           },
           async closeTab() {
@@ -435,9 +436,9 @@ await test("a concurrent Batch uses a fresh fetched base and isolated real Git W
             },
           );
           assert.equal(stdout.trim(), "Issue Runner");
-          return tab;
+          return this.bindTab(tab, options);
         },
-        async submitText(tab, text) {
+        async onInput(tab, text) {
           const options = tabs.get(tab)!;
           const number = Number(/ticket-(\d+)$/u.exec(options.cwd)![1]);
           if (text.startsWith("Session Probe\n")) {

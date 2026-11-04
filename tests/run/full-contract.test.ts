@@ -5,7 +5,7 @@ import test from "node:test";
 import type { AuditEvent } from "../../src/audit.ts";
 import type { BatchProgress, MaintenanceProgress } from "../../src/recovery.ts";
 import type { CodeHost } from "../../src/run/contracts.ts";
-import type { TerminalPlugin } from "../../src/terminal.ts";
+import type { TestTerminal } from "../support/cli-dependencies.ts";
 import { fiveIssueRun } from "../support/full-contract-run.ts";
 import { agent } from "../support/cli-project.ts";
 import {
@@ -42,9 +42,9 @@ await test(
       [51, 52, 53].map((number) => [number, deferred<void>()]),
     );
     const ciGate = deferred<void>();
-    const terminal: TerminalPlugin = fixture.dependencies.terminalPlugin;
-    const submit = terminal.submitText.bind(terminal);
-    terminal.submitText = async (tab, text, chord) => {
+    const terminal: TestTerminal = fixture.dependencies.terminalPlugin;
+    const submit = terminal.onInput.bind(terminal);
+    terminal.onInput = async (tab, text, chord) => {
       const number = Number(
         /ticket-(\d+)$/u.exec(fixture.tabs.get(tab)!.cwd)![1],
       );

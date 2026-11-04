@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external contracts retain asynchronous signatures. */
 import assert from "node:assert/strict";
-import type { TerminalPlugin } from "../../src/terminal.ts";
+import type { CreateTabOptions, TabHandle } from "../../src/terminal.ts";
 import { LocalGitWorkspace } from "../../src/adapters/git-workspace.ts";
 import type {
   CodeHost,
@@ -10,10 +10,10 @@ import type {
   MergeRequestResult,
 } from "../../src/run/contracts.ts";
 
-export function terminalModule(plugin: TerminalPlugin) {
+export function terminalModule(plugin: TestTerminal) {
   const calls: unknown[][] = [];
   return {
-    contractVersion: 1 as const,
+    contractVersion: 2 as const,
     calls,
     createTerminalPlugin(...args: [unknown]) {
       calls.push(args);
@@ -30,25 +30,17 @@ export function createCliDependencies(launchDirectory: string) {
   const pauses: string[] = [];
   const remoteBranches = new Map<string, string>();
   const pullRequests: PullRequestRecord[] = [];
-  const terminalPlugin: TerminalPlugin = {
-    async createTab() {
-      effects.push("dispatch");
-      return {};
-    },
-    async start(tab, command) {
-      await this.submitText(tab, command, "Enter");
-      return undefined;
-    },
-    async resume(tab, command, sessionref) {
-      await this.submitText(tab, command, "Enter");
-      return sessionref;
-    },
-    async submitText() {
-      effects.push("submit");
-    },
-    async closeTab() {
-      effects.push("close_tab");
-    },
+  const terminalPlugin = createTestTerminal();
+  terminalPlugin.onInput = async () => {
+    effects.push("submit");
+  };
+  const create = terminalPlugin.createTab.bind(terminalPlugin);
+  terminalPlugin.createTab = async (options) => {
+    effects.push("dispatch");
+    return create(options);
+  };
+  terminalPlugin.closeTab = async () => {
+    effects.push("close_tab");
   };
   return {
     launchDirectory,
@@ -189,6 +181,8 @@ export function createCliDependencies(launchDirectory: string) {
     },
     commandName: "generic-terminal",
     commandVersion: "2.3.4",
+    terminalPackageRoot: launchDirectory,
+    terminalCliEntry: `${launchDirectory}/cli.mjs`,
     terminal: terminalModule(terminalPlugin),
     terminalPlugin,
     clock: {
@@ -212,3 +206,38 @@ export function createCliDependencies(launchDirectory: string) {
     },
   };
 }
+
+export function createTestTerminal() {
+  return {
+    onInput: async (
+      _tab: TabHandle,
+      _text: string,
+      _chord?: string,
+    ): Promise<void> => {
+      void [_tab, _text, _chord];
+    },
+    bindTab(handle: TabHandle, options: CreateTabOptions) {
+      return {
+        handle,
+        io: {
+          read: async () => "visible screen",
+          sendKeys: async (_keys: readonly string[]) => {
+            void _keys;
+          },
+          submitText: (text: string) =>
+            this.onInput(handle, text, options.submitKey),
+        },
+      };
+    },
+    async createTab(options: CreateTabOptions) {
+      return this.bindTab({}, options);
+    },
+    async execute(handle: TabHandle, command: string) {
+      await this.onInput(handle, command, "Enter");
+    },
+    async closeTab(_handle: TabHandle) {
+      void _handle;
+    },
+  };
+}
+export type TestTerminal = ReturnType<typeof createTestTerminal>;

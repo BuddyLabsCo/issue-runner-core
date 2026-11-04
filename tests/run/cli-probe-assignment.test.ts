@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import test, { type TestContext } from "node:test";
-import type { TerminalPlugin } from "../../src/terminal.ts";
+import type { TestTerminal } from "../support/cli-dependencies.ts";
 import { loadPrompt, renderPrompt } from "../../src/prompts/load.ts";
 import { ciRepairRun } from "../support/ci-repair-run.ts";
 import { conflictRepairRun } from "../support/conflict-repair-run.ts";
@@ -27,13 +27,17 @@ for (const [purpose, create] of [
 ] as const) {
   await test(`${purpose} Probe and correction forward the persisted assignment through every terminal wrapper`, async (t) => {
     const fixture = await create(t);
-    const plugin: TerminalPlugin = fixture.dependencies.terminalPlugin;
+    const plugin: TestTerminal = fixture.dependencies.terminalPlugin;
     const open = plugin.createTab.bind(plugin);
     let currentTab: object;
-    plugin.createTab = async (options) => (currentTab = await open(options));
-    const submit = plugin.submitText.bind(plugin);
+    plugin.createTab = async (options) => {
+      const tab = await open(options);
+      currentTab = tab.handle;
+      return tab;
+    };
+    const submit = plugin.onInput.bind(plugin);
     const paths = new Map<string, string[]>();
-    plugin.submitText = async (...args) => {
+    plugin.onInput = async (...args) => {
       const [, text] = args;
       if (!text.startsWith("Session Probe\n")) return submit(...args);
       const assignment = promptAssignment(text);
@@ -63,14 +67,11 @@ for (const [purpose, create] of [
           path: JSON.stringify(file),
         }),
         "Shift+Enter",
-        file,
-        `Continue the unfinished Session Probe in this conversation. Determine your actual native conversation session ID and report it through the assigned Probe protocol.\n\nWrite the JSON object to ${JSON.stringify(`${file}.tmp`)}, close it, and atomically rename it to ${JSON.stringify(file)}. Do not begin or replay the business task, or report business completion.`,
-      ] satisfies Parameters<TerminalPlugin["submitText"]>);
+      ] satisfies Parameters<TestTerminal["onInput"]>);
       if (assigned.length) {
         assert.notEqual(file, assigned[0]);
         assert.ok(stage.superseded.includes(assigned[0]!));
         assert.ok(text.includes("Correct the previous Probe:"));
-        assert.ok(!args[4].includes(assigned[0]!));
       }
       assigned.push(file);
       paths.set(role, assigned);
@@ -114,17 +115,16 @@ await test("restored documentation uses the current corrected Probe instead of s
   await publish(before.superseded[0]!, { sessionid: "superseded-native" });
   fixture.state.onProbe = async () =>
     assert.fail("retained Probe needs no replay");
-  fixture.dependencies.terminalPlugin.start = async () =>
+  fixture.dependencies.terminalPlugin.execute = async () =>
     assert.fail("restored identity must resume its native conversation");
   const refs: string[] = [];
-  fixture.dependencies.terminalPlugin.resume = async (_tab, command, ref) => {
-    refs.push(ref);
+  fixture.dependencies.terminalPlugin.execute = async (_tab, command) => {
+    refs.push(command);
     assert.equal(command, 'document-cli --resume "current-native"');
-    return ref;
   };
   fixture.dependencies.signal = new AbortController().signal;
   assert.equal((await fixture.run()).summary.outcome, "succeeded");
-  assert.deepEqual(refs, ["current-native"]);
+  assert.deepEqual(refs, ['document-cli --resume "current-native"']);
   const after = await fixture.snapshot();
   assert.deepEqual(after.probe, before.probe);
   assert.deepEqual(after.superseded, before.superseded);

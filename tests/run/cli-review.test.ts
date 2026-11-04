@@ -27,11 +27,11 @@ await test("verified implementation starts an independent Standards/Spec Review 
       },
     },
   });
-  const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+  const submit = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
   let reviews = 0;
-  fixture.dependencies.terminalPlugin.submitText = async (tab, text, chord) => {
+  fixture.dependencies.terminalPlugin.onInput = async (tab, text, chord) => {
     if (text.startsWith("Session Probe\n") && text.includes("-review-probe-")) {
       assert.equal(fixture.state.closedTabs.length, 1);
       assert.doesNotMatch(text, /pr_title|pr_body/u);
@@ -73,7 +73,7 @@ await test("verified implementation starts an independent Standards/Spec Review 
   assert.match(result.summary.reasons.join(" "), /CI-ready/u);
   assert.equal(fixture.state.closedTabs.length, 2);
   assert.deepEqual(
-    fixture.state.sleeps.filter((ms) => ms !== 30_000),
+    fixture.state.sleeps.filter((ms) => ms !== 30_000 && ms !== 10_000),
     [],
   );
   assert.equal(
@@ -185,7 +185,7 @@ await test("with no default cap, every findings round receives a fix and later R
   assert.equal(fixture.state.probeCount, 2);
   assert.equal(fixture.state.closedTabs.length, 8);
   assert.deepEqual(
-    fixture.state.sleeps.filter((ms) => ms !== 30_000),
+    fixture.state.sleeps.filter((ms) => ms !== 30_000 && ms !== 10_000),
     [],
   );
   const reviewerCommands = fixture.state.submissions.filter((item) =>
@@ -259,14 +259,13 @@ await test("cap=1 still fixes final findings in the exact implementation convers
   assert.equal(fixture.reviewState.fixes.length, 1);
   assert.equal(fixture.state.closedTabs.length, 3);
   assert.deepEqual(
-    fixture.state.tabOptions.map(({ agent, submitKey }) => ({
-      agent,
+    fixture.state.tabOptions.map(({ submitKey }) => ({
       submitKey,
     })),
     [
-      { agent: "custom-agent", submitKey: "Shift+Enter" },
-      { agent: "review-agent", submitKey: "Shift+Enter" },
-      { agent: "custom-agent", submitKey: "Shift+Enter" },
+      { submitKey: "Shift+Enter" },
+      { submitKey: "Shift+Enter" },
+      { submitKey: "Shift+Enter" },
     ],
   );
   assert.ok(
@@ -276,7 +275,7 @@ await test("cap=1 still fixes final findings in the exact implementation convers
   );
 
   assert.deepEqual(
-    fixture.state.sleeps.filter((ms) => ms !== 30_000),
+    fixture.state.sleeps.filter((ms) => ms !== 30_000 && ms !== 10_000),
     [],
   );
   const commands = fixture.state.submissions.filter(

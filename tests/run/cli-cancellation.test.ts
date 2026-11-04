@@ -44,10 +44,10 @@ for (const boundary of [
       return release.promise;
     };
     if (boundary === "startup") {
-      const start = fixture.dependencies.terminalPlugin.start.bind(
+      const start = fixture.dependencies.terminalPlugin.execute.bind(
         fixture.dependencies.terminalPlugin,
       );
-      fixture.dependencies.terminalPlugin.start = async (tab, command) => {
+      fixture.dependencies.terminalPlugin.execute = async (tab, command) => {
         await start(tab, command);
         waitSignal = fixture.state.tabOptions[0]!.signal;
         entered.resolve();
@@ -98,10 +98,10 @@ await test("q in a sibling's non-Agent pause cancels pending readiness", async (
   const entered = deferred<void>();
   const paused = deferred<void>();
   const release = deferred<void>();
-  const start = fixture.dependencies.terminalPlugin.start.bind(
+  const start = fixture.dependencies.terminalPlugin.execute.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.start = async (tab, command) => {
+  fixture.dependencies.terminalPlugin.execute = async (tab, command) => {
     await start(tab, command);
     entered.resolve();
     await release.promise;
@@ -123,10 +123,10 @@ await test("q in a sibling's non-Agent pause cancels pending readiness", async (
     return Promise.resolve("q");
   };
   const submissions: string[] = [];
-  const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+  const submit = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.submitText = (tab, text) => {
+  fixture.dependencies.terminalPlugin.onInput = (tab, text) => {
     submissions.push(text);
     return submit(tab, text);
   };

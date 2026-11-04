@@ -65,7 +65,7 @@ await test("restart reprocesses a verified handoff when completion persistence f
           "the retained final must be verified before native dispatch",
         );
       },
-      async submitText() {
+      async onInput() {
         assert.fail("recovery must not replay the assignment");
       },
       async closeTab() {

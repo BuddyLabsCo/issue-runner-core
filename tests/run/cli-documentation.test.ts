@@ -25,7 +25,7 @@ await test("standalone documentation delivers a Maintenance Ticket without busin
   assert.equal(fixture.integrationState.closures, 1);
   assert.equal(fixture.state.closedTabs.length, 1);
   assert.equal(fixture.state.submissions[0]!.text, "document-cli");
-  assert.equal(fixture.state.tabOptions[0]!.agent, "document-agent");
+  assert.equal("agent" in fixture.state.tabOptions[0]!, false);
   assert.equal(fixture.state.tabOptions[0]!.submitKey, "Shift+Enter");
   assert.ok(fixture.state.tabOptions[0]!.signal instanceof AbortSignal);
   const progress = await fixture.snapshot();

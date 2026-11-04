@@ -95,18 +95,18 @@ await test("one standalone implementation persists verified completion before cl
     },
     terminal: terminalModule({
       ...deps.terminalPlugin,
-      async createTab(options: {
-        cwd: string;
-        env: Readonly<Record<string, string>>;
-      }) {
+      async createTab(options) {
         assert.equal(options.cwd, worktree);
         assert.ok(path.isAbsolute(options.cwd));
         assert.ok(path.isAbsolute(options.env.GIT_CONFIG_GLOBAL!));
         assert.ok(await readFile(options.env.GIT_CONFIG_GLOBAL!, "utf8"));
         effects.push("open");
-        return { privatePluginState: "NEVER_PERSIST_THIS" };
+        return this.bindTab(
+          { privatePluginState: "NEVER_PERSIST_THIS" },
+          options,
+        );
       },
-      async submitText(_tab: object, text: string, chord?: string) {
+      async onInput(_tab: object, text: string, chord?: string) {
         assert.ok(!text.includes("\r"));
         if (!effects.includes("start")) {
           effects.push("start");
@@ -173,6 +173,7 @@ await test("one standalone implementation persists verified completion before cl
     "verify",
     "open",
     "start",
+    "sleep:10000",
     "probe",
     "task",
     "verify",

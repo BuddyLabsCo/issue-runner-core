@@ -91,10 +91,10 @@ for (const operation of ["Git fetch", "Reservation write"] as const) {
 
 await test("a rejected substantive prompt is audited without replay, redirection, or Operator Pause", async (t) => {
   const fixture = await implementationRun(t);
-  const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+  const submit = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.submitText = async (tab, text, chord) => {
+  fixture.dependencies.terminalPlugin.onInput = async (tab, text, chord) => {
     await submit(tab, text, chord);
     if (text.startsWith("Implementation assignment\n"))
       throw new Error("submitText response lost after delivery");
@@ -131,14 +131,10 @@ for (const feedback of ["Probe", "handoff"] as const) {
         /* No result from the uncertain submission yet. */
       };
     }
-    const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+    const submit = fixture.dependencies.terminalPlugin.onInput.bind(
       fixture.dependencies.terminalPlugin,
     );
-    fixture.dependencies.terminalPlugin.submitText = async (
-      tab,
-      text,
-      chord,
-    ) => {
+    fixture.dependencies.terminalPlugin.onInput = async (tab, text, chord) => {
       await submit(tab, text, chord);
       if (
         text.startsWith("Correct the") ||
@@ -163,7 +159,7 @@ for (const feedback of ["Probe", "handoff"] as const) {
     );
     if (feedback === "handoff") {
       const before = fixture.state.submissions.length;
-      fixture.dependencies.terminalPlugin.submitText = async (
+      fixture.dependencies.terminalPlugin.onInput = async (
         tab,
         text,
         chord,
@@ -188,7 +184,7 @@ for (const feedback of ["Probe", "handoff"] as const) {
   });
 }
 
-for (const operation of ["createTab", "submitText", "closeTab"] as const) {
+for (const operation of ["createTab", "onInput", "closeTab"] as const) {
   await test(`cancelling unresolved ${operation} stops the Run without waiting for the I/O bound`, async (t) => {
     const fixture = await implementationRun(t);
     const entered = deferred<void>();
@@ -305,19 +301,21 @@ for (const operation of ["addLabel", "addAssignee"] as const) {
     assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
     assert.equal(mutations, 1);
     assert.deepEqual(fixture.dependencies.pauses, []);
-    assert.deepEqual(fixture.state.sleeps, [30_000]);
+    assert.deepEqual(fixture.state.sleeps, [10_000, 30_000]);
     assert.equal(fixture.state.taskCount, 1);
   });
 }
 
-for (const operation of ["createTab", "submitText", "closeTab"] as const) {
+for (const operation of ["createTab", "onInput", "closeTab"] as const) {
   await test(`an unresolved terminal ${operation} has a finite bound and retains partial-operation diagnostics`, async (t) => {
     const fixture = await implementationRun(t, {
       ...validConfig,
       operationRetry: 0,
     });
-    if (operation === "submitText")
-      fixture.dependencies.terminalPlugin.start = async () => "native-ready";
+    if (operation === "onInput")
+      fixture.dependencies.terminalPlugin.execute = async () => {
+        /* Command submission completes before the stalled task input. */
+      };
     const entered = deferred<void>();
     let calls = 0;
     fixture.dependencies.terminalPlugin[operation] = () => {
@@ -339,13 +337,13 @@ for (const operation of ["createTab", "submitText", "closeTab"] as const) {
     const result = await running;
     assert.equal(
       result.summary.outcome,
-      operation === "submitText" ? "failed" : "cancelled",
+      operation === "onInput" ? "failed" : "cancelled",
       JSON.stringify(result),
     );
     assert.equal(calls, 1);
     assert.equal(
       fixture.dependencies.pauses.length,
-      operation === "submitText" ? 0 : 1,
+      operation === "onInput" ? 0 : 1,
     );
     assert.equal(fixture.state.taskCount, operation === "closeTab" ? 1 : 0);
     if (operation === "closeTab")

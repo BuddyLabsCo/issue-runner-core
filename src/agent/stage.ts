@@ -10,17 +10,15 @@ import type {
 } from "../recovery.ts";
 import type { Clock, OperatorIO, Ticket } from "../run/contracts.ts";
 import { OperatorCancelled, TicketSkipped } from "../run/operations.ts";
-import type { TabHandle, TerminalPlugin } from "../terminal.ts";
-import { NativeConversations } from "./conversation.ts";
+import type { TerminalPlugin } from "../terminal.ts";
+import { NativeConversations, type ConversationTab } from "./conversation.ts";
 import { nonempty, object, readHandoff } from "./handoff.ts";
 import { renderPrompt } from "../prompts/load.ts";
 import {
   probeInstructions,
   probeCorrectionInstructions,
-  probeRecoveryInstructions,
   handoffCorrectionInstructions,
   resumeInstructions,
-  recoveryInstructions,
 } from "../prompts/session.ts";
 
 export interface IssueStageContext {
@@ -126,7 +124,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
   };
   await mkdir(path.join(loaded.directory, "handoffs"), { recursive: true });
   await input.withEnvironment(async (env) => {
-    let tab: TabHandle | undefined;
+    let tab: ConversationTab | undefined;
     let ready = false;
     const saveIdentity = (ref: unknown, expected?: string) => {
       if (
@@ -147,18 +145,15 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
         cwd: input.worktree ?? progress.worktree,
         env,
         label: `issue-${progress.ticket} ${(input.progressLabel ?? purpose).replace(/_/gu, " ").replace(/ round /u, " r")}`,
-        agent: profile.agent,
         submitKey: profile.submitKey ?? "Enter",
         ...(signal ? { signal } : {}),
       });
       if (!ready) {
         const expected = sessionid();
-        const ref = await conversations.start(tab, profile, expected);
+        if (expected !== undefined) saveIdentity(expected, expected);
+        await conversations.start(tab, profile, expected);
+        await sleep(loaded.config.terminalPlugins.agentStartDelay * 1000);
         signal?.throwIfAborted();
-        if (ref !== undefined || expected !== undefined) {
-          saveIdentity(ref, expected);
-          await persist();
-        }
         ready = true;
       }
       return tab;
@@ -184,16 +179,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
         }
       }
       if (!allowed) return false;
-      await conversations.submit(
-        tab,
-        text,
-        profile.submitKey,
-        stage.invocation!.path,
-        renderPrompt(recoveryInstructions, {
-          name,
-          path: JSON.stringify(stage.invocation!.path),
-        }),
-      );
+      await conversations.submit(tab, text);
       return true;
     };
     if (!sessionid()) {
@@ -213,16 +199,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
         (purpose !== "documentation" && !repairRole) ||
         !(await readHandoff(stage.probe.path))
       )
-        await conversations.submit(
-          await open(),
-          prompt(),
-          profile.submitKey,
-          stage.probe.path,
-          renderPrompt(probeRecoveryInstructions, {
-            temporary: JSON.stringify(`${stage.probe.path}.tmp`),
-            path: JSON.stringify(stage.probe.path),
-          }),
-        );
+        await conversations.submit(await open(), prompt());
       for (;;) {
         signal?.throwIfAborted();
         const observed = await readHandoff(stage.probe.path);
@@ -254,16 +231,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
               path: assignment(`${purpose}-probe`),
             };
             await persist();
-            await conversations.submit(
-              await open(),
-              prompt(reason),
-              profile.submitKey,
-              stage.probe.path,
-              renderPrompt(probeRecoveryInstructions, {
-                temporary: JSON.stringify(`${stage.probe.path}.tmp`),
-                path: JSON.stringify(stage.probe.path),
-              }),
-            );
+            await conversations.submit(await open(), prompt(reason));
             continue;
           }
           await persist();

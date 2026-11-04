@@ -60,7 +60,7 @@ for (const scenario of [
     assert.equal(fixture.reviewState.reviews.length, 1);
     assert.equal(fixture.state.closedTabs.length, 2);
     assert.deepEqual(
-      fixture.state.sleeps.filter((ms) => ms !== 30_000),
+      fixture.state.sleeps.filter((ms) => ms !== 30_000 && ms !== 10_000),
       [],
     );
     const prompts = fixture.state.submissions.filter(
@@ -105,7 +105,7 @@ for (const scenario of [
     assert.equal(fixture.reviewState.reviews.length, 1);
     assert.equal((await fixture.snapshot()).reviews![0]!.superseded.length, 1);
     assert.deepEqual(
-      fixture.state.sleeps.filter((ms) => ms !== 30_000),
+      fixture.state.sleeps.filter((ms) => ms !== 30_000 && ms !== 10_000),
       [],
     );
   });
@@ -139,7 +139,7 @@ await test("no_change cannot satisfy findings; the correction remains in the fix
   assert.equal(fixture.reviewState.reviews.length, 1);
   assert.equal(fixture.reviewState.fixes.length, 1);
   assert.deepEqual(
-    fixture.state.sleeps.filter((ms) => ms !== 30_000),
+    fixture.state.sleeps.filter((ms) => ms !== 30_000 && ms !== 10_000),
     [],
   );
   const prompts = fixture.state.submissions.filter(
@@ -226,7 +226,7 @@ await test("Review handoffs containing commits receive immediate feedback for ev
   assert.equal(submissions.length, 6);
   assert.equal(new Set(submissions.map(({ tab }) => tab)).size, 1);
   assert.deepEqual(
-    fixture.state.sleeps.filter((ms) => ms !== 30_000),
+    fixture.state.sleeps.filter((ms) => ms !== 30_000 && ms !== 10_000),
     [],
   );
   assert.equal((await fixture.snapshot()).reviews!.length, 1);

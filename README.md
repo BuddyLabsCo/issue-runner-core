@@ -7,7 +7,7 @@ The project will reuse the workflow behavior of
 [sandcastle-runner](https://github.com/BuddyLabsCo/sandcastle-runner), excluding
 Agent-session Operator Pause and Runner-recorded Agent conversation logs.
 Interactive Agent CLIs run in terminals owned by the selected environment,
-where operators can intervene directly. Native session references return through composite startup or a fallback file Probe;
+where operators can intervene directly. Native session references come from the identity-only file Probe;
 task results return through file handoffs.
 
 ## Status
@@ -15,7 +15,7 @@ task results return through file handoffs.
 The development package exports `runCli` and `CliOptions` at `issue-runner-core/cli`,
 with help/version/init, strict Project and Run-scope validation, lazy terminal
 creation, and an empty-parent Run that returns `no_work` without closing the parent.
-Core registers no executable. It exports both v1 runtime constants and the complete Terminal and
+Core registers no executable. It exports both v2 runtime constants and the complete Terminal and
 Enhancement TypeScript contracts at `issue-runner-core/terminal`. The accepted
 [handoff skill](skills/issue-runner-handoff/SKILL.md) is available for manual
 installation and is included in the tarball. A numbered standalone `--issue`
@@ -62,11 +62,12 @@ Set `workflow.docMaintainTriggerLabel` to run this document workflow once after
 each successful Batch with a matching delivery-time label. Matching is exact and
 case-sensitive. Pending maintenance blocks later Batch discovery and parent closure,
 including after interruption; verified `no_change` satisfies the barrier.
-The [contract milestone](docs/terminal-contract.md) requires each Agent profile's
-opaque `agent` identifier and exposes composite startup and enhancement hosting
-contracts. Core awaits composite start/resume readiness and saves a returned native
-identity before dispatch. Only a new start returning undefined uses an identity-only
-Probe. Implementation and documentation handoffs supply PR metadata.
+The [terminal contract](docs/terminal-contract.md) exposes opaque control and bound I/O.
+Core submits configured commands, waits the base delay (ten seconds by default),
+and establishes new-session identity through Probe. Resume uses the exact saved
+reference. Agent selection, Assignment metadata, and recovery wording stay in Core.
+Enhancement discovery and activation follow separately; base startup needs no enhancement.
+Implementation and documentation handoffs supply PR metadata.
 No npm package has been published.
 
 Non-Agent failures retain bounded safe retries and Operator Pause. Enter retries;
@@ -98,8 +99,9 @@ issue-runner-herdr run --project my-project --issue
 
 The [issue-runner-herdr](https://github.com/BuddyLabsCo/issue-runner-herdr) package
 owns the command and generic Herdr terminal operations. It calls Core's shared
-CLI with its command name, version, and lazy terminal module. Herdr owns generic
-optional enhancement discovery; Codex remains optional and unchanged.
+CLI with its command name, version, lazy terminal module, real package root, and CLI
+entry identity. Core owns generic enhancement configuration; activation and discovery
+follow separately. Companion packages must match the revised contracts.
 Use Node.js 22.18.0 or later and npm 11 or later, including subsequent major versions.
 Project configuration stays in the selected Project's `config.yaml`.
 For unpublished development, supply the full Core tarball as Herdr's runtime
@@ -163,8 +165,8 @@ push, PR, integration, and tracker operations. The skill only submits the
 handoff; submission alone does not establish successful delivery.
 
 Numbered Issue Runs display the validated native identity and active handoff path.
-Core passes configured commands unchanged to composite start/resume and awaits
-readiness without a timeout. Fallback Probe and task submissions use the configured Agent chord. Approvals, questions, native errors, and missing output require
+Core passes configured commands through `execute` and waits `terminalPlugins.agentStartDelay`.
+Probe and task submissions use bound I/O with the creation-time Agent chord. Approvals, questions, native errors, and missing output require
 direct handling in that native conversation. Runner sends no missing-output
 reminders. Invalid results get specific corrections in the same tab at new paths,
 without correction backoff. Each newly published invalid
@@ -182,7 +184,7 @@ handoff files remain until successful Issue cleanup.
 A known unsent assignment or correction remains pending when eligibility stops
 dispatch and is submitted when eligibility returns, retaining its path. Missing output from an attempted assignment opens a fresh Runner Tab
 in the original Worktree with recreated per-call Git configuration. Runner submits
-the saved role's exact ref to composite resume, awaits readiness, then sends only
+the saved role's exact ref in the configured resume command, waits the base delay, then sends only
 `continue` with the configured Agent chord. It preserves the invocation, active
 handoff path, uncommitted work, and metadata without another
 Probe or task prompt.

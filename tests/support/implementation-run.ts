@@ -6,14 +6,18 @@ import path from "node:path";
 import type { TestContext } from "node:test";
 import { executeCli } from "../../src/cli.ts";
 import type { ImplementationProgress } from "../../src/recovery.ts";
-import type { CreateTabOptions, TerminalPlugin } from "../../src/terminal.ts";
+import type { CreateTabOptions } from "../../src/terminal.ts";
 import type {
   GitWorkspace,
   Ticket,
   WorkspaceEvidence,
 } from "../../src/run/contracts.ts";
 import { createProject, validConfig } from "./cli-project.ts";
-import { createCliDependencies, terminalModule } from "./cli-dependencies.ts";
+import {
+  createCliDependencies,
+  terminalModule,
+  type TestTerminal,
+} from "./cli-dependencies.ts";
 
 export const deliveryCommand = ["run", "--project", "demo", "--issue", "50"];
 export const implementationCommand = [...deliveryCommand, "--no-auto-merge"];
@@ -51,6 +55,7 @@ export async function implementationRun(
   t: TestContext,
   config: typeof validConfig & {
     workflow?: { review?: boolean; maxReviewRounds?: number };
+    terminalPlugins?: Record<string, unknown>;
   } = validConfig,
 ) {
   const { root, directory } = await createProject(t, {
@@ -65,8 +70,6 @@ export async function implementationRun(
       tab: object;
       text: string;
       chord?: string;
-      expectedFile?: string;
-      recoveryText?: string;
     }[],
     ticket: {
       number: 50,
@@ -113,21 +116,19 @@ export async function implementationRun(
     },
   };
   const snapshot = () => implementationProgress(directory, state.ticket.number);
-  const terminal: TerminalPlugin = {
+  const terminal: TestTerminal = {
     ...deps.terminalPlugin,
     async createTab(options) {
       state.events.push("open");
       state.tabOptions.push(options);
       state.gitConfigs.push(options.env.GIT_CONFIG_GLOBAL!);
-      return {};
+      return this.bindTab({}, options);
     },
-    async submitText(tab, text, chord, expectedFile, recoveryText) {
+    async onInput(tab, text, chord) {
       state.submissions.push({
         tab,
         text,
         ...(chord ? { chord } : {}),
-        ...(expectedFile === undefined ? {} : { expectedFile }),
-        ...(recoveryText === undefined ? {} : { recoveryText }),
       });
       state.events.push("submit");
       if (text.startsWith("Session Probe\n")) {

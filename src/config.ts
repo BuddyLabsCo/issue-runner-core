@@ -1,3 +1,4 @@
+import { terminalSettings } from "./config-terminal.ts";
 import { readFile, copyFile, mkdir } from "node:fs/promises";
 import { constants } from "node:fs";
 import path from "node:path";
@@ -25,7 +26,10 @@ export interface ProjectConfig {
   issueList: number[];
   maxBatchSize: number;
   targetBranch?: string;
-  terminalPlugins: Record<string, unknown>;
+  terminalPlugins: Record<string, unknown> & {
+    agentStartDelay: number;
+    enhancements: Record<string, unknown>;
+  };
   tracker: {
     tokenEnv: string;
     runnerAccount: string;
@@ -313,7 +317,9 @@ function parseConfig(
     checkout,
     issueList: configuredIssueList,
     maxBatchSize,
-    terminalPlugins: record(terminalPlugins, "terminalPlugins"),
+    terminalPlugins: terminalSettings(
+      record(terminalPlugins, "terminalPlugins"),
+    ),
     ...(input.targetBranch === undefined
       ? {}
       : { targetBranch: text(input.targetBranch, "targetBranch") }),

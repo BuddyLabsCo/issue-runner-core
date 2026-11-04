@@ -36,20 +36,15 @@ await test("explicit merge conflict repairs the existing PR and waits for checks
   assertBusinessAssignment(
     task,
     saved.publication!.conflictRepair!.attempts[0]!.invocation!.path,
-    "Conflict repair",
   );
   assert.equal(task.chord, "Enter");
   assert.equal(task.tab, fixture.state.closedTabs[1]);
   assert.equal(saved.publication!.conflictRepair!.consumed, 1);
   assert.deepEqual(
-    fixture.state.tabOptions.map(({ agent, submitKey }) => ({
-      agent,
+    fixture.state.tabOptions.map(({ submitKey }) => ({
       submitKey,
     })),
-    [
-      { agent: "custom-agent", submitKey: "Shift+Enter" },
-      { agent: "conflict-agent", submitKey: "Enter" },
-    ],
+    [{ submitKey: "Shift+Enter" }, { submitKey: "Enter" }],
   );
   assert.ok(
     fixture.state.tabOptions.every(
@@ -70,7 +65,7 @@ await test("explicit merge conflict repairs the existing PR and waits for checks
   assert.equal(fixture.repairs.tasks.length, 1);
   assert.match(fixture.repairs.tasks[0]!, /Merge conflict in README/u);
   assert.match(fixture.repairs.tasks[0]!, /Target Branch SHA: a{40}/u);
-  assert.deepEqual(fixture.state.sleeps, [30_000, 30_000]);
+  assert.deepEqual(fixture.state.sleeps, [10_000, 30_000, 10_000, 30_000]);
 });
 
 await test("explicit conflicting state starts repair without attempting a rejected merge", async (t) => {
@@ -174,7 +169,7 @@ await test("CI failure after conflict repair consumes the separate CI budget and
   assert.equal(fixture.publicationState.pushes, 3);
   assert.deepEqual(
     fixture.publicationState.discoveries,
-    [30_000, 60_000, 90_000],
+    [40_000, 80_000, 120_000],
   );
   assert.equal((await fixture.run()).summary.outcome, "succeeded");
   assert.equal(fixture.repairs.tasks.length, 1);
@@ -206,7 +201,10 @@ await test("operator resolution after budget exhaustion refreshes checks before 
     (await fixture.snapshot()).publication!.conflictRepair!.generation,
     0,
   );
-  assert.deepEqual(fixture.state.sleeps, [30_000, 30_000]);
+  assert.deepEqual(
+    fixture.state.sleeps,
+    [10_000, 30_000, 10_000, 10_000, 30_000],
+  );
 });
 
 await test("a queue that reports an explicit conflict hands off to repair instead of waiting for timeout", async (t) => {
@@ -314,10 +312,10 @@ await test("conflict repair preserves the completed ordinary Review across match
     else await probe(assignment);
   };
   let reviews = 0;
-  const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+  const submit = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.submitText = async (tab, text, chord) => {
+  fixture.dependencies.terminalPlugin.onInput = async (tab, text, chord) => {
     await submit(tab, text, chord);
     if (text.startsWith("Review assignment\n")) {
       reviews++;
