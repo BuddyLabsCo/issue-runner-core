@@ -5,6 +5,7 @@ import { access, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { stringify } from "yaml";
+import type { BatchProgress, MaintenanceProgress } from "../../src/recovery.ts";
 import type { CodeHost } from "../../src/run/contracts.ts";
 import { child } from "../support/parent-run.ts";
 import {
@@ -174,7 +175,7 @@ await test("ordinary implementation no_change earns no delivery trigger", async 
   assert.equal(fixture.maintenance.length, 0);
 });
 
-await test("pending documentation recovers before any parent discovery, using its saved conversation and occurrence", async (t) => {
+await test("a command version upgrade recovers pending documentation before parent discovery with its saved Batch association", async (t) => {
   const ticket = child(51, { labels: ["ready-for-agent", "Docs"] });
   const fixture = await batchDocumentationRun(t, [ticket]);
   fixture.state.onDocument = async () => {
@@ -193,7 +194,7 @@ await test("pending documentation recovers before any parent discovery, using it
       ),
       "utf8",
     ),
-  ) as { documentation: string; completed?: boolean };
+  ) as BatchProgress;
   const occurrence = JSON.parse(
     await readFile(
       path.join(
@@ -204,8 +205,14 @@ await test("pending documentation recovers before any parent discovery, using it
       ),
       "utf8",
     ),
-  ) as { batch: string };
+  ) as MaintenanceProgress;
   assert.equal(occurrence.batch, batch.documentation);
+  const implementation = await implementationProgress(fixture.directory, 51);
+  for (const progress of [implementation, before, occurrence]) {
+    assert.equal(progress.input_hash, batch.input_hash);
+    assert.equal(progress.run_id, batch.run_id);
+    assert.deepEqual(progress.run_arguments, batch.run_arguments);
+  }
   assert.equal(batch.completed, undefined);
   const getTicket = fixture.dependencies.tracker.getTicket.bind(
     fixture.dependencies.tracker,
@@ -244,6 +251,7 @@ await test("pending documentation recovers before any parent discovery, using it
   };
   fixture.dependencies.signal = new AbortController().signal;
 
+  fixture.dependencies.commandVersion = "3.0.0";
   const result = await fixture.run();
 
   assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
@@ -265,43 +273,51 @@ await test("pending documentation recovers before any parent discovery, using it
   assert.equal(fixture.maintenance.length, 1);
 });
 
-await test("changed configuration ignores the pending occurrence and retains all of its artifacts", async (t) => {
-  const fixture = await batchDocumentationRun(t, [
-    child(51, { labels: ["ready-for-agent", "Docs"] }),
-  ]);
-  fixture.state.onDocument = async () => {
-    fixture.controller.abort();
-  };
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  const original = await implementationProgress(fixture.directory, 100);
-  const recovery = path.join(fixture.directory, "recovery");
-  const files = await readdir(recovery);
-  const saved = await Promise.all(
-    files.map((file) => readFile(path.join(recovery, file), "utf8")),
-  );
-  await writeFile(
-    path.join(fixture.directory, "config.yaml"),
-    stringify({
-      ...batchDocumentationConfig,
-      targetBranch: "another-target",
-    }),
-  );
-  fixture.dependencies.signal = new AbortController().signal;
-  assert.equal((await fixture.run()).summary.outcome, "succeeded");
-  assert.equal(fixture.maintenance.length, 1);
-  assert.equal(fixture.maintenance[0]!.state, "open");
-  assert.deepEqual(fixture.cleanup, [
-    (await implementationProgress(fixture.directory, 51)).worktree,
-  ]);
-  await access(original.worktree);
-  await access(original.probe!.path);
-  assert.deepEqual(
-    await Promise.all(
+for (const change of ["configuration", "command name", "command rename"]) {
+  await test(`changed ${change} ignores the pending Batch and maintenance occurrence and retains its artifacts`, async (t) => {
+    const fixture = await batchDocumentationRun(t, [
+      child(51, { labels: ["ready-for-agent", "Docs"] }),
+    ]);
+    fixture.state.onDocument = async () => {
+      fixture.controller.abort();
+    };
+    assert.equal((await fixture.run()).summary.outcome, "cancelled");
+    const original = await implementationProgress(fixture.directory, 100);
+    const recovery = path.join(fixture.directory, "recovery");
+    const files = await readdir(recovery);
+    const saved = await Promise.all(
       files.map((file) => readFile(path.join(recovery, file), "utf8")),
-    ),
-    saved,
-  );
-});
+    );
+    if (change === "configuration")
+      await writeFile(
+        path.join(fixture.directory, "config.yaml"),
+        stringify({
+          ...batchDocumentationConfig,
+          targetBranch: "another-target",
+        }),
+      );
+    else
+      fixture.dependencies.commandName =
+        change === "command name"
+          ? "another-terminal"
+          : "generic-terminal-next";
+    fixture.dependencies.signal = new AbortController().signal;
+    assert.equal((await fixture.run()).summary.outcome, "succeeded");
+    assert.equal(fixture.maintenance.length, 1);
+    assert.equal(fixture.maintenance[0]!.state, "open");
+    assert.deepEqual(fixture.cleanup, [
+      (await implementationProgress(fixture.directory, 51)).worktree,
+    ]);
+    await access(original.worktree);
+    await access(original.probe!.path);
+    assert.deepEqual(
+      await Promise.all(
+        files.map((file) => readFile(path.join(recovery, file), "utf8")),
+      ),
+      saved,
+    );
+  });
+}
 
 for (const issueList of [[51], [51, 52, 53, 54]]) {
   await test(`Issue List recovery completes maintenance and all ${issueList.length} configured Issues`, async (t) => {

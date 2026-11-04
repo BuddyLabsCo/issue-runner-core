@@ -57,7 +57,12 @@ tests/
 - Business logic, including `run/` and `agent/`, must be OS- and coding-agent-agnostic:
   no platform or agent-brand branches, commands or imports. Keep platform details in
   adapters/plugins and agent-specific start/resume commands in configuration.
-- `recovery.ts` owns persistence; `run/` and `agent/` own restored behavior.
+- `recovery.ts` owns persistence and the shared input hash. CLI supplies the canonical
+  command name, exact argument array, and validated configuration bytes once;
+  execution, Batch, and maintenance checkpoints and associations reuse that hash.
+  Command renames isolate progress; command/Core versions and installation paths
+  do not affect it. `run/` and `agent/` own restored behavior, including explicit
+  restart and retention of unfinished resources.
 - Keep helpers in their owning module; extract shared code only for actual callers.
 - Built-in Markdown templates own complete Agent messages, including headings,
   context labels, project-instruction placement, and handoff instructions. Code

@@ -9,11 +9,12 @@ import type {
 } from "./run/contracts.ts";
 
 export function hashRunInput(
+  commandName: string,
   argv: readonly string[],
   config: Uint8Array,
 ): string {
   return createHash("sha256")
-    .update(JSON.stringify(argv))
+    .update(JSON.stringify([commandName, argv]))
     .update(config)
     .digest("hex");
 }

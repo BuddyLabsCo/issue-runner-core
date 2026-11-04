@@ -39,7 +39,9 @@ await test("the recovery hash uses the configuration bytes validated at startup"
   };
   assert.equal((await fixture.run()).summary.outcome, "incomplete");
   const expectedHash = createHash("sha256")
-    .update(JSON.stringify(implementationCommand))
+    .update(
+      JSON.stringify([fixture.dependencies.commandName, implementationCommand]),
+    )
     .update(config)
     .digest("hex");
   assert.equal((await fixture.snapshot()).input_hash, expectedHash);
@@ -80,8 +82,11 @@ for (const change of [
   "arguments",
   "configuration",
   "terminalPlugins",
+  "command name",
+  "command rename",
+  "argument order",
 ] as const) {
-  await test(`changed ${change} ignore old progress and preserve ambiguous retained work`, async (t) => {
+  await test(`a change in ${change} ignores old progress and preserves ambiguous retained work`, async (t) => {
     const fixture = await implementationRun(t);
     const configFile = path.join(fixture.directory, "config.yaml");
     if (change === "terminalPlugins")
@@ -101,6 +106,13 @@ for (const change of [
     const command = [...implementationCommand];
     if (change === "arguments")
       command[command.indexOf("--no-auto-merge")] = "--auto-merge";
+    else if (change === "argument order")
+      command.splice(1, 4, "--issue", "50", "--project", "demo");
+    else if (change === "command name" || change === "command rename")
+      fixture.dependencies.commandName =
+        change === "command name"
+          ? "another-terminal"
+          : "generic-terminal-next";
     else if (change === "terminalPlugins")
       await writeFile(
         configFile,
@@ -116,6 +128,9 @@ for (const change of [
       );
     const controller = new AbortController();
     fixture.dependencies.signal = controller.signal;
+    fixture.state.onSleep = async (ms) => {
+      if (ms === 250) controller.abort();
+    };
     const before = fixture.state.submissions.length;
     const reserved = await executeCli(command, fixture.dependencies);
     assert.equal(reserved.summary.outcome, "incomplete");

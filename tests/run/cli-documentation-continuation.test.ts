@@ -121,40 +121,49 @@ for (const outcome of ["committed", "no_change"] as const) {
   });
 }
 
-await test("changed documentation arguments start new resources without consuming the old checkpoint", async (t) => {
-  const fixture = await documentationRun(t);
-  fixture.state.onTask = async () => fixture.controller.abort();
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  const old = await fixture.snapshot();
-  const recovery = path.join(fixture.directory, "recovery");
-  const files = await readdir(recovery);
-  const saved = await Promise.all(
-    files.map((file) => readFile(path.join(recovery, file), "utf8")),
-  );
-  const controller = new AbortController();
-  fixture.dependencies.signal = controller.signal;
-  fixture.state.onTask = async () => controller.abort();
-
-  const result = await executeCli(
-    [...documentCommand, "--no-auto-merge"],
-    fixture.dependencies,
-  );
-
-  assert.equal(result.summary.outcome, "cancelled");
-  const current = await fixture.snapshot();
-  assert.notEqual(current.input_hash, old.input_hash);
-  assert.notEqual(current.execution_id, old.execution_id);
-  assert.notEqual(current.worktree, old.worktree);
-  assert.notEqual(current.invocation!.path, old.invocation!.path);
-  assert.equal(fixture.maintenance.creates, 2);
-  assert.deepEqual(fixture.dependencies.pauses, []);
-  assert.deepEqual(
-    await Promise.all(
+for (const change of ["arguments", "command name", "command rename"]) {
+  await test(`a change in documentation ${change} starts new resources without consuming the old checkpoint`, async (t) => {
+    const fixture = await documentationRun(t);
+    fixture.state.onTask = async () => fixture.controller.abort();
+    assert.equal((await fixture.run()).summary.outcome, "cancelled");
+    const old = await fixture.snapshot();
+    const recovery = path.join(fixture.directory, "recovery");
+    const files = await readdir(recovery);
+    const saved = await Promise.all(
       files.map((file) => readFile(path.join(recovery, file), "utf8")),
-    ),
-    saved,
-  );
-  await access(old.worktree);
-  await access(old.probe!.path);
-  assert.deepEqual(fixture.maintenance.cleanup, []);
-});
+    );
+    const controller = new AbortController();
+    fixture.dependencies.signal = controller.signal;
+    fixture.state.onTask = async () => controller.abort();
+
+    if (change !== "arguments")
+      fixture.dependencies.commandName =
+        change === "command name"
+          ? "another-terminal"
+          : "generic-terminal-next";
+    const result = await executeCli(
+      change === "arguments"
+        ? [...documentCommand, "--no-auto-merge"]
+        : documentCommand,
+      fixture.dependencies,
+    );
+
+    assert.equal(result.summary.outcome, "cancelled");
+    const current = await fixture.snapshot();
+    assert.notEqual(current.input_hash, old.input_hash);
+    assert.notEqual(current.execution_id, old.execution_id);
+    assert.notEqual(current.worktree, old.worktree);
+    assert.notEqual(current.invocation!.path, old.invocation!.path);
+    assert.equal(fixture.maintenance.creates, 2);
+    assert.deepEqual(fixture.dependencies.pauses, []);
+    assert.deepEqual(
+      await Promise.all(
+        files.map((file) => readFile(path.join(recovery, file), "utf8")),
+      ),
+      saved,
+    );
+    await access(old.worktree);
+    await access(old.probe!.path);
+    assert.deepEqual(fixture.maintenance.cleanup, []);
+  });
+}

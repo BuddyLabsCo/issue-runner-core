@@ -110,6 +110,15 @@ methods and checks cancellation before audit or workflow effects. Terminal and
 enhancement v1 contracts and lifecycle remain unchanged. Herdr owns generic
 optional enhancement discovery, with Codex optional and unchanged.
 
+Recovery uses one identity for execution, Batch, and maintenance checkpoints and
+associations: the canonical command name, exact argument array, and configuration
+bytes validated at startup. A command rename, argument change, or configuration
+change starts a new Run without adopting old progress. Command and Core versions,
+installation prefix, and executable path are excluded, so package upgrades alone
+preserve compatible recovery. Matching progress still requires its original
+working context. Cancellation retains unfinished resources; recovery failure
+offers explicit restart or exit, and restart retains the old resources.
+
 Install the terminal package globally with Core as a transitive runtime dependency:
 
 ```sh

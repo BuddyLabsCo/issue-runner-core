@@ -1,8 +1,7 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import { terminalModule } from "../support/cli-dependencies.ts";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
-import { access, appendFile, readFile, rm } from "node:fs/promises";
+import { access, appendFile, rm } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { executeCli } from "../../src/cli.ts";
@@ -62,7 +61,7 @@ await test("missing original Worktree offers only restart or exit before creatin
   await assert.rejects(access(saved.worktree));
 });
 
-await test("unchanged plugin configuration resumes only the saved role with literal all-occurrence session substitution", async (t) => {
+await test("a command version upgrade resumes only the saved role with unchanged configuration and literal session substitution", async (t) => {
   const fixture = await implementationRun(t, {
     ...validConfig,
     agents: {
@@ -85,19 +84,10 @@ await test("unchanged plugin configuration resumes only the saved role with lite
   };
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   const saved = await fixture.snapshot();
-  // Compatibility oracle: the argument/config bytes used before hashing moved.
-  const legacyHash = createHash("sha256")
-    .update(JSON.stringify(implementationCommand))
-    .update(await readFile(path.join(fixture.directory, "config.yaml")))
-    .digest("hex");
   await access(
-    path.join(fixture.directory, "recovery", `${legacyHash}-50.json`),
+    path.join(fixture.directory, "recovery", `${saved.input_hash}-50.json`),
   );
-  assert.deepEqual(saved, {
-    ...saved,
-    run_arguments: implementationCommand,
-    input_hash: legacyHash,
-  });
+  assert.deepEqual(saved.run_arguments, implementationCommand);
   const controller = new AbortController();
   const before = fixture.state.submissions.length;
   const messages = fixture.dependencies.messages.length;
@@ -108,6 +98,7 @@ await test("unchanged plugin configuration resumes only the saved role with lite
   fixture.state.evidence.commits = committed().commits;
   const result = await executeCli(implementationCommand, {
     ...fixture.dependencies,
+    commandVersion: "3.0.0",
     signal: controller.signal,
     terminal: terminalModule({
       ...fixture.dependencies.terminalPlugin,
@@ -162,6 +153,8 @@ await test("unchanged plugin configuration resumes only the saved role with lite
   assert.equal(fixture.state.taskCount, 1);
   const recovered = await fixture.snapshot();
   for (const key of [
+    "input_hash",
+    "run_id",
     "execution_id",
     "invocation",
     "worktree",

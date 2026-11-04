@@ -281,7 +281,11 @@ export async function executeRun(
         audit,
         runId,
         runArguments: [...argv],
-        inputHash: hashRunInput(argv, loaded.configBytes),
+        inputHash: hashRunInput(
+          dependencies.commandName,
+          argv,
+          loaded.configBytes,
+        ),
         clock,
         operator: dependencies.operator,
         git:
