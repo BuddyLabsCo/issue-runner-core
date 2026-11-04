@@ -57,7 +57,6 @@ export interface RunSummary {
 
 export interface RunOptions {
   project: string;
-  environment: string;
   selector: "parent" | "issue" | "document";
   parentTicket?: number;
   issueTicket?: number;

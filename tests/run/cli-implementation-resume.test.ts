@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import { terminalModule } from "../support/cli-dependencies.ts";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { access, appendFile, readFile, rm } from "node:fs/promises";
@@ -35,12 +36,12 @@ await test("missing original Worktree offers only restart or exit before creatin
   const result = await executeCli(implementationCommand, {
     ...fixture.dependencies,
     signal: new AbortController().signal,
-    terminalPlugin: {
+    terminal: terminalModule({
       ...fixture.dependencies.terminalPlugin,
       async createTab() {
         assert.fail("missing original context must not open a Runner Tab");
       },
-    },
+    }),
   });
   assert.equal(result.summary.outcome, "cancelled");
   assert.equal(prompts.length, 3);
@@ -108,7 +109,7 @@ await test("unchanged plugin configuration resumes only the saved role with lite
   const result = await executeCli(implementationCommand, {
     ...fixture.dependencies,
     signal: controller.signal,
-    terminalPlugin: {
+    terminal: terminalModule({
       ...fixture.dependencies.terminalPlugin,
       async createTab(options) {
         assert.equal(options.cwd, saved.worktree);
@@ -137,7 +138,7 @@ await test("unchanged plugin configuration resumes only the saved role with lite
           recoveryText,
         );
       },
-    },
+    }),
   });
   assert.equal(result.summary.outcome, "incomplete");
   const resumed = fixture.state.submissions.slice(before);

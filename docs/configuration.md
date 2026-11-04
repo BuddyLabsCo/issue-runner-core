@@ -12,18 +12,23 @@ import source Sandcastle/provider execution or transcript/session-pause code.
 
 Use Node.js 22.18.0 or later and npm 11 or later, including subsequent major versions.
 Build with `npm ci` and `npm run build`; `npm pack` also builds.
-Install Core and the selected terminal
-plugin globally in the same active npm installation environment/prefix,
-including a custom prefix. The artifact includes CLI code, terminal JS/types,
-init templates, and the handoff skill for manual installation.
+Install the terminal package globally, including in a custom npm prefix. Herdr
+owns `issue-runner-herdr` and depends on the full Core runtime transitively.
+For unpublished builds, supply the Core tarball as Herdr's runtime dependency
+before packing Herdr; see [package consumption](terminal-contract.md#build-and-identify-a-development-artifact).
+The Core artifact includes CLI code, terminal JS/types, init templates, and the
+handoff skill for manual installation. Core registers no executable.
 
 ```sh
-npm install -g /path/to/core.tgz /path/to/plugin.tgz
-issue-runner --help
-issue-runner --version
-issue-runner init --project my-project
-issue-runner run --project my-project --env herdr --parent 42
+npm install -g /path/to/herdr.tgz
+issue-runner-herdr --help
+issue-runner-herdr --version
+issue-runner-herdr init --project my-project
+issue-runner-herdr run --project my-project --parent 42
 ```
+
+Use `npm install -g --prefix /path/to/prefix /path/to/herdr.tgz` for a custom
+prefix, and invoke its installed command through that prefix's npm bin directory.
 
 The Launch Directory is the operator's working directory. Project keys use
 letters, digits, dot, underscore, or hyphen and identify exactly one child:
@@ -34,15 +39,23 @@ lookup are rejected. Global package installation does not relocate this config.
 destination, including a file or symbolic link, and retains partial output if
 copying fails. Edit its placeholders before running.
 
-`--env <name>` accepts lowercase letters, digits, and separating hyphens.
-Core loads only `issue-runner-<name>` through its public import entry, beside the
-executing Core package. It checks contract version 1, the `createTerminalPlugin(config)` factory,
-initialization, and all five terminal methods before workflow reads or mutations.
-The factory receives the complete `terminalPlugins` object from Project configuration,
-regardless of `--env`. Omission supplies `{}`. Explicit null, arrays, and scalar
-containers fail startup validation before workflow reads or mutations.
-Project-local packages, other global prefixes, and caches cannot substitute for
-a missing sibling. No automatic installation or backend fallback occurs.
+The terminal command calls `runCli({ commandName, commandVersion, terminal })`
+from `issue-runner-core/cli`. Importing this entry starts no CLI, creates no
+terminal, and installs no process handlers. Calling it reads process arguments,
+working directory and environment, and owns OperatorIO, the AbortController,
+and signal listeners. Help, usage errors and init follow-up commands use the
+supplied command name. Version output is
+`<commandName> <commandVersion> (core <loadedCoreVersion>)` and uses the executing
+Core package's version. Help, version and init need no credentials or terminal factory.
+
+For Runs, Core validates arguments, selectors, Project lookup, configuration,
+credentials, and the nonempty Issue List before calling the factory. `--env`
+is unsupported. There is no terminal package discovery or fallback.
+Core validates contract version 1 and the callable `createTerminalPlugin(config)`
+factory, then invokes it once with the complete `terminalPlugins` value.
+Omission supplies `{}`; null, arrays, and scalar containers fail configuration validation.
+The result must be an object with callable `createTab`, `start`, `resume`,
+`submitText`, and `closeTab` methods.
 
 Configure plugin-owned fields under `terminalPlugins`, using the selected plugin's documentation:
 
@@ -55,22 +68,14 @@ environment-subtree selection, Agent-profile mapping, or enhancement installatio
 Plugin configuration remains part of the original configuration bytes hashed for recovery.
 Changing those bytes selects a new Run; unchanged arguments and bytes retain matching recovery behavior.
 
-Lookup follows the executing Core package's real location, including after
-relocating a portable installation or invoking Core through a link. It does not
-ask the `npm` on PATH to choose a prefix. A sibling link into another prefix
-or a package cache is rejected, as is a public entry that escapes the selected
-package. Nested Core dependencies cannot substitute for the selected sibling.
-The package's public `import` entry is used; private entries and unrelated
-plugins are not initialized.
-
-Startup errors name `issue-runner-<name>`, retain the underlying import or
-initialization error, and explain the required contract-v1/same-prefix
-installation. For a missing package, install the selected plugin into the
-prefix containing the Core executable you actually invoked. For a version,
-export, factory, or method error, use a compatible plugin in that same prefix.
-An incompatible sibling is never replaced with a Project-local or cached copy.
-These failures happen before audit creation, Reservations, Worktrees, or Agent
-dispatch.
+Module and factory failures identify the supplied command and preserve the
+underlying cause. Successful validation and the cancellation checkpoint precede
+audit creation, Run state, Reservations, Worktrees, and Agent dispatch.
+SIGINT and SIGTERM abort the controller; Core removes its listeners in `finally`.
+`runCli` resolves without a result and sets `process.exitCode` to 0 on success
+or 1 on handled failure/cancellation. It never forces process termination.
+A pending factory is awaited; cancellation is checked once it finishes.
+Reports and retained resources follow the existing workflow policy.
 
 ## Run scope
 
@@ -111,7 +116,7 @@ maxBatchSize: 2
 ```
 
 ```sh
-issue-runner run --project my-project --env herdr --issue
+issue-runner-herdr run --project my-project --issue
 ```
 
 If all three Issues are eligible, this selects 51 and 57. Ineligible Issues do
@@ -392,7 +397,7 @@ Snapshots retain each attempt's identity, generation, native session, repair Wor
 With a numbered `--issue` or `--document`, the CLI accepts `--no-auto-merge`:
 
 ```sh
-issue-runner run --project my-project --env herdr --issue 50 --no-auto-merge
+issue-runner-herdr run --project my-project --issue 50 --no-auto-merge
 ```
 
 With `--no-auto-merge`, a CI-ready unmerged PR retains its remote branch, original Worktree, Probe/handoff files, Reservation, and recovery evidence. The terminal report shows the PR link and retained Worktree paths with outcome `incomplete` and nonzero exit. It grants no successful-delivery credit, performs no success cleanup, closes no Issue, and triggers no documentation maintenance.
@@ -459,7 +464,7 @@ Recovery also checks that the occurrence belongs to the Batch's saved Run, inclu
 Run documentation maintenance without selecting a business Issue:
 
 ```sh
-issue-runner run --project demo --env herdr --document
+issue-runner-herdr run --project demo --document
 ```
 
 Supply `agents.documentation`, a nonempty `prompts/documentation.md`, and the
@@ -578,7 +583,7 @@ Review and fix progress show `review round N` and `fix review round N`, includin
 
 The final report lists Issues in selection order, even when concurrent work finishes in another order.
 Documentation appears as maintenance work after its triggering Batch.
-Each structured CLI result includes `exitCode`, `logPath`, and a `summary` with the Run outcome and reasons.
+The private application test seam returns structured results with `exitCode`, `logPath`, and a `summary` with the Run outcome and reasons. The public `runCli` API prints reports and returns `Promise<void>`.
 For a started Run, `summary.tickets` contains ordered records with Issue number, kind, status, PR number/URL, detail, and retained Worktrees.
 Failures and cancellation retain these records and resource details already observed by Runner.
 The terminal report shows failure details, retained Worktrees, and cancellation, but omits recovery-file and historical-branch lists.
@@ -864,20 +869,15 @@ mutations and transport. They use real audit-file failures and controlled timers
 no Herdr installation, Agent account, or model call is required.
 No public testing entry, filesystem port, or scheduler is added.
 
-Run `npm run test:package` to check built Core and private fake-plugin tarballs
-installed together in a custom npm global prefix. A separate Launch Directory
-exercises npm's installed executable, init templates, every built-in Markdown
-prompt, public JavaScript/types, and the exact manually installable handoff asset.
-Installed CLI checks cover prompt assembly, separate startup/Probe/task/correction
-submissions, waits, and continuation. Removing the installed prompt assets must
-fail rather than load them from the checkout.
+Run `npm run test:package` to install a private generic terminal command in a
+custom npm global prefix, with the full Core tarball as its transitive dependency.
+A separate Launch Directory exercises the command's help/version/init, public
+CLI and terminal JavaScript/types, bundled templates/prompts, and the manually
+installable handoff asset. Core must register no executable or public testing API.
+Startup tests cover invalid modules, factories and methods, exact configuration
+forwarding, cancellation after a pending factory, and process-listener cleanup.
 See [package verification](terminal-contract.md#verification-limits-and-global-installation)
 for setup and evidence limits.
-
-Installed-package cases also relocate the global prefix and invoke Core through
-a link. They exercise public import selection, asynchronous initialization,
-malformed modules/factories/methods, and isolation from Project packages, other
-prefixes, PATH, NODE_PATH, npm caches, and linked entries outside the package.
 
 These checks do not prove live Herdr delivery, native Agent restoration, full
 delivery workflows, or macOS operation. Those remain downstream verification.

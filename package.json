@@ -7,6 +7,10 @@
     "./terminal": {
       "types": "./dist/terminal.d.ts",
       "default": "./dist/terminal.js"
+    },
+    "./cli": {
+      "types": "./dist/cli-entry.d.ts",
+      "default": "./dist/cli-entry.js"
     }
   },
   "files": [
@@ -17,9 +21,6 @@
     "docs/terminal-contract.md",
     "docs/configuration.md"
   ],
-  "bin": {
-    "issue-runner": "dist/cli.js"
-  },
   "engines": {
     "node": ">=22.18.0",
     "npm": ">=11"

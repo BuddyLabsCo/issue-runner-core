@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import { terminalModule } from "../support/cli-dependencies.ts";
 import { promptAssignment } from "../support/prompt-assignment.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -251,7 +252,7 @@ for (const scenario of [
         ...fixture.dependencies,
         signal: controller.signal,
         gitWorkspace: new LocalGitWorkspace("unused-local-test-token"),
-        terminalPlugin: {
+        terminal: terminalModule({
           ...fixture.dependencies.terminalPlugin,
           async createTab(options) {
             assert.equal(options.cwd, progress.worktree);
@@ -289,7 +290,7 @@ for (const scenario of [
           async closeTab() {
             assert.fail("interrupted work retains its Runner Tab");
           },
-        },
+        }),
       });
       assert.equal(resumed.summary.outcome, "cancelled");
       assert.deepEqual(submissions, [
@@ -330,7 +331,7 @@ for (const scenario of [
         ...fixture.dependencies,
         signal: new AbortController().signal,
         gitWorkspace: new LocalGitWorkspace("unused-local-test-token"),
-        terminalPlugin: {
+        terminal: terminalModule({
           ...fixture.dependencies.terminalPlugin,
           async createTab() {
             assert.fail("a valid result produced while stopped needs no tab");
@@ -341,7 +342,7 @@ for (const scenario of [
           async closeTab() {
             assert.fail("old opaque handles do not survive restart");
           },
-        },
+        }),
       });
       assert.match(recovered.summary.reasons.join(" "), /CI-ready/u);
       const completed = await fixture.snapshot();
@@ -414,11 +415,11 @@ await test("a concurrent Batch uses a fresh fetched base and isolated real Git W
   });
   let tasks = 0;
   const result = await executeCli(
-    ["run", "--project", "demo", "--env", "fake", "--parent", "48"],
+    ["run", "--project", "demo", "--parent", "48"],
     {
       ...fixture.dependencies,
       gitWorkspace: new LocalGitWorkspace("unused-local-test-token"),
-      terminalPlugin: {
+      terminal: terminalModule({
         ...fixture.dependencies.terminalPlugin,
         async createTab(options) {
           const tab = {};
@@ -478,7 +479,7 @@ await test("a concurrent Batch uses a fresh fetched base and isolated real Git W
           assert.equal(closed.has(tab), false);
           closed.add(tab);
         },
-      },
+      }),
     },
   );
   assert.equal(result.summary.outcome, "incomplete");

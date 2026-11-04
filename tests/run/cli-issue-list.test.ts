@@ -228,7 +228,7 @@ await test("list option ordering preserves the configured Target Branch", async 
   fixture.dependencies.codeHost.resolveTargetBranch = async () =>
     assert.fail("the configured Target Branch wins");
   const result = await executeCli(
-    ["run", "--issue", "--env", "fake", "--project", "demo"],
+    ["run", "--issue", "--project", "demo"],
     fixture.dependencies,
   );
   assert.deepEqual(fixture.dispatched, [51]);
@@ -249,12 +249,13 @@ await test("empty and invalid lists fail at startup before external reads or del
     const { root } = await createProject(t, { ...validConfig, issueList });
     const deps = createCliDependencies(root);
     const result = await executeCli(
-      ["run", "--issue", "--env", "fake", "--project", "demo"],
+      ["run", "--issue", "--project", "demo"],
       deps,
     );
     assert.equal(result.summary.outcome, "failed");
     assert.equal(result.logPath, null);
     assert.match(result.summary.reasons.join("; "), /issueList/u);
+    assert.deepEqual(deps.terminal.calls, []);
     assert.deepEqual(deps.reads, []);
     assert.deepEqual(deps.effects, []);
   }

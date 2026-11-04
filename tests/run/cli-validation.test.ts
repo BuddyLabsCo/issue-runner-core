@@ -10,7 +10,7 @@ import { loadProject } from "../../src/config.ts";
 import { agent, createProject, validConfig } from "../support/cli-project.ts";
 import { createCliDependencies } from "../support/cli-dependencies.ts";
 
-const run = ["run", "--project", "demo", "--env", "fake", "--parent", "48"];
+const run = ["run", "--project", "demo", "--parent", "48"];
 
 await test("omitted terminalPlugins supplies an empty object", async (t) => {
   const { root } = await createProject(t);
@@ -41,6 +41,7 @@ await test("tagged terminalPlugins containers fail before external access", asyn
     assert.equal(result.exitCode, 1, container);
     assert.equal(result.logPath, null);
     assert.deepEqual(deps.reads, []);
+    assert.deepEqual(deps.terminal.calls, []);
     assert.deepEqual(deps.effects, []);
   }
 });
@@ -269,6 +270,7 @@ await test("invalid configuration fails before any external reads or delivery re
     assert.equal(result.logPath, null);
     assert.deepEqual(deps.effects, []);
     assert.deepEqual(deps.reads, []);
+    assert.deepEqual(deps.terminal.calls, []);
     assert.deepEqual((await readdir(directory)).sort(), [
       "config.yaml",
       "prompts",
@@ -288,11 +290,12 @@ await test("Project selection uses only its named launch-directory child", async
   ]) {
     const deps = createCliDependencies(root);
     const result = await executeCli(
-      ["run", "--env", "fake", "--project", project, "--parent", "48"],
+      ["run", "--project", project, "--parent", "48"],
       deps,
     );
     assert.equal(result.exitCode, 1);
     assert.deepEqual(deps.reads, []);
+    assert.deepEqual(deps.terminal.calls, []);
   }
   const nested = createCliDependencies(path.join(root, "demo"));
   assert.equal(
@@ -338,6 +341,7 @@ await test("enabled purposes require their profiles, prompts, and maintenance me
     const deps = createCliDependencies(root);
     assert.equal((await executeCli(run, deps)).exitCode, 1);
     assert.deepEqual(deps.reads, []);
+    assert.deepEqual(deps.terminal.calls, []);
     await writeFile(file, saved);
   }
   for (const trigger of ["documentation", " Documentation "]) {
@@ -392,7 +396,7 @@ await test("enabled purposes require their profiles, prompts, and maintenance me
 
 await test("Run modes are exclusive and auto-merge is restricted before external access", async (t) => {
   const { root } = await createProject(t);
-  const prefix = ["run", "--project", "demo", "--env", "fake"];
+  const prefix = ["run", "--project", "demo"];
   for (const scope of [
     [],
     ["--parent"],
@@ -406,6 +410,7 @@ await test("Run modes are exclusive and auto-merge is restricted before external
     ["--issue", "49", "--no-auto-merge", "true"],
     ["--document=false"],
     ["--parent", "48", "--unknown"],
+    ["--parent", "48", "--env", "fake"],
   ]) {
     const deps = createCliDependencies(root);
     assert.equal(
@@ -414,6 +419,7 @@ await test("Run modes are exclusive and auto-merge is restricted before external
       scope.join(" "),
     );
     assert.deepEqual(deps.reads, []);
+    assert.deepEqual(deps.terminal.calls, []);
     assert.deepEqual(deps.effects, []);
   }
 });
@@ -429,7 +435,7 @@ await test("option ordering and configured Target Branch do not change the empty
     assert.fail("configured branch wins");
   };
   const result = await executeCli(
-    ["run", "--parent", "48", "--env", "fake", "--project", "demo"],
+    ["run", "--parent", "48", "--project", "demo"],
     deps,
   );
   assert.equal(result.summary.outcome, "no_work");
@@ -449,7 +455,7 @@ await test("ineligible Issue scopes do not dispatch and documentation requires c
   ]) {
     const deps = createCliDependencies(root);
     const result = await executeCli(
-      ["run", "--env", "fake", "--project", "demo", ...scope],
+      ["run", "--project", "demo", ...scope],
       deps,
     );
     assert.equal(result.summary.outcome, "incomplete");
@@ -457,8 +463,6 @@ await test("ineligible Issue scopes do not dispatch and documentation requires c
   }
   const document = [
     "run",
-    "--env",
-    "fake",
     "--project",
     "demo",
     "--document",

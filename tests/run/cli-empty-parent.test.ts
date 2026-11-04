@@ -13,7 +13,7 @@ await test("an empty parent returns no_work through the application without clos
   const { root, directory } = await createProject(t);
   const dependencies = createCliDependencies(root);
   const result = await executeCli(
-    ["run", "--env", "fake", "--project", "demo", "--parent", "48"],
+    ["run", "--project", "demo", "--parent", "48"],
     dependencies,
   );
   assert.equal(result.exitCode, 0);
@@ -69,7 +69,7 @@ await test("a failed audit append retries logging without replaying a completed 
     return "";
   };
   const result = await executeCli(
-    ["run", "--project", "demo", "--env", "fake", "--parent", "48"],
+    ["run", "--project", "demo", "--parent", "48"],
     deps,
   );
   assert.equal(result.summary.outcome, "no_work");
@@ -80,7 +80,7 @@ await test("pagination cannot hide ineligible children or turn a nonempty parent
   const { root } = await createProject(t);
   const deps = createCliDependencies(root);
   const result = await executeCli(
-    ["run", "--project", "demo", "--env", "fake", "--parent", "48"],
+    ["run", "--project", "demo", "--parent", "48"],
     {
       ...deps,
       tracker: {
@@ -111,7 +111,7 @@ await test("cancelled parents stop discovery without rewriting children", async 
   const { root } = await createProject(t);
   const deps = createCliDependencies(root);
   const result = await executeCli(
-    ["run", "--project", "demo", "--env", "fake", "--parent", "48"],
+    ["run", "--project", "demo", "--parent", "48"],
     {
       ...deps,
       tracker: {

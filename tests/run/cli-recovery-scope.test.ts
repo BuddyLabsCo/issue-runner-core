@@ -99,7 +99,8 @@ for (const change of [
     const oldFile = path.join(recovery, (await readdir(recovery))[0]!);
     const oldText = await readFile(oldFile, "utf8");
     const command = [...implementationCommand];
-    if (change === "arguments") command[4] = "alternate";
+    if (change === "arguments")
+      command[command.indexOf("--no-auto-merge")] = "--auto-merge";
     else if (change === "terminalPlugins")
       await writeFile(
         configFile,

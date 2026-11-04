@@ -1,38 +1,11 @@
-import { realpath } from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
 import { terminalContractVersion, type TerminalPlugin } from "../terminal.ts";
 
 export async function loadTerminalPlugin(
-  environment: string,
+  commandName: string,
+  module: unknown,
   config: unknown,
 ): Promise<TerminalPlugin> {
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(environment))
-    throw new Error(
-      "Invalid --env name; use lowercase letters, digits, and hyphens",
-    );
-  const name = `issue-runner-${environment}`;
   try {
-    const core = await realpath(
-      fileURLToPath(new URL("../../", import.meta.url)),
-    );
-    const sibling = await realpath(path.join(path.dirname(core), name));
-    if (path.dirname(sibling) !== path.dirname(core))
-      throw new Error(
-        "selected package must be a sibling of the executing Core package",
-      );
-    // Node selects the public import entry; containment forbids local/cache fallbacks.
-    const entry = await realpath(fileURLToPath(import.meta.resolve(name)));
-    const relative = path.relative(sibling, entry);
-    if (
-      relative === ".." ||
-      relative.startsWith(`..${path.sep}`) ||
-      path.isAbsolute(relative)
-    )
-      throw new Error(
-        "selected module is not the sibling of the executing Core package",
-      );
-    const module: unknown = await import(pathToFileURL(entry).href);
     if (
       typeof module !== "object" ||
       module === null ||
@@ -73,7 +46,7 @@ export async function loadTerminalPlugin(
     return plugin as TerminalPlugin;
   } catch (error) {
     throw new Error(
-      `Unable to load ${name}: ${error instanceof Error ? error.message : String(error)}. Install a contract-v${terminalContractVersion} compatible ${name} globally in the same npm environment/prefix as issue-runner-core.`,
+      `Unable to initialize ${commandName}: ${error instanceof Error ? error.message : String(error)}`,
       { cause: error },
     );
   }

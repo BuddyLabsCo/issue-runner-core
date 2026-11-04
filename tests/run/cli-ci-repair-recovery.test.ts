@@ -222,7 +222,7 @@ await test(
     const issueByPr = new Map<number, number>();
     const host = fixture.dependencies.codeHost;
     const result = await executeCli(
-      ["run", "--project", "demo", "--env", "fake", "--parent", "48"],
+      ["run", "--project", "demo", "--parent", "48"],
       {
         ...fixture.dependencies,
         codeHost: {

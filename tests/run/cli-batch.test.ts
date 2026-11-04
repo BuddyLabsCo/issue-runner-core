@@ -263,15 +263,7 @@ await test("invalid Batch ownership or membership fails closed before dispatch",
   ) as object;
   assert.deepEqual(saved, {
     ...saved,
-    run_arguments: [
-      "run",
-      "--project",
-      "demo",
-      "--env",
-      "fake",
-      "--parent",
-      "48",
-    ],
+    run_arguments: ["run", "--project", "demo", "--parent", "48"],
   });
   fixture.dependencies.terminalPlugin.createTab = async () =>
     assert.fail("invalid Batch cannot dispatch");

@@ -1,7 +1,7 @@
 # issue-runner-core
 
-Shared issue delivery workflow and the `issue-runner` CLI, with independently
-installed terminal execution environment plugins.
+Shared CLI and issue delivery workflow for terminal-owned commands. Terminal
+packages supply the executable and terminal I/O.
 
 The project will reuse the workflow behavior of
 [sandcastle-runner](https://github.com/BuddyLabsCo/sandcastle-runner), excluding
@@ -12,10 +12,10 @@ task results return through file handoffs.
 
 ## Status
 
-The development package includes the single `issue-runner` executable,
-help/version/init, strict Project and Run-scope validation, global terminal
-plugin loading, and an empty-parent Run that returns `no_work` without closing
-the parent. It exports both v1 runtime constants and the complete Terminal and
+The development package exports `runCli` and `CliOptions` at `issue-runner-core/cli`,
+with help/version/init, strict Project and Run-scope validation, lazy terminal
+creation, and an empty-parent Run that returns `no_work` without closing the parent.
+Core registers no executable. It exports both v1 runtime constants and the complete Terminal and
 Enhancement TypeScript contracts at `issue-runner-core/terminal`. The accepted
 [handoff skill](skills/issue-runner-handoff/SKILL.md) is available for manual
 installation and is included in the tarball. A numbered standalone `--issue`
@@ -78,32 +78,33 @@ See [non-Agent recovery](docs/configuration.md#non-agent-recovery) for the opera
 See [terminal contract development](docs/terminal-contract.md) for the public
 API, build/test commands, tarball identity, and independent plugin consumption.
 The accepted [Core specification](https://github.com/BuddyLabsCo/issue-runner-core/issues/45)
-and its linked final decisions supersede the earlier
-[design document](docs/design.md), including its local/npx installation examples.
+and its linked final decisions govern the [design document](docs/design.md).
 
 ## Development usage
 
-Install built Core and plugin tarballs globally in the same active npm
-environment. The package names below describe the eventual registry install:
+Install the terminal package globally; it includes Core as a runtime dependency.
+Custom npm prefixes are supported. The package name below describes the eventual registry install:
 
 ```sh
-npm install -g issue-runner-core issue-runner-herdr
-issue-runner init --project my-project
+npm install -g issue-runner-herdr
+issue-runner-herdr init --project my-project
 # Edit my-project/config.yaml and the three prompts, then set its credentials.
-issue-runner run --project my-project --env herdr --parent 42
+issue-runner-herdr run --project my-project --parent 42
 # For one eligible standalone Issue, run implementation and enabled Review/fixes:
-issue-runner run --project my-project --env herdr --issue 123
+issue-runner-herdr run --project my-project --issue 123
 # For the standalone Issue List, set issueList in config.yaml, then run:
-issue-runner run --project my-project --env herdr --issue
+issue-runner-herdr run --project my-project --issue
 ```
 
-Core supplies the executable and shared behavior. The separately installed
-[issue-runner-herdr](https://github.com/BuddyLabsCo/issue-runner-herdr) package
-supplies generic Herdr terminal operations. Core has no built-in list of
-supported environment names or Agent brands. Install both in the same active
-npm global environment/prefix. Use Node.js 22.18.0 or later and npm 11 or later,
-including subsequent major versions. Project configuration stays in the selected
-Project's `config.yaml`.
+The [issue-runner-herdr](https://github.com/BuddyLabsCo/issue-runner-herdr) package
+owns the command and generic Herdr terminal operations. It calls Core's shared
+CLI with its command name, version, and lazy terminal module. Herdr owns generic
+optional enhancement discovery; Codex remains optional and unchanged.
+Use Node.js 22.18.0 or later and npm 11 or later, including subsequent major versions.
+Project configuration stays in the selected Project's `config.yaml`.
+For unpublished development, supply the full Core tarball as Herdr's runtime
+dependency before packing and globally installing Herdr; see
+[package-consumer instructions](docs/terminal-contract.md#build-and-identify-a-development-artifact).
 
 See [configuration and startup](docs/configuration.md) for supported options,
 validation, current scope, and test limits. `init` refuses existing destinations,
@@ -115,7 +116,7 @@ Install `issue-runner-handoff` in each Agent CLI used for implementation,
 Review, or documentation before running Runner:
 
 1. Locate the Agent CLI's documented user skill directory.
-2. Copy the repository's entire `skills/issue-runner-handoff` directory there,
+2. Copy the full Core tarball's (or repository's) `skills/issue-runner-handoff` directory there,
    unchanged. The installed file must be
    `<agent-skills-directory>/issue-runner-handoff/SKILL.md`.
 3. Reload skills or restart the Agent CLI as its documentation requires, and
@@ -224,4 +225,4 @@ access and dynamic loading. These checks support the
 
 ## Verify packaged assets
 
-Run `npm run test:package` to build and install the package in isolated consumer and global prefixes. It checks the public types, executable, plugin resolution, bundled prompts and handoff skill asset. These checks require no Agent account, model call or Herdr installation. Real Agent execution remains separate acceptance work.
+Run `npm run test:package` to build and install the package in isolated consumer and global prefixes. It checks the public CLI and terminal types, terminal-owned executable, bundled prompts and handoff skill asset. These checks require no Agent account, model call or Herdr installation. Real Agent execution remains separate acceptance work.

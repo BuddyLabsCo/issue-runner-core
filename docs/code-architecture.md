@@ -2,14 +2,15 @@
 
 ```text
 src/
-|-- cli.ts                 # Parse arguments, wire dependencies, return exit status.
+|-- cli-entry.ts           # Public runCli/CliOptions; process, operator and signal ownership.
+|-- cli.ts                 # Internal argument parsing, dependency wiring and structured results.
 |-- config.ts              # Validate startup; keep init and Project lookup alongside.
 |-- terminal.ts            # Public v1 contract: createTab, submitText, closeTab.
 |-- run/                   # Delivery policy: selection, Batches, Review/fixes, publication,
 |                          # repairs, maintenance, verification, cleanup and reports.
 |-- agent/                 # Native sessions, Probe, handoff parsing/polling, corrections,
 |                          # start/resume and stage tab lifecycle; shared by all purposes.
-|-- adapters/              # API/Git/clock/operator I/O and selected global plugin loading.
+|-- adapters/              # API/Git/clock/operator I/O and supplied terminal module validation.
 |                          # Herdr transport belongs in the plugin repository.
 |-- recovery.ts            # Atomic snapshots and input hash; workflow owners restore progress.
 |-- audit.ts               # Workflow event recording.
@@ -25,6 +26,10 @@ tests/
 `-- package/               # Built artifacts installed in isolated global prefixes.
 ```
 
+- Terminal packages own commands and terminal I/O. Core registers no executable;
+  `issue-runner-core/cli` exports only `runCli` and `CliOptions`. Importing it is inert.
+  `cli.ts` receives the canonical command identity and validates startup before
+  invoking the supplied lazy factory. Herdr owns generic optional enhancement discovery.
 - Dependencies: CLI wires `run/ -> agent/ -> TerminalPlugin`. Use existing
   Tracker/CodeHost/GitWorkspace/Clock/OperatorIO contracts; only entry wiring imports
   concrete adapters.

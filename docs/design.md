@@ -1,6 +1,7 @@
 # Issue Runner design
 
-Agreed direction as of 2026-10-29 (Asia/Shanghai).
+Original proposal agreed on 2026-10-29 (Asia/Shanghai).
+Command ownership below incorporates the accepted #223/#228 cutover.
 This document is the shared design proposal for `issue-runner-core` and its
 execution environment plugins. It describes intended behavior, not an
 implemented or published product.
@@ -13,7 +14,7 @@ logs. Replace its Sandcastle-managed,
 non-interactive Agent execution with native interactive Agent CLIs hosted by an
 external terminal multiplexer.
 
-The operator runs one `issue-runner` command in the multiplexer, sees Agent
+The operator runs a terminal-owned command such as `issue-runner-herdr` in the multiplexer, sees Agent
 conversations in other terminals, and can interrupt, diagnose, instruct, and
 continue those same conversations directly.
 
@@ -25,19 +26,19 @@ The new execution path does not require Sandcastle.
 
 | Repository / intended package | Responsibility |
 | --- | --- |
-| `BuddyLabsCo/issue-runner-core` / `issue-runner-core` | Shared workflow, the `issue-runner` executable, configuration, file handoffs, and public environment plugin contracts |
-| `BuddyLabsCo/issue-runner-herdr` / `issue-runner-herdr` | Herdr implementation of those terminal contracts |
+| `BuddyLabsCo/issue-runner-core` / `issue-runner-core` | Shared CLI/workflow policy, configuration, file handoffs, and public terminal contracts |
+| `BuddyLabsCo/issue-runner-herdr` / `issue-runner-herdr` | The `issue-runner-herdr` command, terminal I/O, and generic optional enhancement discovery |
 | Future environment plugins | Other multiplexer implementations, such as tmux, using the same contracts |
 
 Only the two named repositories are in the initial scope. A tmux plugin is a
 future example, not part of this bootstrap.
 
 ```text
-User: issue-runner run --env herdr
+User: issue-runner-herdr run
                   |
-        issue-runner-core CLI
+        issue-runner-core/cli runCli
                   |
-       load installed environment plugin
+       validate supplied lazy terminal module
                   |
         shared workflow and Agent execution
                   |
@@ -48,8 +49,8 @@ User: issue-runner run --env herdr
         Herdr-owned interactive terminal
 ```
 
-Core defines the contracts and loads the selected plugin at runtime. A plugin
-implements those contracts and may depend on Core's public types. Core does
+Core defines the contracts and validates the supplied module at runtime. A terminal
+package implements those contracts and depends on Core's public CLI and types. Core does
 not have a compile-time dependency on any specific environment plugin.
 
 ## Existing behavior to preserve
@@ -88,45 +89,37 @@ Do not remove unrelated retries or failure behavior as a side effect of
 changing the execution transport. Do not replace a schema-validated result or
 Verified Handoff with an operator message or terminal status.
 
-## One CLI with installed environment plugins
+## Terminal-owned commands with shared CLI policy
 
-`issue-runner-core` owns the `issue-runner` executable. Environment plugins do
-not each publish a competing runner executable.
+The original proposal assigned the executable and plugin discovery to Core.
+The accepted #223/#228 decision assigns each terminal package its command and
+keeps shared CLI/workflow policy in Core. The earlier local/npx proposal was
+superseded by global installation, including supported custom npm prefixes.
 
-Core accepts an environment name without a built-in `herdr`/`tmux` enumeration.
-The initial discovery rule is:
+A terminal command imports `runCli` from `issue-runner-core/cli` and supplies
+its canonical command name, package version, and existing `TerminalPluginModule`.
+Core registers no executable, discovers no terminal packages, and accepts no
+`--env` option. Importing the CLI is inert. Calling it owns process arguments,
+cwd/environment, OperatorIO, cancellation wiring and exit status.
+Help/version/init do not create a terminal. Combined version output identifies
+both the command and the executing Core instance.
 
-```text
---env <name> -> installed package issue-runner-<name>
-```
+Core validates run arguments and Project configuration before invoking the
+factory once with the complete `terminalPlugins` value. It validates the returned
+methods and checks cancellation before audit or workflow effects. Terminal and
+enhancement v1 contracts and lifecycle remain unchanged. Herdr owns generic
+optional enhancement discovery, with Codex optional and unchanged.
 
-Core validates the name, locates the selected installed package, loads its
-public entry point, and validates the plugin contract and compatibility before
-starting workflow side effects. Only the selected plugin needs to load.
-
-A missing plugin produces an actionable error. Core does not automatically
-install packages during `run`.
-
-The intended installation and execution examples are:
-
-```sh
-npm install --save-dev issue-runner-core issue-runner-herdr
-npx issue-runner run --env herdr
-```
+Install the terminal package globally with Core as a transitive runtime dependency:
 
 ```sh
-npx --package=issue-runner-core --package=issue-runner-herdr issue-runner run --env herdr
+npm install -g issue-runner-herdr
+issue-runner-herdr run --project my-project --parent 42
 ```
 
-These package names are design targets, not a claim of npm publication or name
-reservation. Repository privacy does not decide future npm distribution.
-
-The plugin loader must support the selected local installation and `npx`
-execution layouts. Having an executable on `PATH` does not by itself locate a
-Node module. Resolution must cover Core's actual execution environment and
-the selected plugin installation, including npm's execution cache. Global and
-mixed installation layouts require explicit validation before support is
-claimed.
+These package names remain distribution targets, not a claim of publication.
+For unpublished builds and manual handoff skill installation, follow the
+[package-consumer instructions](terminal-contract.md#build-and-identify-a-development-artifact).
 
 ## Terminal plugin responsibility
 

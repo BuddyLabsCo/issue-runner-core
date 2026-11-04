@@ -6,14 +6,7 @@ import { executeCli } from "../../src/cli.ts";
 import { agent, validConfig } from "./cli-project.ts";
 import { integrationRun } from "./integration-run.ts";
 
-export const documentCommand = [
-  "run",
-  "--project",
-  "demo",
-  "--env",
-  "fake",
-  "--document",
-];
+export const documentCommand = ["run", "--project", "demo", "--document"];
 
 export async function documentationRun(
   t: TestContext,

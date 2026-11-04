@@ -1,6 +1,6 @@
-# Created by issue-runner init. Replace repository, checkout, and runnerAccount
-# before running. Core and the selected terminal
-# plugin must be installed globally in the same npm environment.
+# Created by the terminal command's init. Replace repository, checkout, and
+# runnerAccount before running. Install the terminal package globally; it
+# supplies Core as a runtime dependency. Custom npm prefixes are supported.
 repository: your-account/your-repository
 # Absolute checkout path; on Windows use e.g. C:\work\your-repository.
 checkout: /absolute/path/to/your-repository
@@ -33,7 +33,7 @@ tracker:
 codeHost:
   tokenEnv: GH_TOKEN
   adminMerge: false
-# Optional plugin-owned configuration, forwarded whole regardless of --env.
+# Optional plugin-owned configuration, forwarded whole to the terminal factory.
 # Use your terminal plugin's documented fields; Core validates only the object.
 # Omission supplies {}; null, arrays, and scalar containers are invalid.
 terminalPlugins: {}

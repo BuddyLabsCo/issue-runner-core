@@ -13,17 +13,9 @@ import type {
   WorkspaceEvidence,
 } from "../../src/run/contracts.ts";
 import { createProject, validConfig } from "./cli-project.ts";
-import { createCliDependencies } from "./cli-dependencies.ts";
+import { createCliDependencies, terminalModule } from "./cli-dependencies.ts";
 
-export const deliveryCommand = [
-  "run",
-  "--project",
-  "demo",
-  "--env",
-  "fake",
-  "--issue",
-  "50",
-];
+export const deliveryCommand = ["run", "--project", "demo", "--issue", "50"];
 export const implementationCommand = [...deliveryCommand, "--no-auto-merge"];
 
 export const implementationCommit = {
@@ -162,6 +154,7 @@ export async function implementationRun(
     ...deps,
     signal: controller.signal,
     terminalPlugin: terminal,
+    terminal: terminalModule(terminal),
     tracker: {
       ...deps.tracker,
       async getTicket() {
