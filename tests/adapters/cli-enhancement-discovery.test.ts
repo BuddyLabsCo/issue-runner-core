@@ -19,7 +19,7 @@ import { documentationRun } from "../support/documentation-run.ts";
 import { validConfig } from "../support/cli-project.ts";
 import { executeCli, type CliDependencies } from "../../src/cli.ts";
 
-await test("CLI discovers a same-prefix enhancement and passes unknown options to the shared workflow", async (t) => {
+await test("CLI discovers a same-prefix enhancement for the shared workflow", async (t) => {
   const fixture = await implementationRun(t);
   const installation = terminalInstallation(
     path.join(fixture.dependencies.launchDirectory, "global prefix"),
@@ -39,11 +39,17 @@ await test("CLI discovers a same-prefix enhancement and passes unknown options t
   );
 });
 
-for (const config of [undefined, {}, ["opaque", 7], "literal options"]) {
-  await test(`discovered factory receives unknown options unchanged: ${JSON.stringify(config)}`, async (t) => {
+for (const config of [
+  undefined,
+  {},
+  { handoffRecoveryDelaySeconds: 120 },
+  { arbitrary: [null, false, 42, "opaque"] },
+  { "custom-agent": { retained: true } },
+]) {
+  await test(`discovered factory receives shared options unchanged: ${JSON.stringify(config)}`, async (t) => {
     const fixture = await implementationRun(t, {
       ...validConfig,
-      terminalPlugins: { enhancements: { "custom-agent": config } },
+      terminalPlugins: config === undefined ? {} : { enhancements: config },
     });
     const installation = terminalInstallation(
       path.join(fixture.dependencies.launchDirectory, "global prefix"),
@@ -78,7 +84,7 @@ for (const config of [undefined, {}, ["opaque", 7], "literal options"]) {
       ).summary.reasons.join(" "),
       /CI-ready/,
     );
-    assert.deepEqual(observed, [[JSON.stringify(config) ?? "undefined"]]);
+    assert.deepEqual(observed, [[JSON.stringify(config ?? {})]]);
   });
 }
 
@@ -150,7 +156,7 @@ for (const purpose of [
   "Conflict repair",
   "documentation",
 ]) {
-  await test(`discovered modules reach ${purpose} through the shared stage`, async (t) => {
+  await test(`discovered modules receive default options for ${purpose} through the shared stage`, async (t) => {
     const fixture =
       purpose === "documentation"
         ? await documentationRun(t)
@@ -169,7 +175,15 @@ for (const purpose of [
       path.join(fixture.dependencies.launchDirectory, "global prefix"),
     );
     for (const agent of ["custom-agent", "review-agent", "document-agent"])
-      installEnhancement(installation.modules, genericEnhancement, agent);
+      installEnhancement(
+        installation.modules,
+        'import assert from "node:assert/strict";\n' +
+          genericEnhancement.replace(
+            'events.push(["factory", config]);',
+            "assert.deepEqual(config, {});",
+          ),
+        agent,
+      );
     Object.assign(fixture.dependencies, installation);
     delete (fixture.dependencies as CliDependencies).enhancements;
     const result = await fixture.run();
@@ -261,7 +275,7 @@ for (const agent of ["constructor", "__proto__"]) {
   });
 }
 
-await test("an installed enhancement named __proto__ receives only configured own options", async (t) => {
+await test("an installed enhancement named __proto__ receives the shared default options", async (t) => {
   const fixture = await implementationRun(t, {
     ...validConfig,
     agents: {
@@ -274,10 +288,11 @@ await test("an installed enhancement named __proto__ receives only configured ow
   );
   installEnhancement(
     installation.modules,
-    genericEnhancement.replace(
-      'events.push(["factory", config]);',
-      'if (config !== undefined) throw new Error("inherited options");',
-    ),
+    'import assert from "node:assert/strict";\n' +
+      genericEnhancement.replace(
+        'events.push(["factory", config]);',
+        "assert.deepEqual(config, {});",
+      ),
     "__proto__",
   );
   const dependencies: CliDependencies = {

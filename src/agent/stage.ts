@@ -163,12 +163,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
             ...(signal ? { signal } : {}),
           },
           input.enhancements?.[profile.agent],
-          Object.hasOwn(
-            loaded.config.terminalPlugins.enhancements,
-            profile.agent,
-          )
-            ? loaded.config.terminalPlugins.enhancements[profile.agent]
-            : undefined,
+          loaded.config.terminalPlugins.enhancements,
         );
         const expected = sessionid();
         if (expected !== undefined) saveIdentity(expected, expected);
