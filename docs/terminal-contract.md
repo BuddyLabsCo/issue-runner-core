@@ -45,18 +45,28 @@ output, not a published package. Repacking unchanged package contents with the
 same toolchain reproduces its identity. Git attributes and compiler output use
 LF line endings so Windows checkout defaults do not change packaged bytes.
 
-Copy the tarball to the independent plugin repository and install it as a
-development dependency:
+Copy the full tarball to the terminal package repository and install it as a
+runtime dependency:
 
 ```sh
-npm install --save-dev ../artifacts/issue-runner-core-0.0.0-contract.1.tgz
+npm install --save ../artifacts/issue-runner-core-0.0.0-contract.1.tgz
 ```
 
 Use the actual tarball's portable relative or absolute path, including quotes
 when it contains spaces. Keep its identity and the plugin lockfile together.
-This development-only installation supports type-only consumption; it does
-not require a Runner or Herdr source checkout. Product execution uses global
-installation as described below.
+The full unpublished artifact supplies runtime code, public declarations, prompts,
+init templates, and the manually installable handoff skill. A terminal command
+must retain Core in `dependencies`, since it imports the CLI at runtime.
+For a local tarball dependency, keep that tarball available at the recorded path
+when packing and installing the terminal package; npm does not embed that file
+inside the terminal tarball. Pack the terminal package and install it globally,
+including with a custom prefix. Core is installed transitively, with no separate
+sibling installation. Type-only enhancement consumers may use a dev dependency.
+Neither consumer needs a Core source checkout.
+
+Copy the full `skills/issue-runner-handoff` directory from the Core artifact to
+each Agent's documented skill directory. Core does not install it automatically;
+see [manual skill installation](../README.md#install-the-handoff-skill-manually).
 
 ```typescript
 import type {
@@ -78,6 +88,52 @@ import {
 
 There is no package-root entry, source-internal import, shared receiver, or
 `issue-runner-core/terminal/testing` entry.
+
+## Public CLI entry
+
+Terminal packages own their executable, command identity and terminal I/O. Core
+owns shared CLI and workflow policy. A command imports its existing lazy module
+and calls the public entry once:
+
+```typescript
+import { runCli, type CliOptions } from "issue-runner-core/cli";
+import * as terminal from "./terminal.js";
+
+const options: CliOptions = {
+  commandName: "generic-terminal",
+  commandVersion: "1.0.0",
+  terminal,
+};
+await runCli(options);
+```
+
+`CliOptions` contains exactly `commandName: string`, `commandVersion: string`,
+and `terminal: TerminalPluginModule`. `runCli(options)` returns `Promise<void>`.
+`executeCli`, `executeRun`, `CliDependencies`, and `CliResult` are internal and
+are not exported by this subpath. There is no public testing entry.
+
+Importing the CLI is inert: it starts no command, creates no terminal and installs
+no process handlers. Calling `runCli` reads process argv, cwd and environment,
+constructs the operator and AbortController, and wires SIGINT/SIGTERM to abort.
+Its `finally` removes the listeners. Success sets `process.exitCode` to 0;
+handled failures and cancellation set it to 1 without forced termination.
+A pending factory is awaited before the cancellation checkpoint.
+Existing reports and retained-resource behavior remain part of Core's workflow.
+
+Help, usage errors and init follow-up commands use `commandName`. Version output
+is `<commandName> <commandVersion> (core <loadedCoreVersion>)`, where the last
+version belongs to the executing Core instance. Help/version/init need no
+configuration credentials or terminal factory call. Init still creates Project
+files and refuses overwrite.
+
+For Runs, argument, selector, Project/configuration/credential and empty Issue
+List validation precedes terminal creation. Core validates the module's v1
+contract and callable factory, then calls it once with the complete configured
+`terminalPlugins` value, or `{}` when omitted. It rejects non-object results
+and missing or non-callable terminal methods. Errors identify the command and
+preserve useful causes. Validation and the cancellation checkpoint precede audit,
+Run state and workflow effects. `--env` and terminal discovery are unsupported.
+Herdr owns generic optional enhancement discovery; Codex remains optional.
 
 ## Public types
 
@@ -151,12 +207,12 @@ export interface EnhancementModule {
 
 A terminal plugin's public module exports `contractVersion = 1` and an
 asynchronous `createTerminalPlugin(config: unknown)` factory. Core passes the complete
-`terminalPlugins` object unchanged, regardless of `--env`, or `{}` when omitted.
+`terminalPlugins` object unchanged, or `{}` when omitted.
 Core validates the container without interpreting plugin-owned values or checking enhancement installation.
 See [plugin configuration](configuration.md#installation-and-project-selection) for startup validation and recovery hashing.
 The loader
 accepts factories with default parameters; it does not inspect function arity.
-Initialization errors reject startup. Same-prefix containment checks still apply.
+Initialization errors reject startup. Core does not discover terminal packages.
 
 `TabHandle` is an opaque capability owned by one initialized plugin instance.
 Core must not inspect, serialize, persist, or reconstruct it. It is distinct
@@ -234,39 +290,35 @@ replacement.
 ## Verification limits and global installation
 
 Run `npm run test:package` for the package checks; `npm test` includes them too.
-These checks build and pack Core, then install its tarball into a temporary
-consumer directory to verify the public JavaScript entry and declarations.
-They also pack a private fake plugin and install both tarballs into the same
-isolated custom npm global prefix. From a separate Launch Directory, they
-invoke npm's generated `issue-runner` executable by absolute path for help,
-version, and init. Hiding that executable must fail even with a local Core
-consumer installed, so an ancestor's local executable cannot satisfy the check.
-They compile representative Terminal and Enhancement implementations using only
-the public entry, then exercise factory configuration, all terminal operations,
-five-argument forwarding through the installed execution wrapper, and bound
-enhancement host methods. No enhancement package is installed. They also verify
-generated templates, installed purpose prompts, and the exact manually installable
-`skills/issue-runner-handoff/SKILL.md` asset.
+These checks build and pack Core, then install the full tarball into a temporary
+consumer directory to verify its public entries and declarations. They also pack
+a private generic terminal command and install it in a custom npm global prefix,
+with Core as its transitive runtime dependency. From a separate Launch Directory,
+they invoke npm's generated command for help, combined versions, and init.
+Core must register no executable. The factory throws if informational commands
+or init try to create a terminal.
 
-The loader checks await selected-plugin initialization and reject local,
-other-prefix, linked-entry, PATH, NODE_PATH, and cache decoys. Temporary paths
-include spaces and are removed after the checks, including on failure.
-Installs use local tarballs and npm's offline dependency cache populated by
-`npm ci`; they require no registry publication, Herdr, Agent account, or model call.
+The checks compile representative CLI, Terminal and Enhancement consumers using
+public entries. They exercise all terminal operations, five-argument forwarding
+through the installed execution wrapper, and bound enhancement host methods.
+No enhancement package is installed. They verify templates, bundled prompts,
+and the manually installable `skills/issue-runner-handoff/SKILL.md` asset.
+Temporary paths include spaces and are removed after the checks.
+No registry publication, Herdr, Agent account or model call is required.
 
-Product execution requires Core and its selected plugin installed globally
-in the same active npm environment/prefix, including custom prefixes:
+Product execution installs Herdr globally and brings Core transitively, including
+with supported custom npm prefixes. The eventual registry command is:
 
 ```sh
-npm install -g issue-runner-core issue-runner-herdr
-issue-runner run --project my-project --env herdr --parent 42
+npm install -g issue-runner-herdr
+issue-runner-herdr run --project my-project --parent 42
 ```
 
 Registry publication is still future work; use built tarballs for development.
-The artifact includes `issue-runner`, configuration parsing, and the
-manually installed handoff skill. Project-local/npx and mixed-prefix product
-installations are outside the agreed support policy. Project configuration remains
-`<launch-directory>/<project>/config.yaml`.
+Project-local/npx product execution is outside the agreed support policy.
+Project configuration remains `<launch-directory>/<project>/config.yaml`.
+Final candidate production and evidence remain completion requirements of #223;
+real-terminal acceptance remains in #15 and #198.
 
 The required full-product CI matrix is Ubuntu and Windows, currently pinned to
 Node.js 22.18.0 and npm 11.6.2. Supported versions have no upper major bound.

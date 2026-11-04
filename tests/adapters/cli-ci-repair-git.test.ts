@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import { terminalModule } from "../support/cli-dependencies.ts";
 import { promptAssignment } from "../support/prompt-assignment.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -115,7 +116,7 @@ for (const kind of ["ci", "conflict"] as const) {
       const tabs = new Map<object, CreateTabOptions>();
       const configs: string[] = [];
       let repairs = 0;
-      fixture.dependencies.terminalPlugin = {
+      fixture.dependencies.terminal = terminalModule({
         ...fixture.dependencies.terminalPlugin,
         async createTab(options) {
           const tab = {};
@@ -207,7 +208,7 @@ for (const kind of ["ci", "conflict"] as const) {
         async closeTab(tab) {
           assert.ok(tabs.has(tab));
         },
-      };
+      });
       const result = await executeCli(
         kind === "ci"
           ? [...implementationCommand, "--no-auto-merge"]

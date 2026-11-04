@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import { terminalModule } from "../support/cli-dependencies.ts";
 import assert from "node:assert/strict";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
@@ -138,12 +139,12 @@ await test("a valid active result wins over a legacy pending correction before n
   const result = await executeCli(implementationCommand, {
     ...fixture.dependencies,
     signal: new AbortController().signal,
-    terminalPlugin: {
+    terminal: terminalModule({
       ...fixture.dependencies.terminalPlugin,
       async createTab() {
         assert.fail("valid active output must precede pending feedback");
       },
-    },
+    }),
   });
   assert.match(result.summary.reasons.join(" "), /CI-ready/u);
   assert.equal(fixture.state.submissions.length, before);
@@ -313,12 +314,12 @@ for (const invalid of [
     const result = await executeCli(implementationCommand, {
       ...fixture.dependencies,
       signal: new AbortController().signal,
-      terminalPlugin: {
+      terminal: terminalModule({
         ...fixture.dependencies.terminalPlugin,
         async createTab() {
           assert.fail("invalid retry checkpoints cannot dispatch follow-ups");
         },
-      },
+      }),
     });
     assert.equal(result.summary.outcome, "cancelled");
     assert.ok(fixture.dependencies.messages.includes("unable to recover"));

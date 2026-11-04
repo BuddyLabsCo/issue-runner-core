@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import { terminalModule } from "../support/cli-dependencies.ts";
 import assert from "node:assert/strict";
 import { access, mkdir, readdir, rmdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -119,12 +120,12 @@ for (const stage of ["review", "fix"] as const) {
     const result = await executeCli(implementationCommand, {
       ...fixture.dependencies,
       signal: new AbortController().signal,
-      terminalPlugin: {
+      terminal: terminalModule({
         ...fixture.dependencies.terminalPlugin,
         async createTab() {
           assert.fail("valid retained results need no native tab");
         },
-      },
+      }),
     });
     assert.match(result.summary.reasons.join(" "), /CI-ready/u);
     assert.equal(fixture.state.submissions.length, before);

@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import { terminalModule } from "../support/cli-dependencies.ts";
 import assert from "node:assert/strict";
 import { mkdir, readdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
@@ -57,7 +58,7 @@ await test("restart reprocesses a verified handoff when completion persistence f
   const result = await executeCli(implementationCommand, {
     ...fixture.dependencies,
     signal: new AbortController().signal,
-    terminalPlugin: {
+    terminal: terminalModule({
       ...fixture.dependencies.terminalPlugin,
       async createTab() {
         assert.fail(
@@ -70,7 +71,7 @@ await test("restart reprocesses a verified handoff when completion persistence f
       async closeTab() {
         assert.fail("recovery must not close an old opaque handle");
       },
-    },
+    }),
   });
   assert.match(result.summary.reasons.join(" "), /CI-ready/u);
   assert.equal(validations, 2);

@@ -5,13 +5,11 @@ import {
   existsSync,
   readFileSync,
   readdirSync,
-  writeFileSync,
+  statSync,
 } from "node:fs";
 import { createRequire } from "node:module";
 import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { stringify } from "yaml";
-import { validConfig } from "../support/cli-project.ts";
 
 /**
  * @param {import("node:test").TestContext} t
@@ -31,7 +29,9 @@ export async function testInstalledArtifacts(
         encoding: "utf8",
       }).filter(
         (file) =>
-          basename(file) === (windows ? "issue-runner.cmd" : "issue-runner"),
+          basename(file) ===
+            (windows ? "generic-terminal.cmd" : "generic-terminal") &&
+          statSync(join(prefix, file)).isFile(),
       );
       assert.equal(executables.length, 1);
       assert.ok(executables[0]);
@@ -45,10 +45,18 @@ export async function testInstalledArtifacts(
           // Windows needs a shell to execute npm's .cmd shim; quote paths with spaces.
           shell: windows,
         });
-      assert.equal(cli(["--version"]).trim(), version);
-      assert.match(cli(["--help"]), /issue-runner/);
-      assert.match(cli(["run", "--help"]), /--env/);
-      assert.match(cli(["init", "--project", "demo"]), /Initialized Project/);
+      assert.equal(
+        cli(["--version"]).trim(),
+        `generic-terminal 2.3.4 (core ${version})`,
+      );
+      assert.match(cli(["--help"]), /generic-terminal/);
+      assert.doesNotMatch(cli(["run", "--help"]), /--env/);
+      assert.match(cli(["run", "--help"]), /generic-terminal run --project/);
+      assert.match(
+        cli(["init", "--project", "demo"]),
+        /then run generic-terminal run --project demo --parent/,
+      );
+      assert.throws(() => cli(["init", "--project", "demo"]), /Command failed/);
       for (const file of [
         "config.yaml",
         "prompts/implement.md",
@@ -61,6 +69,10 @@ export async function testInstalledArtifacts(
   await t.test(
     "installed public types compile from the independent plugin",
     () => {
+      copyFileSync(
+        new URL("../fixtures/cli-consumer.mts", import.meta.url),
+        join(plugin, "cli-consumer.mts"),
+      );
       copyFileSync(
         new URL("../fixtures/terminal-consumer.mts", import.meta.url),
         join(plugin, "consumer.mts"),
@@ -82,6 +94,7 @@ export async function testInstalledArtifacts(
           "--outDir",
           "output",
           "consumer.mts",
+          "cli-consumer.mts",
           "implementations.mts",
         ],
         plugin,
@@ -178,65 +191,4 @@ export async function testInstalledArtifacts(
     ])
       assert.ok(existsSync(join(core, file)), file);
   });
-}
-
-/**
- * @param {import("node:test").TestContext} t
- * @param {{ globalRoot: string, launch: string, validPlugin: string,
- *   writePlugin: (directory: string, source?: string) => void,
- *   runInstalled: (environment: string) => { summary: { outcome: unknown } } }} options
- */
-export async function testPluginConfiguration(
-  t,
-  { globalRoot, launch, validPlugin, writePlugin, runInstalled },
-) {
-  const plugin = join(globalRoot, "issue-runner-scripted");
-  await t.test(
-    "environment selection accepts names beyond built-in terminal brands",
-    () => {
-      writePlugin(
-        join(globalRoot, "issue-runner-custom-2"),
-        validPlugin.replace("(config)", "(config = { defaulted: true })"),
-      );
-      assert.equal(runInstalled("custom-2").summary.outcome, "no_work");
-    },
-  );
-  await t.test(
-    "selected factories receive complete opaque terminalPlugins regardless of environment",
-    () => {
-      const terminalPlugins = {
-        scripted: {
-          nativeOptions: [null, false, 0, "  preserve whitespace  "],
-        },
-        "custom-2": { enhancement: "not-installed", enabled: true },
-        arbitrary: { nested: [{ timeout: -1, options: {} }] },
-      };
-      const source = validPlugin.replace(
-        "assert.deepEqual(config, {});",
-        `assert.deepEqual(config, ${JSON.stringify(terminalPlugins)});`,
-      );
-      writeFileSync(
-        join(launch, "demo/config.yaml"),
-        stringify({ ...validConfig, targetBranch: "main", terminalPlugins }),
-      );
-      try {
-        for (const environment of ["scripted", "custom-2"]) {
-          writePlugin(join(globalRoot, `issue-runner-${environment}`), source);
-          const result = runInstalled(environment);
-          assert.equal(
-            result.summary.outcome,
-            "no_work",
-            JSON.stringify(result),
-          );
-        }
-      } finally {
-        writePlugin(plugin);
-        writePlugin(join(globalRoot, "issue-runner-custom-2"));
-        writeFileSync(
-          join(launch, "demo/config.yaml"),
-          stringify({ ...validConfig, targetBranch: "main" }),
-        );
-      }
-    },
-  );
 }

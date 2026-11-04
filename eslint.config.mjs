@@ -28,7 +28,7 @@ export default defineConfig(
   },
   {
     files: ["src/**/*.{js,mjs,cjs,ts,tsx,mts,cts}"],
-    ignores: ["src/adapters/**", "src/cli.*"],
+    ignores: ["src/adapters/**", "src/cli.*", "src/cli-entry.ts"],
     rules: {
       "no-restricted-imports": [
         "error",

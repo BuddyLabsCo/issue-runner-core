@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
+import { terminalModule } from "../support/cli-dependencies.ts";
 import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -88,14 +89,14 @@ await test("independent handles can complete while another handle's command tran
   };
   const firstRun = executeCli(implementationCommand, {
     ...first.dependencies,
-    terminalPlugin: plugin,
+    terminal: terminalModule(plugin),
   });
   await started;
   assert.equal(
     (
       await executeCli(implementationCommand, {
         ...second.dependencies,
-        terminalPlugin: plugin,
+        terminal: terminalModule(plugin),
       })
     ).summary.outcome,
     "incomplete",

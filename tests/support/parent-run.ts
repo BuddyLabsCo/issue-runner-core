@@ -13,7 +13,7 @@ import type {
   WorkspaceEvidence,
 } from "../../src/run/contracts.ts";
 import { createProject, validConfig } from "./cli-project.ts";
-import { createCliDependencies } from "./cli-dependencies.ts";
+import { createCliDependencies, terminalModule } from "./cli-dependencies.ts";
 import { committed, publish } from "./implementation-run.ts";
 
 export function child(number: number, extra: Partial<Ticket> = {}): Ticket {
@@ -125,6 +125,7 @@ export async function parentRun(
         return structuredClone(worktrees.get(input.worktree)!);
       },
     },
+    terminal: terminalModule(terminalPlugin),
     terminalPlugin,
   };
   return {
@@ -134,10 +135,7 @@ export async function parentRun(
     writes,
     dispatched,
     run: (scope = ["--parent", "48"]) =>
-      executeCli(
-        ["run", "--project", "demo", "--env", "fake", ...scope],
-        dependencies,
-      ),
+      executeCli(["run", "--project", "demo", ...scope], dependencies),
   };
 }
 

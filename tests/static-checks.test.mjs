@@ -58,7 +58,11 @@ await test("portable dependencies and adapter wiring remain allowed", async () =
   }
   const source =
     'export { platform } from "node:os";\nexport const host = process.platform;';
-  for (const filePath of ["src/adapters/check.ts", "src/cli.ts"]) {
+  for (const filePath of [
+    "src/adapters/check.ts",
+    "src/cli.ts",
+    "src/cli-entry.ts",
+  ]) {
     assert.deepEqual(await diagnostics(source, filePath), []);
   }
 });

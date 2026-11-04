@@ -1,7 +1,4 @@
-#!/usr/bin/env node
-import { readFileSync, realpathSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { cac } from "cac";
@@ -12,7 +9,6 @@ import { GitHubTracker } from "./adapters/github-tracker.ts";
 import { GitHubCodeHost } from "./adapters/github-code-host.ts";
 import { LocalGitWorkspace } from "./adapters/git-workspace.ts";
 import { loadTerminalPlugin } from "./adapters/terminal-plugin.ts";
-import { TerminalOperator } from "./adapters/terminal.ts";
 import type {
   Tracker,
   CodeHost,
@@ -20,12 +16,12 @@ import type {
   Clock,
   OperatorIO,
 } from "./run/contracts.ts";
-import type { TerminalPlugin } from "./terminal.ts";
+import type { CliOptions } from "./cli-entry.ts";
 import { runProject, type RunOptions, type RunSummary } from "./run/run.ts";
 import { renderRunReport } from "./run/report.ts";
 import { OperatorCancelled, supervisedAuditWrite } from "./run/operations.ts";
 
-export interface CliDependencies {
+export interface CliDependencies extends CliOptions {
   launchDirectory: string;
   env: Record<string, string | undefined>;
   operator: OperatorIO;
@@ -33,7 +29,6 @@ export interface CliDependencies {
   tracker?: Tracker;
   codeHost?: CodeHost;
   gitWorkspace?: GitWorkspace;
-  terminalPlugin?: TerminalPlugin;
   signal?: AbortSignal;
 }
 
@@ -43,31 +38,35 @@ export interface CliResult {
   logPath: string | null;
 }
 
-const usage = `usage: issue-runner <command> [options]
+const usage = (
+  commandName: string,
+) => `usage: ${commandName} <command> [options]
 
 Commands:
   init --project <project-key>  Create config.yaml and three Project prompts
-  run --project <project-key> --env <name> (--parent <number> | --issue [<number>] | --document)
+  run --project <project-key> (--parent <number> | --issue [<number>] | --document)
 
 Project configuration: <launch directory>/<project-key>/config.yaml
 Edit <project-key>/config.yaml and prompts/ before the first Run.
-Install Core and the selected plugin globally in the same npm environment.
-Run issue-runner run --help for scope constraints.`;
+Run ${commandName} run --help for scope constraints.`;
 
-const runHelp = `usage: issue-runner run --project <project-key> --env <name> (--parent <number> | --issue [<number>] | --document)
+const runHelp = (
+  commandName: string,
+) => `usage: ${commandName} run --project <project-key> (--parent <number> | --issue [<number>] | --document)
 
 Exactly one of --parent, --issue, or --document is required.
 --issue without a number uses the configured issueList.
 --no-auto-merge applies only to --issue <number> or --document, and accepts no value.
---env <name> selects the globally installed issue-runner-<name> plugin.
 --issue runs selected Issues through verified implementation, independent Review,
 and required fixes in their original native conversations.
 Runner owns publication and integration after verification.
 --no-auto-merge retains CI-ready unmerged work and exits nonzero.
 
-Example: issue-runner run --project my-project --env herdr --parent 42`;
+Example: ${commandName} run --project my-project --parent 42`;
 
-const initHelp = `usage: issue-runner init --project <project-key>
+const initHelp = (
+  commandName: string,
+) => `usage: ${commandName} init --project <project-key>
 
 Creates <launch directory>/<project-key>/config.yaml and:
   prompts/implement.md
@@ -79,8 +78,7 @@ Existing destinations are refused. No credentials or plugin are needed.
 Replace repository, checkout, targetBranch, tracker.runnerAccount, and every
 Agent start/resume command. Edit the three repository-specific prompts.
 Set the credentials named by tracker.tokenEnv and codeHost.tokenEnv.
-Install Core and the selected terminal plugin globally in the same npm environment.
-Then run issue-runner run --project <project-key> --env <name> --parent <number>.`;
+Then run ${commandName} run --project <project-key> --parent <number>.`;
 
 function result(
   exitCode: number,
@@ -100,35 +98,30 @@ function result(
   };
 }
 
-function parseArguments(argv: string[]): RunOptions {
-  const cli = cac("issue-runner");
+function parseArguments(argv: string[], commandName: string): RunOptions {
+  const cli = cac(commandName);
   cli
     .command("run")
     .option("--project <project>", "Project key")
-    .option("--env <name>", "Terminal environment")
     .option("--parent <ticket>", "Parent Ticket number")
     .option("--issue [ticket]", "Standalone Issue number")
     .option("--document", "Documentation Maintenance")
     .option("--auto-merge", "Merge after CI readiness")
     .option("--no-auto-merge", "Retain CI-ready work")
     .action(() => undefined);
-  cli.parse(["node", "issue-runner", ...argv]);
+  cli.parse(["node", commandName, ...argv]);
   const options = cli.options as Record<string, unknown>;
-  if (
-    cli.args.length ||
-    typeof options.project !== "string" ||
-    typeof options.env !== "string" ||
-    !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(options.env)
-  )
+  if (cli.args.length || typeof options.project !== "string")
     throw new Error(
-      "run requires --project and a valid --env name (lowercase letters, digits, hyphens)",
+      `usage: ${commandName} run --project <project-key> (--parent <number> | --issue [<number>] | --document)`,
     );
   const selectors = [
     options.parent !== undefined,
     options.issue !== undefined,
     options.document === true,
   ];
-  if (selectors.filter(Boolean).length !== 1) throw new Error(runHelp);
+  if (selectors.filter(Boolean).length !== 1)
+    throw new Error(runHelp(commandName));
   if (argv.includes("--auto-merge") && argv.includes("--no-auto-merge"))
     throw new Error("auto-merge flags are mutually exclusive");
   if (typeof options.autoMerge !== "boolean")
@@ -154,7 +147,6 @@ function parseArguments(argv: string[]): RunOptions {
     );
   return {
     project: options.project,
-    environment: options.env,
     selector: selectors[0] ? "parent" : selectors[1] ? "issue" : "document",
     ...(parentTicket === undefined ? {} : { parentTicket }),
     ...(issueTicket === undefined ? {} : { issueTicket }),
@@ -166,15 +158,15 @@ export async function executeCli(
   argv: string[],
   dependencies: CliDependencies,
 ): Promise<CliResult> {
+  const { commandName, commandVersion } = dependencies;
   const command = argv[0];
   if (command === "--version" || command === "-v") {
     const manifest = JSON.parse(
-      readFileSync(
-        path.join(import.meta.dirname, "..", "package.json"),
-        "utf8",
-      ),
+      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
     ) as { version: string };
-    dependencies.operator.write(manifest.version);
+    dependencies.operator.write(
+      `${commandName} ${commandVersion} (core ${manifest.version})`,
+    );
     return result(0);
   }
   if (
@@ -184,33 +176,33 @@ export async function executeCli(
     (["run", "init"].includes(command) &&
       argv.some((arg) => arg === "--help" || arg === "-h"))
   ) {
-    dependencies.operator.write(
-      command === "run" ? runHelp : command === "init" ? initHelp : usage,
-    );
+    const help =
+      command === "run" ? runHelp : command === "init" ? initHelp : usage;
+    dependencies.operator.write(help(commandName));
     return result(0);
   }
   if (command === "init") {
     try {
-      const cli = cac("issue-runner");
+      const cli = cac(commandName);
       cli
         .command("init")
         .option("--project <project>", "Project key")
         .action(() => undefined);
-      cli.parse(["node", "issue-runner", ...argv]);
+      cli.parse(["node", commandName, ...argv]);
       const { project } = cli.options as { project?: unknown };
       if (typeof project !== "string" || cli.args.length > 0)
-        throw new Error("usage: issue-runner init --project <project-key>");
+        throw new Error(`usage: ${commandName} init --project <project-key>`);
       const directory = await initializeProject(
         dependencies.launchDirectory,
         project,
       );
       dependencies.operator.write(
-        `Initialized Project at ${directory}. Edit config.yaml and prompts/, set tokenEnv credentials, then run issue-runner run --project ${project} --env <name> --parent <number>.`,
+        `Initialized Project at ${directory}. Edit config.yaml and prompts/, set tokenEnv credentials, then run ${commandName} run --project ${project} --parent <number>.`,
       );
       return result(0, project, ["Project initialized"]);
     } catch (error) {
       dependencies.operator.write(
-        `Startup failed: ${error instanceof Error ? error.message : String(error)}`,
+        `Startup failed (${commandName}): ${error instanceof Error ? error.message : String(error)}`,
       );
       return result(1, "unknown", [
         error instanceof Error ? error.message : String(error),
@@ -218,8 +210,8 @@ export async function executeCli(
     }
   }
   if (command === "run") return executeRun(argv, dependencies);
-  dependencies.operator.write(`Startup failed: ${usage}`);
-  return result(1, "unknown", [usage]);
+  dependencies.operator.write(`Startup failed: ${usage(commandName)}`);
+  return result(1, "unknown", [usage(commandName)]);
 }
 
 export async function executeRun(
@@ -233,7 +225,7 @@ export async function executeRun(
   let summary: RunSummary | undefined;
   try {
     dependencies.signal?.throwIfAborted();
-    const options = parseArguments(argv);
+    const options = parseArguments(argv, dependencies.commandName);
     project = options.project;
     parentTicket = options.parentTicket ?? options.issueTicket ?? 0;
     const loaded = await loadProject(
@@ -253,22 +245,11 @@ export async function executeRun(
     )
       throw new Error("issueList must not be empty for value-less --issue");
     targetBranch = loaded.config.targetBranch ?? "unresolved";
-    const terminalPlugin =
-      dependencies.terminalPlugin ??
-      (await loadTerminalPlugin(
-        options.environment,
-        loaded.config.terminalPlugins,
-      ));
-    if (
-      typeof terminalPlugin.createTab !== "function" ||
-      typeof terminalPlugin.start !== "function" ||
-      typeof terminalPlugin.resume !== "function" ||
-      typeof terminalPlugin.submitText !== "function" ||
-      typeof terminalPlugin.closeTab !== "function"
-    )
-      throw new Error(
-        "Terminal plugin must implement createTab, start, resume, submitText, and closeTab",
-      );
+    const terminalPlugin = await loadTerminalPlugin(
+      dependencies.commandName,
+      dependencies.terminal,
+      loaded.config.terminalPlugins,
+    );
     dependencies.signal?.throwIfAborted();
     const clock = dependencies.clock ?? {
       now: () => new Date(),
@@ -355,37 +336,8 @@ export async function executeRun(
     dependencies.operator.write(
       logPath
         ? renderRunReport(failed)
-        : `Startup ${cancelled ? "cancelled" : "failed"}: ${reason.replace(/\s+/gu, " ").trim()}`,
+        : `Startup ${cancelled ? "cancelled" : "failed"} (${dependencies.commandName}): ${reason.replace(/\s+/gu, " ").trim()}`,
     );
     return { exitCode: 1, summary: failed, logPath };
-  }
-}
-
-function isDirectExecution(): boolean {
-  const entry = process.argv[1];
-  if (entry === undefined) return false;
-  try {
-    return realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url));
-  } catch {
-    return false;
-  }
-}
-
-if (isDirectExecution()) {
-  const controller = new AbortController();
-  const cancel = () => controller.abort();
-  process.once("SIGINT", cancel);
-  process.once("SIGTERM", cancel);
-  try {
-    const result = await executeCli(process.argv.slice(2), {
-      launchDirectory: process.cwd(),
-      env: process.env,
-      operator: new TerminalOperator(controller.signal),
-      signal: controller.signal,
-    });
-    process.exitCode = result.exitCode;
-  } finally {
-    process.removeListener("SIGINT", cancel);
-    process.removeListener("SIGTERM", cancel);
   }
 }

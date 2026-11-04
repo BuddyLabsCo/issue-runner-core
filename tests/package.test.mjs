@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
-import { testGlobalPluginLoading } from "./package/terminal-plugin.mjs";
+import { testTerminalCommand } from "./package/terminal-plugin.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 
@@ -62,6 +62,8 @@ await test("built artifacts work in isolated consumer and npm global installatio
   const installed = join(consumer, "node_modules/issue-runner-core");
   for (const file of [
     "dist/cli.js",
+    "dist/cli-entry.js",
+    "dist/cli-entry.d.ts",
     "dist/terminal.js",
     "dist/terminal.d.ts",
     "dist/prompts/implement.js",
@@ -102,9 +104,8 @@ await test("built artifacts work in isolated consumer and npm global installatio
       manifest.exports &&
       typeof manifest.exports === "object",
   );
-  assert.deepEqual(Object.keys(manifest.exports), ["./terminal"]);
-  assert.ok("bin" in manifest);
-  assert.deepEqual(manifest.bin, { "issue-runner": "dist/cli.js" });
+  assert.deepEqual(Object.keys(manifest.exports), ["./terminal", "./cli"]);
+  assert.ok(!("bin" in manifest));
   assert.ok("engines" in manifest);
   assert.deepEqual(manifest.engines, {
     node: ">=22.18.0",
@@ -123,13 +124,19 @@ await test("built artifacts work in isolated consumer and npm global installatio
        assert.equal(contract.enhancementContractVersion, 1);
        await assert.rejects(import("issue-runner-core/terminal/testing"),
          { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
+       const before = [process.listenerCount("SIGINT"), process.listenerCount("SIGTERM")];
+       const cli = await import("issue-runner-core/cli");
+       assert.deepEqual(Object.keys(cli), ["runCli"]);
+       assert.deepEqual([process.listenerCount("SIGINT"), process.listenerCount("SIGTERM")], before);
+       assert.equal(process.exitCode, undefined);
+       await assert.rejects(import("issue-runner-core/cli/testing"), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
        console.log("terminal contract v1");`,
     ],
     { cwd: consumer, encoding: "utf8", timeout: 30_000 },
   );
   assert.equal(output.trim(), "terminal contract v1");
 
-  await testGlobalPluginLoading(t, {
+  await testTerminalCommand(t, {
     consumer,
     artifact,
     npm,

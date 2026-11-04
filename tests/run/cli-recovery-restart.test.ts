@@ -156,10 +156,7 @@ await test("a missing retained conflict repair Worktree offers exit even during 
     stringify({ ...validConfig, workflow: { review: false }, issueList: [50] }),
   );
   const run = () =>
-    executeCli(
-      ["run", "--project", "demo", "--env", "fake", "--issue"],
-      fixture.dependencies,
-    );
+    executeCli(["run", "--project", "demo", "--issue"], fixture.dependencies);
   fixture.repairs.onTask = async () => fixture.controller.abort();
   assert.equal((await run()).summary.outcome, "cancelled");
   const saved = await fixture.snapshot();

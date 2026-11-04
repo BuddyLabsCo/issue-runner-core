@@ -10,6 +10,18 @@ import type {
   MergeRequestResult,
 } from "../../src/run/contracts.ts";
 
+export function terminalModule(plugin: TerminalPlugin) {
+  const calls: unknown[][] = [];
+  return {
+    contractVersion: 1 as const,
+    calls,
+    createTerminalPlugin(...args: [unknown]) {
+      calls.push(args);
+      return Promise.resolve(plugin);
+    },
+  };
+}
+
 export function createCliDependencies(launchDirectory: string) {
   const git = new LocalGitWorkspace("host-secret");
   const messages: string[] = [];
@@ -175,6 +187,9 @@ export function createCliDependencies(launchDirectory: string) {
         effects.push("worktree");
       },
     },
+    commandName: "generic-terminal",
+    commandVersion: "2.3.4",
+    terminal: terminalModule(terminalPlugin),
     terminalPlugin,
     clock: {
       now() {

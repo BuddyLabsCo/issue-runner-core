@@ -19,7 +19,8 @@
     "newLine": "lf",
     "noEmitOnError": true,
     "paths": {
-      "issue-runner-core/terminal": ["./src/terminal.ts"]
+      "issue-runner-core/terminal": ["./src/terminal.ts"],
+      "issue-runner-core/cli": ["./src/cli-entry.ts"]
     }
   },
   "include": ["src/**/*", "tests/**/*", "scripts/**/*", "eslint.config.mjs"],

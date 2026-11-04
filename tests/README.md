@@ -6,7 +6,7 @@ Run `npm test` for all tests, or `npm run verify` to include formatting, lint, a
 | --- | --- |
 | `npm run test:workflow` | Handoff parsing and application workflows, including recovery |
 | `npm run test:adapters` | Real Git and scripted GitHub command boundaries |
-| `npm run test:package` | Build, pack, install, public types, CLI shims, plugin resolution, bundled assets |
+| `npm run test:package` | Build, pack, install, public types, terminal command shims, public CLI API, bundled assets |
 | `npm run check` | Formatting, lint, and TypeScript |
 
 `npm test` also includes architecture-rule checks. CI runs every behavioral suite on Linux and Windows. Static checks run once on Linux. Package tests invoke `prepack`; no separate build is needed before testing.

@@ -21,7 +21,9 @@ await test("help and version need no Project, credentials, plugin, or delivery r
     ["--version"],
   ]) {
     const messages: string[] = [];
+    const deps = createCliDependencies(launchDirectory);
     const result = await executeCli(argv, {
+      ...deps,
       launchDirectory,
       env: {},
       operator: {
@@ -34,9 +36,23 @@ await test("help and version need no Project, credentials, plugin, or delivery r
       },
     });
     assert.equal(result.exitCode, 0);
+    assert.deepEqual(deps.terminal.calls, []);
+    assert.match(messages.join("\n"), /generic-terminal/);
+    if (argv[0] === "--version") {
+      const manifest = JSON.parse(
+        await readFile(new URL("../../package.json", import.meta.url), "utf8"),
+      ) as { version: string };
+      assert.equal(
+        messages[0],
+        `generic-terminal 2.3.4 (core ${manifest.version})`,
+      );
+    }
     assert.ok(messages.join("\n").length > 0);
     if (argv[0] === "init")
-      assert.match(messages.join("\n"), /^usage: issue-runner init --project/);
+      assert.match(
+        messages.join("\n"),
+        /^usage: generic-terminal init --project/,
+      );
   }
   assert.deepEqual(await readdir(launchDirectory), []);
 });
@@ -45,6 +61,7 @@ await test("init creates a Project without credentials and refuses to overwrite 
   const launchDirectory = await mkdtemp(path.join(tmpdir(), "core-init "));
   t.after(() => rm(launchDirectory, { recursive: true, force: true }));
   const dependencies = {
+    ...createCliDependencies(launchDirectory),
     launchDirectory,
     env: {},
     operator: {
@@ -77,9 +94,10 @@ await test("init creates a Project without credentials and refuses to overwrite 
     await readFile(path.join(launchDirectory, "demo/config.yaml"), "utf8"),
     config,
   );
+  assert.deepEqual(dependencies.terminal.calls, []);
   const runDependencies = createCliDependencies(launchDirectory);
   const generated = await executeCli(
-    ["run", "--project", "demo", "--env", "fake", "--parent", "48"],
+    ["run", "--project", "demo", "--parent", "48"],
     { ...runDependencies, env: { GH_TOKEN: "test" } },
   );
   assert.equal(
@@ -118,7 +136,7 @@ await test("EOF during a real Operator Pause returns and reports a cancelled Run
       const dependencies = createCliDependencies(${JSON.stringify(root)});
       dependencies.tracker.getParent = async () => { throw new Error("tracker unavailable"); };
       const result = await executeCli(
-        ["run", "--project", "demo", "--env", "fake", "--parent", "48"],
+        ["run", "--project", "demo", "--parent", "48"],
         { ...dependencies, operator: new TerminalOperator() },
       );
       console.log("RESULT", result.exitCode, result.summary.outcome);
@@ -130,4 +148,137 @@ await test("EOF during a real Operator Pause returns and reports a cancelled Run
   assert.equal(child.status, 0, child.stderr);
   assert.match(child.stdout, /Run cancelled\./);
   assert.match(child.stdout, /RESULT 1 cancelled/);
+});
+
+await test("public CLI import is inert and exports only runCli", () => {
+  const child = spawnSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "--eval",
+      `
+    import assert from "node:assert/strict";
+    process.argv = [process.execPath, "generic-terminal", "--version"];
+    const before = [process.listenerCount("SIGINT"), process.listenerCount("SIGTERM")];
+    const cli = await import(${JSON.stringify(new URL("../../src/cli-entry.ts", import.meta.url).href)});
+    assert.deepEqual(Object.keys(cli), ["runCli"]);
+    assert.deepEqual([process.listenerCount("SIGINT"), process.listenerCount("SIGTERM")], before);
+    assert.equal(process.exitCode, undefined);
+  `,
+    ],
+    { encoding: "utf8", timeout: 10_000 },
+  );
+  assert.ifError(child.error);
+  assert.equal(child.status, 0, child.stderr);
+  assert.equal(child.stdout, "");
+});
+
+await test("public process entry handles signals after a pending factory and removes only its listeners", async (t) => {
+  for (const signal of ["SIGINT", "SIGTERM"]) {
+    const { root, directory } = await createProject(t);
+    const child = spawnSync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "--eval",
+        `
+      import assert from "node:assert/strict";
+      const { runCli } = await import(${JSON.stringify(new URL("../../src/cli-entry.ts", import.meta.url).href)});
+      process.argv = [process.execPath, "generic-terminal", "run", "--project", "demo", "--parent", "48"];
+      const existing = () => {};
+      process.on("SIGINT", existing);
+      process.on("SIGTERM", existing);
+      const before = [process.listeners("SIGINT"), process.listeners("SIGTERM")];
+      let release;
+      let entered;
+      let settled = false;
+      const pending = new Promise(resolve => { release = resolve; });
+      const started = new Promise(resolve => { entered = resolve; });
+      const run = runCli({
+        commandName: "generic-terminal", commandVersion: "2.3.4",
+        terminal: {
+          contractVersion: 1,
+          async createTerminalPlugin(config) {
+            assert.deepEqual(config, {});
+            assert.equal(arguments.length, 1);
+            entered();
+            await pending;
+            const forbidden = async () => assert.fail("cancelled run must not use terminal");
+            return { createTab: forbidden, start: forbidden, resume: forbidden, submitText: forbidden, closeTab: forbidden };
+          }
+        }
+      }).then(value => { assert.equal(value, undefined); settled = true; });
+      await started;
+      process.emit(${JSON.stringify(signal)});
+      await Promise.resolve();
+      assert.equal(settled, false, "pending factories are not forcibly cancelled");
+      release();
+      await run;
+      assert.equal(process.exitCode, 1);
+      assert.deepEqual([process.listeners("SIGINT"), process.listeners("SIGTERM")], before);
+    `,
+      ],
+      {
+        cwd: root,
+        env: { ...process.env, TRACKER_TOKEN: "test", HOST_TOKEN: "test" },
+        encoding: "utf8",
+        timeout: 10_000,
+      },
+    );
+    assert.ifError(child.error);
+    assert.equal(child.status, 1, child.stderr);
+    assert.equal(child.stderr, "");
+    assert.match(child.stdout, /Startup cancelled \(generic-terminal\)/);
+    assert.deepEqual((await readdir(directory)).sort(), [
+      "config.yaml",
+      "prompts",
+    ]);
+  }
+});
+
+await test("public entry sets exitCode for success and handled failures and cleans listeners each time", async (t) => {
+  const { root } = await createProject(t);
+  const child = spawnSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "--eval",
+      `
+    import assert from "node:assert/strict";
+    const { runCli } = await import(${JSON.stringify(new URL("../../src/cli-entry.ts", import.meta.url).href)});
+    const before = [process.listenerCount("SIGINT"), process.listenerCount("SIGTERM")];
+    let calls = 0;
+    const options = {
+      commandName: "generic-terminal", commandVersion: "2.3.4",
+      terminal: { contractVersion: 1, async createTerminalPlugin() { calls++; throw new Error("factory rejected"); } }
+    };
+    for (const [args, expected, factories] of [
+      [["--help"], 0, 0],
+      [["run", "--project", "demo", "--parent", "48", "--env", "old"], 1, 0],
+      [["run", "--project", "demo", "--parent", "48"], 1, 1],
+      [["--version"], 0, 1],
+    ]) {
+      process.argv = [process.execPath, "generic-terminal", ...args];
+      process.exitCode = 17;
+      assert.equal(await runCli(options), undefined);
+      assert.equal(process.exitCode, expected);
+      assert.equal(calls, factories);
+      assert.deepEqual([process.listenerCount("SIGINT"), process.listenerCount("SIGTERM")], before);
+    }
+  `,
+    ],
+    {
+      cwd: root,
+      env: { ...process.env, TRACKER_TOKEN: "test", HOST_TOKEN: "test" },
+      encoding: "utf8",
+      timeout: 10_000,
+    },
+  );
+  assert.ifError(child.error);
+  assert.equal(child.status, 0, child.stderr);
+  assert.match(child.stdout, /Unknown option.*--env/);
+  assert.match(
+    child.stdout,
+    /Unable to initialize generic-terminal: factory rejected/,
+  );
 });

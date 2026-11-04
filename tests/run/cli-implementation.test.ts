@@ -7,14 +7,15 @@ import test from "node:test";
 
 import { executeCli } from "../../src/cli.ts";
 import { createProject, validConfig } from "../support/cli-project.ts";
-import { createCliDependencies } from "../support/cli-dependencies.ts";
+import {
+  createCliDependencies,
+  terminalModule,
+} from "../support/cli-dependencies.ts";
 
 const command = [
   "run",
   "--project",
   "demo",
-  "--env",
-  "fake",
   "--issue",
   "50",
   "--no-auto-merge",
@@ -92,7 +93,7 @@ await test("one standalone implementation persists verified completion before cl
         effects.push(`sleep:${ms}`);
       },
     },
-    terminalPlugin: {
+    terminal: terminalModule({
       ...deps.terminalPlugin,
       async createTab(options: {
         cwd: string;
@@ -161,7 +162,7 @@ await test("one standalone implementation persists verified completion before cl
         assert.ok(!JSON.stringify(saved).includes("NEVER_PERSIST_THIS"));
         effects.push("close");
       },
-    },
+    }),
   };
   const result = await executeCli(command, dependencies);
   assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
