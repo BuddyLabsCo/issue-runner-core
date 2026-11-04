@@ -66,8 +66,17 @@ terminalPlugins: {}
 Core owns `terminalPlugins.agentStartDelay`: finite nonnegative seconds, at most
 2147483.647, default ten. The base workflow waits after command submission before
 Probe or task input.
-`terminalPlugins.enhancements` is an object, default `{}`. Its Agent-specific values
-remain unknown and pass unchanged to a resolved enhancement factory for validation.
+`terminalPlugins.enhancements` is a shared options object, default `{}`. Core passes
+the entire object unchanged to each resolved enhancement factory for validation.
+Place options directly in this object, without an Agent namespace. For example,
+the Codex enhancement accepts this recovery delay in seconds:
+
+```yaml
+terminalPlugins:
+  enhancements:
+    handoffRecoveryDelaySeconds: 120
+```
+
 Core selects `issue-runner-agent-<agent>` from the executing terminal's verified
 global prefix. Install the enhancement there, including when using a custom prefix.
 Core may be nested inside the terminal package; its location does not select the module.

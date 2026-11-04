@@ -166,7 +166,7 @@ Importing a module can execute its top-level code; validation is not a sandbox
 or a pre-import metadata check.
 
 Discovery returns modules, without creating instances. Core passes each selected
-module and `terminalPlugins.enhancements[agent]` to the shared Agent workflow.
+module and the entire `terminalPlugins.enhancements` options object to the shared Agent workflow.
 Factory and lifecycle failures retain the existing error reporting and tab cleanup
 rules below. Herdr supplies terminal behavior and installation identity; it does
 not discover or orchestrate enhancements. Companion contracts remain v2, with no
@@ -282,7 +282,8 @@ and asynchronous `stop()` form the lifecycle. Assignment IDs distinguish dispatc
 even when a handoff path is reused. Recovery wording stays in Core.
 
 Core creates one instance per Runner Tab, passing the adapter's unchanged bound I/O,
-the callback, cwd/env, and `terminalPlugins.enhancements[agent]` unchanged. It
+the callback, cwd/env, and the shared `terminalPlugins.enhancements` object unchanged,
+including the default `{}`. Agent selection chooses the module, not a configuration namespace. Core
 validates all four methods before use. An invalid instance's callable `stop` is
 still attempted; initialization and cleanup errors are reported separately.
 

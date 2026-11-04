@@ -323,7 +323,9 @@ await test("base repair identity persists independently of the implementation ro
 await test("enhanced startup completes preflight and monitoring before command, readiness and Assignment", async (t) => {
   const fixture = await implementationRun(t, {
     ...validConfig,
-    terminalPlugins: { enhancements: { "custom-agent": { custom: [1, "x"] } } },
+    terminalPlugins: {
+      enhancements: { handoffRecoveryDelaySeconds: 120, custom: [1, "x"] },
+    },
   });
   const order: string[] = [];
   let adapterIO: import("../../src/terminal.ts").TerminalIO | undefined;
@@ -352,7 +354,10 @@ await test("enhanced startup completes preflight and monitoring before command, 
           assert.equal(await io.read(), "visible screen");
           assert.equal(context.cwd, fixture.state.evidence.worktree);
           assert.deepEqual(context.env, fixture.state.tabOptions[0]!.env);
-          assert.deepEqual(options, { custom: [1, "x"] });
+          assert.deepEqual(options, {
+            handoffRecoveryDelaySeconds: 120,
+            custom: [1, "x"],
+          });
           return {
             async startMonitoring(ref?: string) {
               assert.equal(ref, undefined);
