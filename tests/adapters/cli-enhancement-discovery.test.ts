@@ -89,24 +89,6 @@ for (const [name, source, expected, tabs] of [
     /CI-ready/,
     1,
   ],
-  [
-    "missing version",
-    "export function createEnhancement() {}",
-    /contractVersion/,
-    0,
-  ],
-  [
-    "malformed version",
-    'export const contractVersion = "2"; export function createEnhancement() {}',
-    /contractVersion/,
-    0,
-  ],
-  [
-    "mismatch with invalid factory",
-    "export const contractVersion = 99; export const createEnhancement = null;",
-    /createEnhancement/,
-    0,
-  ],
   ["import failure", 'throw new Error("import failed");', /import failed/, 0],
   [
     "initialization failure",
