@@ -179,6 +179,10 @@ export function createCliDependencies(launchDirectory: string) {
         effects.push("worktree");
       },
     },
+    enhancements: {} as Record<
+      string,
+      import("../../src/terminal.ts").EnhancementModule
+    >,
     commandName: "generic-terminal",
     commandVersion: "2.3.4",
     terminalPackageRoot: launchDirectory,

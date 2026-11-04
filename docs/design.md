@@ -109,8 +109,11 @@ Core validates run arguments and Project configuration before invoking the
 factory once with the complete `terminalPlugins` value. It validates the returned
 methods and checks cancellation before audit or workflow effects. Terminal and
 enhancement v2 contracts define opaque control and bound I/O. Core owns generic
-enhancement configuration and lifecycle orchestration; installed discovery follows separately. Companion
-packages must match the revised contracts.
+enhancement discovery, configuration, and lifecycle orchestration. Its discovery
+adapter verifies the terminal package, declared executable, supplied CLI entry, and
+same-prefix launcher before resolving optional `issue-runner-agent-<agent>` modules.
+Core nesting, the task cwd, and unrelated npm prefixes do not select enhancements.
+Companion packages must match the revised contracts.
 
 Recovery uses one identity for execution, Batch, and maintenance checkpoints and
 associations: the canonical command name, exact argument array, and configuration

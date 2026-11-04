@@ -41,10 +41,10 @@ terminalPlugins: {}
 # Complete shell command strings, with shell-appropriate quoting supplied by you.
 # Core does not choose an Agent brand, rebuild argv, or interpret native options.
 # agent is a required opaque plugin identifier, preserved exactly as configured.
-# Core does not infer it from commands or check enhancement installation.
+# Core discovers optional issue-runner-agent-<agent> packages in the terminal global prefix.
 # Every resume command must contain the exact {sessionref} placeholder.
 # submitKey is a Runner setting alongside start/resume, outside native options.
-# The terminal plugin combines command launch and readiness; Core adds no delay.
+# Core coordinates command launch and readiness; base startup waits agentStartDelay.
 agents:
   implement:
     agent: codebuddy

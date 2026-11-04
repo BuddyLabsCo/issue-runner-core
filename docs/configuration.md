@@ -50,7 +50,7 @@ Core package's version. The terminal supplies absolute real package-root and CLI
 paths; installation locations and versions stay outside the recovery input hash. Help, version and init need no credentials or terminal factory.
 
 For Runs, Core validates arguments, selectors, Project lookup, configuration,
-credentials, and the nonempty Issue List before calling the factory. `--env`
+credentials, and the nonempty Issue List before discovery and terminal factory invocation. `--env`
 is unsupported. There is no terminal package discovery or fallback.
 Core validates contract version 2 and the callable `createTerminalPlugin(config)`
 factory, then invokes it once with the complete `terminalPlugins` value.
@@ -68,7 +68,12 @@ Core owns `terminalPlugins.agentStartDelay`: finite nonnegative seconds, at most
 Probe or task input.
 `terminalPlugins.enhancements` is an object, default `{}`. Its Agent-specific values
 remain unknown and pass unchanged to a resolved enhancement factory for validation.
-Installed enhancement selection remains separate work.
+Core selects `issue-runner-agent-<agent>` from the executing terminal's verified
+global prefix. Install the enhancement there, including when using a custom prefix.
+Core may be nested inside the terminal package; its location does not select the module.
+Project-local packages, nested terminal dependencies, other prefixes, `NODE_PATH`,
+and external configuration paths cannot supply the enhancement.
+See [discovery validation](terminal-contract.md#installed-enhancement-discovery) for supported layouts and failure behavior.
 Other terminal-owned values remain unchanged. No enhancement is required for base startup.
 The terminal adapter need not interpret these generic settings.
 Plugin configuration remains part of the original configuration bytes hashed for recovery.
@@ -740,8 +745,10 @@ Unknown or obsolete fields are rejected at every Runner-owned object.
   and concurrent Issue execution. `targetBranch`, when supplied, is
   nonempty; omission selects the repository default.
 - Each configured Agent profile requires a nonempty opaque `agent` string. Core
-  preserves it unchanged, without defaults, brand inference, command parsing, or
-  enhancement installation checks. Agent selection stays in Core. Every role passes
+  preserves it unchanged, without defaults, brand inference, or command parsing.
+  At startup, Core uses valid package suffixes
+  for optional same-prefix discovery; other opaque identifiers retain base startup.
+  Agent selection stays in Core. Every role passes
   only terminal context, the effective submit key, and a per-tab cancellation signal
   linked to Run cancellation to `createTab`.
 - Each Agent purpose has complete nonempty `start` and `resume` shell-command
@@ -893,7 +900,10 @@ Run `npm run test:package` to install a private generic terminal command in a
 custom npm global prefix, with the full Core tarball as its transitive dependency.
 A separate Launch Directory exercises the command's help/version/init, public
 CLI and terminal JavaScript/types, bundled templates/prompts, and the manually
-installable handoff asset. Core must register no executable or public testing API.
+installable handoff asset. Installed enhancement fixtures cover nested Core,
+same-prefix selection, local/other-prefix decoys, launcher identity, containment
+escapes, absence, contract mismatch, malformed modules, and shared enhanced startup.
+Core must register no executable or public testing API.
 Startup tests cover invalid modules, factories and methods, exact configuration
 forwarding, cancellation after a pending factory, and process-listener cleanup.
 See [package verification](terminal-contract.md#verification-limits-and-global-installation)

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import { testEnhancements } from "./enhancements.mjs";
 import { testInstalledArtifacts } from "./installed-artifacts.mjs";
 
 /**
@@ -97,6 +98,7 @@ export async function testTerminalCommand(
       typeof installed.dependencies === "object",
   );
   assert.deepEqual(Object.keys(installed.dependencies), ["generic-terminal"]);
+  await testEnhancements(t, { core, plugin, prefix, launch, runNode });
   await testInstalledArtifacts(t, {
     core,
     plugin,
