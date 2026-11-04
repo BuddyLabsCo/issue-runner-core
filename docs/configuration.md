@@ -66,7 +66,7 @@ terminalPlugins: {}
 Core validates only the container. It preserves nested values without normalization,
 environment-subtree selection, Agent-profile mapping, or enhancement installation checks.
 Plugin configuration remains part of the original configuration bytes hashed for recovery.
-Changing those bytes selects a new Run; unchanged arguments and bytes retain matching recovery behavior.
+Changing those bytes selects a new Run; the same canonical command, exact arguments, and bytes retain matching recovery behavior.
 
 Module and factory failures identify the supplied command and preserve the
 underlying cause. Successful validation and the cancellation checkpoint precede
@@ -185,8 +185,8 @@ unfinished Batch, including members that are now ineligible or have left parent 
 Core revalidates each member and reports why it cannot continue rather than
 filling its slot from newly eligible work. Cancellation before the first Issue
 checkpoint still retains this membership. Invalid Batch ownership or membership
-fails recovery before dispatch. Changed arguments or configuration select a new
-Batch without adopting previous Reservations. Successful parent Batches mark
+fails recovery before dispatch. Changed command names, arguments, or configuration
+select a new Batch without adopting previous Reservations. Successful parent Batches mark
 their checkpoint complete before further discovery. The next Batch replaces
 that membership while preserving each child's execution and delivery evidence.
 
@@ -455,7 +455,7 @@ One matching successful Batch creates one maintenance occurrence, even when seve
 
 Automatic maintenance uses the [document workflow](#standalone-documentation), including its configuration requirements, normal publication and repair paths, and independently verified no-change completion. It fetches the current Target Branch after business delivery and runs without ordinary Review. Pending or unsuccessful maintenance blocks subsequent Batch discovery and parent closure; it retains its owned artifacts for recovery.
 
-The Batch checkpoint records its maintenance association before document work starts. The occurrence has its own `recovery/<input-hash>-document-batch-<occurrence>.json` checkpoint and Maintenance Ticket execution. Matching inputs resume that occurrence before parent discovery, even when all business children are already closed. Completed maintenance satisfies its original barrier without creating another occurrence. Changed arguments or configuration start a new Run without adopting the old occurrence or deleting its artifacts.
+The Batch checkpoint records its maintenance association before document work starts. The occurrence has its own `recovery/<input-hash>-document-batch-<occurrence>.json` checkpoint and Maintenance Ticket execution. Matching inputs resume that occurrence before parent discovery, even when all business children are already closed. Completed maintenance satisfies its original barrier without creating another occurrence. Changed command names, arguments, or configuration start a new Run without adopting the old occurrence or deleting its artifacts.
 
 Recovery also checks that the occurrence belongs to the Batch's saved Run, including when maintenance is already completed. A mismatched occurrence cannot satisfy the discovery or closure barrier. An explicit restart creates a new Maintenance Ticket and document execution while keeping the original Batch association. If that replacement is interrupted, matching recovery continues it before business discovery.
 
@@ -500,8 +500,8 @@ Restart retains the old resources and starts at documentation with a new ticket 
 
 Recovery preserves uncommitted work in the original Worktree. Each Agent call recreates temporary Git configuration from the matching Run configuration and removes it afterward. Old temporary configuration files are not recovery inputs.
 
-Changed arguments or configuration start a separate occurrence and retain the old
-one. After a completed Run, the next `--document` invocation starts a new occurrence.
+Changed command names, arguments, or configuration start a separate occurrence
+and retain the old one. After a completed Run, the next `--document` invocation starts a new occurrence.
 An uncertain ticket-creation response stops automatic creation; inspect remote state
 before explicitly authorizing another creation. Runner never adopts an unrelated
 old Maintenance Ticket by its title or label.
@@ -524,7 +524,8 @@ that input or establish that Agent processes have stopped.
 Runner retains unfinished Worktrees, Probe/handoff files, and Recovery Snapshots.
 Snapshots preserve accepted stage completion, assigned paths, pending prompts, and
 consumed non-Agent operation retries. Cancellation never automatically restarts an Issue. To continue, stop leftover
-Agent sessions and explicitly rerun with the same arguments and `config.yaml`.
+Agent sessions and explicitly rerun the same canonical command with the same
+arguments and `config.yaml`.
 Recovery uses the saved progress where the original context remains available.
 
 ### Retained execution resources
@@ -533,7 +534,7 @@ Failed, cancelled, skipped, interrupted, and CI-ready unmerged executions retain
 
 At Run exit, `Retained` reports identify executions, recorded branches, and resource paths that still exist. Reports cover only executions created or restored by that Run, including documentation and repairs. Recovery Snapshots preserve fixed PR metadata, native role references, assigned paths, accepted results, and consumed budgets. Maintenance checkpoints and archived occurrences remain available. If Runner terminates abruptly, a final report may be absent; inspect the Project's `recovery/` snapshots and original resource paths.
 
-Changed arguments or configuration ignore old progress without authorizing its deletion or adopting an unrelated Reservation. Runner adds no retention expiry, periodic pruning, or native-history deletion. Per-call temporary Git configuration is removed when each call unwinds, including failure and cancellation; abrupt process termination can prevent that cleanup. Later stages recreate their temporary configuration.
+Changed command names, arguments, or configuration ignore old progress without authorizing its deletion or adopting an unrelated Reservation. Runner adds no retention expiry, periodic pruning, or native-history deletion. Per-call temporary Git configuration is removed when each call unwinds, including failure and cancellation; abrupt process termination can prevent that cleanup. Later stages recreate their temporary configuration.
 
 ### Rejected handoffs and correction
 
@@ -606,16 +607,26 @@ Implementation snapshots under
 invocation/path, superseded paths, a known unsent assignment or correction prompt,
 result facts and stage completion. Execution, Batch, and maintenance snapshots
 store `run_arguments` and `input_hash` in their existing atomic checkpoints.
-The SHA-256 hash combines the exact Run argument array with the raw `config.yaml`
-bytes read and validated at startup. Argument order and configuration comments
-therefore affect matching. Each checkpoint validates its input scope and workflow
-ownership before restoring native invocation progress. Handles are process-local
+
+The SHA-256 hash combines a JSON tuple of the canonical `commandName` and exact
+Run argument array with the raw `config.yaml` bytes read and validated at startup.
+The tuple preserves command and argument boundaries; configuration bytes follow it
+without normalization. Argument order, argument spelling, and configuration comments
+therefore affect matching. Execution, Batch, and maintenance paths share this one
+identity, including persisted Batch-to-maintenance associations.
+
+Command and Core versions, installation prefix, and executable path are excluded.
+A package upgrade alone preserves compatible recovery; a command rename selects
+a new Run and cannot resume progress saved under the previous name.
+
+Each checkpoint validates its input scope and workflow ownership before restoring
+native invocation progress. Handles are process-local
 and never persisted. Audit logs are diagnostic output, never recovery input;
 unfinished `.tmp` snapshots cannot replace the last valid checkpoint.
 
-Matching arguments and configuration select saved progress for that Project and
-mode. Without matching progress, Runner starts a new Run with fresh counts.
-Changing either arguments alone or configuration alone ignores the old snapshots;
+Matching canonical command, exact arguments, and configuration bytes select saved
+progress for that Project and mode. Without matching progress, Runner starts a new
+Run with fresh counts. Changing any of those inputs ignores the old snapshots;
 Runner neither forces old settings nor enters recovery-failure pause for that
 mismatch. Copied or invalid checkpoints at the matching path fail ownership
 validation before dispatch.

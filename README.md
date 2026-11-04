@@ -173,9 +173,10 @@ See [correction behavior](docs/configuration.md#rejected-handoffs-and-correction
 
 Recovery Snapshots retain role identity, accepted business handoff PR metadata, invocation,
 Worktree/branch/base, accepted commits, and stage
-completion under the Project's `recovery/`. Matching arguments and configuration
-can continue assigned implementation, Review, and fixes using each role's exact
-saved native reference. Review round/base/HEAD, assigned findings, superseded paths, and accepted fix commits are retained. Findings stay available
+completion under the Project's `recovery/`. Matching canonical command identity,
+exact arguments, and validated configuration bytes allow assigned implementation,
+Review, and fixes to continue using each role's exact saved native reference.
+Review round/base/HEAD, assigned findings, superseded paths, and accepted fix commits are retained. Findings stay available
 through the loop and are deleted after the complete Review/fix loop; Probe and
 handoff files remain until successful Issue cleanup.
 A known unsent assignment or correction remains pending when eligibility stops
