@@ -73,7 +73,14 @@ for (const selector of ["parent", "issue"] as const) {
     fixture.dependencies.terminalPlugin.closeTab = async (tab: object) => {
       const { number } = tabs.get(tab)!;
       closed.push(number);
-      if (number === 52) closedSecond.resolve();
+      if (number === 52) {
+        // Read before closeTab returns and Runner resumes checkpoint writes.
+        assert.equal(
+          (await progress(fixture.directory, 52)).result!.summary,
+          "Completed Issue #52",
+        );
+        closedSecond.resolve();
+      }
     };
     let fetches = 0;
     fixture.dependencies.gitWorkspace.fetchTargetBranch = async () => {
@@ -134,13 +141,13 @@ for (const selector of ["parent", "issue"] as const) {
         (await progress(fixture.directory, 51)).phase,
         "implementing",
       );
-      assert.equal(
-        (await progress(fixture.directory, 52)).result!.summary,
-        "Completed Issue #52",
-      );
       gates.get(51)!.resolve();
       const result = await Promise.race([running, timedOut.promise]);
-      assert.equal(result.summary.outcome, "incomplete");
+      assert.equal(
+        result.summary.outcome,
+        "incomplete",
+        JSON.stringify({ result, pauses: fixture.dependencies.pauses }),
+      );
       assert.deepEqual(closed, [52, 51]);
       assert.equal(
         (await progress(fixture.directory, 51)).result!.summary,
