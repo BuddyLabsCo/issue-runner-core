@@ -38,7 +38,10 @@ function assertHandoffSkill(core) {
       ),
   );
   assert.doesNotMatch(skill, /disable-model-invocation/u);
-  assert.match(body, /model-followed guidance/u);
+  assert.match(
+    body,
+    /That request applies to the whole task, including continuation after a pause, unless the user cancels it\./u,
+  );
   const [beforeCompletion, completion] = body.split("## Task complete");
   assert.ok(beforeCompletion && completion);
   const pause = beforeCompletion.split("## Human action required")[1];
@@ -47,10 +50,9 @@ function assertHandoffSkill(core) {
   assert.match(pause, /Do not create the handoff file\./u);
   assert.match(pause, /starts with literal `\[action required\]`/u);
   assert.match(pause, /no preceding heading, list marker, or formatting/u);
-  assert.match(pause, /Explain the blocker and required action, then wait/u);
   assert.match(
     pause,
-    /After the blocker is resolved, resume work and publish a handoff only on completion/u,
+    /Explain the blocker and required action, then stop work and wait for user input\./u,
   );
   assert.match(completion, /Only after the assigned work is complete/u);
   assert.match(

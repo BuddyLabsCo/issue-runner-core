@@ -5,8 +5,8 @@ argument-hint: "<absolute-handoff-json-path>"
 ---
 
 Invoke this skill only when explicitly requested by name.
+That request applies to the whole task, including continuation after a pause, unless the user cancels it.
 Use the supplied Handoff path or explicit argument as the absolute path of the final JSON handoff file.
-This explicit-only restriction is model-followed guidance, not client-enforced protection.
 
 ## Human action required
 
@@ -14,8 +14,7 @@ Use this branch only when user action is required and no independent work can co
 Do not create the handoff file.
 
 Your final response starts with literal `[action required]`, with no preceding heading, list marker, or formatting.
-Explain the blocker and required action, then wait.
-After the blocker is resolved, resume work and publish a handoff only on completion.
+Explain the blocker and required action, then stop work and wait for user input.
 
 ## Task complete
 
