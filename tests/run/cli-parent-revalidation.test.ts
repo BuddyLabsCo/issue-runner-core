@@ -82,10 +82,10 @@ for (const change of [
       blockers: changed && change === "blocked" ? [child(900)] : [],
       nextPage: null,
     });
-    const submitText = fixture.dependencies.terminalPlugin.submitText.bind(
+    const submitText = fixture.dependencies.terminalPlugin.onInput.bind(
       fixture.dependencies.terminalPlugin,
     );
-    fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+    fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
       await submitText(tab, text);
       if (!text.startsWith("Session Probe\n")) return;
       changed = true;
@@ -119,10 +119,10 @@ for (const change of [
 await test("parent cancellation during native startup prevents implementation dispatch", async (t) => {
   const fixture = await parentRun(t, [child(51)]);
   let cancelled = false;
-  const start = fixture.dependencies.terminalPlugin.start.bind(
+  const start = fixture.dependencies.terminalPlugin.execute.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.start = async (tab, command) => {
+  fixture.dependencies.terminalPlugin.execute = async (tab, command) => {
     await start(tab, command);
     cancelled = true;
     return undefined;
@@ -192,10 +192,10 @@ await test("parent cancellation after invalid publication prevents the follow-up
     state: cancelled ? "closed" : "open",
     stateReason: cancelled ? "not_planned" : null,
   });
-  const submitText = fixture.dependencies.terminalPlugin.submitText.bind(
+  const submitText = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+  fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
     if (text.startsWith("Correct the implementation handoff:")) {
       followups.push(text);
       fixture.controller.abort();
@@ -217,10 +217,10 @@ await test("parent cancellation during recovery startup prevents continue in the
   const fixture = await parentRun(t, [child(51)]);
   let controller = fixture.controller;
   const followups: string[] = [];
-  const submitText = fixture.dependencies.terminalPlugin.submitText.bind(
+  const submitText = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+  fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
     if (text.startsWith("Implementation assignment\n") || text === "continue") {
       followups.push(text);
       controller.abort();
@@ -233,13 +233,12 @@ await test("parent cancellation during recovery startup prevents continue in the
   controller = new AbortController();
   fixture.dependencies.signal = controller.signal;
   let cancelled = false;
-  const resume = fixture.dependencies.terminalPlugin.resume.bind(
+  const resume = fixture.dependencies.terminalPlugin.execute.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.resume = async (tab, command, ref) => {
-    await resume(tab, command, ref);
+  fixture.dependencies.terminalPlugin.execute = async (tab, command) => {
+    await resume(tab, command);
     cancelled = true;
-    return ref;
   };
   fixture.dependencies.tracker.getParent = async () => ({
     number: 48,

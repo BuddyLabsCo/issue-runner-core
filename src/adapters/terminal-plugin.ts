@@ -31,17 +31,13 @@ export async function loadTerminalPlugin(
       plugin === null ||
       !("createTab" in plugin) ||
       typeof plugin.createTab !== "function" ||
-      !("start" in plugin) ||
-      typeof plugin.start !== "function" ||
-      !("resume" in plugin) ||
-      typeof plugin.resume !== "function" ||
-      !("submitText" in plugin) ||
-      typeof plugin.submitText !== "function" ||
+      !("execute" in plugin) ||
+      typeof plugin.execute !== "function" ||
       !("closeTab" in plugin) ||
       typeof plugin.closeTab !== "function"
     )
       throw new Error(
-        "factory must return createTab, start, resume, submitText, and closeTab methods",
+        "factory must return createTab, execute, and closeTab methods",
       );
     return plugin as TerminalPlugin;
   } catch (error) {

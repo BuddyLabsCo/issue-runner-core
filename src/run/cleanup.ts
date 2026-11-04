@@ -22,32 +22,45 @@ export function executionTerminal(input: {
         options.label,
         async () => {
           const tab = await plugin.createTab(options);
-          ownedTabs.add(tab);
-          return tab;
+          ownedTabs.add(tab.handle);
+          return {
+            handle: tab.handle,
+            io: {
+              read: () => tab.io.read(),
+              sendKeys: (keys) => tab.io.sendKeys(keys),
+              submitText: (text) =>
+                read(
+                  "submit_text",
+                  `ticket:${progress.ticket}:${progress.phase}`,
+                  () => tab.io.submitText(text),
+                  { retry: "never" },
+                ),
+            },
+          };
         },
         { retry: "manual" },
       ),
-    start: (tab, command) =>
-      read(
-        "start_agent",
+    execute(tab, command) {
+      let attempted = false;
+      return read(
+        "execute_agent",
         `ticket:${progress.ticket}:${progress.phase}`,
-        () => plugin.start(tab, command),
+        async () => {
+          // Delivery may be partial: continuing after pause must not launch twice.
+          if (attempted) return;
+          attempted = true;
+          try {
+            await plugin.execute(tab, command);
+          } catch (error) {
+            throw new Error(
+              `Agent command delivery is uncertain; inspect the retained tab before continuing. Command will not be replayed: ${error instanceof Error ? error.message : String(error)}`,
+              { cause: error },
+            );
+          }
+        },
         { retry: "manual" },
-      ),
-    resume: (tab, command, sessionref) =>
-      read(
-        "resume_agent",
-        `ticket:${progress.ticket}:${progress.phase}`,
-        () => plugin.resume(tab, command, sessionref),
-        { retry: "manual" },
-      ),
-    submitText: (tab, text, chord, expectedFile, recoveryText) =>
-      read(
-        "submit_text",
-        `ticket:${progress.ticket}:${progress.phase}`,
-        () => plugin.submitText(tab, text, chord, expectedFile, recoveryText),
-        { retry: "never" },
-      ),
+      );
+    },
     async closeTab(tab) {
       if (!ownedTabs.has(tab)) throw new Error("Unknown Issue Runner Tab");
       await plugin.closeTab(tab);

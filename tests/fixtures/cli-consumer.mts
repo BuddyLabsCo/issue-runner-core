@@ -15,6 +15,8 @@ export type CliChecks = [
         commandName: string;
         commandVersion: string;
         terminal: TerminalPluginModule;
+        terminalPackageRoot: string;
+        terminalCliEntry: string;
       }
     >
   >,
@@ -32,5 +34,7 @@ export async function command(terminal: TerminalPluginModule): Promise<void> {
     commandName: "generic-terminal",
     commandVersion: "2.3.4",
     terminal,
+    terminalPackageRoot: "/installation/generic-terminal",
+    terminalCliEntry: "/installation/generic-terminal/cli.mjs",
   });
 }

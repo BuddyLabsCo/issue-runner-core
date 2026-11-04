@@ -34,7 +34,6 @@ await test("unexpected Probe fields cannot establish identity or dispatch implem
 for (const invalid of ["pr_title", "pr_body"] as const) {
   await test(`business handoff rejects invalid ${invalid} and corrects it before publication`, async (t) => {
     const fixture = await implementationRun(t);
-    fixture.dependencies.terminalPlugin.start = async () => "native-session";
     fixture.state.onTask = async (file) => {
       fixture.state.evidence.commits = committed().commits;
       await publish(file, {
@@ -52,7 +51,7 @@ for (const invalid of ["pr_title", "pr_body"] as const) {
     assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/);
     assert.equal(fixture.state.taskCount, 1);
     assert.equal(corrections, 1);
-    assert.equal(fixture.state.probeCount, 0);
+    assert.equal(fixture.state.probeCount, 1);
     assert.equal(
       (await fixture.snapshot()).publication?.title,
       committed().pr_title,

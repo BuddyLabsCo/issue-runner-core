@@ -19,7 +19,7 @@ await test("execution findings receive a specific correction in the original con
     assert.match(correction.text, /Execution findings_file must be null/);
     assert.equal(correction.tab, fixture.state.submissions[2]!.tab);
     assert.equal(correction.chord, "Shift+Enter");
-    assertBusinessAssignment(correction, file, "implementation");
+    assertBusinessAssignment(correction, file);
     assert.ok(correction.text.includes(JSON.stringify(file)));
     assert.equal((await fixture.snapshot()).phase, "implementing");
     assert.equal(fixture.state.closedTabs.length, 0);
@@ -29,7 +29,7 @@ await test("execution findings receive a specific correction in the original con
   assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
   assert.equal((await fixture.snapshot()).phase, "implementation_completed");
   assert.deepEqual(
-    fixture.state.sleeps.filter((ms) => ms !== 30_000),
+    fixture.state.sleeps.filter((ms) => ms !== 30_000 && ms !== 10_000),
     [],
   );
 });
@@ -52,7 +52,7 @@ await test("each invalid publication receives immediate feedback at a fresh path
     const correction = fixture.state.submissions.at(-1)!;
     assert.equal(correction.tab, fixture.state.submissions[0]!.tab);
     assert.equal(correction.chord, "Shift+Enter");
-    assertBusinessAssignment(correction, file, "implementation");
+    assertBusinessAssignment(correction, file);
     assert.equal(fixture.state.closedTabs.length, 0);
     paths.push(file);
     invocations.push(saved.invocation!.invocation_id);

@@ -26,10 +26,10 @@ await test("reports keep selection order when native implementations finish in r
   const fixture = await parentDeliveryRun(t, [child(52), child(51)]);
   const second = deferred<void>();
   const finished: number[] = [];
-  const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+  const submit = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+  fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
     if (!text.startsWith("Implementation assignment\n"))
       return submit(tab, text);
     const { path: handoff } = promptAssignment(text) as {

@@ -68,7 +68,7 @@ await test("invalid Probes receive immediate feedback beyond the Operator retry 
   assert.equal(fixture.state.probeCount, 5);
   assert.equal(fixture.state.taskCount, 1);
   assert.deepEqual(
-    fixture.state.sleeps.filter((ms) => ms !== 30_000),
+    fixture.state.sleeps.filter((ms) => ms !== 30_000 && ms !== 10_000),
     [],
   );
   assert.equal(

@@ -3,42 +3,60 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { NativeConversations } from "../../src/agent/conversation.ts";
 import type { TerminalPlugin } from "../../src/terminal.ts";
-import { createCliDependencies } from "../support/cli-dependencies.ts";
 import { agent } from "../support/cli-project.ts";
 
-await test("conversation submissions forward the current assignment and recovery text positionally", async () => {
-  const calls: Parameters<TerminalPlugin["submitText"]>[] = [];
-  const conversations = new NativeConversations({
-    ...createCliDependencies(".").terminalPlugin,
-    async submitText(...args) {
-      calls.push(args);
+await test("conversations execute opaque commands and normalize text through tab-bound I/O", async () => {
+  const commands: unknown[][] = [];
+  const texts: string[] = [];
+  const handle = new Proxy(
+    {},
+    {
+      get() {
+        throw new Error("opaque handle inspected");
+      },
     },
-  });
+  );
+  const plugin: TerminalPlugin = {
+    async createTab(options) {
+      assert.equal(options.submitKey, "Shift+Enter");
+      assert.equal("agent" in options, false);
+      return {
+        handle,
+        io: {
+          async read() {
+            return "visible screen";
+          },
+          async sendKeys() {
+            assert.fail("unexpected key input");
+          },
+          async submitText(text) {
+            texts.push(text);
+          },
+        },
+      };
+    },
+    async execute(...args) {
+      commands.push(args);
+    },
+    async closeTab(tab) {
+      assert.equal(tab, handle);
+    },
+  };
+  const conversations = new NativeConversations(plugin);
   const tab = await conversations.create({
     cwd: "/worktree",
     env: {},
     label: "Agent",
-    agent: agent.agent,
     submitKey: "Shift+Enter",
   });
   await conversations.start(tab, agent);
-  calls.length = 0;
-  await conversations.submit(
-    tab,
-    "task\r\n  你好 $&",
-    "Shift+Enter",
-    "/assigned.json",
-    "continue unfinished work $&",
-  );
+  await conversations.start(tab, agent, "  native/$&/$`/$'  ");
+  await conversations.submit(tab, "task\r\n  你好 $&");
   await conversations.submit(tab, "continue");
-  assert.deepEqual(calls, [
-    [
-      tab,
-      "task\n  你好 $&",
-      "Shift+Enter",
-      "/assigned.json",
-      "continue unfinished work $&",
-    ],
-    [tab, "continue", "Enter", undefined, undefined],
+  await conversations.close(tab);
+  assert.deepEqual(commands, [
+    [handle, agent.start],
+    [handle, `any-cli --resume "  native/$&/$\`/$'  "`],
   ]);
+  assert.deepEqual(texts, ["task\n  你好 $&", "continue"]);
 });

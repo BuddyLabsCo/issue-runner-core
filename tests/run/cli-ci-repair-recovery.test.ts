@@ -173,13 +173,13 @@ await test(
     );
     fixture.dependencies.terminalPlugin.createTab = async (options) => {
       const tab = await open(options);
-      tabs.set(tab, Number(/ticket-(\d+)/u.exec(options.cwd)![1]));
+      tabs.set(tab.handle, Number(/ticket-(\d+)/u.exec(options.cwd)![1]));
       return tab;
     };
-    const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+    const submit = fixture.dependencies.terminalPlugin.onInput.bind(
       fixture.dependencies.terminalPlugin,
     );
-    fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+    fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
       if (text.startsWith("Session Probe\n")) {
         const assignment = promptAssignment(text) as {
           path: string;

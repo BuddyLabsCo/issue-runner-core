@@ -2,6 +2,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { setImmediate } from "node:timers/promises";
+import { access } from "node:fs/promises";
+import path from "node:path";
 import { executeCli } from "../../src/cli.ts";
 import {
   implementationRun,
@@ -11,77 +13,87 @@ import {
   publish,
 } from "../support/implementation-run.ts";
 import { documentationRun } from "../support/documentation-run.ts";
-import { access } from "node:fs/promises";
-import path from "node:path";
 import { findings, reviewRun } from "../support/review-run.ts";
 import { ciRepairRun } from "../support/ci-repair-run.ts";
+import { validConfig } from "../support/cli-project.ts";
 
-await test("returned native identity skips Probe and publishes business handoff metadata", async (t) => {
-  const fixture = await implementationRun(t);
-  fixture.dependencies.terminalPlugin.start = async (tab, command) => {
-    assert.equal(fixture.state.tabOptions.length, 1);
-    assert.equal(command, 'any-cli --model "my model" --native-option');
-    assert.ok(tab);
-    return "opaque/$&/native";
-  };
-  fixture.state.onProbe = async () =>
-    assert.fail("returned identity needs no Probe");
-  fixture.state.onTask = async (file) => {
-    const saved = await fixture.snapshot();
-    assert.equal(saved.roles.implement?.sessionid, "opaque/$&/native");
-    assert.equal(saved.pr_title, undefined);
-    fixture.state.evidence.commits = committed().commits;
-    await publish(file, {
-      ...committed(),
-      pr_title: "fix: business title",
-      pr_body: "Business body. Closes #50",
+for (const agentStartDelay of [undefined, 0, 0.125]) {
+  await test(`base startup waits ${agentStartDelay ?? 10} seconds before Probe and business dispatch`, async (t) => {
+    const fixture = await implementationRun(t, {
+      ...validConfig,
+      terminalPlugins: agentStartDelay === undefined ? {} : { agentStartDelay },
     });
-  };
-  const result = await fixture.run();
-  assert.match(result.summary.reasons.join(" "), /CI-ready/);
-  const saved = await fixture.snapshot();
-  assert.equal(saved.probe, undefined);
-  assert.equal(saved.publication?.title, "fix: business title");
-  assert.equal(saved.publication?.body, "Business body. Closes #50");
-  assert.deepEqual(fixture.state.sleeps, [30_000]);
-});
+    const order: string[] = [];
+    const execute = fixture.dependencies.terminalPlugin.execute.bind(
+      fixture.dependencies.terminalPlugin,
+    );
+    fixture.dependencies.terminalPlugin.execute = async (tab, command) => {
+      assert.equal(command, 'any-cli --model "my model" --native-option');
+      assert.equal("agent" in fixture.state.tabOptions[0]!, false);
+      order.push("command");
+      await execute(tab, command);
+    };
+    fixture.state.onSleep = async (ms) => {
+      order.push(`sleep:${ms}`);
+    };
+    fixture.state.onProbe = async (assignment) => {
+      order.push("probe");
+      await publish(String(assignment.path), { sessionid: "opaque/$&/native" });
+    };
+    fixture.state.onTask = async (file) => {
+      order.push("task");
+      assert.equal(
+        (await fixture.snapshot()).roles.implement?.sessionid,
+        "opaque/$&/native",
+      );
+      fixture.state.evidence.commits = committed().commits;
+      await publish(file, {
+        ...committed(),
+        pr_title: "fix: business title",
+        pr_body: "Business body. Closes #50",
+      });
+    };
+    assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/);
+    assert.deepEqual(order.slice(0, 4), [
+      "command",
+      `sleep:${(agentStartDelay ?? 10) * 1000}`,
+      "probe",
+      "task",
+    ]);
+    assert.equal(
+      (await fixture.snapshot()).publication?.title,
+      "fix: business title",
+    );
+  });
+}
 
-await test("readiness retry reuses the created Runner Tab without launching the Agent twice", async (t) => {
+await test("continuing after uncertain command delivery reuses the tab without launching twice", async (t) => {
   const fixture = await implementationRun(t);
-  const launched = new Set<object>();
-  const attempts: object[] = [];
   let launches = 0;
-  fixture.dependencies.terminalPlugin.start = async (tab) => {
-    attempts.push(tab);
-    if (!launched.has(tab)) {
-      launched.add(tab);
-      launches++;
-      throw new Error("readiness interrupted after launch");
-    }
-    return "native-ready";
+  fixture.dependencies.terminalPlugin.execute = async () => {
+    launches++;
+    throw new Error("transport interrupted after command submission");
   };
   fixture.dependencies.operator.pause = async (message) => {
-    assert.match(message, /readiness interrupted after launch/);
+    assert.match(message, /delivery is uncertain.*will not be replayed/);
     assert.match(message, /s to skip Issue #50/);
     fixture.dependencies.pauses.push(message);
     return "";
   };
   assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/);
   assert.equal(launches, 1);
-  assert.equal(attempts.length, 2);
-  assert.equal(attempts[0], attempts[1]);
   assert.equal(fixture.state.tabOptions.length, 1);
   assert.equal(fixture.dependencies.pauses.length, 1);
-  assert.equal(fixture.state.probeCount, 0);
+  assert.equal(fixture.state.probeCount, 1);
 });
 
-await test("readiness can exceed the former operation bound without dispatch or timeout", async (t) => {
+await test("pending command input can exceed the operation bound without dispatch", async (t) => {
   const fixture = await implementationRun(t);
   const entered = deferred<void>();
-  const ready = deferred<string>();
-  fixture.dependencies.terminalPlugin.start = async () => {
+  const submitted = deferred<void>();
+  fixture.dependencies.terminalPlugin.execute = async () => {
     entered.resolve();
-    return ready.promise;
+    return submitted.promise;
   };
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const running = fixture.run();
@@ -89,17 +101,18 @@ await test("readiness can exceed the former operation bound without dispatch or 
   t.mock.timers.tick(120_000);
   await setImmediate();
   assert.equal(fixture.state.taskCount, 0);
+  assert.equal(fixture.state.probeCount, 0);
+  assert.deepEqual(fixture.state.sleeps, []);
   assert.deepEqual(fixture.dependencies.pauses, []);
-  assert.deepEqual(fixture.state.closedTabs, []);
-  ready.resolve("native-ready");
+  submitted.resolve();
   assert.match((await running).summary.reasons.join(" "), /CI-ready/);
 });
 
 for (const choice of ["s", "q", null]) {
-  await test(`startup failure preserves the Runner Tab when the operator selects ${choice ?? "EOF"}`, async (t) => {
+  await test(`startup failure retains the tab when the operator selects ${choice ?? "EOF"}`, async (t) => {
     const fixture = await implementationRun(t);
-    fixture.dependencies.terminalPlugin.start = async () => {
-      throw new Error("readiness failed");
+    fixture.dependencies.terminalPlugin.execute = async () => {
+      throw new Error("command failed");
     };
     fixture.dependencies.operator.pause = async () => choice;
     const result = await fixture.run();
@@ -113,34 +126,31 @@ for (const choice of ["s", "q", null]) {
   });
 }
 
-await test("cancellation reaches pending readiness and retains the Runner Tab and Agent", async (t) => {
-  const fixture = await implementationRun(t);
-  const entered = deferred<void>();
-  let observedSignal: AbortSignal | undefined;
-  const create = fixture.dependencies.terminalPlugin.createTab.bind(
-    fixture.dependencies.terminalPlugin,
-  );
-  fixture.dependencies.terminalPlugin.createTab = async (options) => {
-    observedSignal = options.signal;
-    return create(options);
-  };
-  fixture.dependencies.terminalPlugin.start = async () => {
-    entered.resolve();
-    return new Promise(() => {
-      /* Readiness remains pending until cancellation. */
-    });
-  };
-  const running = fixture.run();
-  await entered.promise;
-  fixture.controller.abort();
-  assert.equal((await running).summary.outcome, "cancelled");
-  assert.equal(observedSignal?.aborted, true);
-  assert.equal(fixture.state.tabOptions.length, 1);
-  assert.equal(fixture.state.taskCount, 0);
-  assert.deepEqual(fixture.state.closedTabs, []);
-  for (const file of fixture.state.gitConfigs)
-    await assert.rejects(access(file));
-});
+for (const phase of ["command", "delay"] as const) {
+  await test(`cancellation during base ${phase} retains the tab and prevents Probe`, async (t) => {
+    const fixture = await implementationRun(t);
+    const entered = deferred<void>();
+    const pending = async () => {
+      entered.resolve();
+      return new Promise<void>(() => {
+        /* Transport deliberately remains pending. */
+      });
+    };
+    if (phase === "command")
+      fixture.dependencies.terminalPlugin.execute = pending;
+    else fixture.state.onSleep = pending;
+    const running = fixture.run();
+    await entered.promise;
+    fixture.controller.abort();
+    assert.equal((await running).summary.outcome, "cancelled");
+    assert.equal(fixture.state.tabOptions[0]!.signal?.aborted, true);
+    assert.equal(fixture.state.probeCount, 0);
+    assert.equal(fixture.state.taskCount, 0);
+    assert.deepEqual(fixture.state.closedTabs, []);
+    for (const file of fixture.state.gitConfigs)
+      await assert.rejects(access(file));
+  });
+}
 
 for (const identity of [
   "",
@@ -152,83 +162,47 @@ for (const identity of [
   null,
   42,
 ]) {
-  await test(`invalid returned identity ${String(identity)} never falls back to Probe or dispatches work`, async (t) => {
+  await test(`invalid Probe identity ${String(identity)} cannot dispatch business work`, async (t) => {
     const fixture = await implementationRun(t);
-    Object.assign(fixture.dependencies.terminalPlugin, {
-      start: async () =>
-        identity === "run_id" || identity === "execution_id"
-          ? (await fixture.snapshot())[identity]
-          : identity,
-    });
-    const result = await fixture.run();
-    assert.equal(result.summary.outcome, "failed");
-    assert.match(
-      result.summary.reasons.join(" "),
-      /Invalid native session identity/,
-    );
-    assert.equal(fixture.state.probeCount, 0);
+    fixture.state.onProbe = async (assignment) => {
+      if (fixture.state.probeCount === 2) {
+        fixture.controller.abort();
+        return;
+      }
+      await publish(String(assignment.path), {
+        sessionid:
+          identity === "run_id" || identity === "execution_id"
+            ? (await fixture.snapshot())[identity]
+            : identity,
+      });
+    };
+    assert.equal((await fixture.run()).summary.outcome, "cancelled");
     assert.equal(fixture.state.taskCount, 0);
     assert.equal((await fixture.snapshot()).roles.implement, undefined);
+    assert.match(
+      fixture.dependencies.messages.join(" "),
+      /Probe requires actual native identity/,
+    );
     assert.deepEqual(fixture.state.closedTabs, []);
   });
 }
 
-for (const returned of [undefined, "different-native-ref"]) {
-  await test(`resume rejects ${String(returned)} before continuing an interrupted pre-handoff execution`, async (t) => {
-    const fixture = await implementationRun(t);
-    fixture.dependencies.terminalPlugin.start = async () => "saved/$&/native";
-    fixture.state.onTask = async () => fixture.controller.abort();
-    assert.equal((await fixture.run()).summary.outcome, "cancelled");
-    const saved = await fixture.snapshot();
-    assert.equal(saved.pr_title, undefined);
-    assert.equal(saved.result, undefined);
-    Object.assign(fixture.dependencies.terminalPlugin, {
-      resume: async (_tab: object, command: string, ref: string) => {
-        assert.equal(command, 'any-cli --resume "saved/$&/native"');
-        assert.equal(ref, "saved/$&/native");
-        return returned;
-      },
-    });
-    const result = await executeCli(implementationCommand, {
-      ...fixture.dependencies,
-      signal: new AbortController().signal,
-    });
-    assert.equal(result.summary.outcome, "failed");
-    assert.match(
-      result.summary.reasons.join(" "),
-      /Invalid native session identity/,
-    );
-    assert.equal(fixture.state.taskCount, 1);
-    assert.equal(fixture.state.probeCount, 0);
-    assert.equal(
-      (await fixture.snapshot()).roles.implement?.sessionid,
-      "saved/$&/native",
-    );
-  });
-}
-
-await test("an interrupted execution resumes its returned opaque ref before accepting its first PR metadata", async (t) => {
+await test("an interrupted execution resumes its exact opaque native ref before accepting PR metadata", async (t) => {
   const fixture = await implementationRun(t);
   const native = "  opaque/$&/$`/$'/native  ";
-  fixture.dependencies.terminalPlugin.start = async () => native;
+  fixture.state.onProbe = async (assignment) =>
+    publish(String(assignment.path), { sessionid: native });
   fixture.state.onTask = async () => fixture.controller.abort();
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   const saved = await fixture.snapshot();
   assert.equal(saved.pr_title, undefined);
-  assert.equal(saved.pr_body, undefined);
   let resumes = 0;
-  fixture.dependencies.terminalPlugin.resume = async (_tab, command, ref) => {
-    assert.equal(ref, native);
+  fixture.dependencies.terminalPlugin.execute = async (_tab, command) => {
     assert.equal(command, `any-cli --resume "${native}"`);
     resumes++;
-    return ref;
   };
-  const submit = fixture.dependencies.terminalPlugin.submitText.bind(
-    fixture.dependencies.terminalPlugin,
-  );
-  fixture.dependencies.terminalPlugin.submitText = async (tab, text, chord) => {
+  fixture.dependencies.terminalPlugin.onInput = async (_tab, text) => {
     assert.equal(text, "continue");
-    await submit(tab, text, chord);
     fixture.state.evidence.commits = committed().commits;
     await publish(saved.invocation!.path, committed());
   };
@@ -238,7 +212,7 @@ await test("an interrupted execution resumes its returned opaque ref before acce
   });
   assert.match(result.summary.reasons.join(" "), /CI-ready/);
   assert.equal(resumes, 1);
-  assert.equal(fixture.state.probeCount, 0);
+  assert.equal(fixture.state.probeCount, 1);
   assert.equal(fixture.state.taskCount, 1);
   assert.equal(
     (await fixture.snapshot()).publication?.title,
@@ -246,9 +220,8 @@ await test("an interrupted execution resumes its returned opaque ref before acce
   );
 });
 
-await test("a returned identity checkpoint can resume before the first business assignment exists", async (t) => {
+await test("an identity checkpoint can resume before the first business assignment exists", async (t) => {
   const fixture = await implementationRun(t);
-  fixture.dependencies.terminalPlugin.start = async () => "saved-native";
   fixture.state.onTask = async () => fixture.controller.abort();
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   const saved = await fixture.snapshot();
@@ -261,9 +234,11 @@ await test("a returned identity checkpoint can resume before the first business 
       pendingPrompt: undefined,
     },
   );
-  fixture.dependencies.terminalPlugin.resume = async (_tab, _command, ref) => {
-    assert.equal(ref, "saved-native");
-    return ref;
+  fixture.dependencies.terminalPlugin.execute = async (_tab, command) => {
+    assert.equal(
+      command,
+      `any-cli --resume "${saved.roles.implement!.sessionid}"`,
+    );
   };
   fixture.state.onTask = async (file) => {
     fixture.state.evidence.commits = committed().commits;
@@ -275,15 +250,13 @@ await test("a returned identity checkpoint can resume before the first business 
   });
   assert.match(result.summary.reasons.join(" "), /CI-ready/);
   assert.equal((await fixture.snapshot()).execution_id, saved.execution_id);
-  assert.equal(fixture.state.probeCount, 0);
+  assert.equal(fixture.state.probeCount, 1);
 });
 
-await test("documentation publishes metadata from its handoff without an identity Probe", async (t) => {
+await test("documentation establishes Probe identity before publishing business metadata", async (t) => {
   const fixture = await documentationRun(t);
-  fixture.dependencies.terminalPlugin.start = async (_tab, command) => {
-    assert.equal(command, "document-cli");
-    return "document-native";
-  };
+  fixture.state.onProbe = async (assignment) =>
+    publish(String(assignment.path), { sessionid: "document-native" });
   fixture.state.onTask = async (file) => {
     assert.equal(
       (await fixture.snapshot()).roles.documentation?.sessionid,
@@ -304,49 +277,45 @@ await test("documentation publishes metadata from its handoff without an identit
     (await fixture.snapshot()).publication?.title,
     "docs: business title",
   );
-  assert.equal(
-    (await fixture.snapshot()).publication?.body,
-    "Document body. Closes #50",
-  );
-  assert.equal(fixture.state.probeCount, 0);
+  assert.equal(fixture.state.probeCount, 1);
 });
 
-await test("returned refs preserve independent implementation and Review roles through a Review fix", async (t) => {
+await test("base commands preserve independent implementation and Review roles through a Review fix", async (t) => {
   const fixture = await reviewRun(t, 1);
-  fixture.dependencies.terminalPlugin.start = async (_tab, command) =>
-    command === "review-cli start" ? "review-native" : "implement-native";
-  fixture.dependencies.terminalPlugin.resume = async (_tab, command, ref) => {
-    assert.equal(ref, "implement-native");
-    assert.equal(command, 'any-cli --resume "implement-native"');
-    return ref;
-  };
   fixture.reviewState.onReview = findings;
   assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/);
   const saved = await fixture.snapshot();
-  assert.deepEqual(saved.roles, {
-    implement: { sessionid: "implement-native" },
-    review: { sessionid: "review-native" },
-  });
-  assert.equal(fixture.state.probeCount, 0);
+  assert.notEqual(
+    saved.roles.implement?.sessionid,
+    saved.roles.review?.sessionid,
+  );
+  assert.equal(fixture.state.probeCount, 2);
   assert.equal(fixture.reviewState.fixes.length, 1);
+  assert.equal(
+    fixture.state.submissions.filter(
+      ({ text }) =>
+        text === `any-cli --resume "${saved.roles.implement!.sessionid}"`,
+    ).length,
+    1,
+  );
 });
 
-await test("returned repair refs persist on the repair attempt independently of the implementation role", async (t) => {
+await test("base repair identity persists independently of the implementation role", async (t) => {
   const fixture = await ciRepairRun(t);
-  let starts = 0;
-  fixture.dependencies.terminalPlugin.start = async () =>
-    ++starts === 1 ? "implement-native" : "repair-native";
   const task = fixture.repairs.onTask;
   fixture.repairs.onTask = async (file, evidence) => {
     const saved = await fixture.snapshot();
-    assert.equal(saved.roles.implement?.sessionid, "implement-native");
+    assert.notEqual(
+      saved.roles.implement?.sessionid,
+      saved.publication?.ciRepair?.attempts.at(-1)?.sessionid,
+    );
     assert.equal(
       saved.publication?.ciRepair?.attempts.at(-1)?.sessionid,
-      "repair-native",
+      "ci-session-1",
     );
     await task(file, evidence);
   };
   assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/);
-  assert.equal(fixture.state.probeCount, 0);
-  assert.deepEqual(fixture.repairs.probes, []);
+  assert.equal(fixture.state.probeCount, 1);
+  assert.equal(fixture.repairs.probes.length, 1);
 });

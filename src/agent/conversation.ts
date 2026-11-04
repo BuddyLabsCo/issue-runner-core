@@ -1,12 +1,10 @@
 import type { AgentConfig } from "../config.ts";
-import type {
-  CreateTabOptions,
-  TabHandle,
-  TerminalPlugin,
-} from "../terminal.ts";
+import type { CreateTabOptions, TerminalPlugin } from "../terminal.ts";
+
+export type ConversationTab = Awaited<ReturnType<TerminalPlugin["createTab"]>>;
 
 export class NativeConversations {
-  private readonly queues = new Map<TabHandle, Promise<void>>();
+  private readonly queues = new Map<ConversationTab, Promise<void>>();
   private readonly plugin: TerminalPlugin;
   private readonly signal: AbortSignal | undefined;
 
@@ -15,7 +13,7 @@ export class NativeConversations {
     this.signal = signal;
   }
 
-  async create(options: CreateTabOptions): Promise<TabHandle> {
+  async create(options: CreateTabOptions): Promise<ConversationTab> {
     this.signal?.throwIfAborted();
     const tab = await this.plugin.createTab(options);
     this.queues.set(tab, Promise.resolve());
@@ -23,45 +21,35 @@ export class NativeConversations {
   }
 
   start(
-    tab: TabHandle,
+    tab: ConversationTab,
     profile: AgentConfig,
     sessionid?: string,
-  ): Promise<string | undefined> {
-    return this.enqueue(tab, () =>
-      sessionid === undefined
-        ? this.plugin.start(tab, profile.start)
-        : this.plugin.resume(
-            tab,
-            profile.resume.replaceAll("{sessionref}", () => sessionid),
-            sessionid,
-          ),
-    );
-  }
-
-  submit(
-    tab: TabHandle,
-    text: string,
-    chord = "Enter",
-    expectedFile?: string,
-    recoveryText?: string,
   ): Promise<void> {
     return this.enqueue(tab, () =>
-      this.plugin.submitText(
-        tab,
-        text.replace(/\r\n?/gu, "\n"),
-        chord,
-        expectedFile,
-        recoveryText,
+      this.plugin.execute(
+        tab.handle,
+        sessionid === undefined
+          ? profile.start
+          : profile.resume.replaceAll("{sessionref}", () => sessionid),
       ),
     );
   }
 
-  async close(tab: TabHandle): Promise<void> {
-    await this.enqueue(tab, () => this.plugin.closeTab(tab));
+  submit(tab: ConversationTab, text: string): Promise<void> {
+    return this.enqueue(tab, () =>
+      tab.io.submitText(text.replace(/\r\n?/gu, "\n")),
+    );
+  }
+
+  async close(tab: ConversationTab): Promise<void> {
+    await this.enqueue(tab, () => this.plugin.closeTab(tab.handle));
     this.queues.delete(tab);
   }
 
-  private enqueue<T>(tab: TabHandle, action: () => Promise<T>): Promise<T> {
+  private enqueue<T>(
+    tab: ConversationTab,
+    action: () => Promise<T>,
+  ): Promise<T> {
     const previous = this.queues.get(tab);
     if (!previous) throw new Error("Unknown Runner Tab");
     const next = previous.then(() => {

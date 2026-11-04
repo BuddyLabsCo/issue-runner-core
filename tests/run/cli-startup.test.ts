@@ -196,15 +196,16 @@ await test("public process entry handles signals after a pending factory and rem
       const started = new Promise(resolve => { entered = resolve; });
       const run = runCli({
         commandName: "generic-terminal", commandVersion: "2.3.4",
+        terminalPackageRoot: process.cwd(), terminalCliEntry: process.execPath,
         terminal: {
-          contractVersion: 1,
+          contractVersion: 2,
           async createTerminalPlugin(config) {
-            assert.deepEqual(config, {});
+            assert.deepEqual(config, { agentStartDelay: 10, enhancements: {} });
             assert.equal(arguments.length, 1);
             entered();
             await pending;
             const forbidden = async () => assert.fail("cancelled run must not use terminal");
-            return { createTab: forbidden, start: forbidden, resume: forbidden, submitText: forbidden, closeTab: forbidden };
+            return { createTab: forbidden, execute: forbidden, closeTab: forbidden };
           }
         }
       }).then(value => { assert.equal(value, undefined); settled = true; });
@@ -250,7 +251,8 @@ await test("public entry sets exitCode for success and handled failures and clea
     let calls = 0;
     const options = {
       commandName: "generic-terminal", commandVersion: "2.3.4",
-      terminal: { contractVersion: 1, async createTerminalPlugin() { calls++; throw new Error("factory rejected"); } }
+        terminalPackageRoot: process.cwd(), terminalCliEntry: process.execPath,
+      terminal: { contractVersion: 2, async createTerminalPlugin() { calls++; throw new Error("factory rejected"); } }
     };
     for (const [args, expected, factories] of [
       [["--help"], 0, 0],

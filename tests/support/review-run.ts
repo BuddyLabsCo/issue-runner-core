@@ -63,17 +63,11 @@ export async function reviewRun(
       });
     } else await onProbe(assignment);
   };
-  const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+  const submit = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.submitText = async (
-    tab,
-    text,
-    chord,
-    expectedFile,
-    recoveryText,
-  ) => {
-    await submit(tab, text, chord, expectedFile, recoveryText);
+  fixture.dependencies.terminalPlugin.onInput = async (tab, text, chord) => {
+    await submit(tab, text, chord);
     const round = (await fixture.snapshot()).reviews?.at(-1);
     if (text.startsWith("Review assignment\n")) {
       state.reviews.push(round!);

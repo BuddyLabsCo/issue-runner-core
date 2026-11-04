@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import type { TestContext } from "node:test";
 import { executeCli } from "../../src/cli.ts";
-import type { CreateTabOptions, TerminalPlugin } from "../../src/terminal.ts";
+import type { CreateTabOptions } from "../../src/terminal.ts";
 import type {
   CodeHost,
   GitWorkspace,
@@ -13,7 +13,11 @@ import type {
   WorkspaceEvidence,
 } from "../../src/run/contracts.ts";
 import { createProject, validConfig } from "./cli-project.ts";
-import { createCliDependencies, terminalModule } from "./cli-dependencies.ts";
+import {
+  createCliDependencies,
+  terminalModule,
+  type TestTerminal,
+} from "./cli-dependencies.ts";
 import { committed, publish } from "./implementation-run.ts";
 
 export function child(number: number, extra: Partial<Ticket> = {}): Ticket {
@@ -67,14 +71,14 @@ export async function parentRun(
         .assignees!.push(account);
     },
   };
-  const terminalPlugin: TerminalPlugin = {
+  const terminalPlugin: TestTerminal = {
     ...deps.terminalPlugin,
     async createTab(options: CreateTabOptions) {
       const tab = {};
       tabs.set(tab, worktrees.get(options.cwd)!);
-      return tab;
+      return this.bindTab(tab, options);
     },
-    async submitText(tab: object, text: string) {
+    async onInput(tab: object, text: string) {
       if (text.startsWith("Session Probe\n")) {
         const assignment = promptAssignment(text) as Record<string, unknown>;
         await publish(String(assignment.path), {

@@ -34,7 +34,7 @@ for (const selector of ["parent", "issue"] as const) {
     const createTab = fixture.dependencies.terminalPlugin.createTab.bind(
       fixture.dependencies.terminalPlugin,
     );
-    const submitText = fixture.dependencies.terminalPlugin.submitText.bind(
+    const submitText = fixture.dependencies.terminalPlugin.onInput.bind(
       fixture.dependencies.terminalPlugin,
     );
     fixture.dependencies.terminalPlugin.createTab = async (
@@ -43,10 +43,10 @@ for (const selector of ["parent", "issue"] as const) {
       const number = Number(/ticket-(\d+)$/u.exec(options.cwd)![1]);
       assert.equal(options.label, `issue-${number} implement`);
       const tab = await createTab(options);
-      tabs.set(tab, { number, options });
+      tabs.set(tab.handle, { number, options });
       return tab;
     };
-    fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+    fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
       const { number } = tabs.get(tab)!;
       if (text.startsWith("Session Probe\n")) {
         const assignment = promptAssignment(text) as {
@@ -298,10 +298,10 @@ await test("a failed Issue cancels a sibling's delayed startup and waits for its
   const siblingStarted = deferred<void>();
   const releaseSibling = deferred<void>();
   let starts = 0;
-  const start = fixture.dependencies.terminalPlugin.start.bind(
+  const start = fixture.dependencies.terminalPlugin.execute.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.start = async (tab, command) => {
+  fixture.dependencies.terminalPlugin.execute = async (tab, command) => {
     await start(tab, command);
     starts += 1;
     if (starts === 1) await siblingStarted.promise;
@@ -311,11 +311,11 @@ await test("a failed Issue cancels a sibling's delayed startup and waits for its
     }
     return undefined;
   };
-  const submitText = fixture.dependencies.terminalPlugin.submitText.bind(
+  const submitText = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
   let failureStarted = false;
-  fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+  fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
     if (text.startsWith("Implementation assignment\n")) {
       failureStarted = true;
       throw new Error("Issue transport failed");

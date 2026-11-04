@@ -1,5 +1,5 @@
-export const terminalContractVersion = 1 as const;
-export const enhancementContractVersion = 1 as const;
+export const terminalContractVersion = 2 as const;
+export const enhancementContractVersion = 2 as const;
 
 // Opaque, plugin-instance-owned reference; Core must not inspect or persist it.
 export type TabHandle = object;
@@ -8,26 +8,15 @@ export interface CreateTabOptions {
   cwd: string;
   env: Readonly<Record<string, string>>;
   label: string;
-  agent: string;
   submitKey: string;
   signal?: AbortSignal;
 }
 
 export interface TerminalPlugin {
-  createTab(options: CreateTabOptions): Promise<TabHandle>;
-  start(tab: TabHandle, startCommand: string): Promise<string | undefined>;
-  resume(
-    tab: TabHandle,
-    resumeCommand: string,
-    sessionref: string,
-  ): Promise<string>;
-  submitText(
-    tab: TabHandle,
-    text: string,
-    submitKey?: string,
-    expectedFile?: string,
-    recoveryText?: string,
-  ): Promise<void>;
+  createTab(
+    options: CreateTabOptions,
+  ): Promise<{ handle: TabHandle; io: TerminalIO }>;
+  execute(handle: TabHandle, command: string): Promise<void>;
   closeTab(tab: TabHandle): Promise<void>;
 }
 
@@ -36,12 +25,13 @@ export interface TerminalPluginModule {
   createTerminalPlugin(config: unknown): Promise<TerminalPlugin>;
 }
 
-export interface EnhancementHost {
+export interface TerminalIO {
   read(): Promise<string>;
   submitText(text: string): Promise<void>;
   sendKeys(keys: readonly string[]): Promise<void>;
-  requestRecovery(): Promise<void>;
 }
+
+export type RequestRecovery = (assignmentId: string) => Promise<void>;
 
 export interface EnhancementContext {
   readonly cwd: string;
@@ -51,14 +41,15 @@ export interface EnhancementContext {
 export interface Enhancement {
   startMonitoring(sessionref?: string): Promise<void>;
   waitUntilReady(): Promise<string>;
-  onAssignment(expectedFile: string): void;
+  onAssignment(assignment: { id: string; expectedFile: string }): void;
   stop(): Promise<void>;
 }
 
 export interface EnhancementModule {
   readonly contractVersion: typeof enhancementContractVersion;
   createEnhancement(
-    host: EnhancementHost,
+    io: TerminalIO,
+    requestRecovery: RequestRecovery,
     context: EnhancementContext,
     config: unknown,
   ): Promise<Enhancement>;

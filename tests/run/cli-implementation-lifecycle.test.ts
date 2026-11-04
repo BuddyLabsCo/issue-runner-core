@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import type { TerminalPlugin } from "../../src/terminal.ts";
+import type { TestTerminal } from "../support/cli-dependencies.ts";
 import { executeCli } from "../../src/cli.ts";
 import {
   implementationCommand,
@@ -46,13 +46,13 @@ await test("configured commands stay unchanged and prompts use canonical LF whil
   const file = (await fixture.snapshot()).invocation!.path;
   assert.equal(task.tab, fixture.state.closedTabs[0]);
   assert.equal(task.chord, "Shift+Enter");
-  assertBusinessAssignment(task, file, "implementation");
+  assertBusinessAssignment(task, file);
 });
 
 await test("independent handles can complete while another handle's command transport is pending", async (t) => {
   const first = await implementationRun(t);
   const second = await implementationRun(t);
-  const routes = new Map<object, TerminalPlugin>();
+  const routes = new Map<object, TestTerminal>();
   let release!: () => void;
   let entered!: () => void;
   const pending = new Promise<void>((resolve) => {
@@ -62,26 +62,24 @@ await test("independent handles can complete while another handle's command tran
     entered = resolve;
   });
   let held = false;
-  const plugin: TerminalPlugin = {
+  const plugin: TestTerminal = {
+    ...first.dependencies.terminalPlugin,
     async createTab(options) {
       const target = options.cwd.startsWith(first.directory)
         ? first.dependencies.terminalPlugin
         : second.dependencies.terminalPlugin;
       const tab = await target.createTab(options);
-      routes.set(tab, target);
+      routes.set(tab.handle, target);
       return tab;
     },
-    start: (tab, command) => routes.get(tab)!.start(tab, command),
-    resume: (tab, command, sessionref) =>
-      routes.get(tab)!.resume(tab, command, sessionref),
-    async submitText(tab, text, chord, expectedFile, recoveryText) {
+    async execute(tab, command) {
       const target = routes.get(tab)!;
       if (target === first.dependencies.terminalPlugin && !held) {
         held = true;
         entered();
         await pending;
       }
-      await target.submitText(tab, text, chord, expectedFile, recoveryText);
+      await target.execute(tab, command);
     },
     async closeTab(tab) {
       await routes.get(tab)!.closeTab(tab);
@@ -118,7 +116,7 @@ await test("a transient close failure retries the same owned handle after the op
   assert.equal(attempts, 2);
   assert.equal(fixture.state.closedTabs[0], fixture.state.closedTabs[1]);
   assert.deepEqual(
-    fixture.state.sleeps.filter((ms) => ms !== 30_000),
+    fixture.state.sleeps.filter((ms) => ms !== 30_000 && ms !== 10_000),
     [1_000],
   );
   assert.equal(fixture.state.taskCount, 1);

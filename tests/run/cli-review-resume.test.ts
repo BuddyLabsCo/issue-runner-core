@@ -63,11 +63,7 @@ await test("an interrupted later Review resumes the original reviewer with its p
     ['review-cli resume "review-native/$&"', "continue"],
   );
   const continuation = fixture.state.submissions.at(-1)!;
-  assertBusinessAssignment(
-    continuation,
-    saved.reviews![1]!.invocation!.path,
-    "Review",
-  );
+  assertBusinessAssignment(continuation, saved.reviews![1]!.invocation!.path);
   assert.equal(continuation.chord, "Shift+Enter");
   assert.equal(continuation.tab, fixture.state.submissions[before]!.tab);
   assert.equal(fixture.reviewState.reviews.length, 2);
@@ -251,21 +247,15 @@ for (const stage of ["review", "fix"] as const) {
     const fixture = await reviewRun(t, 1);
     if (stage === "fix") fixture.reviewState.onReview = findings;
     const terminal = fixture.dependencies.terminalPlugin;
-    const method = stage === "review" ? "start" : "resume";
-    const start = terminal.start.bind(terminal);
-    const resume = terminal.resume.bind(terminal);
-    if (method === "start")
-      terminal.start = async (tab, command) => {
-        const ref = await start(tab, command);
-        if (fixture.state.closedTabs.length === 1) fixture.controller.abort();
-        return ref;
-      };
-    else
-      terminal.resume = async (tab, command, sessionref) => {
-        const ref = await resume(tab, command, sessionref);
+    const execute = terminal.execute.bind(terminal);
+    terminal.execute = async (tab, command) => {
+      await execute(tab, command);
+      if (
+        (stage === "review" && fixture.state.closedTabs.length === 1) ||
+        (stage === "fix" && command.includes("--resume"))
+      )
         fixture.controller.abort();
-        return ref;
-      };
+    };
     assert.equal((await fixture.run()).summary.outcome, "cancelled");
     assert.equal(fixture.reviewState.fixes.length, 0);
     if (stage === "review") {

@@ -334,10 +334,10 @@ for (const invalid of [
 
 await test("a parent consumes retained handoff evidence for its recorded execution after interruption", async (t) => {
   const fixture = await parentRun(t, [child(51)]);
-  const submitText = fixture.dependencies.terminalPlugin.submitText.bind(
+  const submitText = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+  fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
     await submitText(tab, text);
     if (text.startsWith("Implementation assignment\n"))
       fixture.controller.abort();

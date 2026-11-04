@@ -97,7 +97,8 @@ keeps shared CLI/workflow policy in Core. The earlier local/npx proposal was
 superseded by global installation, including supported custom npm prefixes.
 
 A terminal command imports `runCli` from `issue-runner-core/cli` and supplies
-its canonical command name, package version, and existing `TerminalPluginModule`.
+its canonical command name, package version, `TerminalPluginModule`, real terminal
+package root, and CLI entry identity.
 Core registers no executable, discovers no terminal packages, and accepts no
 `--env` option. Importing the CLI is inert. Calling it owns process arguments,
 cwd/environment, OperatorIO, cancellation wiring and exit status.
@@ -107,8 +108,9 @@ both the command and the executing Core instance.
 Core validates run arguments and Project configuration before invoking the
 factory once with the complete `terminalPlugins` value. It validates the returned
 methods and checks cancellation before audit or workflow effects. Terminal and
-enhancement v1 contracts and lifecycle remain unchanged. Herdr owns generic
-optional enhancement discovery, with Codex optional and unchanged.
+enhancement v2 contracts define opaque control and bound I/O. Core owns generic
+enhancement configuration; discovery and activation follow separately. Companion
+packages must match the revised contracts.
 
 Recovery uses one identity for execution, Batch, and maintenance checkpoints and
 associations: the canonical command name, exact argument array, and configuration
@@ -137,13 +139,13 @@ The public interface should cover the operations needed by shared execution:
 | Operation | Required meaning |
 | --- | --- |
 | Create a terminal | Use the assigned cwd, environment, and label; return an unambiguous handle without relying on current UI focus |
-| Start a command | Execute the configured program and argument list in the assigned terminal, with backend-specific quoting handled by the adapter |
+| Execute a command | Input the complete configured command unchanged, then Right and Enter |
 | Submit text | Deliver literal text and its submission action, including multiline prompt handling |
 | Send terminal keys | Provide the small set of terminal controls needed by execution and cancellation |
 | Observe lifecycle | Report terminal existence, relevant process/connection state, and closure or failure without pretending these are Agent completion |
 | Close a terminal | Target the intended Runner-created terminal and report failure or uncertainty |
 
-These are semantic requirements, not finalized TypeScript method signatures.
+The [v2 contract](terminal-contract.md) defines the public TypeScript signatures.
 Herdr tabs/panes and tmux windows/panes can map to the same logical terminal
 handle; their native object names need not leak into shared workflow code.
 
@@ -175,20 +177,20 @@ supported Agent products.
 Starting a command and submitting a prompt are separate operations. Start and
 resume commands are not required to accept a `{prompt}` argument. Core builds
 the prompt and submits it through the terminal interface after startup
-readiness has been established.
+the base delay and applicable identity Probe.
 
 Within one stage, Core submits further prompts to its owned Runner Tab. Recovery
-and later stages open a fresh Runner Tab, then await composite resume with the
-exact saved native ref. Core does not adopt surviving live tabs. Startup and
-readiness retries reuse the created handle; plugins must avoid launching an
-Agent twice. Cancellation retains the Tab and Agent. Other terminal operations
-remain bounded, while composite readiness has no Core timeout or startup sleep.
+and later stages open a fresh Runner Tab and execute the configured resume command
+with the exact saved native ref. Core waits the configured base delay before input.
+It does not adopt surviving tabs. Uncertain command delivery enters Operator Pause;
+continuing never replays the command. Cancellation retains the Tab and Agent.
+Other terminal operations retain their bounds.
 
 ## Session Probe file handoff
 
 Establish a native reference for each conversation so it can be identified in
 stage output and resumed if its terminal is closed. When the reference is not
-already supplied by the configured launcher, send a Session Probe to the
+already saved for exact resume, send a Session Probe to the
 interactive Agent. Ask it to obtain its real native session ID or session-file
 reference using its available tools and write it to an assigned file.
 
@@ -284,7 +286,7 @@ Keep native conversation identity and terminal identity separate. The terminal
 is a UI/process location; the native reference identifies context that may be
 resumed elsewhere.
 
-Preserve the original implementation and Review conversations across the rounds that need them. Close each accepted stage's Runner Tab before its successor starts. A later fix or Review opens a new tab and resumes the exact saved conversation after composite resume readiness.
+Preserve the original implementation and Review conversations across the rounds that need them. Close each accepted stage's Runner Tab before its successor starts. A later fix or Review opens a new tab and resumes the exact saved conversation after base resume and delay.
 
 When an Issue completes successfully, close its residual owned Runner Tabs and remove its owned Worktrees, local branches, and assigned Probe/handoff final and temporary files, including superseded corrections. Stage completion alone never deletes these files. Retain unfinished execution resources and native conversation histories. Keep workflow audit and recovery records. Checkpoint completed cleanup actions so recovery retries only unfinished actions.
 
@@ -314,9 +316,8 @@ associated Agent conversation report `sessionid=n/a`.
 
 The following must be specified and proven during implementation:
 
-- Startup readiness before sending the first probe or prompt. File handoff
-  solves result submission, not readiness to receive input. A fixed sleep
-  alone is insufficient.
+- Base startup uses a configurable delay followed by Probe for new sessions.
+  Enhancement readiness and monitoring are separate follow-up work.
 - Input ordering when the operator is typing or has interrupted a turn, and
   when existing automatic continuation/correction becomes eligible.
 - Detecting an open terminal whose Agent has exited, and recovering without

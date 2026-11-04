@@ -122,9 +122,9 @@ for (const kind of ["ci", "conflict"] as const) {
           const tab = {};
           tabs.set(tab, options);
           configs.push(options.env.GIT_CONFIG_GLOBAL!);
-          return tab;
+          return this.bindTab(tab, options);
         },
-        async submitText(tab, text) {
+        async onInput(tab, text) {
           const options = tabs.get(tab)!;
           if (text.startsWith("Session Probe\n")) {
             const assignment = promptAssignment(text) as {

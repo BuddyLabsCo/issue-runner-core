@@ -58,8 +58,8 @@ export async function fiveIssueRun(t: TestContext) {
       "close each stage before opening its successor",
     );
     const tab = await create(options);
-    tabs.set(tab, options);
-    active.add(tab);
+    tabs.set(tab.handle, options);
+    active.add(tab.handle);
     maxActive = Math.max(maxActive, active.size);
     return tab;
   };
@@ -70,7 +70,7 @@ export async function fiveIssueRun(t: TestContext) {
     fixture.events.push(`tab:close:${tabs.get(tab)!.label}`);
     await close(tab);
   };
-  const submit = terminal.submitText.bind(terminal);
+  const submit = terminal.onInput.bind(terminal);
   const fixed = new Set<string>();
   const git: GitWorkspace = fixture.dependencies.gitWorkspace;
   const inspect = git.inspect.bind(git);
@@ -86,13 +86,7 @@ export async function fiveIssueRun(t: TestContext) {
     }
     return evidence;
   };
-  terminal.submitText = async (
-    tab,
-    text,
-    chord = "Enter",
-    expectedFile,
-    recoveryText,
-  ) => {
+  terminal.onInput = async (tab, text, chord = "Enter") => {
     assert.ok(active.has(tab), "submit only to an active owned Runner Tab");
     submissions.push({ tab, text, chord });
     const number = Number(/ticket-(\d+)$/u.exec(tabs.get(tab)!.cwd)![1]);
@@ -118,7 +112,7 @@ export async function fiveIssueRun(t: TestContext) {
         commits: [fixCommit],
         findings_file: null,
       });
-    } else await submit(tab, text, chord, expectedFile, recoveryText);
+    } else await submit(tab, text, chord);
   };
   // Bound missing scripted responses so regressions fail instead of polling forever.
   let polls = 0;

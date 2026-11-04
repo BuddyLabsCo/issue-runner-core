@@ -5,7 +5,8 @@ src/
 |-- cli-entry.ts           # Public runCli/CliOptions; process, operator and signal ownership.
 |-- cli.ts                 # Internal argument parsing, dependency wiring and structured results.
 |-- config.ts              # Validate startup; keep init and Project lookup alongside.
-|-- terminal.ts            # Public v1 contract: createTab, submitText, closeTab.
+|-- config-terminal.ts     # Core-owned generic terminal settings and defaults.
+|-- terminal.ts            # Public v2 contracts: opaque control, bound I/O, enhancements.
 |-- run/                   # Delivery policy: selection, Batches, Review/fixes, publication,
 |                          # repairs, maintenance, verification, cleanup and reports.
 |-- agent/                 # Native sessions, Probe, handoff parsing/polling, corrections,
@@ -29,10 +30,15 @@ tests/
 - Terminal packages own commands and terminal I/O. Core registers no executable;
   `issue-runner-core/cli` exports only `runCli` and `CliOptions`. Importing it is inert.
   `cli.ts` receives the canonical command identity and validates startup before
-  invoking the supplied lazy factory. Herdr owns generic optional enhancement discovery.
+  invoking the supplied lazy factory. Core owns generic enhancement configuration;
+  discovery and lifecycle activation are separate follow-up work. Terminal adapters
+  own terminal I/O. CLI accepts the terminal package root and CLI entry identity.
 - Dependencies: CLI wires `run/ -> agent/ -> TerminalPlugin`. Use existing
   Tracker/CodeHost/GitWorkspace/Clock/OperatorIO contracts; only entry wiring imports
   concrete adapters.
+- `agent/` submits configured commands through `execute`, waits the Core-owned base
+  delay, and establishes identity through Probe or validates saved resume identity.
+  Assignment metadata and recovery wording never enter the terminal contract.
 - `run/` owns acceptance and remote mutations; `agent/` owns conversation mechanics.
   Adapters provide operations and facts, not workflow decisions.
 - `run/documentation.ts` owns Maintenance Ticket occurrences and their

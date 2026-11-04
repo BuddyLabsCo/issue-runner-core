@@ -368,10 +368,10 @@ await test("list recovery preserves recorded ownership and verified completion w
 
 await test("cancellation during a list assignment retains its Batch and handoff evidence without dispatching replacements", async (t) => {
   const fixture = await issueListRun(t, [child(51), child(52)], undefined, 1);
-  const submitText = fixture.dependencies.terminalPlugin.submitText.bind(
+  const submitText = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+  fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
     await submitText(tab, text);
     if (text.startsWith("Implementation assignment\n"))
       fixture.controller.abort();
@@ -389,7 +389,7 @@ await test("cancellation during a list assignment retains its Batch and handoff 
   >;
   assert.equal(before.phase, "implementing");
   fixture.dependencies.signal = new AbortController().signal;
-  fixture.dependencies.terminalPlugin.submitText = submitText;
+  fixture.dependencies.terminalPlugin.onInput = submitText;
   assert.equal((await fixture.run()).summary.outcome, "incomplete");
   const after = JSON.parse(await readFile(checkpoint, "utf8")) as Record<
     string,

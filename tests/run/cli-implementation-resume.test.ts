@@ -99,6 +99,8 @@ await test("a command version upgrade resumes only the saved role with unchanged
   const result = await executeCli(implementationCommand, {
     ...fixture.dependencies,
     commandVersion: "3.0.0",
+    terminalPackageRoot: "/different/installation",
+    terminalCliEntry: "/different/installation/cli.mjs",
     signal: controller.signal,
     terminal: terminalModule({
       ...fixture.dependencies.terminalPlugin,
@@ -106,11 +108,13 @@ await test("a command version upgrade resumes only the saved role with unchanged
         assert.equal(options.cwd, saved.worktree);
         const tab =
           await fixture.dependencies.terminalPlugin.createTab(options);
-        assert.ok(fixture.state.submissions.every((item) => item.tab !== tab));
+        assert.ok(
+          fixture.state.submissions.every((item) => item.tab !== tab.handle),
+        );
         sequence.push("fresh Runner Tab");
-        return tab;
+        return this.bindTab(tab.handle, options);
       },
-      async submitText(tab, text, chord, expectedFile, recoveryText) {
+      async onInput(tab, text, chord) {
         if (text === "continue") {
           assert.ok(
             fixture.dependencies.messages
@@ -121,13 +125,7 @@ await test("a command version upgrade resumes only the saved role with unchanged
           );
         }
         sequence.push(text === "continue" ? "continue" : "resume");
-        await fixture.dependencies.terminalPlugin.submitText(
-          tab,
-          text,
-          chord,
-          expectedFile,
-          recoveryText,
-        );
+        await fixture.dependencies.terminalPlugin.onInput(tab, text, chord);
       },
     }),
   });
@@ -143,11 +141,7 @@ await test("a command version upgrade resumes only the saved role with unchanged
     ["continue"],
   );
   assert.equal(resumed[1]?.chord, "Shift+Enter");
-  assertBusinessAssignment(
-    resumed[1],
-    saved.invocation!.path,
-    "implementation",
-  );
+  assertBusinessAssignment(resumed[1], saved.invocation!.path);
   assert.deepEqual(sequence, ["fresh Runner Tab", "resume", "continue"]);
   assert.equal(fixture.state.probeCount, 1);
   assert.equal(fixture.state.taskCount, 1);
@@ -198,13 +192,9 @@ await test("missing output resumes the saved correction conversation with contin
   );
   assert.deepEqual(await fixture.snapshot(), saved);
   const continuation = fixture.state.submissions.at(-1)!;
-  assertBusinessAssignment(
-    continuation,
-    saved.invocation!.path,
-    "implementation",
-  );
+  assertBusinessAssignment(continuation, saved.invocation!.path);
   assert.equal(continuation.tab, fixture.state.submissions.at(-2)!.tab);
-  assert.notEqual(continuation.expectedFile, saved.superseded[0]);
+  assert.notEqual(saved.invocation!.path, saved.superseded[0]);
 });
 
 await test("cancellation during recovered startup prevents the delayed continue", async (t) => {
@@ -221,9 +211,8 @@ await test("cancellation during recovered startup prevents the delayed continue"
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   const saved = await fixture.snapshot();
   const controller = new AbortController();
-  fixture.dependencies.terminalPlugin.resume = async () => {
+  fixture.dependencies.terminalPlugin.execute = async () => {
     controller.abort();
-    return saved.roles.implement!.sessionid;
   };
   const before = fixture.state.submissions.length;
   assert.equal(

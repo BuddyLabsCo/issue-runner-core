@@ -85,16 +85,10 @@ export async function batchDocumentationRun(
       await rm(input.worktree, { recursive: true });
     },
   });
-  const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+  const submit = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.submitText = async (
-    tab,
-    text,
-    chord,
-    expectedFile,
-    recoveryText,
-  ) => {
+  fixture.dependencies.terminalPlugin.onInput = async (tab, text, chord) => {
     if (text.startsWith("Documentation assignment\n")) {
       const assignment = promptAssignment(text) as { path: string };
       events.push("document");
@@ -106,14 +100,12 @@ export async function batchDocumentationRun(
             "Implementation assignment\n",
           ),
           chord,
-          expectedFile,
-          recoveryText,
         ),
       );
     } else {
       if (text.startsWith("Implementation assignment\n"))
         events.push("implement");
-      await submit(tab, text, chord, expectedFile, recoveryText);
+      await submit(tab, text, chord);
     }
   };
   return { ...fixture, maintenance, events, cleanup, state };

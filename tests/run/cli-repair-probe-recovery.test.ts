@@ -8,14 +8,10 @@ import { conflictRepairRun } from "../support/conflict-repair-run.ts";
 for (const kind of ["ci", "conflict"] as const) {
   await test(`interrupted ${kind} repair Probe restores retained native identity before dispatch`, async (t) => {
     const fixture = await (kind === "ci" ? ciRepairRun : conflictRepairRun)(t);
-    const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+    const submit = fixture.dependencies.terminalPlugin.onInput.bind(
       fixture.dependencies.terminalPlugin,
     );
-    fixture.dependencies.terminalPlugin.submitText = async (
-      tab,
-      text,
-      chord,
-    ) => {
+    fixture.dependencies.terminalPlugin.onInput = async (tab, text, chord) => {
       await submit(tab, text, chord);
       if (
         text.startsWith("Session Probe\n") &&
@@ -30,7 +26,7 @@ for (const kind of ["ci", "conflict"] as const) {
     assert.ok(pending.probe);
     assert.equal(pending.sessionid, undefined);
     fixture.dependencies.signal = new AbortController().signal;
-    fixture.dependencies.terminalPlugin.submitText = submit;
+    fixture.dependencies.terminalPlugin.onInput = submit;
     const submissions = fixture.state.submissions.length;
     const result = await fixture.run();
     assert.match(result.summary.reasons.join(" "), /CI-ready|completed/u);
@@ -57,10 +53,10 @@ for (const kind of ["ci", "conflict"] as const) {
       const fixture = await (kind === "ci" ? ciRepairRun : conflictRepairRun)(
         t,
       );
-      const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+      const submit = fixture.dependencies.terminalPlugin.onInput.bind(
         fixture.dependencies.terminalPlugin,
       );
-      fixture.dependencies.terminalPlugin.submitText = async (
+      fixture.dependencies.terminalPlugin.onInput = async (
         tab,
         text,
         chord,
@@ -82,7 +78,7 @@ for (const kind of ["ci", "conflict"] as const) {
         await mkdir(pending.probe!.path);
       } else await writeFile(pending.probe!.path, "{}");
       fixture.dependencies.signal = new AbortController().signal;
-      fixture.dependencies.terminalPlugin.submitText = submit;
+      fixture.dependencies.terminalPlugin.onInput = submit;
       fixture.dependencies.operator.pause = async (message) => {
         assert.equal(
           message,

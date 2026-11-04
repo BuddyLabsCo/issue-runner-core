@@ -160,30 +160,31 @@ async function executeProject(
       createTab: (options) =>
         operator.advance(() =>
           boundedOperation(
-            () => terminal.createTab(options),
+            async () => {
+              const tab = await terminal.createTab(options);
+              return {
+                handle: tab.handle,
+                io: {
+                  read: () => tab.io.read(),
+                  sendKeys: (keys) => tab.io.sendKeys(keys),
+                  submitText: (text) =>
+                    operator.advance(() =>
+                      boundedOperation(
+                        () => tab.io.submitText(text),
+                        "terminal submitText; delivery is uncertain",
+                        signal,
+                      ),
+                    ),
+                },
+              };
+            },
             `terminal createTab ${options.label}`,
             signal,
           ),
         ),
-      start: (tab, command) =>
+      execute: (tab, command) =>
         operator.advance(() =>
-          cancellableOperation(() => terminal.start(tab, command), signal),
-        ),
-      resume: (tab, command, sessionref) =>
-        operator.advance(() =>
-          cancellableOperation(
-            () => terminal.resume(tab, command, sessionref),
-            signal,
-          ),
-        ),
-      submitText: (tab, text, chord, expectedFile, recoveryText) =>
-        operator.advance(() =>
-          boundedOperation(
-            () =>
-              terminal.submitText(tab, text, chord, expectedFile, recoveryText),
-            "terminal submitText; delivery is uncertain",
-            signal,
-          ),
+          cancellableOperation(() => terminal.execute(tab, command), signal),
         ),
       closeTab: (tab) =>
         operator.advance(() =>

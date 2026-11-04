@@ -128,15 +128,15 @@ for (const selector of ["parent", "issue"] as const) {
       const create = fixture.dependencies.terminalPlugin.createTab.bind(
         fixture.dependencies.terminalPlugin,
       );
-      const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+      const submit = fixture.dependencies.terminalPlugin.onInput.bind(
         fixture.dependencies.terminalPlugin,
       );
       fixture.dependencies.terminalPlugin.createTab = async (options) => {
         const tab = await create(options);
-        tabs.set(tab, Number(/ticket-(\d+)$/u.exec(options.cwd)![1]));
+        tabs.set(tab.handle, Number(/ticket-(\d+)$/u.exec(options.cwd)![1]));
         return tab;
       };
-      fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+      fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
         if (text.startsWith("Implementation assignment\n")) {
           const number = tabs.get(tab)!;
           assigned.get(number)!.resolve();
@@ -301,10 +301,10 @@ for (const failure of ["rejected", "conflict"] as const) {
   await test(`a later ${failure} merge retains earlier confirmed delivery without rollback or overtaking`, async (t) => {
     const fixture = await batchRun(t);
     let repairAttempts = 0;
-    const submit = fixture.dependencies.terminalPlugin.submitText.bind(
+    const submit = fixture.dependencies.terminalPlugin.onInput.bind(
       fixture.dependencies.terminalPlugin,
     );
-    fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+    fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
       if (text.startsWith("Session Probe\n")) {
         const assignment = promptAssignment(text) as {
           path: string;

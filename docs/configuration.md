@@ -11,7 +11,7 @@ import source Sandcastle/provider execution or transcript/session-pause code.
 ## Installation and Project selection
 
 Use Node.js 22.18.0 or later and npm 11 or later, including subsequent major versions.
-Build with `npm ci` and `npm run build`; `npm pack` also builds.
+Build with `npm ci --ignore-scripts` and `npm run build`; `npm pack` also builds.
 Install the terminal package globally, including in a custom npm prefix. Herdr
 owns `issue-runner-herdr` and depends on the full Core runtime transitively.
 For unpublished builds, supply the Core tarball as Herdr's runtime dependency
@@ -39,23 +39,23 @@ lookup are rejected. Global package installation does not relocate this config.
 destination, including a file or symbolic link, and retains partial output if
 copying fails. Edit its placeholders before running.
 
-The terminal command calls `runCli({ commandName, commandVersion, terminal })`
+The terminal command calls `runCli({ commandName, commandVersion, terminal, terminalPackageRoot, terminalCliEntry })`
 from `issue-runner-core/cli`. Importing this entry starts no CLI, creates no
 terminal, and installs no process handlers. Calling it reads process arguments,
 working directory and environment, and owns OperatorIO, the AbortController,
 and signal listeners. Help, usage errors and init follow-up commands use the
 supplied command name. Version output is
 `<commandName> <commandVersion> (core <loadedCoreVersion>)` and uses the executing
-Core package's version. Help, version and init need no credentials or terminal factory.
+Core package's version. The terminal supplies absolute real package-root and CLI-entry
+paths; installation locations and versions stay outside the recovery input hash. Help, version and init need no credentials or terminal factory.
 
 For Runs, Core validates arguments, selectors, Project lookup, configuration,
 credentials, and the nonempty Issue List before calling the factory. `--env`
 is unsupported. There is no terminal package discovery or fallback.
-Core validates contract version 1 and the callable `createTerminalPlugin(config)`
+Core validates contract version 2 and the callable `createTerminalPlugin(config)`
 factory, then invokes it once with the complete `terminalPlugins` value.
-Omission supplies `{}`; null, arrays, and scalar containers fail configuration validation.
-The result must be an object with callable `createTab`, `start`, `resume`,
-`submitText`, and `closeTab` methods.
+Core applies generic defaults; null, arrays, and scalar containers fail validation.
+The result must expose callable `createTab`, `execute`, and `closeTab` methods.
 
 Configure plugin-owned fields under `terminalPlugins`, using the selected plugin's documentation:
 
@@ -63,8 +63,12 @@ Configure plugin-owned fields under `terminalPlugins`, using the selected plugin
 terminalPlugins: {}
 ```
 
-Core validates only the container. It preserves nested values without normalization,
-environment-subtree selection, Agent-profile mapping, or enhancement installation checks.
+Core owns `terminalPlugins.agentStartDelay`: finite nonnegative seconds, at most
+2147483.647, default ten. It waits after command submission before Probe or task input.
+`terminalPlugins.enhancements` is an object, default `{}`. Its Agent-specific values
+remain unknown and are reserved for enhancement validation when activation is added.
+Other terminal-owned values remain unchanged. No enhancement is required for base startup.
+The terminal adapter need not interpret these generic settings.
 Plugin configuration remains part of the original configuration bytes hashed for recovery.
 Changing those bytes selects a new Run; the same canonical command, exact arguments, and bytes retain matching recovery behavior.
 
@@ -230,20 +234,21 @@ eligibility/ownership, fetches the Target Branch, and creates an isolated
 Worktree and branch from that exact base. Partial writes remain retained.
 The Reservation label must already exist in the repository.
 
-Core awaits tab creation with an absolute cwd and a unique temporary
-`GIT_CONFIG_GLOBAL` overlay, then calls composite `start` with the unchanged
-configured command. A valid returned native ref is saved before business dispatch.
-Only `undefined` from a new start selects a Session Probe, using the Agent chord.
-Every fallback Probe returns exactly `sessionid`; its persisted unique output path
-associates the response with the execution and stage. Core rejects empty refs,
-`latest`/`last`, and Runner Run/execution IDs. Composite resume receives the exact
-saved opaque ref and must return that ref, without another identity Probe.
+Core creates a tab with absolute cwd, a unique temporary `GIT_CONFIG_GLOBAL`
+overlay, label, effective submit key, and Run signal. Creation returns an opaque
+handle and bound I/O. Core calls `execute` with the unchanged configured command,
+then waits `terminalPlugins.agentStartDelay` seconds. New sessions receive a Session
+Probe through bound I/O. Probe returns exactly `sessionid`; its unique persisted
+path associates the response with the stage. Core rejects empty refs, `latest`/`last`,
+and Runner Run/execution IDs. Base resume validates and substitutes the exact saved
+opaque reference, waits the same delay, and continues without another Probe.
 
-Startup/readiness failures retain the created Runner Tab. Enter retries the
-composite operation on that same handle; the plugin must not launch another Agent.
-Issue-scoped pauses also allow skip, and q/EOF cancels. Core forwards cancellation
-through the Run signal and retains the Tab and Agent. Readiness has no Core timeout
-or startup sleep; create, submit, and close operations keep their existing bounds.
+Command failure may mean partial delivery. Generic Operator Pause retains the tab;
+the operator inspects it before continuing without command replay. Issue-scoped
+pauses also allow skip; q/EOF cancels. Cancellation reaches the adapter through the
+Run signal, interrupts Core's waits, and retains the tab and Agent. Create, submit,
+and close operations keep their existing bounds. The shared coordinator applies
+to implementation, Review, Review fix, both repairs, and documentation.
 
 The Agent reads the Issue by number and the repository's contribution/PR
 conventions from its current Worktree context. Configure `repository` and
@@ -302,8 +307,8 @@ Verified commits proceed to publication after enabled Review/fixes.
 
 When Review is enabled (the default), only a verified `committed` implementation
 starts it. A separate reviewer starts in a fresh Runner Tab in the original
-Worktree with its own per-call Git configuration. Core awaits composite startup,
-uses an identity-only Probe if no ref is returned, and saves the role reference before the
+Worktree with its own per-call Git configuration. Core awaits base startup,
+uses an identity-only Probe for its new session, and saves the role reference before the
 Review assignment. Review receives the Issue number, repository/spec review
 instructions, the Project review prompt, Review base, implementation HEAD,
 and an assigned absolute findings path outside the Worktree.
@@ -318,7 +323,7 @@ implementation edits or commits.
 
 After accepted findings, Core saves the Review result and closes its tab before
 opening a fresh tab that resumes the exact original implementation conversation.
-After composite resume readiness, the fix receives the findings report, reviewed HEAD as
+After base resume and delay, the fix receives the findings report, reviewed HEAD as
 its Base SHA, and a fresh handoff path. It must produce verified new commits and
 a clean Worktree. `no_change` cannot satisfy findings. Core verifies both this
 turn's commits relative to the reviewed HEAD and the complete accumulated history
@@ -337,7 +342,7 @@ Core substitutes named placeholders once. Project prompt contents are inserted
 as literal text through `{{instructions}}`; their own placeholders are not expanded.
 
 Later Reviews resume the exact original reviewer in fresh tabs, with the
-review profile's composite readiness and a fresh invocation/path. The previous reviewed HEAD becomes the
+review profile's base startup and delay and a fresh invocation/path. The previous reviewed HEAD becomes the
 next Review base; the implementation HEAD includes the latest fixes.
 `workflow.maxReviewRounds` has no default cap. With a cap, every allowed findings
 round still receives its fix before the loop exits. For example:
@@ -386,7 +391,7 @@ Recovery can adopt an exact merged PR and skip required-check discovery. If the 
 
 Runner waits 30 seconds before required-check discovery. Empty checks or checks with no pending, failed, or cancelled entries establish readiness, preserving the source treatment of skipped checks. Pending checks are polled every 10 seconds, bounded by `timeouts.requiredChecksMinutes`. A timeout enters Operator Pause; Enter starts another configured wait window and q/EOF cancels.
 
-Failed or cancelled required checks start CI repair using `agents.ciRepair`. Each attempt uses a fresh native conversation and a separate repair Worktree and local branch based on the recorded PR head. Its assignment includes the Issue number, PR URL, and failed check names/states/links. The Agent reads the check logs; log bodies are not embedded in the prompt. The original PR and remote branch remain unchanged in identity. Repair Probes establish only native session identity; they never regenerate publication metadata. Each start or exact resume awaits composite readiness, and each completed stage closes its own Runner Tab.
+Failed or cancelled required checks start CI repair using `agents.ciRepair`. Each attempt uses a fresh native conversation and a separate repair Worktree and local branch based on the recorded PR head. Its assignment includes the Issue number, PR URL, and failed check names/states/links. The Agent reads the check logs; log bodies are not embedded in the prompt. The original PR and remote branch remain unchanged in identity. Repair Probes establish only native session identity; they never regenerate publication metadata. Each start or exact resume awaits base startup and delay, and each completed stage closes its own Runner Tab.
 
 Runner verifies the repair Worktree, local branch, base, cleanliness, actual changes, and exact commit claims before pushing the verified HEAD to the original remote branch. It never force-pushes. Lost push responses reconcile against persisted pending-push evidence; unexpected remote advancement or PR identity changes require ordinary operation recovery. Each repair push restarts the 30-second discovery delay and required-check timeout window. CI repair does not enter ordinary Review.
 
@@ -491,7 +496,7 @@ Recovery stores the maintenance occurrence in `recovery/<input-hash>-document.js
 and its execution in `recovery/<input-hash>-document-<ticket>.json`. Matching interrupted
 Runs reuse the original ticket, native conversation, paths, PR metadata, and consumed
 budgets. Completed document stages skip Agent work. Existing output is verified before
-opening a tab; missing output awaits composite resume of the saved documentation
+opening a tab; missing output awaits the configured resume command of the saved documentation
 conversation and sends only `continue`. Superseded handoffs cannot replace the current assignment. Close leftover Agent
 tabs and stop their execution before recovery, retaining native history and Worktrees.
 Runner does not adopt live tabs. If the original context cannot be recovered, Runner
@@ -515,7 +520,7 @@ its resources; native histories and unrelated tabs remain untouched.
 ### Cancellation and explicit reruns
 
 Press Ctrl+C to cancel Runner, or enter `q`/EOF at a non-Agent Operator Pause.
-Cancellation interrupts composite readiness, polling, and retry delays, including waits
+Cancellation interrupts base startup and delay, polling, and retry delays, including waits
 in sibling Batch executions. Runner stops subsequent dispatch, terminal input,
 and resource creation, reports `cancelled`, and exits nonzero.
 Input already queued in a terminal can still execute; cancellation does not undo
@@ -645,9 +650,9 @@ active invocation and superseded paths. Cancellation during the dispatch gate al
 Core processes a valid expected result before sending a pending prompt. Once a
 dispatch attempt begins, the checkpoint no longer classifies the prompt as known
 unsent; a rejected eligibility check restores that evidence. If an attempted
-assignment has no expected result, recovery sends only `continue` after composite resume readiness. Runner opens a fresh Runner Tab in the original Worktree, recreates its
+assignment has no expected result, recovery sends only `continue` after base resume and delay. Runner opens a fresh Runner Tab in the original Worktree, recreates its
 per-call Git configuration, passes the configured resume command and exact saved
-role ref to composite resume, then submits the literal `continue` with that Agent's
+role ref to the configured resume command, then submits the literal `continue` with that Agent's
 configured `submitKey`. It sends no task, path reminder, context message, or new
 Probe. The invocation, active output path, and fixed PR metadata remain unchanged.
 Staged, unstaged, and untracked work remain in the original Worktree.
@@ -734,8 +739,8 @@ Unknown or obsolete fields are rejected at every Runner-owned object.
   nonempty; omission selects the repository default.
 - Each configured Agent profile requires a nonempty opaque `agent` string. Core
   preserves it unchanged, without defaults, brand inference, command parsing, or
-  enhancement installation checks. Every role passes it, the effective submit key,
-  and the Run signal to `createTab`.
+  enhancement installation checks. Agent selection stays in Core. Every role passes
+  only terminal context, the effective submit key, and Run signal to `createTab`.
 - Each Agent purpose has complete nonempty `start` and `resume` shell-command
   strings. `resume` must contain exactly spelled `{sessionref}` at least once.
   Authors supply shell quoting and all native flags. Core does not choose a
@@ -743,8 +748,8 @@ Unknown or obsolete fields are rejected at every Runner-owned object.
 - Optional `submitKey` is a nonempty Runner setting beside `start`/`resume`,
   outside the optional opaque native `options` object. Omission uses Enter.
   The obsolete `model` and `reasoningEffort` profile fields are rejected.
-- Core has no startup delay setting. Terminal plugins own command launch and readiness.
-  Remove obsolete `startupDelaySeconds` entries; configuration validation rejects them.
+- Core owns `terminalPlugins.agentStartDelay` (ten seconds by default), applied
+  after command submission. `startupDelaySeconds` remains unsupported.
 
 - `implement`, `ciRepair`, and `conflictRepair` profiles are required. Review
   defaults enabled, requiring its profile and nonempty `prompts/review.md`.

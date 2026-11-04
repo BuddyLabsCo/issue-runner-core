@@ -106,7 +106,7 @@ export async function testPromptAssembly(
   );
   assert.deepEqual(
     fixture.state.sleeps.filter((ms) => ms !== 30_000),
-    [],
+    [10_000],
   );
 }
 
@@ -149,6 +149,6 @@ export async function testPromptContinuation(
   );
   assert.deepEqual(
     fixture.state.sleeps.filter((ms) => ms !== 30_000),
-    [250],
+    [10_000, 10_000, 250],
   );
 }

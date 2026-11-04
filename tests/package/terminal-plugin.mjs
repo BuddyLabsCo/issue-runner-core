@@ -37,9 +37,11 @@ export async function testTerminalCommand(
   writeFileSync(
     join(source, "command.js"),
     `#!/usr/bin/env node
+    import { realpathSync } from "node:fs";
+    import { fileURLToPath } from "node:url";
     import { runCli } from "issue-runner-core/cli";
     import * as terminal from "./terminal.js";
-    await runCli({ commandName: "generic-terminal", commandVersion: "2.3.4", terminal });
+    await runCli({ commandName: "generic-terminal", commandVersion: "2.3.4", terminal, terminalPackageRoot: realpathSync(fileURLToPath(new URL(".", import.meta.url))), terminalCliEntry: realpathSync(fileURLToPath(import.meta.url)) });
   `,
   );
   writeFileSync(

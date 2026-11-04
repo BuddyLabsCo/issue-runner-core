@@ -210,10 +210,10 @@ for (const response of ["", "q"] as const) {
       }
       return inspect(input);
     };
-    const start = fixture.dependencies.terminalPlugin.start.bind(
+    const start = fixture.dependencies.terminalPlugin.execute.bind(
       fixture.dependencies.terminalPlugin,
     );
-    fixture.dependencies.terminalPlugin.start = async (tab, command) => {
+    fixture.dependencies.terminalPlugin.execute = async (tab, command) => {
       await start(tab, command);
       starting.resolve();
       await paused.promise;
@@ -227,10 +227,10 @@ for (const response of ["", "q"] as const) {
       return answer.promise;
     };
     const submitted: string[] = [];
-    const submitText = fixture.dependencies.terminalPlugin.submitText.bind(
+    const submitText = fixture.dependencies.terminalPlugin.onInput.bind(
       fixture.dependencies.terminalPlugin,
     );
-    fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+    fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
       submitted.push(text);
       await submitText(tab, text);
     };
@@ -283,10 +283,10 @@ await test("a fatal sibling error interrupts unresolved Operator input and retai
     }
     return inspect(input);
   };
-  const submitText = fixture.dependencies.terminalPlugin.submitText.bind(
+  const submitText = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
-  fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+  fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
     if (text.startsWith("Implementation assignment\n")) {
       assigned.resolve();
       await paused.promise;
@@ -369,8 +369,8 @@ await test(
           }
           return inspect(input);
         };
-        const submit = fixture.dependencies.terminalPlugin.submitText.bind(fixture.dependencies.terminalPlugin);
-        fixture.dependencies.terminalPlugin.submitText = async (tab, text) => {
+        const submit = fixture.dependencies.terminalPlugin.onInput.bind(fixture.dependencies.terminalPlugin);
+        fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
           if (text.startsWith("Implementation assignment\\n")) {
             assigned();
             await inputStarted;

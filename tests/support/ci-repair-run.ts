@@ -75,19 +75,13 @@ export async function ciRepairRun(
   const open = terminal.createTab.bind(terminal);
   terminal.createTab = async (options) => {
     const tab = await open(options);
-    tabs.set(tab, options.cwd);
+    tabs.set(tab.handle, options.cwd);
     return tab;
   };
-  const submit = terminal.submitText.bind(terminal);
-  terminal.submitText = async (
-    tab,
-    text,
-    chord,
-    expectedFile,
-    recoveryText,
-  ) => {
+  const submit = terminal.onInput.bind(terminal);
+  terminal.onInput = async (tab, text, chord) => {
     const evidence = workspaces.get(tabs.get(tab)!);
-    if (!evidence) return submit(tab, text, chord, expectedFile, recoveryText);
+    if (!evidence) return submit(tab, text, chord);
     const kind = evidence.branch.includes("conflict-repair")
       ? "conflict"
       : "ci";
@@ -96,8 +90,6 @@ export async function ciRepairRun(
       tab,
       text,
       ...(chord ? { chord } : {}),
-      ...(expectedFile === undefined ? {} : { expectedFile }),
-      ...(recoveryText === undefined ? {} : { recoveryText }),
     });
     if (text.startsWith("Session Probe\n")) {
       repairs.probes.push(text);
