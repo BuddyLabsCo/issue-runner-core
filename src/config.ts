@@ -24,6 +24,7 @@ export interface ProjectConfig {
   repository: string;
   checkout: string;
   issueList: number[];
+  issueLabel: string;
   maxBatchSize: number;
   targetBranch?: string;
   terminalPlugins: Record<string, unknown> & {
@@ -180,7 +181,7 @@ function parseConfig(
   options: { requireDocumentationMaintenance?: boolean } = {},
 ): ProjectConfig {
   const input = record(value, "config");
-  const { terminalPlugins = {} } = input;
+  const { terminalPlugins = {}, issueLabel = "" } = input;
   if (Object.getPrototypeOf(terminalPlugins ?? {}) !== Object.prototype)
     throw new Error("terminalPlugins must be an object mapping");
   knownFields(
@@ -189,6 +190,7 @@ function parseConfig(
       "repository",
       "checkout",
       "issueList",
+      "issueLabel",
       "maxBatchSize",
       "targetBranch",
       "terminalPlugins",
@@ -257,6 +259,8 @@ function parseConfig(
   };
   const repository = text(input.repository, "repository");
   const configuredIssueList = issueList(input.issueList);
+  if (typeof issueLabel !== "string")
+    throw new Error("issueLabel must be a string");
   const maxBatchSize = nonNegativeInteger(input.maxBatchSize, "maxBatchSize");
   if (maxBatchSize === 0)
     throw new Error("maxBatchSize must be a positive safe integer");
@@ -306,16 +310,12 @@ function parseConfig(
     ["title", "body", "label"],
     "maintenanceTicket",
   );
-  if (documentationRequired) {
-    text(maintenanceTicket.title, "maintenanceTicket.title");
-    text(maintenanceTicket.body, "maintenanceTicket.body");
-    text(maintenanceTicket.label, "maintenanceTicket.label");
-  }
 
   return {
     repository,
     checkout,
     issueList: configuredIssueList,
+    issueLabel: issueLabel.trim(),
     maxBatchSize,
     terminalPlugins: terminalSettings(
       record(terminalPlugins, "terminalPlugins"),

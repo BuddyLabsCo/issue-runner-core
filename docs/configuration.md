@@ -157,9 +157,11 @@ Both `completed` and `not_planned` closed blockers unblock work; open blockers
 prevent selection. Unsupported terminal reasons, incomplete reads, and invalid
 pagination prevent selection. Cross-repository direct children are unsupported.
 
-Eligible children are open, carry the exact case-sensitive `ready-for-agent`
-label, have no assignee other than the configured runner, and have no open
-blockers. Other labels do not change eligibility. A nonempty `issueList`
+Eligible children are open, carry the exact case-sensitive label configured by
+`issueLabel` when nonempty, have no assignee other than the configured runner,
+and have no open blockers. Empty or omitted `issueLabel` disables label filtering,
+including for Issues with no labels. The init template sets `issueLabel: ready-for-agent`.
+Other labels do not change eligibility. A nonempty `issueList`
 restricts selection to matching direct children; it never expands parent scope.
 Core selects ascending Issue numbers up to `maxBatchSize`, reports selected
 numbers and blocked/owned/reserved/missing work, and dispatches that Batch
@@ -243,7 +245,7 @@ implementations are verified without redispatch; matching in-flight work uses
 the existing native conversation/handoff recovery path.
 
 A numbered `--issue` also supports the implementation checkpoint. The Issue
-must be open, have `ready-for-agent`, have no open blockers (including blockers
+must be open, match `issueLabel` when nonempty, have no open blockers (including blockers
 on later pages), and have no external assignee or unrelated/partial Reservation.
 Core adds the configured Reservation label and runner assignee, revalidates
 eligibility/ownership, fetches the Target Branch, and creates an isolated
@@ -746,6 +748,10 @@ Use [the init template](../templates/config.yaml) as the complete example.
 Unknown or obsolete fields are rejected at every Runner-owned object.
 
 - `repository` is `owner/repo`; `checkout` is an absolute path.
+- `issueLabel` is an optional, trimmed, case-sensitive label used by Parent,
+  Issue List, and numbered Issue selection and revalidation. The init template
+  sets `ready-for-agent`; an empty or omitted value disables label filtering.
+  Existing configurations that omit this field now allow unlabeled Issues.
 - `tracker.tokenEnv` and `codeHost.tokenEnv` name nonempty inherited credential
   values. Credentials are not written into audit records. `runnerAccount` and
   `reservationLabel` are required. `codeHost.adminMerge` is a required boolean.
