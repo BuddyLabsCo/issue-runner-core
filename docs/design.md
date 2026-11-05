@@ -312,8 +312,7 @@ The fix round reports the same implementation reference even if it resumes in
 a new tab. Use the validated opaque `session_ref`, not a terminal handle,
 application ID, or an ambiguous latest-session reference. While
 the native reference is being established, report `sessionid=pending`; emit
-the stage with its actual reference once available. Stages without an
-associated Agent conversation report `sessionid=n/a`.
+the stage with its actual reference once available.
 
 ## Open execution details
 

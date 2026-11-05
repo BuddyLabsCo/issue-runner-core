@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { appendFileSync } from "node:fs";
 import {
   access,
   appendFile,
@@ -29,15 +28,15 @@ await test("the recovery hash uses the configuration bytes validated at startup"
   const file = path.join(fixture.directory, "config.yaml");
   await appendFile(file, "\nterminalPlugins: { fake: { enabled: true } }\n");
   const config = await readFile(file);
-  const write = fixture.dependencies.operator.write.bind(
-    fixture.dependencies.operator,
+  const createPlugin = fixture.dependencies.terminal.createTerminalPlugin.bind(
+    fixture.dependencies.terminal,
   );
-  fixture.dependencies.operator.write = (message) => {
-    write(message);
-    if (message === "demo: workflow sessionid=n/a")
-      appendFileSync(file, "\n# Edited after validation\n");
+  fixture.dependencies.terminal.createTerminalPlugin = async (options) => {
+    await appendFile(file, "\n# Edited after validation\n");
+    return createPlugin(options);
   };
   assert.equal((await fixture.run()).summary.outcome, "incomplete");
+  assert.notDeepEqual(await readFile(file), config);
   const expectedHash = createHash("sha256")
     .update(
       JSON.stringify([fixture.dependencies.commandName, implementationCommand]),
