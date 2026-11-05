@@ -1,6 +1,7 @@
 import type { Ticket, Tracker } from "./contracts.ts";
 import {
   hasOpenBlocker,
+  missingIssueReasons,
   readChildren,
   type ReadOperation,
 } from "./discovery.ts";
@@ -74,6 +75,7 @@ function closeParent(input: ParentScope): Promise<boolean> {
 export async function runParent(
   input: ParentScope & {
     summary: RunSummary;
+    issueList: readonly number[];
     runBatch: (tickets: Ticket[]) => Promise<RunSummary>;
     maintenancePending: () => boolean;
   },
@@ -85,13 +87,27 @@ export async function runParent(
     if (input.maintenancePending())
       return { ...input.summary, outcome: "incomplete", reasons };
     const { parent, tickets } = await readParentScope(input);
+    const completionReasons = [
+      ...reasons,
+      ...missingIssueReasons(tickets, input.issueList).filter(
+        (reason) => !reasons.includes(reason),
+      ),
+    ];
     hadChildren ||= tickets.length > 0;
     if (parent.state === "closed")
-      return { ...input.summary, outcome: "succeeded", reasons };
+      return {
+        ...input.summary,
+        outcome: "succeeded",
+        reasons: completionReasons,
+      };
     if (!hadChildren) return input.runBatch(tickets);
     if (tickets.every((ticket) => ticket.state === "closed")) {
       if (await closeParent(input))
-        return { ...input.summary, outcome: "succeeded", reasons };
+        return {
+          ...input.summary,
+          outcome: "succeeded",
+          reasons: completionReasons,
+        };
       continue;
     }
     if (previous && previous.outcome !== "succeeded")

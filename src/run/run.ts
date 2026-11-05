@@ -263,7 +263,7 @@ async function executeProject(
     return result;
   };
   if (options.selector === "document") return document();
-  const selectBatch = (tickets: Ticket[]) =>
+  const selectBatch = (tickets?: Ticket[]) =>
     selectIssueBatch({
       tickets,
       loaded,
@@ -309,7 +309,7 @@ async function executeProject(
     return ticket;
   };
   const recoveredReasons: string[] = [];
-  const pending = await selectBatch([]);
+  const pending = await selectBatch();
   if (pending.batch.length > 0) {
     const result = await batch(
       pending.documentation
@@ -329,6 +329,7 @@ async function executeProject(
       read,
       summary,
       runBatch: batch,
+      issueList: loaded.config.issueList,
       maintenancePending: () => maintenancePending,
     });
     return { ...result, reasons: [...recoveredReasons, ...result.reasons] };

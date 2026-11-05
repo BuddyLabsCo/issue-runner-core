@@ -7,6 +7,65 @@ import test from "node:test";
 import { validConfig } from "../support/cli-project.ts";
 import { child, parentDeliveryRun, parentRun } from "../support/parent-run.ts";
 
+for (const [selector, missing, numbers] of [
+  ["parent", false, [51, 52]],
+  ["parent", true, [51, 52]],
+  ["parent", false, [51]],
+  ["parent", true, [51]],
+  ["issue", false, [51, 52]],
+] as const) {
+  await test(`${selector} saved Batch recovery with ${numbers.length} discovered ${numbers.length === 1 ? "Issue" : "Issues"} ${missing ? "preserves genuine missing-Issue warnings" : "does not report delivered Issues as missing"}`, async (t) => {
+    const fixture = await parentDeliveryRun(
+      t,
+      numbers.map((number) => child(number)),
+      {
+        ...validConfig,
+        issueList: [...numbers, ...(missing ? [999] : [])],
+        maxBatchSize: 1,
+      },
+    );
+    const scope = [`--${selector}`, ...(selector === "parent" ? ["48"] : [])];
+    const addLabel = fixture.dependencies.tracker.addLabel.bind(
+      fixture.dependencies.tracker,
+    );
+    fixture.dependencies.tracker.addLabel = async () => {
+      fixture.controller.abort();
+    };
+    assert.equal((await fixture.run(scope)).summary.outcome, "cancelled");
+    fixture.dependencies.tracker.addLabel = addLabel;
+    fixture.dependencies.signal = new AbortController().signal;
+
+    const result = await fixture.run(scope);
+
+    assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
+    assert.deepEqual(fixture.dispatched, [...numbers]);
+    assert.deepEqual(fixture.closures, [
+      ...numbers,
+      ...(selector === "parent" ? [48] : []),
+    ]);
+    assert.deepEqual(
+      result.summary.reasons.filter((reason) =>
+        reason.startsWith("configured Delivery Tickets not found:"),
+      ),
+      missing ? ["configured Delivery Tickets not found: 999"] : [],
+    );
+  });
+}
+
+await test("an empty discovered parent scope still reports configured Issues as missing", async (t) => {
+  const fixture = await parentRun(t, [], {
+    ...validConfig,
+    issueList: [51],
+  });
+
+  const result = await fixture.run();
+
+  assert.equal(result.summary.outcome, "no_work");
+  assert.deepEqual(result.summary.reasons, [
+    "configured Delivery Tickets not found: 51",
+  ]);
+});
+
 await test("parent reads every child and blocker page before selecting across labels, ownership and Issue List filtering", async (t) => {
   const children = [
     child(51),

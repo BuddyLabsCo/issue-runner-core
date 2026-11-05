@@ -108,8 +108,20 @@ function parseBatch(
   return saved as unknown as BatchProgress;
 }
 
+export function missingIssueReasons(
+  tickets: readonly Ticket[],
+  issueList: readonly number[],
+): string[] {
+  const missing = issueList.filter(
+    (number) => !tickets.some((ticket) => ticket.number === number),
+  );
+  return missing.length
+    ? [`configured Delivery Tickets not found: ${missing.join(", ")}`]
+    : [];
+}
+
 export async function selectIssueBatch(input: {
-  tickets: Ticket[];
+  tickets: Ticket[] | undefined;
   loaded: LoadedProject;
   tracker: Tracker;
   context: RunContext;
@@ -147,7 +159,9 @@ export async function selectIssueBatch(input: {
   const blocked: number[] = [];
   const externallyOwned: number[] = [];
   const reservations: string[] = [];
-  for (const child of [...tickets].sort((a, b) => a.number - b.number)) {
+  for (const child of [...(tickets ?? [])].sort(
+    (a, b) => a.number - b.number,
+  )) {
     const isBlocked = await hasOpenBlocker(
       config.repository,
       child.number,
@@ -197,9 +211,6 @@ export async function selectIssueBatch(input: {
       continue;
     eligible.push(child);
   }
-  const missing = config.issueList.filter(
-    (number) => !tickets.some((child) => child.number === number),
-  );
   const batch =
     (recorded && !recorded.completed ? recorded.tickets : undefined) ??
     [...new Set(eligible.map((ticket) => ticket.number))].slice(
@@ -245,9 +256,7 @@ export async function selectIssueBatch(input: {
       ...(reservations.length
         ? [`existing Reservations: ${reservations.join(", ")}`]
         : []),
-      ...(missing.length
-        ? [`configured Delivery Tickets not found: ${missing.join(", ")}`]
-        : []),
+      ...(tickets ? missingIssueReasons(tickets, config.issueList) : []),
     ],
   };
 }
