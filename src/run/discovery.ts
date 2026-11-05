@@ -191,7 +191,8 @@ export async function selectIssueBatch(input: {
     if (
       external ||
       isBlocked ||
-      !child.labels?.includes("ready-for-agent") ||
+      (config.issueLabel !== "" &&
+        !child.labels?.includes(config.issueLabel)) ||
       (config.issueList.length > 0 &&
         input.issueTicket === undefined &&
         !config.issueList.includes(child.number)) ||

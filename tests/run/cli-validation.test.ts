@@ -96,6 +96,10 @@ await test("invalid configuration fails before any external reads or delivery re
     [{ issueList: [1, 1] }, /unique/],
     [{ issueList: [0] }, /positive/],
     [{ issueList: "1" }, /array/],
+    ...[null, false, 1, [], {}].map((issueLabel): [object, RegExp] => [
+      { issueLabel },
+      /issueLabel must be a string/,
+    ]),
     [{ maxBatchSize: 0 }, /maxBatchSize/],
     [{ maxBatchSize: 1.5 }, /maxBatchSize/],
     [{ targetBranch: " " }, /targetBranch/],

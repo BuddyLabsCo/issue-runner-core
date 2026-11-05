@@ -170,8 +170,8 @@ async function executeStandalone(
           reason:
             "Maintenance Ticket lost its standalone markers or became externally owned",
         };
-    } else if (!ticket.labels?.includes("ready-for-agent"))
-      return { ticket, reason: "Issue is missing ready-for-agent" };
+    } else if (config.issueLabel && !ticket.labels?.includes(config.issueLabel))
+      return { ticket, reason: `Issue is missing ${config.issueLabel}` };
     if (ticket.assignees?.some((account) => account !== runnerAccount))
       return { ticket, reason: "Issue is externally owned" };
     if (await hasOpenBlocker(repository, number, tracker, read))

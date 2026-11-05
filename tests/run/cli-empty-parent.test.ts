@@ -33,9 +33,7 @@ await test("an empty parent returns no_work through the application without clos
   ]);
   assert.ok(result.logPath);
   const audit = await readFile(result.logPath, "utf8");
-  assert.ok(
-    dependencies.messages.some((message) => message.includes("sessionid=n/a")),
-  );
+  assert.doesNotMatch(dependencies.messages.join("\n"), /workflow sessionid=/u);
   const events = audit
     .trim()
     .split("\n")

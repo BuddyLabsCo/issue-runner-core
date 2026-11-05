@@ -16,6 +16,7 @@ export const validConfig = {
   repository: "owner/repo",
   checkout: path.resolve(tmpdir()),
   issueList: [],
+  issueLabel: "ready-for-agent",
   maxBatchSize: 3,
   tracker: {
     tokenEnv: "TRACKER_TOKEN",
