@@ -597,7 +597,6 @@ implementation, documentation, Review/fix, and repair stages. Other saved progre
 and ownership checks remain intact. Keep configuration bytes unchanged to recover
 an existing Run: removing legacy keys changes the input hash and starts a separate Run.
 
-Run startup displays `sessionid=n/a` for workflow work without an Agent conversation.
 Each Agent stage identifies its Issue and purpose, with `sessionid=pending` before its Probe.
 After the Probe, progress shows the actual native identity and absolute active handoff path.
 Corrections update that path; resumed work displays its saved identity and assignment.

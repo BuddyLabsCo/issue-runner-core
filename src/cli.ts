@@ -282,7 +282,6 @@ export async function executeRun(
       dependencies.signal,
     );
     logPath = audit.path;
-    dependencies.operator.write(`${project}: workflow sessionid=n/a`);
     const runSummary = await runProject(
       options,
       loaded,
