@@ -35,8 +35,9 @@ export function child(number: number, extra: Partial<Ticket> = {}): Ticket {
 export async function parentRun(
   t: TestContext,
   children: Ticket[],
-  config: Omit<typeof validConfig, "issueList"> & {
+  config: Omit<typeof validConfig, "issueList" | "issueLabel"> & {
     issueList: number[];
+    issueLabel?: string;
     workflow?: { review?: boolean; maxReviewRounds?: number };
   } = validConfig,
 ) {
