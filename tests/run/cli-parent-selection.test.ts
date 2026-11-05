@@ -7,6 +7,59 @@ import test from "node:test";
 import { validConfig } from "../support/cli-project.ts";
 import { child, parentDeliveryRun, parentRun } from "../support/parent-run.ts";
 
+for (const [selector, missing] of [
+  ["parent", false],
+  ["parent", true],
+  ["issue", false],
+] as const) {
+  await test(`${selector} saved Batch recovery ${missing ? "preserves genuine missing-Issue warnings" : "does not report delivered Issues as missing"}`, async (t) => {
+    const fixture = await parentDeliveryRun(t, [child(51), child(52)], {
+      ...validConfig,
+      issueList: missing ? [51, 52, 999] : [51, 52],
+      maxBatchSize: 1,
+    });
+    const scope = [`--${selector}`, ...(selector === "parent" ? ["48"] : [])];
+    const addLabel = fixture.dependencies.tracker.addLabel.bind(
+      fixture.dependencies.tracker,
+    );
+    fixture.dependencies.tracker.addLabel = async () => {
+      fixture.controller.abort();
+    };
+    assert.equal((await fixture.run(scope)).summary.outcome, "cancelled");
+    fixture.dependencies.tracker.addLabel = addLabel;
+    fixture.dependencies.signal = new AbortController().signal;
+
+    const result = await fixture.run(scope);
+
+    assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
+    assert.deepEqual(fixture.dispatched, [51, 52]);
+    assert.deepEqual(
+      fixture.closures,
+      selector === "parent" ? [51, 52, 48] : [51, 52],
+    );
+    assert.deepEqual(
+      result.summary.reasons.filter((reason) =>
+        reason.startsWith("configured Delivery Tickets not found:"),
+      ),
+      missing ? ["configured Delivery Tickets not found: 999"] : [],
+    );
+  });
+}
+
+await test("an empty discovered parent scope still reports configured Issues as missing", async (t) => {
+  const fixture = await parentRun(t, [], {
+    ...validConfig,
+    issueList: [51],
+  });
+
+  const result = await fixture.run();
+
+  assert.equal(result.summary.outcome, "no_work");
+  assert.deepEqual(result.summary.reasons, [
+    "configured Delivery Tickets not found: 51",
+  ]);
+});
+
 await test("parent reads every child and blocker page before selecting across labels, ownership and Issue List filtering", async (t) => {
   const children = [
     child(51),
