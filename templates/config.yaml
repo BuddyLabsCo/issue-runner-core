@@ -54,7 +54,7 @@ agents:
     submitKey: Enter
   review:
     agent: codex
-    start: 'codex --model gpt-6.1-sol -c model_reasoning_effort="high" --dangerously-bypass-approvals-and-sandbox'
+    start: 'codex --remote unix:// --model gpt-6.1-sol -c model_reasoning_effort="high" --dangerously-bypass-approvals-and-sandbox'
     resume: 'codex resume "{sessionref}" --model gpt-6.1-sol -c model_reasoning_effort="high" --dangerously-bypass-approvals-and-sandbox'
     submitKey: Enter
   ciRepair:
