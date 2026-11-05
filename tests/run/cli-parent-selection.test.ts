@@ -7,17 +7,23 @@ import test from "node:test";
 import { validConfig } from "../support/cli-project.ts";
 import { child, parentDeliveryRun, parentRun } from "../support/parent-run.ts";
 
-for (const [selector, missing] of [
-  ["parent", false],
-  ["parent", true],
-  ["issue", false],
+for (const [selector, missing, numbers] of [
+  ["parent", false, [51, 52]],
+  ["parent", true, [51, 52]],
+  ["parent", false, [51]],
+  ["parent", true, [51]],
+  ["issue", false, [51, 52]],
 ] as const) {
-  await test(`${selector} saved Batch recovery ${missing ? "preserves genuine missing-Issue warnings" : "does not report delivered Issues as missing"}`, async (t) => {
-    const fixture = await parentDeliveryRun(t, [child(51), child(52)], {
-      ...validConfig,
-      issueList: missing ? [51, 52, 999] : [51, 52],
-      maxBatchSize: 1,
-    });
+  await test(`${selector} saved Batch recovery with ${numbers.length} discovered ${numbers.length === 1 ? "Issue" : "Issues"} ${missing ? "preserves genuine missing-Issue warnings" : "does not report delivered Issues as missing"}`, async (t) => {
+    const fixture = await parentDeliveryRun(
+      t,
+      numbers.map((number) => child(number)),
+      {
+        ...validConfig,
+        issueList: [...numbers, ...(missing ? [999] : [])],
+        maxBatchSize: 1,
+      },
+    );
     const scope = [`--${selector}`, ...(selector === "parent" ? ["48"] : [])];
     const addLabel = fixture.dependencies.tracker.addLabel.bind(
       fixture.dependencies.tracker,
@@ -32,11 +38,11 @@ for (const [selector, missing] of [
     const result = await fixture.run(scope);
 
     assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
-    assert.deepEqual(fixture.dispatched, [51, 52]);
-    assert.deepEqual(
-      fixture.closures,
-      selector === "parent" ? [51, 52, 48] : [51, 52],
-    );
+    assert.deepEqual(fixture.dispatched, [...numbers]);
+    assert.deepEqual(fixture.closures, [
+      ...numbers,
+      ...(selector === "parent" ? [48] : []),
+    ]);
     assert.deepEqual(
       result.summary.reasons.filter((reason) =>
         reason.startsWith("configured Delivery Tickets not found:"),

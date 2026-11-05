@@ -329,6 +329,7 @@ async function executeProject(
       read,
       summary,
       runBatch: batch,
+      issueList: loaded.config.issueList,
       maintenancePending: () => maintenancePending,
     });
     return { ...result, reasons: [...recoveredReasons, ...result.reasons] };
