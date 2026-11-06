@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+
+- - docs: [issue-313] consolidate Core documentation (#320)
+
 ## 0.1.0
 
 - - ci: [issue-317] skip duplicate checks after release merges (#318)
