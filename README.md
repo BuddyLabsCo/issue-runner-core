@@ -5,7 +5,7 @@ Issue Runner coordinates AI work on GitHub Issues: it selects eligible work, cre
 Core is a library only. You need to install terminal multiplexer plugin to start Issue Runner, e.g. [issue-runner-herdr](https://github.com/BuddyLabsCo/issue-runner-herdr)  
 You can use issue runner with any AI agent cli supporting interactive session, e.g. claude, pi, codex, codebuddy, etc...
 
-[demo gif place holder]
+![Issue Runner demo](docs/assets/demo.gif)
 
 ## Workflow overview
 
