@@ -1,17 +1,25 @@
 # Changelog
 
+## 1.0.0
+
+- - fix: [issue-328] remove reasons output and aggregation (#329)
+- - docs: [issue-330] add demo GIF to README (#331)
+
 ## 0.1.3
 
 - - fix: [issue-325] unblock conflict repairs and document agent startup (#326)
+
 
 ## 0.1.2
 
 - - chore: [issue-322] remove unused Agent timeout settings (#323)
 
 
+
 ## 0.1.1
 
 - - docs: [issue-313] consolidate Core documentation (#320)
+
 
 
 
