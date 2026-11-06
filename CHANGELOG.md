@@ -1,12 +1,18 @@
 # Changelog
 
+## 0.1.3
+
+- - fix: [issue-325] unblock conflict repairs and document agent startup (#326)
+
 ## 0.1.2
 
 - - chore: [issue-322] remove unused Agent timeout settings (#323)
 
+
 ## 0.1.1
 
 - - docs: [issue-313] consolidate Core documentation (#320)
+
 
 
 ## 0.1.0
