@@ -52,7 +52,6 @@ export interface RunSummary {
   project: string;
   parentTicket: number;
   targetBranch: string;
-  reasons: string[];
   tickets?: TicketReport[];
   failure?: string;
   retainedEvidence?: RetainedEvidence[];
@@ -79,7 +78,6 @@ export async function runProject(
     project: options.project,
     parentTicket: options.parentTicket ?? options.issueTicket ?? 0,
     targetBranch: loaded.config.targetBranch ?? "unresolved",
-    reasons: [],
     tickets: [],
   };
   try {
@@ -101,7 +99,6 @@ export async function runProject(
         ? "cancelled"
         : "failed";
     const reason = error instanceof Error ? error.message : String(error);
-    summary.reasons.push(reason);
     summary.failure = reason;
     return summary;
   } finally {
@@ -222,8 +219,7 @@ async function executeProject(
     try {
       return await runStandalone(input);
     } catch (error) {
-      if (error instanceof TicketSkipped)
-        return { ...summary, reasons: [error.message] };
+      if (error instanceof TicketSkipped) return summary;
       throw error;
     }
   };
@@ -308,7 +304,6 @@ async function executeProject(
       throw new Error("Unexpected Issue ownership");
     return ticket;
   };
-  const recoveredReasons: string[] = [];
   const pending = await selectBatch();
   if (pending.batch.length > 0) {
     const result = await batch(
@@ -319,20 +314,17 @@ async function executeProject(
     );
     if (result.outcome !== "succeeded" || options.issueTicket !== undefined)
       return result;
-    recoveredReasons.push(...result.reasons);
   }
   if (options.selector === "parent") {
-    const result = await runParent({
+    return runParent({
       repository: loaded.config.repository,
       parentTicket: summary.parentTicket,
       tracker,
       read,
       summary,
       runBatch: batch,
-      issueList: loaded.config.issueList,
       maintenancePending: () => maintenancePending,
     });
-    return { ...result, reasons: [...recoveredReasons, ...result.reasons] };
   }
   const tickets: Ticket[] = [];
   for (const number of options.issueTicket !== undefined
@@ -344,9 +336,8 @@ async function executeProject(
   return {
     ...result,
     outcome:
-      recoveredReasons.length > 0 && result.outcome === "no_work"
+      pending.batch.length > 0 && result.outcome === "no_work"
         ? "succeeded"
         : result.outcome,
-    reasons: [...recoveredReasons, ...result.reasons],
   };
 }

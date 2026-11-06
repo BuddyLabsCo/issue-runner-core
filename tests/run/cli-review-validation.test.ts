@@ -56,7 +56,7 @@ for (const scenario of [
     };
     const result = await fixture.run();
     assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
-    assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+    assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
     assert.equal(fixture.reviewState.reviews.length, 1);
     assert.equal(fixture.state.closedTabs.length, 2);
     assert.deepEqual(
@@ -100,7 +100,7 @@ for (const scenario of [
       await publish(String(assignment.path), invalid);
     };
     const result = await fixture.run();
-    assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+    assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
     assert.equal(reviewProbes, 2);
     assert.equal(fixture.reviewState.reviews.length, 1);
     assert.equal((await fixture.snapshot()).reviews![0]!.superseded.length, 1);
@@ -135,7 +135,7 @@ await test("no_change cannot satisfy findings; the correction remains in the fix
     });
   };
   const result = await fixture.run();
-  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
   assert.equal(fixture.reviewState.reviews.length, 1);
   assert.equal(fixture.reviewState.fixes.length, 1);
   assert.deepEqual(
@@ -188,7 +188,7 @@ for (const scenario of [
       });
     };
     const result = await fixture.run();
-    assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+    assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
   });
 }
 
@@ -215,7 +215,7 @@ await test("Review handoffs containing commits receive immediate feedback for ev
         : passed(),
     );
   };
-  assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/u);
+  assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/u);
   assert.equal(paths.length, 6);
   assert.equal(new Set(paths).size, 6);
   const submissions = fixture.state.submissions.filter(

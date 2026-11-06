@@ -29,7 +29,7 @@ for (const kind of ["ci", "conflict"] as const) {
     fixture.dependencies.terminalPlugin.onInput = submit;
     const submissions = fixture.state.submissions.length;
     const result = await fixture.run();
-    assert.match(result.summary.reasons.join(" "), /CI-ready|completed/u);
+    assert.match(result.summary.tickets![0]!.detail, /CI-ready|completed/u);
     const after = await fixture.snapshot();
     const restored = after.publication![key]!.attempts[0]!;
     assert.equal(restored.attempt_id, pending.attempt_id);

@@ -75,7 +75,7 @@ await test("verified implementation starts an independent Standards/Spec Review 
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
   assert.equal(reviews, 1);
-  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
   assert.equal(fixture.state.closedTabs.length, 2);
   assert.deepEqual(
     fixture.state.sleeps.filter((ms) => ms !== 30_000 && ms !== 10_000),
@@ -160,7 +160,7 @@ await test("with no default cap, every findings round receives a fix and later R
     });
   };
   const result = await fixture.run();
-  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
   assert.equal(fixture.reviewState.reviews.length, 4);
   assert.equal(fixture.reviewState.fixes.length, 3);
   assert.deepEqual(labels, [
@@ -216,7 +216,7 @@ await test("disabled Review and initial no_change never start a reviewer", async
   const disabled = await implementationRun(t);
   const result = await disabled.run();
   assert.equal(result.summary.outcome, "incomplete");
-  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
   assert.equal(disabled.state.closedTabs.length, 1);
   assert.equal((await disabled.snapshot()).reviews, undefined);
 
@@ -259,7 +259,7 @@ await test("cap=1 still fixes final findings in the exact implementation convers
   };
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
-  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
   assert.equal(fixture.reviewState.reviews.length, 1);
   assert.equal(fixture.reviewState.fixes.length, 1);
   assert.equal(fixture.state.closedTabs.length, 3);
@@ -306,7 +306,7 @@ await test("cap=1 still fixes final findings in the exact implementation convers
   for (const file of fixture.state.gitConfigs)
     await assert.rejects(access(file));
   const submissions = fixture.state.submissions.length;
-  assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/u);
+  assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/u);
   assert.equal(fixture.state.submissions.length, submissions);
   fixture.controller.abort();
   assert.ok(fixture.state.tabOptions.every(({ signal }) => signal?.aborted));

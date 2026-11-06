@@ -166,7 +166,7 @@ await test("one standalone implementation persists verified completion before cl
   };
   const result = await executeCli(command, dependencies);
   assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
-  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
   assert.deepEqual(effects.slice(0, effects.indexOf("close") + 1), [
     "reserve",
     "worktree",

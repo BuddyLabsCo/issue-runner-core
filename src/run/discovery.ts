@@ -108,18 +108,6 @@ function parseBatch(
   return saved as unknown as BatchProgress;
 }
 
-export function missingIssueReasons(
-  tickets: readonly Ticket[],
-  issueList: readonly number[],
-): string[] {
-  const missing = issueList.filter(
-    (number) => !tickets.some((ticket) => ticket.number === number),
-  );
-  return missing.length
-    ? [`configured Delivery Tickets not found: ${missing.join(", ")}`]
-    : [];
-}
-
 export async function selectIssueBatch(input: {
   tickets: Ticket[] | undefined;
   loaded: LoadedProject;
@@ -131,7 +119,6 @@ export async function selectIssueBatch(input: {
 }): Promise<{
   batch: number[];
   runId: string;
-  reasons: string[];
   documentation?: string;
   scheduleDocumentation: () => Promise<string>;
   complete: () => Promise<void>;
@@ -156,9 +143,6 @@ export async function selectIssueBatch(input: {
     ? parseBatch(previous.text, ownership, config.maxBatchSize)
     : undefined;
   const eligible: Ticket[] = [];
-  const blocked: number[] = [];
-  const externallyOwned: number[] = [];
-  const reservations: string[] = [];
   for (const child of [...(tickets ?? [])].sort(
     (a, b) => a.number - b.number,
   )) {
@@ -182,12 +166,6 @@ export async function selectIssueBatch(input: {
     const external = child.assignees?.some(
       (account) => account !== config.tracker.runnerAccount,
     );
-    if (external) externallyOwned.push(child.number);
-    if (isBlocked) blocked.push(child.number);
-    if (hasRunner || hasLabel)
-      reservations.push(
-        `${child.number} (${hasRunner && hasLabel ? "complete" : "partial"})`,
-      );
     if (
       external ||
       isBlocked ||
@@ -247,17 +225,5 @@ export async function selectIssueBatch(input: {
       read("complete_batch_checkpoint", batchFile, () =>
         saveProgress(batchFile, { ...progress, completed: true }),
       ),
-    reasons: [
-      ...(blocked.length
-        ? [`blocked Delivery Tickets: ${blocked.join(", ")}`]
-        : []),
-      ...(externallyOwned.length
-        ? [`externally owned Delivery Tickets: ${externallyOwned.join(", ")}`]
-        : []),
-      ...(reservations.length
-        ? [`existing Reservations: ${reservations.join(", ")}`]
-        : []),
-      ...(tickets ? missingIssueReasons(tickets, config.issueList) : []),
-    ],
   };
 }

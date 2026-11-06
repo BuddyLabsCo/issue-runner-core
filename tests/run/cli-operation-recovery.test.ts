@@ -170,9 +170,8 @@ for (const feedback of ["Probe", "handoff"] as const) {
           await publish(saved.invocation!.path, committed());
       };
       assert.match(
-        (
-          await executeCli(implementationCommand, fixture.dependencies)
-        ).summary.reasons.join(" "),
+        (await executeCli(implementationCommand, fixture.dependencies)).summary
+          .tickets![0]!.detail,
         /CI-ready/u,
       );
       assert.deepEqual(
@@ -407,7 +406,7 @@ await test("skipping a non-Agent Issue failure retains its Reservation and lets 
   assert.deepEqual(fixture.dispatched, [52]);
   assert.ok(fixture.writes.includes("label:51"));
   assert.match(
-    result.summary.reasons.join("; "),
+    result.summary.tickets![0]!.detail,
     /skipped Issue #51; side effects may remain/,
   );
 });

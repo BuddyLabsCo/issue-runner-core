@@ -183,10 +183,7 @@ for (const selector of ["parent", "issue"] as const) {
     const result = await fixture.run(scope);
 
     assert.equal(result.summary.outcome, "incomplete");
-    assert.match(
-      result.summary.reasons.join("; "),
-      /selected Delivery Tickets: 51, 52/u,
-    );
+
     assert.deepEqual([...fixture.dispatched].sort(), [51, 52]);
     assert.equal(
       fixture.writes.some((write) => write.endsWith(":53")),
@@ -221,10 +218,7 @@ await test("a recorded Batch survives cancellation before any Issue checkpoint a
   const result = await fixture.run();
 
   assert.equal(result.summary.outcome, "incomplete");
-  assert.match(
-    result.summary.reasons.join("; "),
-    /selected Delivery Tickets: 51, 52/u,
-  );
+
   assert.deepEqual(fixture.dispatched, []);
   assert.equal(await readFile(path.join(recovery, files[0]!), "utf8"), saved);
 });
@@ -249,10 +243,6 @@ await test("overlapping parent pages cannot dispatch the same Issue concurrently
     JSON.stringify(result.summary),
   );
   assert.deepEqual([...fixture.dispatched].sort(), [51, 52]);
-  assert.match(
-    result.summary.reasons.join("; "),
-    /selected Delivery Tickets: 51, 52/u,
-  );
 });
 
 await test("invalid Batch ownership or membership fails closed before dispatch", async (t) => {
@@ -293,10 +283,7 @@ await test("invalid Batch ownership or membership fails closed before dispatch",
     );
     const result = await fixture.run();
     assert.equal(result.summary.outcome, "failed");
-    assert.match(
-      result.summary.reasons.join("; "),
-      /invalid Batch checkpoint/u,
-    );
+    assert.match(result.summary.failure!, /invalid Batch checkpoint/u);
   }
 });
 
@@ -337,7 +324,7 @@ await test("a failed Issue cancels a sibling's delayed startup and waits for its
   const result = await fixture.run();
   releaseSibling.resolve();
   assert.equal(result.summary.outcome, "failed");
-  assert.match(result.summary.reasons.join("; "), /Issue transport failed/u);
+  assert.match(result.summary.failure!, /Issue transport failed/u);
   assert.deepEqual(fixture.dispatched, []);
   const checkpoints = await Promise.all(
     [51, 52].map((number) => progress(fixture.directory, number)),

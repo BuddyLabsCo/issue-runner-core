@@ -131,7 +131,9 @@ await test(
       await access(saved.worktree);
       await access(saved.probe!.path);
       assert.ok(
-        first.summary.reasons.some((reason) => reason.includes(saved.worktree)),
+        first.summary.retainedEvidence!.some((entry) =>
+          entry.worktrees.includes(saved.worktree),
+        ),
       );
     }
     assert.ok(

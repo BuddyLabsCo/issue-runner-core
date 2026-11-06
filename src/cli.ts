@@ -87,7 +87,7 @@ Then run ${commandName} run --project <project-key> --parent <number>.`;
 function result(
   exitCode: number,
   project = "unknown",
-  reasons: string[] = [],
+  failure?: string,
 ): CliResult {
   return {
     exitCode,
@@ -96,7 +96,7 @@ function result(
       project,
       parentTicket: 0,
       targetBranch: "unresolved",
-      reasons,
+      ...(failure ? { failure } : {}),
     },
     logPath: null,
   };
@@ -203,19 +203,18 @@ export async function executeCli(
       dependencies.operator.write(
         `Initialized Project at ${directory}. Edit config.yaml and prompts/, set tokenEnv credentials, then run ${commandName} run --project ${project} --parent <number>.`,
       );
-      return result(0, project, ["Project initialized"]);
+      return result(0, project);
     } catch (error) {
+      const failure = error instanceof Error ? error.message : String(error);
       dependencies.operator.write(
-        `Startup failed (${commandName}): ${error instanceof Error ? error.message : String(error)}`,
+        `Startup failed (${commandName}): ${failure}`,
       );
-      return result(1, "unknown", [
-        error instanceof Error ? error.message : String(error),
-      ]);
+      return result(1, "unknown", failure);
     }
   }
   if (command === "run") return executeRun(argv, dependencies);
   dependencies.operator.write(`Startup failed: ${usage(commandName)}`);
-  return result(1, "unknown", [usage(commandName)]);
+  return result(1, "unknown", usage(commandName));
 }
 
 export async function executeRun(
@@ -345,7 +344,6 @@ export async function executeRun(
       project,
       parentTicket,
       targetBranch,
-      reasons: [...(summary?.reasons ?? []), reason],
       failure: reason,
     };
     dependencies.operator.write(

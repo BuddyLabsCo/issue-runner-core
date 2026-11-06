@@ -345,7 +345,7 @@ for (const scenario of [
           },
         }),
       });
-      assert.match(recovered.summary.reasons.join(" "), /CI-ready/u);
+      assert.match(recovered.summary.tickets![0]!.detail, /CI-ready/u);
       const completed = await fixture.snapshot();
       assert.deepEqual(completed.result, handoff);
       assert.equal(completed.execution_id, progress.execution_id);

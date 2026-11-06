@@ -71,7 +71,7 @@ for (const interruption of [
     state.onChecks = onChecks;
     fixture.dependencies.codeHost.listPullRequests = list;
     const result = await fixture.run();
-    assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+    assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
     assert.equal(state.pushes, 1);
     assert.equal(state.creations, 1);
     assert.equal(fixture.state.taskCount, 1);
@@ -125,7 +125,7 @@ await test("restart pauses before retrying an uncertain PR creation with no exac
     pauses++;
     return "";
   };
-  assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/u);
+  assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/u);
   assert.equal(pauses, 1);
   assert.equal(fixture.publicationState.pushes, 1);
   assert.equal(fixture.publicationState.creations, 1);

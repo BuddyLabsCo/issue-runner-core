@@ -103,7 +103,6 @@ export async function runDocumentation(
         return {
           ...summary,
           outcome: "succeeded",
-          reasons: [`Completed Maintenance Ticket ${String(saved.ticket)}`],
         };
       if (
         saved.phase !== "completed" &&
@@ -189,7 +188,6 @@ export async function runDocumentation(
       ? {
           ...summary,
           outcome: "succeeded" as const,
-          reasons: [`Completed Maintenance Ticket ${maintenance.ticket}`],
         }
       : await runStandalone({
           ...input,
@@ -229,7 +227,10 @@ export async function runDocumentation(
     if (recoveredDelivery)
       await reportTicket(
         { ...input, context, number: maintenance.ticket!, documentation: true },
-        () => Promise.resolve(result),
+        (_input, report) => {
+          report.detail = `Completed Maintenance Ticket ${maintenance.ticket}`;
+          return Promise.resolve(result);
+        },
       );
     const persistExecution = () =>
       context.signal?.aborted
@@ -283,6 +284,6 @@ export async function runDocumentation(
       maintenance.phase = "skipped";
       await persist();
     }
-    return { ...summary, reasons: [error.message] };
+    return summary;
   }
 }

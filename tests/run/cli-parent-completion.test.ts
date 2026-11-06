@@ -382,7 +382,7 @@ for (const reason of ["completed", "not_planned"] as const) {
     );
     if (reason === "completed")
       assert.match(
-        result.summary.reasons.join(" "),
+        result.summary.failure!,
         /completed Parent Ticket has open children/u,
       );
     assert.deepEqual(fixture.dispatched, [51]);

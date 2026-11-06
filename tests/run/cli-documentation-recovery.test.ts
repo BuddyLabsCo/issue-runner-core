@@ -56,7 +56,14 @@ await test("cancelled documentation cleanup retries retain execution resources i
     const executionFile = (await readdir(recovery)).find((name) =>
       name.endsWith("-document-50.json"),
     )!;
-    const report = result.summary.reasons.join("\n");
+    const report = result.summary
+      .retainedEvidence!.flatMap((entry) => [
+        ...entry.paths,
+        ...entry.worktrees,
+        ...entry.recordedBranches,
+        entry.executionId ?? "",
+      ])
+      .join("\n");
     for (const file of [
       path.join(recovery, executionFile),
       saved.worktree,

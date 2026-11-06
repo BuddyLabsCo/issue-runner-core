@@ -79,7 +79,7 @@ await test("publication reconciles canonical repository casing with lowercase co
     },
   );
   assert.match(
-    result.summary.reasons.join(" "),
+    result.summary.tickets![0]!.detail,
     /CI-ready/u,
     JSON.stringify(result),
   );
