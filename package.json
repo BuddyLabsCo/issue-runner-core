@@ -2,6 +2,20 @@
   "name": "issue-runner-core",
   "version": "0.1.0",
   "description": "Issue Runner CLI startup and public terminal plugin contract",
+  "keywords": [
+    "issue-runner",
+    "github",
+    "github-issues",
+    "issue-automation",
+    "workflow-automation",
+    "ai-agent",
+    "coding-agent",
+    "agent-orchestration",
+    "code-review",
+    "pull-request",
+    "git-worktree",
+    "cli"
+  ],
   "type": "module",
   "exports": {
     "./terminal": {
