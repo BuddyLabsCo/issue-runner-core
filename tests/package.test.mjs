@@ -87,6 +87,8 @@ await test("built artifacts work in isolated consumer and npm global installatio
   );
   const installed = join(consumer, "node_modules/issue-runner-core");
   for (const file of [
+    "README.md",
+    "docs/terminal-contract.md",
     "dist/cli.js",
     "dist/cli-entry.js",
     "dist/cli-entry.d.ts",
@@ -119,6 +121,10 @@ await test("built artifacts work in isolated consumer and npm global installatio
   ])
     assert.ok(statSync(join(installed, file)).isFile(), file);
   assert.ok(!readdirSync(installed).includes("tests"));
+  assert.ok(
+    !readdirSync(join(installed, "docs")).includes("configuration.md"),
+    "configuration guidance ships in templates/config.yaml",
+  );
 
   /** @type {unknown} */
   const manifest = JSON.parse(

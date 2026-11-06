@@ -1,52 +1,106 @@
-# Created by the terminal command's init. Replace repository, checkout, and
-# runnerAccount before running. Install the terminal package globally; it
-# supplies Core as a runtime dependency. Custom npm prefixes are supported.
+# Created by the terminal command's init in <launch-directory>/<project>/.
+# Edit this file and prompts/{implement,review,documentation}.md before running.
+# Project keys allow letters, digits, dot, underscore, and hyphen; no paths or
+# ancestor lookup. Init refuses existing destinations and needs no credentials.
+# Install the terminal package globally; it supplies Core as a runtime dependency.
+# Install the bundled handoff skill manually for every configured native Agent.
+# Unknown fields in Runner-owned mappings fail startup. Terminal/enhancement
+# options retain their owners' schemas. Validation precedes workflow side effects.
+# Changing command name, exact Run arguments, or these bytes selects new progress;
+# do not edit them when continuing an interrupted Run. Package versions and
+# installation paths are not hash inputs.
+
+# GitHub owner/repo. Must identify the checkout's repository; Core does not verify
+# that it agrees with the Git remote. Git credentials must permit fetch and push.
 repository: your-account/your-repository
 # Absolute checkout path; on Windows use e.g. C:\work\your-repository.
 checkout: /absolute/path/to/your-repository
-# Limits Parent selection, or supplies value-less --issue.
+# Unique positive safe Issue numbers, sorted by Core. Empty/omitted means no
+# Parent filter; value-less --issue requires a nonempty list. A numbered --issue
+# selects only that Issue. A Parent filter never expands beyond direct children.
 issueList: []
-# Exact case-sensitive Issue label. Empty/omitted disables label filtering.
+# Trimmed, exact case-sensitive eligibility label for all business selectors.
+# Empty/omitted disables filtering. Closed, blocked, externally assigned, or
+# unrelated/partially reserved Issues cannot be selected even with this label.
 issueLabel: ready-for-agent
-# Maximum selected Issues and concurrent executions in one Batch.
+# Positive safe integer; bounds selected Issues AND concurrency in one Batch.
+# Selection is ascending by number; integration waits for all Batch PRs to be
+# CI-ready, then runs serially by PR creation time and number before the next Batch.
 maxBatchSize: 2
-# Omit targetBranch to use the repository's default branch.
+# Nonempty branch; omit to use the CodeHost repository default.
 targetBranch: main
-# Non-Agent operation retries are additional attempts; delays are in seconds.
-# The last delay repeats when the budget exceeds the schedule.
+
+# Nonnegative safe integer counting ADDITIONAL non-Agent operation attempts.
+# Safe reads/checkpoints retry automatically; resource creation requires Enter
+# after its first failure. Uncertain Agent input is never automatically replayed.
+# Exhaustion pauses: Enter retries, q/EOF cancels, Issue-scoped s skips that Issue.
+# Audit failures retry only logging. Matching recovery retains consumed retries.
 operationRetry: 4
+# Nonempty schedule of positive finite SECONDS; last delay repeats as needed.
 operationRetryDelay: [10, 20, 40, 80]
+# runner: Runner closes delivered Issues after confirmed merge.
+# code_host: expect host closure and confirm it; neither mode grants delivery
+# before observed closed/completed state or closes an initially empty Parent.
 ticketClosure: runner
+
+# Required nonempty title/body/label when --document or an automatic trigger is
+# enabled. Runner creates a separate Maintenance Ticket; documentation skips
+# ordinary Review. Changed docs use normal PR/check/integration; verified no_change
+# closes the Maintenance Ticket without a PR. No business Issue selection occurs.
 maintenanceTicket:
   title: Maintain project documentation
   body: Update the documentation surfaces named by the documentation prompt.
   label: doc-maintain
 workflow:
-  # Review defaults to enabled. Omit maxReviewRounds for no round cap.
-  # Every findings round gets a fix, including the final allowed round.
-  # maxReviewRounds: 1 permits findings -> fix with no second Review.
+  # Boolean, enabled by default. Requires agents.review and nonempty review prompt.
+  # false removes those requirements; supplied optional profiles still validate.
   review: true
-  # Exact case-sensitive delivery label. Empty/omitted disables automatic maintenance.
+  # Optional positive safe integer, no default cap. Every findings round gets a fix,
+  # including the final allowed round; 1 permits findings -> fix with no second Review.
+  # maxReviewRounds: 1
+  # Trimmed, exact case-sensitive delivery-time label; empty/omitted disables it.
+  # A successful Batch with any matching Issue triggers one maintenance occurrence.
+  # Requires agents.documentation, its nonempty prompt, and maintenanceTicket above.
+  # Pending maintenance blocks later Batch discovery and Parent closure on recovery.
   docMaintainTriggerLabel: ""
 tracker:
+  # Inherited environment variable containing a nonempty GitHub token; no token here.
   tokenEnv: GH_TOKEN
+  # GitHub account owning Reservations. Label and assignee are best-effort claims,
+  # not locks. Matching saved ownership is required to continue a reserved Issue.
   runnerAccount: your-github-account
+  # Existing repository label; Runner adds it before assigning runnerAccount.
   reservationLabel: sandcastle:reserved
 codeHost:
+  # Inherited nonempty credential variable for PRs, checks, and merge operations.
   tokenEnv: GH_TOKEN
+  # Required boolean; controls the host's administrator merge flag.
   adminMerge: false
-# Core defaults: agentStartDelay: 10 (seconds), enhancements: {}.
-# Delay must be finite, nonnegative, and at most 2147483.647 seconds.
-# Enhancement values stay unknown; other fields belong to the terminal adapter.
-# Core passes this object with defaults to the factory. Null/arrays/scalars fail.
+
+# Object mapping; Core supplies defaults agentStartDelay: 10 and enhancements: {}.
+# agentStartDelay: finite nonnegative SECONDS, at most 2147483.647, after command
+# submission in base startup. Enhancements replace delay/Probe with native readiness.
+# enhancements: object mapping passed unchanged to every selected enhancement;
+# fields/values belong to that enhancement, not per-Agent Core namespaces.
+# Other keys belong to the terminal adapter. Null/arrays/scalars fail validation.
+# Optional issue-runner-agent-<agent> modules are discovered only in the executing
+# terminal command's verified global npm prefix, including nested Core installs.
+# Absence or valid version mismatch uses base startup; broken modules fail startup.
 terminalPlugins: {}
-# Complete shell command strings, with shell-appropriate quoting supplied by you.
-# Core does not choose an Agent brand, rebuild argv, or interpret native options.
-# agent is a required opaque plugin identifier, preserved exactly as configured.
-# Core discovers optional issue-runner-agent-<agent> packages in the terminal global prefix.
-# Every resume command must contain the exact {sessionref} placeholder.
-# submitKey is a Runner setting alongside start/resume, outside native options.
-# Core coordinates command launch and readiness; base startup waits agentStartDelay.
+
+# implement, ciRepair, conflictRepair are required. review is required when enabled;
+# documentation is required for --document or a nonempty maintenance trigger.
+# Each profile uses complete nonempty shell commands with your shell's quoting.
+# agent: required opaque identifier, preserved exactly; Core does not infer a brand
+# or rebuild argv. Package-safe identifiers select optional same-prefix enhancements.
+# start: command sent unchanged. resume: must contain literal {sessionref}; Core
+# replaces every occurrence with the exact saved native ref, preserving its bytes.
+# submitKey: nonempty logical chord, defaults to Enter; unsupported chords reject.
+# It applies to Probe/task text, while command launch always uses Right then Enter.
+# Optional options: {} is accepted as opaque native configuration, but is not
+# converted into command flags; submitKey belongs outside it. Put native flags
+# in start/resume. Obsolete model/reasoningEffort/startupDelaySeconds fields fail.
+# Set up native authentication/permissions yourself; Runner does not install Agents.
 agents:
   implement:
     agent: codebuddy
@@ -76,10 +130,17 @@ agents:
     start: 'claude --model claude-opus-5-5 --effort high --dangerously-skip-permissions'
     resume: 'claude --resume "{sessionref}" --dangerously-skip-permissions'
     submitKey: Enter
-# Positive minute thresholds retained for downstream delivery slices.
-# agentIdleMinutes is optional and defaults to 10.
+
+# All thresholds are positive finite MINUTES. They do not authorize automated
+# missing-output reminders or Agent-session Pause; handle native questions directly.
+# Legacy agentRetry/agentRetryDelay are accepted only for unchanged recovery input
+# compatibility and do not control Agent retries. Do not add them to new configs.
 timeouts:
+  # Required; retained compatibility setting, not an enforced Agent execution limit.
   agentMinutes: 120
+  # Optional, defaults to 10; retained setting, not an enforced Agent idle limit.
   agentIdleMinutes: 10
+  # Required; bounds required-check waiting before Operator Pause.
   requiredChecksMinutes: 60
+  # Required; bounds merge confirmation waiting before Operator Pause.
   mergeQueueMinutes: 60

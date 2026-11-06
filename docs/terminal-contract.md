@@ -1,225 +1,172 @@
-# Terminal contract v2
+# Public integration contract
 
-Core exports Terminal and Enhancement contracts from `issue-runner-core/terminal`.
-Both independent contract constants are `2`; neither comes from an npm version.
-Companion terminal and enhancement packages must compile against these matching
-contracts. There are no legacy overloads or supported mixed-contract combinations.
-This requirement defines no npm release numbers or release order.
-
-Core owns base Agent startup: create a Runner Tab, execute the configured command,
-wait the configured delay, then establish native identity through a Session Probe.
-Resume substitutes the exact saved native reference into the configured command.
-Core retains Agent selection, handoff validation, Assignment metadata, recovery
-wording, Operator Pause, and delivery policy. Terminal adapters own terminal I/O.
-Core discovers optional enhancements from the executing terminal's verified global
-prefix and orchestrates them through internal dependencies. Base operation requires no enhancement.
-These repository checks do not establish native E2E acceptance.
-
-## Build and identify a development artifact
-
-Use Node.js 22.18.0 or later and npm 11 or later, including subsequent major versions.
-The lockfile pins the TypeScript build dependency.
-The CLI uses the source's `cac` and `yaml` parsers.
-From the Core checkout:
-
-```sh
-npm ci --ignore-scripts
-npm run typecheck
-npm test
-npm pack --json --pack-destination artifacts
-```
-
-`npm pack` builds the JavaScript and declarations through `prepack`. Its JSON
-output records the filename, version, SHA-1 `shasum`, SHA-512 `integrity`, and
-packaged files. Save that output alongside the tarball when handing it to Herdr;
-the repository records the historical v1 artifact in
-`artifacts/terminal-contract-v1.json`, which does not identify this v2 build. The tarball itself is a local build
-output, not a published package. Repacking unchanged package contents with the
-same toolchain reproduces its identity. Git attributes and compiler output use
-LF line endings so Windows checkout defaults do not change packaged bytes.
-
-Copy the full tarball to the terminal package repository and install it as a
-runtime dependency:
-
-```sh
-npm install --save ../artifacts/issue-runner-core-0.1.0.tgz
-```
-
-Use the actual tarball's portable relative or absolute path, including quotes
-when it contains spaces. Keep its identity and the plugin lockfile together.
-The full unpublished artifact supplies runtime code, public declarations, prompts,
-init templates, and the manually installable handoff skill. A terminal command
-must retain Core in `dependencies`, since it imports the CLI at runtime.
-For a local tarball dependency, keep that tarball available at the recorded path
-when packing and installing the terminal package; npm does not embed that file
-inside the terminal tarball. Pack the terminal package and install it globally,
-including with a custom prefix. Core is installed transitively, with no separate
-sibling installation. Type-only enhancement consumers may use a dev dependency.
-Neither consumer needs a Core source checkout.
-
-Copy the full `skills/issue-runner-handoff` directory from the Core artifact to
-each Agent's documented skill directory. Core does not install it automatically;
-see [manual skill installation](../README.md#install-the-handoff-skill-manually).
+## Responsibilities and public entries
 
 ```typescript
-import type {
-  CreateTabOptions,
-  TabHandle,
-  TerminalPlugin,
-  TerminalPluginModule,
-} from "issue-runner-core/terminal";
-```
+// Terminal package: executable, command identity, process entry, terminal I/O.
+// Core: CLI/workflow policy, Agent selection, Session Probe, native identities,
+// handoff validation, Assignments, recovery wording, Operator Pause, and cleanup.
+// Agent enhancement: native preflight, monitoring, readiness, recovery requests.
+// Base startup requires no enhancement. No legacy or mixed-contract overloads.
 
-The same public entry supports the runtime import:
-
-```javascript
+// Terminal commands import runCli at runtime: keep Core in dependencies.
+import { runCli, type CliOptions } from "issue-runner-core/cli";
 import {
-  terminalContractVersion,
-  enhancementContractVersion,
+  terminalContractVersion, // 2; independent of npm package version
+  enhancementContractVersion, // 2; independent of terminal contract version
 } from "issue-runner-core/terminal";
+// Type-only enhancement consumers can keep Core in devDependencies.
+import type {
+  TerminalPluginModule, TerminalPlugin, TerminalIO,
+  CreateTabOptions, TabHandle, EnhancementModule, Enhancement,
+  EnhancementContext, RequestRecovery,
+} from "issue-runner-core/terminal";
+// No root, source-internal, terminal/testing, or cli/testing public entry.
+// Build/check commands and consumer verification: ../README.md#developing-core.
 ```
 
-There is no package-root entry, source-internal import, shared receiver, or
-`issue-runner-core/terminal/testing` entry.
-
-## Public CLI entry
-
-Terminal packages own their executable, command identity and terminal I/O. Core
-owns shared CLI and workflow policy. A command imports its existing lazy module
-and calls the public entry once:
+## Terminal CLI integration
 
 ```typescript
+export interface CliOptions {
+  commandName: string; // Executing terminal-owned command, used in help/errors.
+  commandVersion: string; // Executing terminal package version.
+  terminal: TerminalPluginModule; // Lazy factory; import must not create tabs.
+  terminalPackageRoot: string; // Absolute real path to installed terminal package.
+  terminalCliEntry: string; // Absolute real path to its executing CLI entry.
+}
+export function runCli(options: CliOptions): Promise<void>;
+
+// Import is inert: no command, terminal creation, or signal listeners.
+// Invocation reads process argv/cwd/env, owns operator and AbortController,
+// installs SIGINT/SIGTERM abort listeners, and removes them in finally.
+// Sets process.exitCode: 0 for success, 1 for handled failure/cancellation;
+// never forces process termination. A pending terminal factory is awaited
+// before the cancellation checkpoint. Reports/retained resources belong to Core.
+// Help/version/init need no credentials or factory; init refuses overwrite.
+// Version: <commandName> <commandVersion> (core <loadedCoreVersion>).
+// For Runs: arguments, selection, config, credentials, prompts, and nonempty
+// Issue List validation precede terminal creation. Module/version/factory and
+// result-method validation plus cancellation precede audit and delivery effects.
+// Command name, exact argv, and validated config bytes identify recovery input;
+// command/Core versions and installation paths do not affect that hash.
+// executeCli/CliDependencies/CliResult are internal. No --env/module-path option.
+```
+
+```typescript
+// Minimal executable at the terminal package root; adapt root for a bin/ entry.
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { runCli, type CliOptions } from "issue-runner-core/cli";
+import { runCli } from "issue-runner-core/cli";
 import * as terminal from "./terminal.js";
 
-const options: CliOptions = {
+await runCli({
   commandName: "generic-terminal",
   commandVersion: "1.0.0",
   terminal,
   terminalPackageRoot: realpathSync(fileURLToPath(new URL(".", import.meta.url))),
   terminalCliEntry: realpathSync(fileURLToPath(import.meta.url)),
-};
-await runCli(options);
+});
 ```
 
-`CliOptions` requires `commandName`, `commandVersion`, `terminal`,
-`terminalPackageRoot`, and `terminalCliEntry`. The last two are absolute real paths
-to the executing terminal package root and its CLI entry file. This example places
-the entry at the package root; adapt the root calculation to the package layout.
-Core verifies these identities before enhancement discovery, including nested Core installs.
-Locations and versions remain outside the recovery input hash.
-`runCli(options)` returns `Promise<void>`.
-`executeCli`, `executeRun`, `CliDependencies`, and `CliResult` are internal and
-are not exported by this subpath. There is no public testing entry.
-
-Importing the CLI is inert: it starts no command, creates no terminal and installs
-no process handlers. Calling `runCli` reads process argv, cwd and environment,
-constructs the operator and AbortController, and wires SIGINT/SIGTERM to abort.
-Its `finally` removes the listeners. Success sets `process.exitCode` to 0;
-handled failures and cancellation set it to 1 without forced termination.
-A pending terminal-plugin factory is awaited before the cancellation checkpoint.
-Existing reports and retained-resource behavior remain part of Core's workflow.
-
-Help, usage errors and init follow-up commands use `commandName`. Version output
-is `<commandName> <commandVersion> (core <loadedCoreVersion>)`, where the last
-version belongs to the executing Core instance. Help/version/init need no
-configuration credentials or terminal factory call. Init still creates Project
-files and refuses overwrite.
-
-For Runs, argument, selector, Project/configuration/credential and empty Issue
-List validation precedes terminal creation. Core validates the module's v2
-contract and callable factory, then calls it once with the complete configured
-`terminalPlugins` value with Core defaults applied. It rejects non-object results
-and missing or non-callable terminal methods. Errors identify the command and
-preserve useful causes. Validation and the cancellation checkpoint precede audit,
-Run state and workflow effects. `--env` and terminal discovery are unsupported.
-Core owns enhancement discovery, configuration, and lifecycle orchestration.
-There is no public module-path option.
-
-## Installed enhancement discovery
-
-For Runs, Core validates the terminal package's manifest name against its installed
-location, the `commandName` bin declaration, and the supplied real CLI entry.
-It requires a matching launcher in that prefix. Supported layouts are
-`<prefix>/lib/node_modules` with a Unix `bin/<command>` symlink and
-`<prefix>/node_modules` with npm's Windows `<command>.cmd` shim.
-The package name and executable may differ; scoped terminal packages are supported.
-Help, version, and init do not perform discovery.
-
-For each configured Agent, Core looks for `issue-runner-agent-<agent>` directly
-in the verified global modules directory. An absent package retains base startup.
-An opaque Agent identifier that cannot form this package name also retains base startup.
-Node resolves the package's import entry from that prefix, including `import` exports.
-The resolved package and entry must remain inside the expected same-prefix package;
-path traversal, symlink escapes, and dangling installations fail startup.
-Core's own installation, task cwd, project-local packages, and other npm prefixes
-are not discovery anchors. There is no configurable external package path.
-
-The imported module must export a positive safe-integer `contractVersion` and
-callable `createEnhancement`. A different valid enhancement contract emits a
-command diagnostic and skips the factory, retaining base startup. Malformed
-exports, invalid entries, and import failures remain errors. Compatibility uses
-`enhancementContractVersion`, independently of the terminal contract and npm version.
-Importing a module can execute its top-level code; validation is not a sandbox
-or a pre-import metadata check.
-
-Discovery returns modules, without creating instances. Core passes each selected
-module and the entire `terminalPlugins.enhancements` options object to the shared Agent workflow.
-Factory and lifecycle failures retain the existing error reporting and tab cleanup
-rules below. Herdr supplies terminal behavior and installation identity; it does
-not discover or orchestrate enhancements. Companion contracts remain v2, with no
-publication requirement or prescribed release order.
-
-## Public types
+## Terminal interfaces and bound I/O
 
 ```typescript
 export const terminalContractVersion = 2 as const;
-export const enhancementContractVersion = 2 as const;
-
-// Opaque, plugin-instance-owned reference; Core must not inspect or persist it.
 export type TabHandle = object;
-
-export interface CreateTabOptions {
-  cwd: string;
-  env: Readonly<Record<string, string>>;
-  label: string;
-  submitKey: string;
-  signal?: AbortSignal;
-}
-
-export interface TerminalPlugin {
-  createTab(options: CreateTabOptions): Promise<{ handle: TabHandle; io: TerminalIO }>;
-  execute(handle: TabHandle, command: string): Promise<void>;
-  closeTab(tab: TabHandle): Promise<void>;
-}
+// Opaque, plugin-instance-owned control reference. Core never inspects,
+// serializes, persists, or reconstructs it. It is not a native conversation ref.
 
 export interface TerminalPluginModule {
   readonly contractVersion: typeof terminalContractVersion;
   createTerminalPlugin(config: unknown): Promise<TerminalPlugin>;
 }
+// Core calls the factory once with the complete terminalPlugins mapping and
+// generic defaults. Preserve adapter-owned fields; do not inspect factory arity.
+// Version/method mismatches, invalid results, and factory failures fail startup
+// with command context and useful causes; no workflow side effects precede them.
 
-export interface TerminalIO {
-  read(): Promise<string>;
-  submitText(text: string): Promise<void>;
-  sendKeys(keys: readonly string[]): Promise<void>;
+export interface CreateTabOptions {
+  cwd: string; // Absolute working directory; never silently redirect.
+  env: Readonly<Record<string, string>>; // Overlay on inherited environment.
+  label: string;
+  submitKey: string; // Effective Agent chord, defaulted to Enter by Core.
+  signal?: AbortSignal; // Run cancellation combined with local revocation.
 }
+// Reject invalid context or unsupported environment application.
+// Creation starts no Agent. Bind cwd/env/key/signal to this Runner Tab.
 
+export interface TerminalPlugin {
+  createTab(options: CreateTabOptions):
+    Promise<{ handle: TabHandle; io: TerminalIO }>;
+  execute(handle: TabHandle, command: string): Promise<void>;
+  closeTab(tab: TabHandle): Promise<void>;
+}
+// execute: complete opaque shell command, then Right and Enter.
+// Resolution means submitted, not process exit or Agent readiness.
+// Core supplies start unchanged; resume replaces every literal {sessionref}
+// with the exact saved native ref, preserving whitespace/replacement characters.
+// No separate Agent selector or native identity is passed to the terminal.
+// closeTab targets only the owned logical tab. Foreign handles/backend failures
+// reject; a target known absent may succeed. Closure does not prove descendants
+// settled. Never select a replacement target or replay uncertain input.
+```
+
+```typescript
+export interface TerminalIO {
+  read(): Promise<string>; // Current visible plain-text screen.
+  submitText(text: string): Promise<void>; // Entire body, Right, bound submitKey.
+  sendKeys(keys: readonly string[]): Promise<void>; // Ordered logical chords.
+}
+// Bound to one tab; no per-call key override, expected file, or recovery text.
+// Core normalizes text to LF, preserving Unicode, quotes, indentation, blanks,
+// and literal characters. Unsupported chords reject without fallback.
+// I/O grants enhancements neither command execution nor tab-closure capability.
+// Core serializes its operations per tab; independent tabs may run concurrently.
+// Assignment changes/recovery stay queued until actual adapter input settles,
+// including the adapter's own queue. Core timeouts do not release that ordering.
+// Adapters check the creation signal when queued input begins: revoked work
+// sends nothing. An already-started complete text/key sequence may settle.
+// Keep finite backend I/O bounds. Revocation does not roll back existing effects
+// or hide real backend errors. Core bounds terminal calls to 60 seconds, while
+// cancellation stops its waits; neither proves underlying work was cancelled.
+```
+
+## Enhancement discovery and compatibility
+
+Discovery uses the executing terminal command's verified global npm prefix, including when Core is nested. It loads modules; it creates no instances.
+
+```mermaid
+flowchart TD
+    Run["Run: supplied real terminal package root and CLI entry"] --> Verify
+    Verify{"Manifest name/location, command bin, real entry, launcher agree?"}
+    Verify -- No --> Error["Fail startup with cause"]
+    Verify -- Yes --> Layout["Unix: prefix/lib/node_modules + bin symlink<br/>Windows: prefix/node_modules + command.cmd"]
+    Layout --> Agent{"Configured Agent can form issue-runner-agent-AGENT?"}
+    Agent -- No --> Base["Base startup: delay and Session Probe"]
+    Agent -- Yes --> Package{"Direct same-prefix package present?"}
+    Package -- Absent --> Base
+    Package -- Present --> Entry["Resolve Node import exports from that prefix"]
+    Entry --> Valid{"Contained real package/file; import succeeds;<br/>positive safe-integer contractVersion;<br/>callable createEnhancement?"}
+    Valid -- No --> Error
+    Valid -- Yes --> Match{"contractVersion equals enhancementContractVersion?"}
+    Match -- No --> Skip["Diagnostic; skip factory"] --> Base
+    Match -- Yes --> Module["Pass selected module to shared Agent workflow"]
+    Module --> Instance["Create one instance per Runner Tab"]
+    Instance -- "Initialization failure" --> Cleanup["Report operational failure; attempt available cleanup"]
+```
+
+Scoped terminal packages and command names differing from package names are supported. Help, version, and init skip discovery. Project-local packages, task cwd, other prefixes, and Core's installation are not discovery anchors. Symlink escapes, dangling installs, malformed exports, and import failures are errors. Compatibility checks use contract versions, not npm versions. Module import executes top-level code; validation is not a sandbox.
+
+## Enhancement interfaces
+
+```typescript
+export const enhancementContractVersion = 2 as const;
 export type RequestRecovery = (assignmentId: string) => Promise<void>;
-
 export interface EnhancementContext {
   readonly cwd: string;
   readonly env: Readonly<Record<string, string>>;
 }
-
-export interface Enhancement {
-  startMonitoring(sessionref?: string): Promise<void>;
-  waitUntilReady(): Promise<string>;
-  onAssignment(assignment: { id: string; expectedFile: string }): void;
-  stop(): Promise<void>;
-}
-
 export interface EnhancementModule {
   readonly contractVersion: typeof enhancementContractVersion;
   createEnhancement(
@@ -229,156 +176,187 @@ export interface EnhancementModule {
     config: unknown,
   ): Promise<Enhancement>;
 }
+// Core passes the adapter's unchanged bound I/O, a SEPARATE recovery capability,
+// the tab's cwd/env, and the entire terminalPlugins.enhancements object unchanged
+// (default {}). Agent selection chooses the module, not a configuration namespace.
+// Factory preflight completes before monitoring and command submission.
+// Factories own resources until transferring an instance; a late transfer is
+// cleanup-only. Invalid instances still receive stop() if it is callable.
 ```
 
-A terminal module exports `contractVersion = 2` and an asynchronous
-`createTerminalPlugin(config: unknown)` factory. Core validates all three methods
-before workflow reads or mutations. Missing methods, mismatched versions, and
-factory failures fail startup with command context. Core preserves terminal-owned
-configuration values and validates its generic settings before calling the factory.
-Factories with default parameters are supported; Core does not inspect arity.
-
-`createTab` creates an owned Runner Tab in absolute `cwd`, overlays readonly `env`
-on the inherited environment, and displays `label`. It binds `submitKey` (default
-`Enter`) and accepts the Run cancellation `signal`. Invalid context or unsupported
-environment application must fail rather than redirect silently. Creation does not
-start an Agent. Its `handle` is plugin-instance-owned: Core never inspects, persists,
-serializes, or reconstructs it. Native conversation identity is separate.
-
-`execute(handle, command)` inputs the complete opaque command, then Right and Enter.
-Resolution means command input was submitted, not command exit or Agent readiness.
-Core supplies the configured start text unchanged. For resume, it substitutes every
-literal `{sessionref}` with the exact saved reference, preserving whitespace and
-replacement characters. The terminal receives neither an Agent selector nor a
-separate native reference.
-
-Bound `TerminalIO.read()` returns the current visible plain-text screen.
-`submitText(text)` inputs the whole body, then Right and the creation-time submit key.
-Core normalizes task text to LF while preserving Unicode, indentation, blank lines,
-quotes, and literal characters. There is no per-call key override, expected-file
-argument, or recovery-text argument. `sendKeys` sends ordered logical chords.
-Unsupported chords reject rather than fall back. I/O alone grants neither command
-execution nor tab closure to an enhancement.
-
-Without an enhancement, Core waits `terminalPlugins.agentStartDelay` seconds
-(default ten) after command submission. New conversations use the existing identity-only Probe and correction
-flow. A retained Probe can establish identity before exact resume. Saved identities
-reject empty refs, `latest`/`last`, and Runner Run/execution IDs. Base resume uses the
-validated saved reference without a fresh Probe; the terminal cannot report identity.
-Only native identity is persisted. All six purposes use the same stage coordinator.
-
-Command failure can mean partial delivery. Core enters generic Operator Pause and
-retains the tab. The operator must inspect it before continuing; Core will proceed
-without replaying the uncertain command. Skip and cancellation retain resources.
-Cancellation interrupts command and delay waits and prevents subsequent dispatch.
-Create, task submission, and closure retain their existing bounds. No startup
-readiness timeout or second pause mechanism is introduced.
-
-`RequestRecovery` is a separate `(assignmentId: string) => Promise<void>` capability.
-The enhancement factory takes bound I/O, this callback, cwd/env context, and unknown
-configuration, in that order. `startMonitoring(sessionref?)`, repeatable
-`waitUntilReady(): Promise<string>`, synchronous `onAssignment({ id, expectedFile })`,
-and asynchronous `stop()` form the lifecycle. Assignment IDs distinguish dispatches
-even when a handoff path is reused. Recovery wording stays in Core.
-
-Core creates one instance per Runner Tab, passing the adapter's unchanged bound I/O,
-the callback, cwd/env, and the shared `terminalPlugins.enhancements` object unchanged,
-including the default `{}`. Agent selection chooses the module, not a configuration namespace. Core
-validates all four methods before use. An invalid instance's callable `stop` is
-still attempted; initialization and cleanup errors are reported separately.
-
-## Enhanced orchestration and recovery
-
-A resolved module replaces base delay/Probe with preflight, monitoring, command
-submission, and readiness. Core validates the returned native reference before
-persisting it or dispatching work; resumed references must match exactly.
-Implementation, Review, Review fixes, both repairs, and documentation share this path.
-The CLI wires modules resolved by the discovery adapter into this shared path.
-Discovery does not call factories or cache instances across Runner Tabs.
-
-Readiness rejection enters generic Operator Pause. Enter retries readiness on the
-same instance and tab, preserving completed preflight, monitoring, and command
-submission. Pause alone leaves capabilities active. Uncertain command delivery is
-never replayed on continuation. Skip, exit, and cancellation retain the interactive tab.
-
-Every task, continuation, correction, and applicable Probe gets a fresh Assignment
-ID, even when its expected file repeats. Core retains its expected file and recovery
-text, and calls synchronous `onAssignment` immediately before task input. Readiness
-markers and recovery input do not allocate Assignments.
-
-`requestRecovery(id)` accepts only the current live Assignment on that instance.
-It submits the retained wording and resolves after adapter submission; real input
-errors reject. Unknown, superseded, accepted, or revoked Assignments succeed without
-input or retries. Assignment changes and recovery share Core's per-tab queue until
-actual adapter input settles, including time waiting in the adapter's own queue.
-A Core timeout cannot release that sequencing while underlying input remains pending.
-Handoff acceptance invalidates the Assignment before persistence and closure.
-
-Core gives each tab a creation-time cancellation signal combining Run cancellation
-and local revocation. Cancellation, terminal failure, and close preparation revoke
-bound automatic I/O and recovery before enhancement cleanup. Adapters must check
-this signal when queued input starts: revoked work performs no input. Cancellation
-allows an already-started complete text/key sequence to settle; subsequent input
-cannot begin. This does not roll back effects or suppress real backend failures.
-Ordinary enhancement reads and input remain adapter operations, not Core forwarding.
-
-Cancellation during a pending enhancement factory returns without waiting for it.
-Core observes late settlement, reports late failure, and stops any transferred
-instance without monitoring or executing commands. The factory remains responsible
-for resources it never transfers.
-
-Explicit close revokes capabilities, awaits successful enhancement cleanup, and
-then closes only the owned tab. Cleanup failure preserves the tab. Concurrent stops
-share one attempt; successful cleanup is idempotent and failed cleanup can retry.
-Historical readiness or input failures do not poison cleanup. Stage exits stop
-monitoring even when retaining the interactive Agent for manual takeover; residual
-tab cleanup follows successful enhancement cleanup. An instance must not terminate
-an interactive Agent, another tab, or package-owned shared infrastructure.
-
-`closeTab` targets only its owned logical tab. Foreign handles and backend errors
-reject; a target known to be absent may close successfully. Closure does not prove
-process or descendant settlement. Adapters use finite backend I/O bounds and do
-not replay input or select replacement targets. Core queues its operations per
-handle, checks cancellation when queued input begins, and permits independent tabs.
-
-## Verification limits and global installation
-
-Run `npm run test:package` for the package checks; `npm test` includes them too.
-These checks build and pack Core, then install the full tarball into a temporary
-consumer directory to verify its public entries and declarations. They also pack
-a private generic terminal command and install it in a custom npm global prefix,
-with Core as its transitive runtime dependency. From a separate Launch Directory,
-they invoke npm's generated command for help, combined versions, and init.
-Core must register no executable. The factory throws if informational commands
-or init try to create a terminal.
-
-The checks compile representative CLI, Terminal and Enhancement consumers using
-public entries. They exercise opaque control, bound I/O through the installed
-execution wrapper, and the separate Assignment-aware recovery callback.
-Enhancement package fixtures exercise both global layouts, nested Core, decoys,
-launcher/entry containment, mismatch fallback, and import/export failures. A valid
-module reaches the shared workflow with an independent instance per tab.
-The checks also verify templates, bundled prompts,
-and the manually installable `skills/issue-runner-handoff/SKILL.md` asset.
-Temporary paths include spaces and are removed after the checks.
-No registry publication, Herdr, Agent account or model call is required.
-
-Product execution installs Herdr globally and brings Core transitively, including
-with supported custom npm prefixes. The eventual registry command is:
-
-```sh
-npm install -g issue-runner-herdr
-issue-runner-herdr run --project my-project --parent 42
+```typescript
+export interface Enhancement {
+  startMonitoring(sessionref?: string): Promise<void>;
+  waitUntilReady(): Promise<string>;
+  onAssignment(assignment: { id: string; expectedFile: string }): void;
+  stop(): Promise<void>;
+}
+// startMonitoring precedes command submission; resume receives the saved ref.
+// waitUntilReady is repeatable. Return actual native identity; Core validates it,
+// rejects empty/latest/last/Run/execution IDs, and requires exact resume equality.
+// Core alone persists native identity; TabHandle never identifies a conversation.
+// onAssignment is synchronous, immediately before input: fresh id for every task,
+// continuation, correction, and applicable Probe, even if expectedFile repeats.
+// Readiness markers and recovery input do not allocate Assignments.
+// requestRecovery accepts only the current live Assignment; resolves after actual
+// adapter submission and rejects real input errors. Stale requests succeed silently.
+// Core retains expectedFile/recovery wording; acceptance invalidates the Assignment
+// before persistence and closure. Readiness rejection alone does not revoke I/O.
+// stop releases enhancement resources, not the interactive Agent, other tabs,
+// or shared package infrastructure. Successful stop is idempotent; failed stop
+// can retry. Concurrent stops share an attempt. Operational and cleanup errors
+// are reported separately; prior readiness/input failures do not prevent cleanup.
+// Skip, exit, and cancellation retain the interactive tab. Core validates all
+// four methods before use. Readiness has no separate Core startup timeout.
 ```
 
-Registry publication is still future work; use built tarballs for development.
-Project-local/npx product execution is outside the agreed support policy.
-Project configuration remains `<launch-directory>/<project>/config.yaml`.
-Final candidate production and evidence remain completion requirements of #223;
-real-terminal acceptance remains in #15 and #198.
+## Lifecycle and failure flows
 
-The required full-product CI matrix is Ubuntu and Windows, currently pinned to
-Node.js 22.18.0 and npm 11.6.2. Supported versions have no upper major bound.
-Paths and child processes here use portable Node APIs;
-portable code does not establish tested macOS behavior. Package tests do not
-establish actual terminal delivery, native Agent behavior, or joint acceptance.
+### Base startup and exact resume
+
+```mermaid
+%%{init: {"sequence": {"width": 220, "wrap": true}}}%%
+sequenceDiagram
+    participant Core
+    participant Terminal
+    Core->>Terminal: createTab(cwd, env, label, submitKey, signal)
+    Terminal-->>Core: opaque handle and bound I/O
+    Core->>Terminal: execute(handle, configured start or exact-ref resume)
+    alt Command transport fails with uncertain delivery
+        Core->>Core: Generic Operator Pause, retain tab
+        Note over Core,Terminal: Inspect before continuing, never replay uncertain command
+    end
+    Core->>Core: Wait configured base delay (default 10 seconds)
+    alt New conversation
+        Core->>Terminal: io.submitText(identity-only Session Probe)
+        Core->>Core: Observe assigned file, validate actual native ref
+        opt Invalid Probe result
+            Core->>Terminal: Correction with fresh Probe path
+            Core->>Core: Observe and validate corrected file
+        end
+    else Saved conversation
+        Core->>Core: Validate saved exact ref, no fresh Probe
+    end
+    Note over Core,Terminal: A retained Probe may establish identity before exact resume
+    Core->>Terminal: io.submitText(task, correction, or saved continuation)
+    Note over Core,Terminal: Missing files cause no reminders, handle native approvals in the tab
+    Core->>Core: Independently verify handoff and persist accepted stage
+    Core->>Core: Revoke automatic capabilities before closure
+    Core->>Terminal: closeTab(owned handle)
+    Note over Core,Terminal: Skip/cancellation retain interactive work, close failure retries same handle
+```
+
+### Enhanced startup, resume, and readiness retry
+
+```mermaid
+%%{init: {"sequence": {"width": 220, "wrap": true}}}%%
+sequenceDiagram
+    participant Core
+    participant Terminal
+    participant Enhancement as Agent Enhancement
+    Core->>Terminal: createTab(cwd, env, label, submitKey, combined signal)
+    Terminal-->>Core: opaque handle and unchanged bound I/O
+    Core->>Enhancement: createEnhancement(io, requestRecovery, context, config)
+    Enhancement-->>Core: Preflight complete, valid instance
+    Core->>Enhancement: startMonitoring(saved ref if resuming)
+    Core->>Terminal: execute(handle, start or exact-ref resume command)
+    Note over Core,Terminal: Uncertain command delivery pauses, continuation never replays command
+    Core->>Enhancement: waitUntilReady()
+    alt Readiness rejects
+        Core->>Core: Generic Operator Pause, keep capabilities active
+        Core->>Enhancement: Enter retries waitUntilReady() on same instance/tab
+        Note over Core,Enhancement: Keep completed preflight, monitoring, command submission
+        Enhancement-->>Core: Actual native ref
+    else Ready
+        Enhancement-->>Core: Actual native ref
+    end
+    Core->>Core: Validate identity,<br/>require exact saved ref on resume
+    Core->>Core: Persist new native identity before task dispatch
+    Note over Core,Enhancement: Shared by implementation, Review, fixes, both repairs, documentation
+```
+
+### Assignment serialization, recovery, and stale requests
+
+```mermaid
+%%{init: {"sequence": {"width": 220, "wrap": true}}}%%
+sequenceDiagram
+    participant Core
+    participant Terminal
+    participant Enhancement as Agent Enhancement
+    Core->>Core: Queue task, allocate fresh Assignment id
+    Core->>Enhancement: onAssignment(id, expectedFile)
+    Core->>Terminal: io.submitText(task)
+    Enhancement->>Core: requestRecovery(current id)
+    Core->>Core: Queue behind actual task adapter submission
+    Terminal-->>Core: Task input settles
+    Core->>Terminal: io.submitText(retained recovery wording)
+    Terminal-->>Core: Recovery input settles (or real error rejects)
+    Core-->>Enhancement: Resolve after submission (or reject real error)
+    Core->>Core: Queue next Assignment or invalidate accepted Assignment
+    opt Unknown, superseded, accepted, or revoked id
+        Enhancement->>Core: requestRecovery(stale id)
+        Core-->>Enhancement: Resolve without input or retries
+    end
+    Note over Core,Terminal: Timeout cannot release queue while adapter input remains pending
+```
+
+### Cancellation, revocation, and late initialization
+
+```mermaid
+%%{init: {"sequence": {"width": 220, "wrap": true}}}%%
+sequenceDiagram
+    participant Core
+    participant Terminal
+    participant Enhancement as Agent Enhancement
+    Core->>Terminal: createTab with combined cancellation/revocation signal
+    Core->>Enhancement: createEnhancement(...)
+    alt Cancellation while factory is pending
+        Core->>Core: Stop waiting, revoke automatic I/O and recovery
+        Note over Core,Terminal: Retain interactive tab, queued input checks signal before starting
+        alt Late instance transfers
+            Enhancement-->>Core: Instance (callable stop captured even if invalid)
+            Core->>Enhancement: stop() only, no monitoring or command
+        else Late factory rejects
+            Enhancement-->>Core: Initialization error
+            Core->>Core: Report late operational failure
+        end
+    else Instance already active
+        Enhancement-->>Core: Instance
+        Core->>Core: Cancellation, terminal failure, or close preparation revokes capabilities
+        Core->>Enhancement: stop()
+        Note over Core,Terminal: Already-started complete input may settle, later input cannot start
+    end
+    Note over Core,Enhancement: Factory owns untransferred resources, cleanup failure reported separately
+```
+
+### Cleanup failure, retry, and closure
+
+```mermaid
+%%{init: {"sequence": {"width": 220, "wrap": true}}}%%
+sequenceDiagram
+    participant Core
+    participant Terminal
+    participant Enhancement as Agent Enhancement
+    Core->>Core: Accept handoff,<br/>invalidate Assignment before persistence
+    Core->>Core: Persist accepted stage,<br/>prepare close and revoke capabilities
+    Core->>Enhancement: stop()
+    alt Cleanup fails
+        Enhancement-->>Core: Cleanup error
+        Core->>Core: Report separately, retain interactive tab
+        Core->>Enhancement: Retry stop() on later cleanup attempt
+        Enhancement-->>Core: Cleanup succeeds
+    else Cleanup succeeds
+        Enhancement-->>Core: Stopped
+    end
+    Note over Core,Enhancement: Concurrent stops share attempt, later successful stops do nothing
+    Core->>Terminal: closeTab(owned handle)
+    alt Terminal close fails or remains unresolved
+        Terminal-->>Core: Close error
+        Core->>Core: Bounded retries then Operator Pause, retain accepted stage
+        Core->>Terminal: Retry same handle only
+    else Closed
+        Terminal-->>Core: Closed
+    end
+    Note over Core,Terminal: No replay of accepted work or claim of process settlement
+    Note over Core,Enhancement: Stage exit stops monitoring even when retaining tab for manual takeover
+```

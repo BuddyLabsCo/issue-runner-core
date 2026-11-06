@@ -1,238 +1,198 @@
-# issue-runner-core
+# Issue Runner Core
 
-Shared CLI and issue delivery workflow for terminal-owned commands. Terminal
-packages supply the executable and terminal I/O.
+Issue Runner coordinates AI work on GitHub Issues: it selects eligible work, creates isolated Worktrees, verifies commits, publishes pull requests, waits for checks, and coordinates integration and Issue closure. AI handles implementation, Review, and repairs; Runner handles the workflow.
 
-The project will reuse the workflow behavior of
-[sandcastle-runner](https://github.com/BuddyLabsCo/sandcastle-runner), excluding
-Agent-session Operator Pause and Runner-recorded Agent conversation logs.
-Interactive Agent CLIs run in terminals owned by the selected environment,
-where operators can intervene directly. Native session references come from the identity-only file Probe;
-task results return through file handoffs.
+Core is a library. A terminal package owns the command and terminal I/O; [issue-runner-herdr](https://github.com/BuddyLabsCo/issue-runner-herdr) is the command-entry example below. Optional Agent enhancements add native readiness and recovery support.
 
-## Status
+Demonstration GIF remains outstanding. Missing inputs: the maintainer's screen recording and selected start/end time intervals showing Runner output, created terminal tabs, and AI conversations starting execution.
 
-The development package exports `runCli` and `CliOptions` at `issue-runner-core/cli`,
-with help/version/init, strict Project and Run-scope validation, lazy terminal
-creation, and an empty-parent Run that returns `no_work` without closing the parent.
-Core registers no executable. It exports both v2 runtime constants and the complete Terminal and
-Enhancement TypeScript contracts at `issue-runner-core/terminal`. The accepted
-[handoff skill](skills/issue-runner-handoff/SKILL.md) is available for manual
-installation and is included in the tarball. A numbered standalone `--issue`
-can reserve eligible work, create a fresh Target Branch Worktree, start a native
-implementation conversation, and persist its independently verified local
-completion before closing the owned tab. Enabled Review starts an independent
-reviewer, verifies its report and unchanged Git state, and resumes the original
-implementation conversation for every findings round. Later Reviews resume the
-original reviewer. The final allowed findings round also receives a verified fix.
-Runner pushes the verified HEAD and creates a non-draft PR using the accepted implementation handoff
-title and body. It waits 30 seconds before discovering required checks.
-Failed required checks start a fresh CI-repair conversation and Worktree, verify
-the repair, and push to the same remote branch and PR. Two consumed CI attempts
-require operator authorization before another generation. Repair progress and
-pending pushes survive matching-input recovery.
-With `--no-auto-merge`, CI-ready PRs, branches, Worktrees, handoffs, and progress
-evidence remain available. Unmerged work reports `incomplete` without successful
-delivery credit or success cleanup. Auto-merge requests squash integration against
-the observed HEAD and confirms both merge completion and tracker `closed/completed`
-before granting delivery credit. Checkpoints retain those facts and exact delivery-time labels.
-Success cleanup for ordinary Issues remains downstream. Initial
-`no_change` skips Review and publication and also reports `incomplete`.
-Parent Runs select eligible direct children across all child/blocker pages,
-respect Issue List filtering and Reservation ownership, and execute successive
-Batches concurrently through publication and CI, bounded by `maxBatchSize`.
-Every Batch PR must be CI-ready before serial integration by creation time and PR number.
-Batch membership is checkpointed before dispatch and retained
-on recovery. Parent Runs rescan after each Batch and before closure.
-An initially empty parent returns `no_work`; unresolved work remains `incomplete`.
-All-terminal children permit parent closure, including all-cancelled children.
-Runner confirms the parent's `closed/completed` state before reporting success.
-Parent cancellation stops dispatch without rewriting children, and completed
-child evidence survives interrupted parent closure.
-A value-less `--issue` selects the configured Issue List
-independently of parent discovery, using the same eligibility checks and
-publication, CI barrier, and integration workflow. `--document` creates a standalone
-Maintenance Ticket and uses the documentation Agent without business-Issue selection
-or ordinary Review. Changed documentation follows normal publication and integration;
-independently verified `no_change` closes the Maintenance Ticket without a PR.
-Matching interrupted documentation Runs recover their own execution and maintenance
-state. Successful documentation removes owned Worktrees, local branches, and handoff
-files; unfinished and `--no-auto-merge` work remains available.
-Set `workflow.docMaintainTriggerLabel` to run this document workflow once after
-each successful Batch with a matching delivery-time label. Matching is exact and
-case-sensitive. Pending maintenance blocks later Batch discovery and parent closure,
-including after interruption; verified `no_change` satisfies the barrier.
-The [terminal contract](docs/terminal-contract.md) exposes opaque control and bound I/O.
-Core submits configured commands, waits the base delay (ten seconds by default),
-and establishes new-session identity through Probe. Resume uses the exact saved
-reference. Agent selection, Assignment metadata, and recovery wording stay in Core.
-Core orchestrates resolved enhancements with readiness, Assignment recovery, and
-per-tab cleanup. Core discovers optional enhancements only in the executing terminal's
-verified global prefix, including when Core is nested. Base startup needs no enhancement.
-Implementation and documentation handoffs supply PR metadata.
-No npm package has been published.
+## Workflow overview
 
-Non-Agent failures retain bounded safe retries and Operator Pause. Enter retries;
-`q` or EOF cancels. Issue-scoped pauses also allow `s` to skip that Issue while
-retaining its resources. Resource creation requires an explicit retry; uncertain
-prompt delivery stops without replay. Audit recovery retries only logging.
-See [non-Agent recovery](docs/configuration.md#non-agent-recovery) for the operation policies.
+<details>
+<summary>Expand the Parent Run workflow</summary>
 
-See [terminal contract development](docs/terminal-contract.md) for the public
-API, build/test commands, tarball identity, and independent plugin consumption.
-The accepted [Core specification](https://github.com/BuddyLabsCo/issue-runner-core/issues/45)
-and its linked final decisions govern the [design document](docs/design.md).
+Adapted from [Sandcastle Runner's workflow overview](https://github.com/BuddyLabsCo/sandcastle-runner#what-can-it-do). This example delivers three eligible children with two Issues per Batch and automatic documentation triggered by #44. Agent names come from your configuration; `AI:` marks Agent work.
 
-## Development usage
+```mermaid
+flowchart TD
+    P["Parent #42: children #43, #44, #45"] --> A43 & A44
+    subgraph B1["Batch 1: two Issues in parallel"]
+        A43["Issue #43"] --> I43["AI: implement"] --> R43["AI: Review"]
+        R43 -- "Findings: fix in original conversation" --> I43
+        R43 -- Passed --> PR43["Publish PR"] --> C43["Wait for checks"]
+        C43 -- Failed --> CI43["AI: repair CI"] --> C43
+        A44["Issue #44: documentation trigger label"] --> I44["AI: implement"]
+        I44 --> R44["AI: Review"]
+        R44 -- "Findings: fix in original conversation" --> I44
+        R44 -- Passed --> PR44["Publish PR"] --> C44["Wait for checks"]
+        C44 -- Failed --> CI44["AI: repair CI"] --> C44
+    end
+    C43 & C44 -- Ready --> G["Wait until every Batch PR is ready"]
+    G --> M["Integrate PRs serially"]
+    M -- Conflict --> MC["AI: repair conflict"] --> M
+    M -- Merged --> T["Confirm Issue closure; clean successful resources"]
+    T --> D["Create Maintenance Ticket triggered by #44"]
+    D --> U["AI: update documentation"] --> Q{"Documentation changed?"}
+    Q -- Yes --> DP["Publish documentation PR"] --> DC["Wait for checks"]
+    DC -- Failed --> DCI["AI: repair CI"] --> DC
+    DC -- Ready --> DM["Integrate documentation PR"]
+    DM -- Conflict --> DMC["AI: repair conflict"] --> DM
+    DM --> DF["Close Maintenance Ticket"]
+    Q -- No --> DF
+    DF --> DW["Clean successful resources"] --> A45
+    subgraph B2["Batch 2: remaining Issue"]
+        A45["Issue #45"] --> I45["AI: implement"] --> R45["AI: Review"]
+        R45 -- Findings --> I45
+        R45 -- Passed --> PR45["Publish PR"] --> C45["Wait for checks"]
+        C45 -- Failed --> CI45["AI: repair CI"] --> C45
+        C45 -- Ready --> M45["Integrate PR"]
+        M45 -- Conflict --> MC45["AI: repair conflict"] --> M45
+        M45 --> T45["Confirm #45 closed; clean successful resources"]
+    end
+    T45 --> F["Rescan children; close Parent #42"]
+```
 
-Install the terminal package globally; it includes Core as a runtime dependency.
-Custom npm prefixes are supported. The package name below describes the eventual registry install:
+Review can be disabled. An ordinary Issue with no changes receives no delivery credit; verified documentation with no changes closes its Maintenance Ticket without a PR. Unfinished work retains its resources.
+
+</details>
+
+## Prerequisites
+
+Prepare these on the machine and in the shell that runs the terminal command:
+
+- Node.js 22.18.0 or later and npm 11 or later, including subsequent major versions
+- Git with Worktree support, configured author identity, and access to push to the repository
+- GitHub CLI (`gh`) on `PATH`, with credentials that can read/write Issues, pull requests, and repository contents and observe required checks
+- An absolute-path repository checkout with working Git/GitHub credentials
+- An installed, authenticated Agent CLI for every configured role, with its own skills, native permissions, and required tools
+- A supported terminal environment; follow the [native Herdr installation instructions](https://herdr.dev/tui/docs/install/) for the example command (the adapter targets Herdr 0.9.5)
+
+Launch the example command inside a live Herdr pane, preserving that pane's inherited environment.
+
+### macOS and Linux
+
+Install those tools, then verify them in the shell inside your selected terminal:
 
 ```sh
-npm install -g issue-runner-herdr
-issue-runner-herdr init --project my-project
-# Edit my-project/config.yaml and the three prompts, then set its credentials.
-issue-runner-herdr run --project my-project --parent 42
-# For one eligible standalone Issue, run implementation and enabled Review/fixes:
-issue-runner-herdr run --project my-project --issue 123
-# For the standalone Issue List, set issueList in config.yaml, then run:
-issue-runner-herdr run --project my-project --issue
+node --version          # At least 22.18.0
+npm --version           # At least 11
+git --version
+gh --version
+herdr --version
+codex --version         # Repeat for each Agent CLI you configure
+export GH_TOKEN='your_github_token' # Use your local secret mechanism
+npm install --global issue-runner-herdr # Installs Core transitively
 ```
 
-The [issue-runner-herdr](https://github.com/BuddyLabsCo/issue-runner-herdr) package
-owns the command and generic Herdr terminal operations. It calls Core's shared
-CLI with its command name, version, lazy terminal module, real package root, and CLI
-entry identity. Core owns enhancement discovery, configuration, and orchestration.
-Install `issue-runner-agent-<agent>` in the same global prefix as the terminal command.
-Companion packages must match the revised contracts.
-Use Node.js 22.18.0 or later and npm 11 or later, including subsequent major versions.
-Project configuration stays in the selected Project's `config.yaml`.
-For unpublished development, supply the full Core tarball as Herdr's runtime
-dependency before packing and globally installing Herdr; see
-[package-consumer instructions](docs/terminal-contract.md#build-and-identify-a-development-artifact).
+### Windows
 
-See [configuration and startup](docs/configuration.md) for supported options,
-validation, current scope, and test limits. `init` refuses existing destinations,
-requires no credentials, and does not install a plugin or an Agent skill.
+Install the same tools natively and reopen PowerShell so `PATH` changes take effect. Use shell syntax your terminal and Agent commands support:
 
-## Install the handoff skill manually
+```powershell
+node --version          # At least 22.18.0
+npm --version           # At least 11
+git --version
+gh --version
+herdr --version
+codex --version         # Repeat for each Agent CLI you configure
+$env:GH_TOKEN = 'your_github_token' # Use your local secret mechanism
+npm install --global issue-runner-herdr # Installs Core transitively
+```
 
-Install `issue-runner-handoff` in each Agent CLI used for implementation,
-Review, or documentation before running Runner:
+Keep credentials out of Git. The repository's automated matrix covers Ubuntu and Windows; it does not establish native macOS acceptance.
 
-1. Locate the Agent CLI's documented user skill directory.
-2. Copy the full Core tarball's (or repository's) `skills/issue-runner-handoff` directory there,
-   unchanged. The installed file must be
-   `<agent-skills-directory>/issue-runner-handoff/SKILL.md`.
-3. Reload skills or restart the Agent CLI as its documentation requires, and
-   verify that `issue-runner-handoff` is available for explicit invocation.
+### Install the handoff skill
 
-Runner does not install the skill automatically. The skill's explicit-only restriction
-is model-followed guidance, not client-enforced protection.
+Install the bundled [issue-runner-handoff](skills/issue-runner-handoff/SKILL.md) skill for every Agent CLI used by Runner:
 
-## Invoke or correct a handoff
+1. Locate Core under the globally installed terminal package. Start with `npm root --global`; Core can be nested at `issue-runner-herdr/node_modules/issue-runner-core` or hoisted into the global modules directory.
+2. Copy Core's entire `skills/issue-runner-handoff` directory unchanged into each Agent's documented user skill directory. The result is `<agent-skills-directory>/issue-runner-handoff/SKILL.md`.
+3. Reload skills or restart that Agent CLI and verify explicit invocation is available.
 
-Runner's task prompts explicitly name `issue-runner-handoff` and supply the assigned
-absolute final JSON output path on a `Handoff path:` line. Runner displays that
-path with the current stage and actual native session identity.
+`init` creates Project files; it does not install this skill or authenticate Agents.
 
-In that native Agent conversation, explicitly invoke the installed skill with
-the displayed path, using the Agent CLI's skill invocation syntax. For a CLI
-with slash-command skills, examples are:
+### Optional Agent enhancements
+
+Base startup works without an enhancement. To add Codex-specific readiness, trust preparation, and recovery, install [issue-runner-agent-codex](https://github.com/BuddyLabsCo/issue-runner-agent-codex) in the same global npm prefix as Herdr:
+
+```sh
+npm install --global issue-runner-agent-codex
+```
+
+Use the same `--prefix` for both packages when using a custom prefix. Core discovers enhancements for configured Agent identifiers; incompatible contract versions fall back to base startup with a diagnostic. Broken installations fail startup. See the [discovery contract](docs/terminal-contract.md#enhancement-discovery-and-compatibility) for integration details.
+
+## Getting started
+
+Run these from the directory that will contain your Project:
+
+```sh
+issue-runner-herdr --help          # Command overview; -h also works
+issue-runner-herdr --version       # Terminal command and loaded Core versions
+issue-runner-herdr run --help      # Run selectors and options
+issue-runner-herdr init --project my-project # Creates config and three prompts
+```
+
+Edit `my-project/config.yaml` using its comments, replace its placeholders, and adapt the Agent commands to your shell. The [shipped configuration template](templates/config.yaml) contains all field guidance. Edit the three Project prompts under `my-project/prompts/` for implementation, Review, and documentation instructions. Run from the same Launch Directory; Runner looks only in its selected Project child directory.
+
+```sh
+issue-runner-herdr run --project my-project --parent 42 # Deliver eligible children
+issue-runner-herdr run --project my-project --issue 43  # Deliver one Issue
+issue-runner-herdr run --project my-project --issue     # Use configured Issue List
+issue-runner-herdr run --project my-project --issue 43 --no-auto-merge # Retain PR/work
+issue-runner-herdr run --project my-project --document  # Create Maintenance Ticket
+issue-runner-herdr run --project my-project --document --no-auto-merge # Retain doc PR
+```
+
+Auto-merge defaults on. `--no-auto-merge` applies to numbered Issues and standalone documentation; retained, unmerged work reports `incomplete`. Runner owns push, PR, integration, and tracker operations. Agents report local work through handoffs; a handoff alone does not establish delivery.
+
+## Troubleshooting
+
+Use the native Agent conversation for approvals, questions, and missing output. Use Runner's terminal for an Operator Pause.
+
+### Operator Pause
+
+Runner pauses when an operation needs a decision, such as exhausted API/Git retries, resource creation failure, uncertain command delivery, or rejected enhancement readiness. Inspect the reported target and any partial effects before pressing Enter to retry or continue. `q` or EOF cancels; Issue-scoped pauses also allow `s` to skip and retain that Issue's resources. Audit recovery retries logging only. Continuing an uncertain command does not replay it.
+
+### Folder or hook trust blocks startup
+
+Without an enhancement, Runner waits the base startup delay and sends an identity-only Session Probe. If folder trust, hook trust, or native permissions block the Agent, approve them in that Runner Tab. Conversation text cannot approve native dialogs. Complete native trust setup before retrying; Runner sends no missing-output reminders.
+
+### Continue a stopped conversation
+
+If the Agent stopped midway, ask it to `continue` in its existing Runner Tab, preserving the current task and handoff path. If Runner itself stopped, close leftover Agent tabs and stop their sessions before rerunning, retaining native history and working resources. Rerun the same command with unchanged arguments and configuration. Runner resumes saved native references in the original Worktrees; it does not adopt surviving tabs.
+
+Changed command names, arguments, or configuration bytes select new progress. If Runner prints `unable to recover`, Enter restarts the affected Issue from implementation with fresh resources; `q` or EOF exits. Failed resources remain available. Inspect the `Retained` report and Project recovery files before manual cleanup.
+
+### Request an omitted handoff
+
+When the Agent finishes without a handoff, find the active absolute path in Runner's `handoff=` output or the task's `Handoff path:` line. Explicitly invoke the installed skill in that same native conversation using that Agent's skill syntax, for example:
 
 ```text
-/issue-runner-handoff /absolute/runner/project/handoffs/123-implement-20261029T120000000Z.json
-/issue-runner-handoff "D:\Runner Work\project\handoffs\123-implement-20261029T120000000Z.json"
+/issue-runner-handoff /absolute/project/handoffs/current-assignment.json
+/issue-runner-handoff "D:\Runner Work\project\handoffs\current-assignment.json"
 ```
 
-Each example passes a single output path; it is not an instructions-document
-path. Use the current assigned path verbatim. If handoff instructions were
-forgotten or that same invocation needs correction, reinvoke the skill in the
-original conversation with that same path. It validates and closes the
-temporary sibling `<handoff-path>.tmp`, then atomically replaces the final
-file as its last step. A different invocation, automatic correction, or retry
-gets a fresh Runner-assigned path.
+Pass the current output path verbatim, including quotes around spaces. If that invocation needs correction, invoke the skill again at the same path. Runner assigns a fresh path for later invocations and automatic corrections. The skill writes atomically and leaves the handoff unwritten while human action is required. Invalid handoffs get specific feedback; missing files cause no reminders.
 
-When user action is required and no independent work can continue, the skill leaves
-the handoff unwritten and starts its response with `[action required]`. Resolve the
-blocker in that conversation; the Agent resumes work and publishes a handoff only
-on completion.
+## Developing Core
 
-The skill's [accepted content](https://github.com/BuddyLabsCo/issue-runner-core/issues/5#issuecomment-6497094791)
-defines exactly `outcome`, `summary`, `commits`, and `findings_file`. Execution
-uses `committed` or `no_change`; Review uses `passed` or `findings`. Commit
-entries contain full Git SHAs and messages. Purpose-specific prompts define
-task completion, required checks and commits, Review write restrictions,
-post-handoff work restrictions, and remote-operation ownership. Runner owns
-push, PR, integration, and tracker operations. The skill only submits the
-handoff; submission alone does not establish successful delivery.
+Install the locked dependencies and use the existing checks:
 
-Numbered Issue Runs display the validated native identity and active handoff path.
-Core passes configured commands through `execute` and waits `terminalPlugins.agentStartDelay`.
-Probe and task submissions use bound I/O with the creation-time Agent chord. Approvals, questions, native errors, and missing output require
-direct handling in that native conversation. Runner sends no missing-output
-reminders. Invalid results get specific corrections in the same tab at new paths,
-without correction backoff. Each newly published invalid
-result receives feedback; missing output and unchanged invalid files cause no reminders.
-See [correction behavior](docs/configuration.md#rejected-handoffs-and-correction).
+```sh
+npm ci                   # Install development dependencies
+npm run build            # Compile JavaScript and declarations into dist/
+npm run typecheck        # TypeScript diagnostics
+node --test tests/run/cli-startup.test.ts # One focused workflow file
+npm run check            # Formatting, lint, and typecheck
+npm test                 # Full suite, including package installation checks
+npm run test:workflow    # Agent and application scenarios
+npm run test:adapters    # External boundaries and real Git
+npm run test:package     # Pack/install in isolated consumer and global prefixes
+npm run verify           # Static checks and full suite
+```
 
-Recovery Snapshots retain role identity, accepted business handoff PR metadata, invocation,
-Worktree/branch/base, accepted commits, and stage
-completion under the Project's `recovery/`. Matching canonical command identity,
-exact arguments, and validated configuration bytes allow assigned implementation,
-Review, and fixes to continue using each role's exact saved native reference.
-Review round/base/HEAD, assigned findings, superseded paths, and accepted fix commits are retained. Findings stay available
-through the loop and are deleted after the complete Review/fix loop; Probe and
-handoff files remain until successful Issue cleanup.
-A known unsent assignment or correction remains pending when eligibility stops
-dispatch and is submitted when eligibility returns, retaining its path. Missing output from an attempted assignment opens a fresh Runner Tab
-in the original Worktree with recreated per-call Git configuration. Runner submits
-the saved role's exact ref in the configured resume command, waits the base delay, then sends only
-`continue` with the configured Agent chord. It preserves the invocation, active
-handoff path, uncommitted work, and metadata without another
-Probe or task prompt.
+`npm pack` builds through `prepack`. To check an existing candidate without repacking, set `RELEASE_TARBALL` to its absolute path and run `npm run release:accept`.
 
-If required original context cannot be recovered, including a missing original
-Worktree, Runner prints exactly `unable to recover`. Enter restarts the entire
-affected Issue from implementation. `q` or EOF exits Runner. Restart creates a
-fresh execution, Worktree, branch,
-conversations, Probe/handoff assignments, and PR metadata, with reset retry counts.
-Other Issues keep their progress and counts. Failed resources remain retained,
-including an archived checkpoint; the active checkpoint remains available until
-replacement progress is saved. There is no retry-recovery choice.
+Core exports `runCli` and `CliOptions` from `issue-runner-core/cli`, and Terminal/Enhancement contracts from `issue-runner-core/terminal`. It has no executable, package-root entry, or public testing entry. Terminal packages depend on Core at runtime; enhancements can use a type-only development dependency.
 
-Before rerunning, manually close leftover tabs and stop their Agent sessions,
-retaining native history and working resources. Runner does not adopt live tabs.
-Incomplete earlier startup checkpoints use the same restart-or-exit interaction.
-Changed input ignores old snapshots and never adopts unrelated Reservations.
-Local completion retains owned files and Worktrees for later workflow steps.
-
-Failed, cancelled, interrupted, skipped, and unmerged executions retain their original working changes and diagnostic files. `Retained` reports list each execution's recorded branches and existing resource paths, including failed repair attempts and maintenance checkpoints. Abrupt process loss can prevent the final report; Recovery Snapshots remain the durable evidence. Changed Run inputs never authorize deletion or adoption of unrelated Reservations. See [retained execution resources](docs/configuration.md#retained-execution-resources).
-
-## Development checks
-
-Run `npm ci`, then `npm run verify` for formatting, lint, type checks and tests.
-Use `npm run format` to apply code formatting and `npm run check` for static checks
-only. CI runs static checks once on Ubuntu and all behavioral tests on Ubuntu
-and Windows with Node 22.18.0 and npm 11.6.2. Test files run in four isolated
-processes at most. Package tests build through `prepack`, so CI does not build
-again beforehand. Each platform retains `verification.log` for seven days,
-including on test failure. See [test ownership and focused commands](tests/README.md).
-
-Workflow tests use private fake terminals, temporary directories with absolute
-platform paths, and controlled workflow clocks. CI uploads only verification
-output, excluding credential files, Run snapshots, and native conversation histories.
-These jobs do not establish tested macOS operation or real Core/Herdr acceptance.
-
-ESLint limits code files to 500 lines, excluding blank lines and comments.
-Business modules reject concrete adapter/known Agent SDK imports, direct platform
-access and dynamic loading. These checks support the
-[architecture boundaries](docs/code-architecture.md); they do not replace review.
-
-## Verify packaged assets
-
-Run `npm run test:package` to build and install the package in isolated consumer and global prefixes. It checks the public CLI and terminal types, terminal-owned executable, bundled prompts and handoff skill asset. These checks require no Agent account, model call or Herdr installation. Real Agent execution remains separate acceptance work.
-
-Release automation follows the [pinned Sandcastle baseline](https://github.com/BuddyLabsCo/sandcastle-runner/tree/55c66eb88ba94272a51563666fe2ca19ece38224/scripts/release). The publication workflow retains the verified candidate and its identity as `verified-core-release`. Its output supplies bootstrap instructions, integrity, release commit, version, workflow run and Trusted Publisher settings. Finish partial-publication recovery before advancing another release; the source's separate concurrency groups remain unchanged.
-
-Local checks establish implementation readiness only. First-publication bootstrap, a subsequent genuine OpenID Connect (OIDC) publication, and real npm installation/operation acceptance each require separate evidence. Existing consumer CI owns registry-consumption evidence.
+Read the [public integration contract](docs/terminal-contract.md) for plugin behavior, [code architecture](https://github.com/BuddyLabsCo/issue-runner-core/blob/main/docs/code-architecture.md) for ownership and test placement, and [glossary](https://github.com/BuddyLabsCo/issue-runner-core/blob/main/GLOSSARY.md) for terminology. Package tests verify installed resources and public consumers without native Herdr or model calls. They do not replace real npm acceptance evidence. Documentation changes do not authorize a new publication; release decisions remain with the maintainer.
