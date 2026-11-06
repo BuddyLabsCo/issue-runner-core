@@ -32,8 +32,7 @@
     "prompts",
     "templates",
     "skills/issue-runner-handoff",
-    "docs/terminal-contract.md",
-    "docs/configuration.md"
+    "docs/terminal-contract.md"
   ],
   "engines": {
     "node": ">=22.18.0",

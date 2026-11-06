@@ -1,85 +1,78 @@
-# Created by the terminal command's init. Replace repository, checkout, and
-# runnerAccount before running. Install the terminal package globally; it
-# supplies Core as a runtime dependency. Custom npm prefixes are supported.
-repository: your-account/your-repository
-# Absolute checkout path; on Windows use e.g. C:\work\your-repository.
-checkout: /absolute/path/to/your-repository
-# Limits Parent selection, or supplies value-less --issue.
+# Edit this file and prompts/{implement,review,documentation}.md before running.
+# Keep arguments and this file unchanged when resuming an interrupted Run.
+
+repository: your-account/your-repository # GitHub owner/repo matching the checkout.
+checkout: /absolute/path/to/your-repository # Absolute path; Windows: C:\work\your-repository.
+# Positive Issue numbers: filters --parent; value-less --issue runs this list directly.
 issueList: []
-# Exact case-sensitive Issue label. Empty/omitted disables label filtering.
-issueLabel: ready-for-agent
-# Maximum selected Issues and concurrent executions in one Batch.
-maxBatchSize: 2
-# Omit targetBranch to use the repository's default branch.
-targetBranch: main
-# Non-Agent operation retries are additional attempts; delays are in seconds.
-# The last delay repeats when the budget exceeds the schedule.
-operationRetry: 4
-operationRetryDelay: [10, 20, 40, 80]
-ticketClosure: runner
+issueLabel: ready-for-agent # Eligibility label; empty/omitted disables filtering.
+maxBatchSize: 2 # Maximum Issues selected and run concurrently per Batch; positive integer.
+targetBranch: main # PR target; omit to use the repository's default branch.
+
+operationRetry: 4 # Additional non-Agent operation attempts; nonnegative integer.
+operationRetryDelay: [10, 20, 40, 80] # Retry delays in seconds; last value repeats.
+ticketClosure: runner # runner closes delivered Issues; code_host waits for host closure.
+
+# Maintenance Issue created by --document or the automatic trigger; all fields required when enabled.
 maintenanceTicket:
   title: Maintain project documentation
   body: Update the documentation surfaces named by the documentation prompt.
   label: doc-maintain
 workflow:
-  # Review defaults to enabled. Omit maxReviewRounds for no round cap.
-  # Every findings round gets a fix, including the final allowed round.
-  # maxReviewRounds: 1 permits findings -> fix with no second Review.
-  review: true
-  # Exact case-sensitive delivery label. Empty/omitted disables automatic maintenance.
-  docMaintainTriggerLabel: ""
+  review: true # Review implementations; requires agents.review and its prompt.
+  # maxReviewRounds: 1 # Optional positive cap; final findings still receive a fix.
+  docMaintainTriggerLabel: "" # Run documentation after a Batch delivers this label; empty disables.
 tracker:
-  tokenEnv: GH_TOKEN
-  runnerAccount: your-github-account
-  reservationLabel: sandcastle:reserved
+  tokenEnv: GH_TOKEN # Environment variable holding the GitHub Issue token; never put tokens here.
+  runnerAccount: your-github-account # GitHub account assigned to reserved Issues.
+  reservationLabel: sandcastle:reserved # Existing repository label marking reserved Issues.
 codeHost:
-  tokenEnv: GH_TOKEN
-  adminMerge: false
-# Core defaults: agentStartDelay: 10 (seconds), enhancements: {}.
-# Delay must be finite, nonnegative, and at most 2147483.647 seconds.
-# Enhancement values stay unknown; other fields belong to the terminal adapter.
-# Core passes this object with defaults to the factory. Null/arrays/scalars fail.
+  tokenEnv: GH_TOKEN # Environment variable holding the GitHub PR/checks/merge token.
+  adminMerge: false # Use GitHub's administrator merge flag.
+
+# Terminal-specific options; optional generic settings shown below.
 terminalPlugins: {}
-# Complete shell command strings, with shell-appropriate quoting supplied by you.
-# Core does not choose an Agent brand, rebuild argv, or interpret native options.
-# agent is a required opaque plugin identifier, preserved exactly as configured.
-# Core discovers optional issue-runner-agent-<agent> packages in the terminal global prefix.
-# Every resume command must contain the exact {sessionref} placeholder.
-# submitKey is a Runner setting alongside start/resume, outside native options.
-# Core coordinates command launch and readiness; base startup waits agentStartDelay.
+# terminalPlugins:
+#   agentStartDelay: 10 # Seconds after command submission without an enhancement (0..2147483.647).
+#   enhancements: {} # Shared options passed unchanged to every selected Agent enhancement.
+
+# Each role runs the configured shell commands; install and authenticate its Agent first.
 agents:
-  implement:
-    agent: codebuddy
+  implement: # Required implementation role.
+    agent: codebuddy # Identifier used to find optional issue-runner-agent-<agent> packages.
     # Windows PowerShell: start/resume use $env:CODEBUDDY_IS_SANDBOX="1"; codebuddy ...
+    # Full shell command, sent unchanged; adapt quoting and flags to your shell.
     start: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --model deepseek-v4.1-flash --effort max --dangerously-skip-permissions'
+    # Must contain {sessionref}; Runner replaces it with the saved native reference.
     resume: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --resume "{sessionref}" --dangerously-skip-permissions'
-    submitKey: Enter
-  review:
+    submitKey: Enter # Task-input chord; defaults to Enter. Commands always launch with Enter.
+    # options: {} # Optional native config; does not become command flags.
+  review: # Required when workflow.review is true.
     agent: codex
     start: 'codex --remote unix:// --model gpt-6.1-sol -c model_reasoning_effort="high" --dangerously-bypass-approvals-and-sandbox'
     resume: 'codex resume "{sessionref}" --dangerously-bypass-approvals-and-sandbox'
     submitKey: Enter
-  ciRepair:
+  ciRepair: # Required CI repair role.
     agent: codebuddy
     # Windows PowerShell: start/resume use $env:CODEBUDDY_IS_SANDBOX="1"; codebuddy ...
     start: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --model deepseek-v4.1-flash --effort max --dangerously-skip-permissions'
     resume: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --resume "{sessionref}" --dangerously-skip-permissions'
     submitKey: Enter
-  conflictRepair:
+  conflictRepair: # Required merge-conflict repair role.
     agent: codebuddy
     # Windows PowerShell: start/resume use $env:CODEBUDDY_IS_SANDBOX="1"; codebuddy ...
     start: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --model deepseek-v4.1-flash --effort max --dangerously-skip-permissions'
     resume: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --resume "{sessionref}" --dangerously-skip-permissions'
     submitKey: Enter
-  documentation:
+  documentation: # Required for --document or automatic documentation.
     agent: claude
     start: 'claude --model claude-opus-5-5 --effort high --dangerously-skip-permissions'
     resume: 'claude --resume "{sessionref}" --dangerously-skip-permissions'
     submitKey: Enter
-# Positive minute thresholds retained for downstream delivery slices.
-# agentIdleMinutes is optional and defaults to 10.
+
+# Positive minutes; Agent thresholds are retained settings, not enforced limits.
 timeouts:
-  agentMinutes: 120
-  agentIdleMinutes: 10
-  requiredChecksMinutes: 60
-  mergeQueueMinutes: 60
+  agentMinutes: 120 # Required; does not stop long-running Agents.
+  agentIdleMinutes: 10 # Optional, default 10; does not stop idle Agents.
+  requiredChecksMinutes: 60 # Required; pause after waiting this long for required checks.
+  mergeQueueMinutes: 60 # Required; pause after waiting this long for merge confirmation.
