@@ -79,8 +79,8 @@ for (const outcome of ["failed", "cancelled"] as const) {
       result.summary.tickets[0].retainedWorktrees.includes(saved.worktree),
     );
     assert.ok(
-      result.summary.reasons.some((reason) =>
-        reason.includes(saved.invocation!.path),
+      result.summary.retainedEvidence!.some((entry) =>
+        entry.paths.includes(`${saved.invocation!.path}.tmp`),
       ),
     );
     const output = fixture.dependencies.messages.at(-1)!;
@@ -208,7 +208,7 @@ await test("an ordinary no_change handoff reports no delivery credit", async (t)
   assert.equal(result.summary.outcome, "incomplete");
   assert.equal((await fixture.snapshot()).phase, "implementation_completed");
   assert.match(
-    result.summary.reasons.join(" "),
+    result.summary.tickets![0]!.detail,
     /no_change.*no Issue delivery/,
   );
   assert.equal(result.exitCode, 1);
@@ -434,7 +434,7 @@ await test("cancellation before ticket dispatch reports why the Run stopped", as
   assert.equal(result.exitCode, 1);
   assert.equal(result.summary.outcome, "cancelled");
   assert.equal(result.summary.failure, "Parent Ticket is cancelled");
-  assert.ok(result.summary.reasons.includes("Parent Ticket is cancelled"));
+
   assert.deepEqual(result.summary.tickets, []);
   assert.deepEqual(fixture.dispatched, []);
 });
@@ -452,7 +452,6 @@ await test("PR #170 keeps its title across report statuses", () => {
       project: "project",
       parentTicket: 37,
       targetBranch: "main",
-      reasons: ["Issue #37: Delivery interrupted"],
       ...(status === "failed" ? { failure: "Delivery interrupted" } : {}),
       tickets: [
         {

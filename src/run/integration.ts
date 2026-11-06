@@ -337,9 +337,8 @@ export async function integrateBatch(input: {
       results[index] = await integration.complete();
     } catch (error) {
       if (!(error instanceof TicketSkipped)) throw error;
-      results[index] = { ...results[index]!, reasons: [error.message] };
     }
-    if (results[index].outcome !== "succeeded") break;
+    if (results[index]!.outcome !== "succeeded") break;
   }
   return results;
 }

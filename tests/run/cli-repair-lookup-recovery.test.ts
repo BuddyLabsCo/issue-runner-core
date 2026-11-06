@@ -70,7 +70,7 @@ for (const kind of ["ci", "conflict"] as const) {
         await access(before.worktree);
         await access(before.publication![key]!.attempts[0]!.worktree);
       } else if (kind === "ci")
-        assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+        assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
       else
         assert.equal(
           result.summary.outcome,

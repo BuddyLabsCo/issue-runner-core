@@ -59,6 +59,6 @@ await test("a custom issueLabel is revalidated after Reservation", async (t) => 
   };
   const result = await fixture.run(["--issue", "51"]);
   assert.equal(result.summary.outcome, "incomplete");
-  assert.match(result.summary.reasons.join("; "), /Issue is missing queued/u);
+  assert.match(result.summary.tickets![0]!.detail, /Issue is missing queued/u);
   assert.deepEqual(fixture.dispatched, []);
 });

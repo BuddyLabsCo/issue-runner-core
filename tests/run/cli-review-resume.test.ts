@@ -57,7 +57,7 @@ await test("an interrupted later Review resumes the original reviewer with its p
     ...fixture.dependencies,
     signal: new AbortController().signal,
   });
-  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
   assert.deepEqual(
     fixture.state.submissions.slice(before).map((item) => item.text),
     ['review-cli resume "review-native/$&"', "continue"],
@@ -123,7 +123,7 @@ for (const stage of ["review", "fix"] as const) {
         },
       }),
     });
-    assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+    assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
     assert.equal(fixture.state.submissions.length, before);
     assert.equal((await fixture.snapshot()).phase, "publication_eligible");
   });
@@ -150,7 +150,7 @@ for (const mismatch of ["dirty", "wrong branch"] as const) {
     const result = await resume();
     assert.equal(result.summary.outcome, "failed", JSON.stringify(result));
     assert.match(
-      result.summary.reasons.join(" "),
+      result.summary.failure!,
       mismatch === "dirty"
         ? /Worktree must be clean/u
         : /Delivery branch mismatch/u,
@@ -161,7 +161,7 @@ for (const mismatch of ["dirty", "wrong branch"] as const) {
     fixture.state.evidence.clean = true;
     fixture.state.evidence.branch = saved.branch;
     const recovered = await resume();
-    assert.match(recovered.summary.reasons.join(" "), /CI-ready/u);
+    assert.match(recovered.summary.tickets![0]!.detail, /CI-ready/u);
     assert.equal((await fixture.snapshot()).phase, "publication_eligible");
     assert.equal(fixture.state.submissions.length, before);
     assert.deepEqual((await fixture.snapshot()).reviews, saved.reviews);
@@ -231,7 +231,7 @@ await test("a withheld Review assignment retains its invocation and resumes only
   const before = fixture.state.submissions.length;
   fixture.state.ticket.labels!.push("ready-for-agent");
   const result = await fixture.run();
-  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
   assert.deepEqual(
     fixture.state.submissions.slice(before).map((item) => item.text),
     ['review-cli resume "review-native/$&"', pending],
@@ -291,6 +291,6 @@ await test("failed findings cleanup retains the completed checkpoint and retries
   };
   const before = fixture.state.submissions.length;
   const result = await fixture.run();
-  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
   assert.equal(fixture.state.submissions.length, before);
 });

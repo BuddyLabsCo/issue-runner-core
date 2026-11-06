@@ -267,7 +267,7 @@ await test("invalid configuration fails before any external reads or delivery re
     const deps = createCliDependencies(root);
     const result = await executeCli(run, deps);
     assert.equal(result.exitCode, 1, JSON.stringify(patch));
-    assert.match(result.summary.reasons.join(" "), expected);
+    assert.match(result.summary.failure!, expected);
     assert.equal(result.logPath, null);
     assert.deepEqual(deps.effects, []);
     assert.deepEqual(deps.reads, []);
@@ -313,9 +313,7 @@ await test("Review defaults on; disabled Review and maintenance do not require t
   };
   const { root, directory } = await createProject(t, config);
   assert.match(
-    (await executeCli(run, createCliDependencies(root))).summary.reasons.join(
-      " ",
-    ),
+    (await executeCli(run, createCliDependencies(root))).summary.failure!,
     /Review is enabled/,
   );
   await writeFile(
@@ -354,9 +352,7 @@ await test("enabled purposes require their profiles, prompts, and maintenance me
       }),
     );
     assert.match(
-      (await executeCli(run, createCliDependencies(root))).summary.reasons.join(
-        " ",
-      ),
+      (await executeCli(run, createCliDependencies(root))).summary.failure!,
       /Documentation Maintenance is enabled/,
     );
   }
@@ -379,18 +375,14 @@ await test("enabled purposes require their profiles, prompts, and maintenance me
       }),
     );
     assert.match(
-      (await executeCli(run, createCliDependencies(root))).summary.reasons.join(
-        " ",
-      ),
+      (await executeCli(run, createCliDependencies(root))).summary.failure!,
       new RegExp(`maintenanceTicket.${field}`),
     );
   }
   await writeFile(path.join(directory, "config.yaml"), stringify(config));
   await rm(path.join(directory, "prompts/documentation.md"));
   assert.match(
-    (await executeCli(run, createCliDependencies(root))).summary.reasons.join(
-      " ",
-    ),
+    (await executeCli(run, createCliDependencies(root))).summary.failure!,
     /Documentation Maintenance is enabled/,
   );
 });
@@ -441,7 +433,6 @@ await test("option ordering and configured Target Branch do not change the empty
   );
   assert.equal(result.summary.outcome, "no_work");
   assert.equal(result.summary.targetBranch, "release");
-  assert.match(result.summary.reasons.join(" "), /2, 7/);
 });
 
 await test("ineligible Issue scopes do not dispatch and documentation requires configuration", async (t) => {

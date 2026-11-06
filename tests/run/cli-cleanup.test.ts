@@ -265,7 +265,7 @@ await test("a recovered cleanup rejects another Issue's assigned path before del
   fixture.dependencies.signal = new AbortController().signal;
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "failed");
-  assert.match(result.summary.reasons.join(" "), /handoff ownership mismatch/u);
+  assert.match(result.summary.failure!, /handoff ownership mismatch/u);
   assert.deepEqual(fixture.state.cleanup, []);
   for (const file of [
     unrelated,
@@ -333,9 +333,8 @@ await test("enhancement cleanup failure retries before closing without replaying
     },
   };
   assert.match(
-    (
-      await executeCli(implementationCommand, dependencies)
-    ).summary.reasons.join(" "),
+    (await executeCli(implementationCommand, dependencies)).summary.tickets![0]!
+      .detail,
     /CI-ready/,
   );
   assert.equal(stops, 2);

@@ -24,7 +24,7 @@ await test("injected terminal plugins require all three methods before external 
       const result = await executeCli(run, deps);
       assert.equal(result.exitCode, 1);
       assert.match(
-        result.summary.reasons.join(" "),
+        result.summary.failure!,
         /factory must return createTab, execute, and closeTab/,
       );
       assert.deepEqual(deps.reads, []);
@@ -61,7 +61,7 @@ await test("Agent profiles require an opaque nonempty agent before external acce
       const deps = createCliDependencies(root);
       const result = await executeCli(run, deps);
       assert.match(
-        result.summary.reasons.join(" "),
+        result.summary.failure!,
         new RegExp(`agents\\.${purpose}\\.agent must be set`),
       );
       assert.deepEqual(deps.reads, []);
@@ -108,11 +108,7 @@ await test("the command's lazy factory receives the complete terminalPlugins val
     });
     const deps = createCliDependencies(root);
     const result = await executeCli(run, deps);
-    assert.equal(
-      result.summary.outcome,
-      "no_work",
-      result.summary.reasons.join(" "),
-    );
+    assert.equal(result.summary.outcome, "no_work", result.summary.failure);
     assert.deepEqual(deps.terminal.calls, [
       [{ ...terminalPlugins, agentStartDelay: 10, enhancements: {} }],
     ]);
@@ -163,15 +159,12 @@ await test("invalid modules and factory results fail with command context before
     Object.assign(deps, { terminal });
     const result = await executeCli(run, deps);
     assert.equal(result.exitCode, 1);
-    assert.match(result.summary.reasons.join(" "), expected);
+    assert.match(result.summary.failure!, expected);
     assert.match(
-      result.summary.reasons.join(" "),
+      result.summary.failure!,
       /Unable to initialize generic-terminal:/,
     );
-    assert.doesNotMatch(
-      result.summary.reasons.join(" "),
-      /sibling|Install|prefix/,
-    );
+    assert.doesNotMatch(result.summary.failure!, /sibling|Install|prefix/);
     assert.equal(result.logPath, null);
     assert.deepEqual(deps.reads, []);
     assert.deepEqual(deps.effects, []);
@@ -229,7 +222,7 @@ await test("Core validates generic terminal settings before invoking the factory
     const result = await executeCli(run, deps);
     assert.equal(result.exitCode, 1);
     assert.match(
-      result.summary.reasons.join(" "),
+      result.summary.failure!,
       /terminalPlugins\.(agentStartDelay|enhancements)/,
     );
     assert.deepEqual(deps.terminal.calls, []);

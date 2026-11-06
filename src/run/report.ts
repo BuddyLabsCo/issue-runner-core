@@ -31,7 +31,10 @@ export interface RetainedEvidence {
 
 export async function reportTicket(
   input: Parameters<typeof runStandalone>[0],
-  execute: (input: Parameters<typeof runStandalone>[0]) => Promise<RunSummary>,
+  execute: (
+    input: Parameters<typeof runStandalone>[0],
+    report: TicketReport,
+  ) => Promise<RunSummary>,
 ): Promise<RunSummary> {
   const report: TicketReport = {
     ticket: input.number,
@@ -50,7 +53,6 @@ export async function reportTicket(
       result = await action();
       report.status =
         result.outcome === "succeeded" ? "completed" : result.outcome;
-      report.detail = result.reasons.join("; ");
       return result;
     } catch (error) {
       report.status =
@@ -93,15 +95,18 @@ export async function reportTicket(
     }
   };
   return capture(() =>
-    execute({
-      ...input,
-      ...(input.deferIntegration
-        ? {
-            deferIntegration: (pullRequest, complete) =>
-              input.deferIntegration!(pullRequest, () => capture(complete)),
-          }
-        : {}),
-    }),
+    execute(
+      {
+        ...input,
+        ...(input.deferIntegration
+          ? {
+              deferIntegration: (pullRequest, complete) =>
+                input.deferIntegration!(pullRequest, () => capture(complete)),
+            }
+          : {}),
+      },
+      report,
+    ),
   );
 }
 
@@ -137,10 +142,6 @@ export function reportRetained(context: RunContext, summary: RunSummary): void {
       ]),
     ].filter(existsSync);
     if (paths.length === 0) continue;
-    const report = progress
-      ? `Retained Issue #${progress.ticket} execution=${progress.execution_id}; recorded branches: ${resources.map((resource) => resource.branch).join(", ")}; resources: ${paths.join(", ")}`
-      : `Retained recovery evidence: ${paths.join(", ")}`;
-    summary.reasons.push(report);
     (summary.retainedEvidence ??= []).push({
       ...(progress
         ? { ticket: progress.ticket, executionId: progress.execution_id }

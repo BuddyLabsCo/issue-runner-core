@@ -217,10 +217,7 @@ await test("recovery cannot credit delivery when recorded publication differs fr
   await writeFile(path.join(directory, file), JSON.stringify(saved));
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "failed");
-  assert.match(
-    result.summary.reasons.join(" "),
-    /Publication evidence does not match/u,
-  );
+  assert.match(result.summary.failure!, /Publication evidence does not match/u);
 });
 
 await test("a changed observed HEAD pauses without merging or closing the Issue", async (t) => {

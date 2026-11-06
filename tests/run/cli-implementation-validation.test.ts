@@ -48,7 +48,7 @@ for (const invalid of ["pr_title", "pr_body"] as const) {
       corrections++;
       await publish(file, committed());
     };
-    assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/);
+    assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/);
     assert.equal(fixture.state.taskCount, 1);
     assert.equal(corrections, 1);
     assert.equal(fixture.state.probeCount, 1);

@@ -53,7 +53,7 @@ for (const agentStartDelay of [undefined, 0, 0.125]) {
         pr_body: "Business body. Closes #50",
       });
     };
-    assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/);
+    assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/);
     assert.deepEqual(order.slice(0, 4), [
       "command",
       `sleep:${(agentStartDelay ?? 10) * 1000}`,
@@ -80,7 +80,7 @@ await test("continuing after uncertain command delivery reuses the tab without l
     fixture.dependencies.pauses.push(message);
     return "";
   };
-  assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/);
+  assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/);
   assert.equal(launches, 1);
   assert.equal(fixture.state.tabOptions.length, 1);
   assert.equal(fixture.dependencies.pauses.length, 1);
@@ -105,7 +105,7 @@ await test("pending command input can exceed the operation bound without dispatc
   assert.deepEqual(fixture.state.sleeps, []);
   assert.deepEqual(fixture.dependencies.pauses, []);
   submitted.resolve();
-  assert.match((await running).summary.reasons.join(" "), /CI-ready/);
+  assert.match((await running).summary.tickets![0]!.detail, /CI-ready/);
 });
 
 for (const choice of ["s", "q", null]) {
@@ -210,7 +210,7 @@ await test("an interrupted execution resumes its exact opaque native ref before 
     ...fixture.dependencies,
     signal: new AbortController().signal,
   });
-  assert.match(result.summary.reasons.join(" "), /CI-ready/);
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/);
   assert.equal(resumes, 1);
   assert.equal(fixture.state.probeCount, 1);
   assert.equal(fixture.state.taskCount, 1);
@@ -248,7 +248,7 @@ await test("an identity checkpoint can resume before the first business assignme
     ...fixture.dependencies,
     signal: new AbortController().signal,
   });
-  assert.match(result.summary.reasons.join(" "), /CI-ready/);
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/);
   assert.equal((await fixture.snapshot()).execution_id, saved.execution_id);
   assert.equal(fixture.state.probeCount, 1);
 });
@@ -283,7 +283,7 @@ await test("documentation establishes Probe identity before publishing business 
 await test("base commands preserve independent implementation and Review roles through a Review fix", async (t) => {
   const fixture = await reviewRun(t, 1);
   fixture.reviewState.onReview = findings;
-  assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/);
+  assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/);
   const saved = await fixture.snapshot();
   assert.notEqual(
     saved.roles.implement?.sessionid,
@@ -315,7 +315,7 @@ await test("base repair identity persists independently of the implementation ro
     );
     await task(file, evidence);
   };
-  assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/);
+  assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/);
   assert.equal(fixture.state.probeCount, 1);
   assert.equal(fixture.repairs.probes.length, 1);
 });
@@ -396,7 +396,7 @@ await test("enhanced startup completes preflight and monitoring before command, 
     order.push("close");
   };
   const result = await executeCli(implementationCommand, dependencies);
-  assert.match(result.summary.reasons.join(" "), /CI-ready/);
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/);
   assert.deepEqual(order, [
     "preflight",
     "monitor",

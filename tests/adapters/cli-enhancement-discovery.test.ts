@@ -31,7 +31,7 @@ await test("CLI discovers a same-prefix enhancement for the shared workflow", as
   };
   delete dependencies.enhancements;
   const result = await executeCli(implementationCommand, dependencies);
-  assert.match(result.summary.reasons.join(" "), /CI-ready/);
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/);
   assert.equal(fixture.state.probeCount, 0);
   assert.equal(
     (await fixture.snapshot()).roles.implement?.sessionid,
@@ -79,9 +79,8 @@ for (const config of [
     };
     delete dependencies.enhancements;
     assert.match(
-      (
-        await executeCli(implementationCommand, dependencies)
-      ).summary.reasons.join(" "),
+      (await executeCli(implementationCommand, dependencies)).summary
+        .tickets![0]!.detail,
       /CI-ready/,
     );
     assert.deepEqual(observed, [[JSON.stringify(config ?? {})]]);
@@ -245,7 +244,7 @@ await test("moving the terminal installation preserves enhanced recovery identit
     commandVersion: "9.0.0",
     signal: new AbortController().signal,
   });
-  assert.match(result.summary.reasons.join(" "), /CI-ready/);
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/);
   const resumed = await fixture.snapshot();
   assert.equal(resumed.input_hash, saved.input_hash);
   assert.equal(resumed.execution_id, saved.execution_id);
@@ -270,7 +269,7 @@ for (const agent of ["constructor", "__proto__"]) {
     };
     delete dependencies.enhancements;
     const result = await executeCli(implementationCommand, dependencies);
-    assert.match(result.summary.reasons.join(" "), /CI-ready/);
+    assert.match(result.summary.tickets![0]!.detail, /CI-ready/);
     assert.equal(fixture.state.probeCount, 1);
   });
 }
@@ -301,9 +300,8 @@ await test("an installed enhancement named __proto__ receives the shared default
   };
   delete dependencies.enhancements;
   assert.match(
-    (
-      await executeCli(implementationCommand, dependencies)
-    ).summary.reasons.join(" "),
+    (await executeCli(implementationCommand, dependencies)).summary.tickets![0]!
+      .detail,
     /CI-ready/,
   );
   assert.equal(fixture.state.probeCount, 0);

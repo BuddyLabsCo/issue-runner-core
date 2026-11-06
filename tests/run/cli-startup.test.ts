@@ -101,11 +101,7 @@ await test("init creates a Project without credentials and refuses to overwrite 
     ["run", "--project", "demo", "--parent", "48"],
     { ...runDependencies, env: { GH_TOKEN: "test" } },
   );
-  assert.equal(
-    generated.summary.outcome,
-    "no_work",
-    generated.summary.reasons.join(" "),
-  );
+  assert.equal(generated.summary.outcome, "no_work", generated.summary.failure);
   for (const project of [
     ".",
     "..",

@@ -72,7 +72,7 @@ await test("no-auto-merge publishes fixed Probe metadata, waits for checks, and 
     body: "Implement the Issue.\n\nCloses #50",
   });
   assert.equal(result.summary.outcome, "incomplete");
-  assert.match(result.summary.reasons.join(" "), /CI-ready.*retained/u);
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready.*retained/u);
   assert.equal(fixture.state.ticket.state, "open");
   assert.ok(fixture.state.ticket.assignees!.length > 0);
   await access(saved.worktree);
@@ -98,7 +98,7 @@ for (const lost of ["push", "create"] as const) {
       };
     const result = await fixture.run();
     assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
-    assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+    assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
     assert.equal(state.pushes, 1);
     assert.equal(state.creations, 1);
     assert.equal(
@@ -197,7 +197,7 @@ await test("required checks wait 30 seconds for discovery, then poll pending che
     },
   ];
   const result = await fixture.run();
-  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
   assert.deepEqual(fixture.publicationState.discoveries, [40_000, 50_000]);
   assert.deepEqual(fixture.state.sleeps, [10_000, 30_000, 10_000]);
   assert.equal(
@@ -219,7 +219,7 @@ await test("required-check timeout uses configured minutes and operator retry wi
     fixture.publicationState.checks[0]!.bucket = "pass";
     return "";
   };
-  assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/u);
+  assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/u);
   assert.deepEqual(fixture.state.sleeps, [10_000, 30_000, 10_000, 5_000]);
   assert.equal(fixture.publicationState.creations, 1);
 });
@@ -239,7 +239,7 @@ for (const bucket of ["fail", "cancel"] as const) {
     };
     const result = await fixture.run();
     assert.equal(result.summary.outcome, "cancelled");
-    assert.doesNotMatch(result.summary.reasons.join(" "), /CI-ready/u);
+    assert.doesNotMatch(result.summary.tickets![0]!.detail, /CI-ready/u);
     const saved = await fixture.snapshot();
     assert.equal(saved.publication?.phase, "checks_failed");
     assert.equal(saved.publication.checks?.[0]?.bucket, bucket);
@@ -268,7 +268,7 @@ await test("lost Issue eligibility after push stops publication without a PR or 
   };
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
-  assert.match(result.summary.reasons.join(" "), /externally owned/u);
+  assert.match(result.summary.tickets![0]!.detail, /externally owned/u);
   assert.equal(fixture.publicationState.creations, 0);
   assert.equal(fixture.dependencies.pauses.length, 0);
 });
@@ -287,7 +287,7 @@ await test("an audit failure after PR creation retries only the log append", asy
     await rename(retained, logs);
     return "";
   };
-  assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/u);
+  assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/u);
   assert.equal(pauses, 1);
   assert.equal(fixture.publicationState.creations, 1);
 });

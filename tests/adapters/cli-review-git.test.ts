@@ -155,7 +155,7 @@ await test("real Git rejects reviewer edits and recovers a final-round fix with 
     ...dependencies,
     signal: new AbortController().signal,
   });
-  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
   assert.deepEqual(
     fixture.state.submissions.slice(before).map(({ text }) => text),
     ['any-cli --resume "native/$&/$`/$\'/session"', "continue"],

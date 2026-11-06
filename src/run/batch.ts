@@ -41,7 +41,6 @@ export async function runBatch(
     if (result.outcome === "succeeded") await selection.complete();
     return result;
   }
-  const reasons = [...selection.reasons];
   let needsDocumentation = false;
   const integrations = new Map<
     number,
@@ -73,8 +72,7 @@ export async function runBatch(
         },
       });
     } catch (error) {
-      if (error instanceof TicketSkipped)
-        return { ...summary, reasons: [error.message] };
+      if (error instanceof TicketSkipped) return summary;
       controller.abort(error);
       throw error;
     }
@@ -95,19 +93,12 @@ export async function runBatch(
     delivered = selection.batch.filter(
       (_number, index) => results[index]!.outcome === "succeeded",
     );
-    for (const [index, result] of results.entries())
-      reasons.push(
-        ...result.reasons.map(
-          (reason) => `Issue #${selection.batch[index]!}: ${reason}`,
-        ),
-      );
     if (resolved && needsDocumentation) {
       const maintenance = await document(
         await selection.scheduleDocumentation(),
         selection.runId,
       );
-      reasons.push(...maintenance.reasons);
-      if (maintenance.outcome !== "succeeded") return { ...summary, reasons };
+      if (maintenance.outcome !== "succeeded") return summary;
     }
     if (selection.batch.length > 0 && resolved) await selection.complete();
   } catch (error) {
@@ -133,11 +124,5 @@ export async function runBatch(
               ))
           ? "succeeded"
           : "incomplete",
-    reasons: [
-      ...(selection.batch.length
-        ? [`selected Delivery Tickets: ${selection.batch.join(", ")}`]
-        : []),
-      ...reasons,
-    ],
   };
 }

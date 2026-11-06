@@ -446,13 +446,8 @@ await test("an incomplete PR keeps its ownership diagnostic when a sibling later
   assert.equal(result.summary.outcome, "failed");
   assert.equal(result.summary.tickets?.[0]?.status, "incomplete");
   assert.equal(result.summary.tickets[0].detail, "Issue is externally owned");
-  assert.ok(
-    !result.summary.reasons.some((reason) =>
-      reason.includes("externally owned"),
-    ),
-  );
+
   const output = fixture.dependencies.messages.at(-1)!;
   assert.match(output, /^51\s+incomplete\s+.*feat: \[issue-51\] implement$/mu);
-  assert.match(output, /^- Issue #51: Issue is externally owned$/mu);
   assert.match(output, /Issue 52 check lookup failed/u);
 });

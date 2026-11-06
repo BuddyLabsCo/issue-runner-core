@@ -47,7 +47,14 @@ await test("cancellation retains original working changes, partial files and sup
     await readFile(path.join(saved.worktree, "unfinished.txt"), "utf8"),
     "original work\n",
   );
-  const report = result.summary.reasons.join("\n");
+  const report = result.summary
+    .retainedEvidence!.flatMap((entry) => [
+      ...entry.paths,
+      ...entry.worktrees,
+      ...entry.recordedBranches,
+      entry.executionId ?? "",
+    ])
+    .join("\n");
   for (const file of [
     saved.worktree,
     saved.probe!.path,
@@ -97,7 +104,7 @@ for (const changed of ["arguments", "configuration"] as const) {
       fixture.dependencies,
     );
     assert.equal(result.summary.outcome, "incomplete");
-    assert.match(result.summary.reasons.join(" "), /existing Reservation/u);
+    assert.match(result.summary.tickets![0]!.detail, /existing Reservation/u);
     assert.equal(fixture.state.taskCount, 1);
     assert.equal(await readFile(snapshot, "utf8"), bytes);
     await access(previous.worktree);
@@ -199,9 +206,16 @@ await test("a failed execution retains its resources in structured results witho
   };
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "failed");
-  assert.match(result.summary.reasons.join(" "), /terminal transport failed/u);
+  assert.match(result.summary.failure!, /terminal transport failed/u);
   const saved = await fixture.snapshot();
-  const report = result.summary.reasons.join("\n");
+  const report = result.summary
+    .retainedEvidence!.flatMap((entry) => [
+      ...entry.paths,
+      ...entry.worktrees,
+      ...entry.recordedBranches,
+      entry.executionId ?? "",
+    ])
+    .join("\n");
   for (const file of [
     saved.worktree,
     saved.probe!.path,
@@ -240,9 +254,19 @@ await test("no-auto-merge retains and reports failed and replacement repair exec
   assert.equal(fixture.publicationState.creations, 1);
   assert.equal(saved.publication!.title, saved.pr_title);
   assert.equal(saved.publication!.body, saved.pr_body);
-  const report = result.summary.reasons.join("\n");
-  assert.match(report, /auto-merge disabled/u);
-  assert.ok(report.includes(saved.publication!.pullRequest!.url));
+  const report = result.summary
+    .retainedEvidence!.flatMap((entry) => [
+      ...entry.paths,
+      ...entry.worktrees,
+      ...entry.recordedBranches,
+      entry.executionId ?? "",
+    ])
+    .join("\n");
+  assert.match(result.summary.tickets![0]!.detail, /auto-merge disabled/u);
+  assert.equal(
+    result.summary.tickets![0]!.pullRequestUrl,
+    saved.publication!.pullRequest!.url,
+  );
   for (const resource of [saved, ...attempts]) {
     assert.ok(report.includes(resource.branch));
     for (const file of [
@@ -271,7 +295,14 @@ await test("cancellation during a Review fix retains necessary findings and both
   assert.equal(result.summary.outcome, "cancelled");
   const saved = await fixture.snapshot();
   const round = saved.reviews![0]!;
-  const report = result.summary.reasons.join("\n");
+  const report = result.summary
+    .retainedEvidence!.flatMap((entry) => [
+      ...entry.paths,
+      ...entry.worktrees,
+      ...entry.recordedBranches,
+      entry.executionId ?? "",
+    ])
+    .join("\n");
   for (const file of [
     round.findings,
     round.probe!.path,
@@ -299,7 +330,14 @@ await test("cancelled documentation retains its Maintenance Ticket checkpoint an
   assert.equal(result.summary.outcome, "cancelled");
   assert.equal(fixture.maintenance.cleanup.length, 0);
   const saved = await fixture.snapshot();
-  const report = result.summary.reasons.join("\n");
+  const report = result.summary
+    .retainedEvidence!.flatMap((entry) => [
+      ...entry.paths,
+      ...entry.worktrees,
+      ...entry.recordedBranches,
+      entry.executionId ?? "",
+    ])
+    .join("\n");
   assert.match(report, /-document\.json/u);
   assert.match(report, /-document-50\.json/u);
   for (const file of [

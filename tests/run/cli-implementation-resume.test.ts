@@ -330,6 +330,6 @@ for (const mismatch of [false, true]) {
     assert.equal(commands, 1);
     assert.equal(assignments, mismatch ? 0 : 1);
     assert.equal((await fixture.snapshot()).roles.implement!.sessionid, native);
-    if (!mismatch) assert.match(result.summary.reasons.join(" "), /CI-ready/);
+    if (!mismatch) assert.match(result.summary.tickets![0]!.detail, /CI-ready/);
   });
 }

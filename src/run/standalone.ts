@@ -21,7 +21,7 @@ import {
 } from "./execution-recovery.ts";
 import { cleanupExecution, executionTerminal } from "./cleanup.ts";
 import type { RunContext, RunSummary } from "./run.ts";
-import { reportTicket } from "./report.ts";
+import { reportTicket, type TicketReport } from "./report.ts";
 import { hasOpenBlocker, readChildren } from "./discovery.ts";
 import type { ReadOperation } from "./discovery.ts";
 import {
@@ -48,11 +48,16 @@ export async function runStandalone(input: {
     complete: () => Promise<RunSummary>,
   ) => void;
 }): Promise<RunSummary> {
-  return reportTicket(input, (issue) => recoverIssue(issue, executeStandalone));
+  return reportTicket(input, (issue, report) =>
+    recoverIssue(issue, (attempt, restarting) =>
+      executeStandalone(attempt, report, restarting),
+    ),
+  );
 }
 
 async function executeStandalone(
   input: Parameters<typeof runStandalone>[0],
+  report: TicketReport,
   restarting = false,
 ): Promise<RunSummary> {
   const { number, loaded, tracker, summary } = input;
@@ -240,8 +245,10 @@ async function executeStandalone(
       publicationReason !== undefined &&
       progress.publication?.phase !== "merged" &&
       (!input.autoMerge || progress.publication?.phase === "checks_failed")
-    )
-      return { ...summary, reasons: [publicationReason] };
+    ) {
+      report.detail = publicationReason;
+      return summary;
+    }
     const complete = async (): Promise<RunSummary> => {
       try {
         const delivery = await integrateImplementation({
@@ -265,23 +272,19 @@ async function executeStandalone(
             });
           input.onDelivery?.(progress.publication!.deliveryLabels!);
         }
-        return {
-          ...summary,
-          outcome: delivery.outcome,
-          reasons: [delivery.reason],
-        };
+        report.detail = delivery.reason;
+        return { ...summary, outcome: delivery.outcome };
       } catch (error) {
         if (!(error instanceof OperationStopped)) throw error;
-        return { ...summary, reasons: [selected.reason ?? error.message] };
+        report.detail = selected.reason ?? error.message;
+        return summary;
       }
     };
     if (input.deferIntegration) {
       const pullRequest = progress.publication!.pullRequest!;
       input.deferIntegration(pullRequest.number, complete);
-      return {
-        ...summary,
-        reasons: [`CI-ready PR ${pullRequest.url} awaits Batch integration`],
-      };
+      report.detail = `CI-ready PR ${pullRequest.url} awaits Batch integration`;
+      return summary;
     }
     return complete();
   };
@@ -304,12 +307,13 @@ async function executeStandalone(
       restored?.noChangeClosure !== undefined &&
       selected.ticket.stateReason === "completed"
     )
-  )
+  ) {
+    report.detail = selected.reason;
     return {
       ...summary,
       outcome: selected.ticket.state === "closed" ? "no_work" : "incomplete",
-      reasons: [selected.reason],
     };
+  }
   async function run(progress: ImplementationProgress): Promise<RunSummary> {
     if (progress.result) {
       if (
@@ -354,7 +358,8 @@ async function executeStandalone(
         return integrate(progress, await publish(progress));
       } catch (error) {
         if (!(error instanceof OperationStopped)) throw error;
-        return { ...summary, reasons: [selected.reason ?? error.message] };
+        report.detail = selected.reason ?? error.message;
+        return summary;
       }
     }
     if (input.documentation && progress.result?.outcome === "no_change") {
@@ -368,35 +373,25 @@ async function executeStandalone(
         },
       });
       await tabs?.closeResidual();
-      return {
-        ...summary,
-        outcome: "succeeded",
-        reasons: [`Completed Maintenance Ticket ${number} with no changes`],
-      };
+      report.detail = `Completed Maintenance Ticket ${number} with no changes`;
+      return { ...summary, outcome: "succeeded" };
     }
-    return {
-      ...summary,
-      reasons: [
-        selected.reason ??
-          (progress.result?.outcome === "no_change"
-            ? "Implementation completed with no_change; no Issue delivery"
-            : "Implementation stage completed; Issue delivery remains incomplete"),
-      ],
-    };
+    report.detail =
+      selected.reason ??
+      (progress.result?.outcome === "no_change"
+        ? "Implementation completed with no_change; no Issue delivery"
+        : "Implementation stage completed; Issue delivery remains incomplete");
+    return summary;
   }
-  if (!input.documentation && restored && !completed && !reserved)
-    return {
-      ...summary,
-      reasons: ["Recorded Reservation changed before continuation"],
-    };
+  if (!input.documentation && restored && !completed && !reserved) {
+    report.detail = "Recorded Reservation changed before continuation";
+    return summary;
+  }
   if (restored && restored.phase !== "reserved") return run(restored);
-  if (!input.documentation && !ownsReservation && (hasRunner || hasLabel))
-    return {
-      ...summary,
-      reasons: [
-        `existing Reservation${hasRunner !== hasLabel ? " (partial)" : ""}; no recorded ownership for this Run`,
-      ],
-    };
+  if (!input.documentation && !ownsReservation && (hasRunner || hasLabel)) {
+    report.detail = `existing Reservation${hasRunner !== hasLabel ? " (partial)" : ""}; no recorded ownership for this Run`;
+    return summary;
+  }
   if (!input.documentation && !ownsReservation) {
     // Confirm each write from current tracker state before retrying it.
     await read(
@@ -421,7 +416,10 @@ async function executeStandalone(
         },
       },
     );
-    if (selected.reason) return { ...summary, reasons: [selected.reason] };
+    if (selected.reason) {
+      report.detail = selected.reason;
+      return summary;
+    }
     await read(
       "add_runner_assignee",
       `ticket:${number}`,
@@ -444,13 +442,15 @@ async function executeStandalone(
         },
       },
     );
-    if (selected.reason) return { ...summary, reasons: [selected.reason] };
+    if (selected.reason) {
+      report.detail = selected.reason;
+      return summary;
+    }
   }
-  if (!(await beforeDispatch()))
-    return {
-      ...summary,
-      reasons: [selected.reason ?? "Reservation changed before dispatch"],
-    };
+  if (!(await beforeDispatch())) {
+    report.detail = selected.reason ?? "Reservation changed before dispatch";
+    return summary;
+  }
   const executionId = randomUUID();
   const progress: ImplementationProgress = (execution = restored ?? {
     ...(input.documentation ? { purpose: "documentation" } : {}),

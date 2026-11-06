@@ -216,7 +216,7 @@ for (const kind of ["ci", "conflict"] as const) {
         { ...fixture.dependencies, gitWorkspace: workspace },
       );
       assert.match(
-        result.summary.reasons.join(" "),
+        result.summary.tickets![0]!.detail,
         kind === "ci" ? /CI-ready/u : /delivered/u,
         JSON.stringify(result),
       );

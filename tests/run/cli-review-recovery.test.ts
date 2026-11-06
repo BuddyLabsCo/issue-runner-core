@@ -86,7 +86,7 @@ for (const stage of ["review", "fix"] as const) {
       ...fixture.dependencies,
       signal: new AbortController().signal,
     });
-    assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+    assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
     const resumed = await fixture.snapshot();
     assert.equal(resumed.execution_id, saved.execution_id);
     assert.equal(resumed.worktree, saved.worktree);
@@ -206,7 +206,7 @@ for (const stage of ["review", "fix"] as const) {
       ...fixture.dependencies,
       signal: new AbortController().signal,
     });
-    assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+    assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
     assert.equal(fixture.reviewState.reviews.length, 1);
     assert.equal(fixture.reviewState.fixes.length, 1);
     const submissions = fixture.state.submissions.slice(before);

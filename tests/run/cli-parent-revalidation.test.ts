@@ -110,7 +110,7 @@ for (const change of [
     assert.deepEqual(fixture.dispatched, []);
     assert.deepEqual(fixture.writes, ["label:51", "assignee:51"]);
     assert.match(
-      result.summary.reasons.join("; "),
+      result.summary.tickets![0]!.detail,
       /cancelled|scope|owned|blocked|ready-for-agent|Reservation|terminal/u,
     );
   });

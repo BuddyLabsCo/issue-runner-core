@@ -7,20 +7,18 @@ import test from "node:test";
 import { validConfig } from "../support/cli-project.ts";
 import { child, parentDeliveryRun, parentRun } from "../support/parent-run.ts";
 
-for (const [selector, missing, numbers] of [
-  ["parent", false, [51, 52]],
-  ["parent", true, [51, 52]],
-  ["parent", false, [51]],
-  ["parent", true, [51]],
-  ["issue", false, [51, 52]],
+for (const [selector, numbers] of [
+  ["parent", [51, 52]],
+  ["parent", [51]],
+  ["issue", [51, 52]],
 ] as const) {
-  await test(`${selector} saved Batch recovery with ${numbers.length} discovered ${numbers.length === 1 ? "Issue" : "Issues"} ${missing ? "preserves genuine missing-Issue warnings" : "does not report delivered Issues as missing"}`, async (t) => {
+  await test(`${selector} saved Batch recovery with ${numbers.length} discovered ${numbers.length === 1 ? "Issue" : "Issues"} completes delivery`, async (t) => {
     const fixture = await parentDeliveryRun(
       t,
       numbers.map((number) => child(number)),
       {
         ...validConfig,
-        issueList: [...numbers, ...(missing ? [999] : [])],
+        issueList: [...numbers],
         maxBatchSize: 1,
       },
     );
@@ -43,16 +41,10 @@ for (const [selector, missing, numbers] of [
       ...numbers,
       ...(selector === "parent" ? [48] : []),
     ]);
-    assert.deepEqual(
-      result.summary.reasons.filter((reason) =>
-        reason.startsWith("configured Delivery Tickets not found:"),
-      ),
-      missing ? ["configured Delivery Tickets not found: 999"] : [],
-    );
   });
 }
 
-await test("an empty discovered parent scope still reports configured Issues as missing", async (t) => {
+await test("an empty discovered parent scope has no work", async (t) => {
   const fixture = await parentRun(t, [], {
     ...validConfig,
     issueList: [51],
@@ -61,9 +53,6 @@ await test("an empty discovered parent scope still reports configured Issues as 
   const result = await fixture.run();
 
   assert.equal(result.summary.outcome, "no_work");
-  assert.deepEqual(result.summary.reasons, [
-    "configured Delivery Tickets not found: 51",
-  ]);
 });
 
 await test("parent reads every child and blocker page before selecting across labels, ownership and Issue List filtering", async (t) => {
@@ -144,7 +133,7 @@ await test("parent reads every child and blocker page before selecting across la
     if (fixture.writes.length) return { blockers: [], nextPage: null };
     return discoveryBlockers(...args);
   };
-  const result = await fixture.run();
+  await fixture.run();
   assert.deepEqual(
     [...fixture.dispatched].sort((a, b) => a - b),
     [57, 60],
@@ -169,22 +158,6 @@ await test("parent reads every child and blocker page before selecting across la
     "60:1",
     "60:2",
   ]);
-  assert.match(
-    result.summary.reasons.join("; "),
-    /blocked Delivery Tickets: 51/u,
-  );
-  assert.match(
-    result.summary.reasons.join("; "),
-    /externally owned Delivery Tickets: 52/u,
-  );
-  assert.match(
-    result.summary.reasons.join("; "),
-    /existing Reservations: 53 \(partial\), 54 \(partial\), 55 \(complete\)/u,
-  );
-  assert.match(
-    result.summary.reasons.join("; "),
-    /configured Delivery Tickets not found: 999/u,
-  );
 });
 
 await test("parent cancellation after a partial Reservation prevents assignment and dispatch", async (t) => {
@@ -214,7 +187,7 @@ await test("a lost Reservation label prevents creating a partial assignee Reserv
   assert.equal(result.summary.outcome, "incomplete");
   assert.deepEqual(fixture.writes, ["label:51"]);
   assert.deepEqual(fixture.dispatched, []);
-  assert.match(result.summary.reasons.join("; "), /Reservation changed/u);
+  assert.match(result.summary.tickets![0]!.detail, /Reservation changed/u);
 });
 
 await test("matching parent progress continues only recorded Reservations among unrelated residual markers", async (t) => {
@@ -244,10 +217,7 @@ await test("matching parent progress continues only recorded Reservations among 
   );
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "incomplete");
-  assert.match(
-    result.summary.reasons.join("; "),
-    /selected Delivery Tickets: 55, 56/u,
-  );
+
   assert.deepEqual(
     [...fixture.dispatched].sort((a, b) => a - b),
     [55, 56],
@@ -282,10 +252,7 @@ await test("changed configuration never adopts parent Reservations from a differ
   );
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "incomplete");
-  assert.match(
-    result.summary.reasons.join("; "),
-    /existing Reservations: 51 \(complete\)/u,
-  );
+
   assert.deepEqual(fixture.dispatched, [51]);
   assert.deepEqual(fixture.writes, ["label:51", "assignee:51"]);
 });
@@ -309,8 +276,8 @@ await test("failed assignee writes retain a partial Reservation without automati
   const next = await fixture.run();
   assert.equal(next.summary.outcome, "incomplete");
   assert.match(
-    next.summary.reasons.join("; "),
-    /Issue #51: existing Reservation \(partial\); no recorded ownership for this Run/u,
+    next.summary.tickets![0]!.detail,
+    /existing Reservation \(partial\); no recorded ownership for this Run/u,
   );
   assert.deepEqual(fixture.writes, ["label:51"]);
   assert.deepEqual(fixture.dispatched, []);
@@ -385,7 +352,7 @@ for (const invalid of [
     assert.deepEqual(fixture.writes, []);
     assert.deepEqual(fixture.dispatched, []);
     assert.match(
-      result.summary.reasons.join("; "),
+      result.summary.failure!,
       /cross-repository|pagination|unsupported terminal state/u,
     );
   });

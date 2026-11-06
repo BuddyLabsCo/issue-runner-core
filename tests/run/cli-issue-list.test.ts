@@ -61,10 +61,6 @@ await test("an explicit Issue List dispatches only selected Issues in ascending 
   assert.equal(result.summary.outcome, "incomplete");
   assert.equal(result.exitCode, 1);
   assert.equal(result.summary.targetBranch, "default-branch");
-  assert.match(
-    result.summary.reasons.join("; "),
-    /selected Delivery Tickets: 51, 53/u,
-  );
 });
 
 await test("list discovery filters blocked, externally owned, unready and reserved work before filling the Batch", async (t) => {
@@ -113,7 +109,7 @@ await test("list discovery filters blocked, externally owned, unready and reserv
     };
   };
 
-  const result = await fixture.run();
+  await fixture.run();
 
   assert.deepEqual(
     [...fixture.dispatched].sort((a, b) => a - b),
@@ -134,18 +130,6 @@ await test("list discovery filters blocked, externally owned, unready and reserv
       "60:1",
       "60:2",
     ],
-  );
-  assert.match(
-    result.summary.reasons.join("; "),
-    /blocked Delivery Tickets: 51/u,
-  );
-  assert.match(
-    result.summary.reasons.join("; "),
-    /externally owned Delivery Tickets: 52/u,
-  );
-  assert.match(
-    result.summary.reasons.join("; "),
-    /existing Reservations: 53 \(partial\), 54 \(partial\), 55 \(complete\)/u,
   );
 });
 
@@ -254,7 +238,7 @@ await test("empty and invalid lists fail at startup before external reads or del
     );
     assert.equal(result.summary.outcome, "failed");
     assert.equal(result.logPath, null);
-    assert.match(result.summary.reasons.join("; "), /issueList/u);
+    assert.match(result.summary.failure!, /issueList/u);
     assert.deepEqual(deps.terminal.calls, []);
     assert.deepEqual(deps.reads, []);
     assert.deepEqual(deps.effects, []);
@@ -356,10 +340,7 @@ await test("list recovery preserves recorded ownership and verified completion w
   );
   const changed = await fixture.run();
   assert.equal(changed.summary.outcome, "incomplete");
-  assert.match(
-    changed.summary.reasons.join("; "),
-    /existing Reservations: 51 \(complete\), 55 \(complete\), 56 \(complete\)/u,
-  );
+
   assert.deepEqual(
     [...fixture.dispatched].sort((a, b) => a - b),
     [55, 56],

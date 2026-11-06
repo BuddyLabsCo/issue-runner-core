@@ -252,8 +252,11 @@ await test(
     );
     assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
     assert.equal(pauses, 1);
-    assert.match(result.summary.reasons.join(" "), /skipped Issue #51/u);
-    assert.match(result.summary.reasons.join(" "), /Issue #52: CI-ready/u);
+    assert.match(result.summary.tickets![0]!.detail, /skipped Issue #51/u);
+    assert.match(
+      result.summary.tickets!.find((ticket) => ticket.ticket === 52)!.detail,
+      /CI-ready/u,
+    );
     assert.deepEqual(fixture.dispatched.sort(), [51, 52]);
     const saved = await implementationProgress(fixture.directory, 51);
     assert.equal(saved.publication!.ciRepair!.consumed, 2);
@@ -288,7 +291,7 @@ await test("blocked repair output is corrected in the same native stage rather t
       });
     else await repair(file, evidence);
   };
-  assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/u);
+  assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/u);
   const budget = (await fixture.snapshot()).publication!.ciRepair!;
   assert.equal(budget.consumed, 1);
   assert.equal(budget.attempts.length, 1);
@@ -312,7 +315,7 @@ await test("repair Worktree creation interrupted after its side effect reconcile
     .attempts[0]!;
   assert.equal(pending.worktreeCreated, undefined);
   fixture.dependencies.signal = new AbortController().signal;
-  assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/u);
+  assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/u);
   assert.equal(repairCreates, 1);
   assert.equal(
     (await fixture.snapshot()).publication!.ciRepair!.attempts[0]!.attempt_id,
@@ -381,7 +384,7 @@ await test("repair pushes retain the discovery deadline across cancellation and 
   fixture.state.onSleep = async () => {
     /* Cancellation is disabled for recovery. */
   };
-  assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/u);
+  assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/u);
   assert.equal(fixture.publicationState.pushes, 2);
   assert.equal(
     (await fixture.snapshot()).publication!.discoveryNotBefore,

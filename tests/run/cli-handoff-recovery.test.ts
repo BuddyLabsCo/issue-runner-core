@@ -73,7 +73,7 @@ await test("restart reprocesses a verified handoff when completion persistence f
       },
     }),
   });
-  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
   assert.equal(validations, 2);
   const recovered = await fixture.snapshot();
   assert.deepEqual(recovered.result, committed());
@@ -109,7 +109,7 @@ await test("restart after durable completion skips the old stage and starts the 
     ...fixture.dependencies,
     signal: new AbortController().signal,
   });
-  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
   const resumed = fixture.state.submissions.slice(before);
   assert.equal(resumed.length, 3);
   assert.equal(resumed[0]!.text, "review-cli start");
@@ -156,7 +156,7 @@ await test("restart ignores a superseded final and an active temporary file unti
     ...fixture.dependencies,
     signal: new AbortController().signal,
   });
-  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
   assert.deepEqual(
     fixture.state.submissions.slice(before).map(({ text }) => text),
     ['any-cli --resume "native/$&/$`/$\'/session"', "continue"],
@@ -224,9 +224,8 @@ await test("enhancement recovery uses Core wording and correction Assignments ex
     },
   };
   assert.match(
-    (
-      await executeCli(implementationCommand, dependencies)
-    ).summary.reasons.join(" "),
+    (await executeCli(implementationCommand, dependencies)).summary.tickets![0]!
+      .detail,
     /CI-ready/,
   );
   await recovery;

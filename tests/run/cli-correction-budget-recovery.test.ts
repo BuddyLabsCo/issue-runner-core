@@ -73,7 +73,7 @@ for (const purpose of ["implementation", "Review"] as const) {
         ...fixture.dependencies,
         signal: new AbortController().signal,
       });
-      assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+      assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
       const resumed = fixture.state.submissions.slice(before);
       assert.equal(resumed.length, 2);
       assert.match(resumed[0]!.text, /resume/u);
@@ -148,7 +148,7 @@ await test("a valid active result wins over a legacy pending correction before n
       },
     }),
   });
-  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
   assert.equal(fixture.state.submissions.length, before);
   assert.deepEqual((await fixture.snapshot()).invocation, saved.invocation);
   assert.deepEqual((await fixture.snapshot()).result, committed());
@@ -208,7 +208,7 @@ await test("operation retries keep their remaining delay and exhausted pause acr
   assert.equal(fixture.state.submissions.length, before);
   unavailable = false;
   fixture.dependencies.operator.pause = async () => "";
-  assert.match((await resume()).summary.reasons.join(" "), /CI-ready/u);
+  assert.match((await resume()).summary.tickets![0]!.detail, /CI-ready/u);
   const recovered = await fixture.snapshot();
   assert.deepEqual(recovered.invocation, saved.invocation);
   assert.equal(fixture.state.submissions.length, before);
@@ -251,7 +251,7 @@ for (const category of ["operation"] as const) {
       ...fixture.dependencies,
       signal: new AbortController().signal,
     });
-    assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+    assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
     assert.ok(fractionalWait);
     const recovered = await fixture.snapshot();
     assert.deepEqual(recovered.invocation, saved.invocation);

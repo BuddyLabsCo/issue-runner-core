@@ -312,10 +312,7 @@ await test("a fatal sibling error interrupts unresolved Operator input and retai
       }),
     ]);
     assert.equal(result.summary.outcome, "failed");
-    assert.match(
-      result.summary.reasons.join("; "),
-      /sibling transport failed/u,
-    );
+    assert.match(result.summary.failure!, /sibling transport failed/u);
     assert.equal(pauseSignal?.aborted, true);
     assert.equal(
       (await implementationProgress(fixture.directory, 51)).phase,
@@ -380,7 +377,7 @@ await test(
         };
         const result = await fixture.run();
         assert.equal(result.summary.outcome, "failed");
-        assert.match(result.summary.reasons.join("; "), /sibling transport failed/);
+        assert.match(result.summary.failure, /sibling transport failed/);
         assert.equal(fixture.controller.signal.aborted, false);
         console.log("COMPLETED_WITH_OPEN_STDIN");
       });

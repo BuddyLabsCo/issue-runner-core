@@ -98,7 +98,7 @@ await test("failed required checks receive a verified fresh repair on the same P
     },
   });
   const result = await fixture.run();
-  assert.match(result.summary.reasons.join(" "), /CI-ready/u);
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
   assert.equal(fixture.publicationState.creations, 1);
   assert.equal(fixture.publicationState.pushes, 2);
   assert.equal(fixture.repairs.tasks.length, 1);
@@ -158,7 +158,7 @@ await test("a second CI repair starts fresh from the first repaired remote head"
       findings_file: null,
     });
   };
-  assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/u);
+  assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/u);
   const budget = (await fixture.snapshot()).publication!.ciRepair!;
   assert.equal(budget.consumed, 2);
   assert.equal(budget.generation, 0);
@@ -168,7 +168,7 @@ await test("a second CI repair starts fresh from the first repaired remote head"
     fixture.publicationState.discoveries,
     [40_000, 80_000, 120_000],
   );
-  assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/u);
+  assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/u);
   assert.equal(fixture.publicationState.pushes, 3);
 });
 
@@ -199,9 +199,9 @@ await test("CI repair never enters ordinary Review, including after matching-inp
       );
     }
   };
-  assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/u);
+  assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/u);
   assert.equal(reviews, 1);
-  assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/u);
+  assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/u);
   assert.equal(reviews, 1);
   assert.equal(fixture.repairs.tasks.length, 1);
   assert.equal(fixture.publicationState.creations, 1);
@@ -225,7 +225,10 @@ for (const present of [false, true]) {
     const opens = fixture.state.events.filter(
       (event) => event === "open",
     ).length;
-    assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/u);
+    assert.match(
+      (await fixture.run()).summary.tickets![0]!.detail,
+      /CI-ready/u,
+    );
     const after = (await fixture.snapshot()).publication!.ciRepair!;
     assert.equal(after.attempts[0]!.attempt_id, attempt.attempt_id);
     assert.equal(after.consumed, 1);
@@ -266,7 +269,7 @@ await test("cancellation after accepting a repair retains its consumed count and
   fixture.state.onClose = async () => {
     /* Cancellation is disabled for recovery. */
   };
-  assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/u);
+  assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/u);
   assert.equal(fixture.repairs.tasks.length, 1);
   assert.equal(fixture.publicationState.pushes, 2);
 });
@@ -289,7 +292,7 @@ await test("operator retry rechecks CI before authorizing a fresh two-attempt ge
     pauses++;
     return "";
   };
-  assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/u);
+  assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/u);
   const budget = (await fixture.snapshot()).publication!.ciRepair!;
   assert.equal(pauses, 1);
   assert.equal(budget.consumed, 1);
@@ -307,7 +310,7 @@ await test("a repair push with a lost response reconciles its pending evidence w
     await push(branch, head);
     if (head === repairCommit.sha) throw new Error("repair push response lost");
   };
-  assert.match((await fixture.run()).summary.reasons.join(" "), /CI-ready/u);
+  assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/u);
   assert.equal(fixture.publicationState.pushes, 2);
   assert.equal(fixture.dependencies.pauses.length, 0);
   assert.equal((await fixture.snapshot()).publication!.ciRepair!.consumed, 1);

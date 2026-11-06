@@ -133,7 +133,7 @@ for (const change of [
     const before = fixture.state.submissions.length;
     const reserved = await executeCli(command, fixture.dependencies);
     assert.equal(reserved.summary.outcome, "incomplete");
-    assert.match(reserved.summary.reasons.join("; "), /existing Reservation/u);
+    assert.match(reserved.summary.tickets![0]!.detail, /existing Reservation/u);
     assert.equal(fixture.state.submissions.length, before);
     assert.deepEqual(fixture.dependencies.pauses, []);
 
