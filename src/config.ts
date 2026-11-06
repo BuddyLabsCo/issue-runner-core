@@ -50,8 +50,6 @@ export interface ProjectConfig {
     documentation?: AgentConfig;
   };
   timeouts: {
-    agentMinutes: number;
-    agentIdleMinutes: number;
     requiredChecksMinutes: number;
     mergeQueueMinutes: number;
   };
@@ -242,12 +240,7 @@ function parseConfig(
   const timeouts = record(input.timeouts, "timeouts");
   knownFields(
     timeouts,
-    [
-      "agentMinutes",
-      "agentIdleMinutes",
-      "requiredChecksMinutes",
-      "mergeQueueMinutes",
-    ],
+    ["requiredChecksMinutes", "mergeQueueMinutes"],
     "timeouts",
   );
   const retryPolicy: RetryPolicy = {
@@ -348,13 +341,6 @@ function parseConfig(
       ...(documentation === undefined ? {} : { documentation }),
     },
     timeouts: {
-      agentMinutes: positive(timeouts.agentMinutes, "timeouts.agentMinutes"),
-      agentIdleMinutes: positive(
-        timeouts.agentIdleMinutes === undefined
-          ? 10
-          : timeouts.agentIdleMinutes,
-        "timeouts.agentIdleMinutes",
-      ),
       requiredChecksMinutes: positive(
         timeouts.requiredChecksMinutes,
         "timeouts.requiredChecksMinutes",

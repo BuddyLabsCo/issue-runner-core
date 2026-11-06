@@ -31,7 +31,6 @@ export const validConfig = {
     conflictRepair: agent,
   },
   timeouts: {
-    agentMinutes: 120,
     requiredChecksMinutes: 60,
     mergeQueueMinutes: 60,
   },
