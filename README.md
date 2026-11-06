@@ -124,6 +124,8 @@ issue-runner-herdr init --project my-project # Creates config and three prompts 
 
 Edit `my-project/config.yaml` using its comments, replace its placeholders, and adapt the Agent commands to your shell. The [shipped configuration template](templates/config.yaml) contains all field guidance. Edit the three Project prompts under `my-project/prompts/` for implementation, Review, and documentation instructions. Run from the same Launch Directory; Runner looks only in its selected Project child directory.
 
+Make sure your AI agent cli can start from the configured checkout folder without interactive popup e.g. Trust folder, Trust hooks. 
+
 ```sh
 issue-runner-herdr run --project my-project --parent 42 # Deliver eligible children
 issue-runner-herdr run --project my-project --issue 43  # Deliver one Issue
@@ -139,20 +141,15 @@ Auto-merge defaults on. `--no-auto-merge` applies to numbered Issues and standal
 
 ### CodeBuddy requires `--port 0`
 
-Add `--port 0` to every CodeBuddy `start` and `resume` command. CodeBuddy 2.181.0 can select the same cached HTTP port in concurrently starting processes. One process then fails with `EADDRINUSE` before its interactive interface is ready, leaving the Session Probe echoed in the terminal. Increasing `agentStartDelay` does not resolve the port conflict.
+CodeBuddy can select the same cached HTTP port in concurrently starting processes. One process then fails with `EADDRINUSE` before its interactive interface is ready, leaving the Session Probe echoed in the terminal.  
 
-`--port 0` lets the operating system allocate an available port when the server binds. The Web UI address can change between launches, so external clients must not assume a fixed port. The [configuration template](templates/config.yaml) includes this flag for all CodeBuddy roles.
+`--port 0` lets the operating system allocate an available port when the server binds. The Web UI address can change between launches, so external clients must not assume a fixed port.
 
 ### Codex enhancement requires `--remote unix://`
 
-When using [issue-runner-agent-codex](https://github.com/BuddyLabsCo/issue-runner-agent-codex), add `--remote unix://` to both Codex `start` and `resume` commands. The enhancement needs access to the same shared Codex app-server as the interactive session for readiness checks and automatic recovery.
+Codex use `-c model_reasoning_effort="high"` to start codex session with specified model. But when `-c` passed in, codex by default will use embedded app-server, causing [issue-runner-agent-codex](https://github.com/BuddyLabsCo/issue-runner-agent-codex) unable to monitor.
 
-Keep your other flags when adding the required connection option:
-
-```sh
-codex --remote unix://
-codex resume "{sessionref}" --remote unix://
-```
+When using [issue-runner-agent-codex](https://github.com/BuddyLabsCo/issue-runner-agent-codex), add `--remote unix://` to Codex `start` commands. The enhancement needs access to the same shared Codex app-server as the interactive session for readiness checks.
 
 ## Troubleshooting
 ### Operator Pause
