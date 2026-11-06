@@ -10,10 +10,15 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { testTerminalCommand } from "./package/terminal-plugin.mjs";
+import { inspectPackageArtifact } from "../scripts/release/package-artifact.ts";
+import {
+  lockfileVersions,
+  readJsonText,
+} from "../scripts/release/release-lib.ts";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 
@@ -33,15 +38,36 @@ await test("built artifacts work in isolated consumer and npm global installatio
   /** @param {string[]} args @param {string} cwd */
   const npm = (args, cwd) => runNode([npmCli, ...args], cwd);
 
-  const artifactsDir = join(consumer, "artifacts");
-  mkdirSync(artifactsDir);
-  npm(["pack", "--pack-destination", artifactsDir], root);
-  const tarballs = readdirSync(artifactsDir).filter((file) =>
-    file.endsWith(".tgz"),
+  let artifact;
+  if (process.env.RELEASE_TARBALL) {
+    artifact = resolve(process.env.RELEASE_TARBALL);
+  } else {
+    const artifactsDir = join(consumer, "artifacts");
+    mkdirSync(artifactsDir);
+    npm(["pack", "--pack-destination", artifactsDir], root);
+    const tarballs = readdirSync(artifactsDir).filter((file) =>
+      file.endsWith(".tgz"),
+    );
+    assert.equal(tarballs.length, 1);
+    assert.ok(tarballs[0]);
+    artifact = join(artifactsDir, tarballs[0]);
+  }
+  const candidate = inspectPackageArtifact(artifact);
+  assert.equal(
+    candidate.manifestText,
+    readFileSync(join(root, "package.json"), "utf8"),
+    "candidate manifest must match this checkout",
   );
-  assert.equal(tarballs.length, 1);
-  assert.ok(tarballs[0]);
-  const artifact = join(artifactsDir, tarballs[0]);
+  assert.equal(candidate.manifest.name, "issue-runner-core");
+  const lock = lockfileVersions(
+    readJsonText(
+      readFileSync(join(root, "package-lock.json"), "utf8"),
+      "lockfile",
+    ),
+    "candidate checkout",
+  );
+  assert.equal(candidate.manifest.version, lock.top);
+  assert.equal(candidate.manifest.version, lock.root);
 
   writeFileSync(
     join(consumer, "package.json"),
@@ -107,6 +133,10 @@ await test("built artifacts work in isolated consumer and npm global installatio
   assert.deepEqual(Object.keys(manifest.exports), ["./terminal", "./cli"]);
   assert.ok(!("bin" in manifest));
   assert.ok("engines" in manifest);
+  assert.equal(
+    "version" in manifest && manifest.version,
+    candidate.manifest.version,
+  );
   assert.deepEqual(manifest.engines, {
     node: ">=22.18.0",
     npm: ">=11",
@@ -142,4 +172,9 @@ await test("built artifacts work in isolated consumer and npm global installatio
     npm,
     runNode,
   });
+  assert.equal(
+    inspectPackageArtifact(artifact).integrity,
+    candidate.integrity,
+    "acceptance must preserve candidate bytes",
+  );
 });
