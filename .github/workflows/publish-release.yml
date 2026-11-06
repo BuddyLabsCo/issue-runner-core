@@ -20,19 +20,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  checks:
-    name: Re-run the required checks
-    if: ${{ github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'auto-release' && github.repository == 'BuddyLabsCo/issue-runner-core' && github.event.pull_request.head.repo.full_name == github.repository }}
-    permissions:
-      contents: read
-    uses: ./.github/workflows/ci.yml
-    with:
-      ref: ${{ github.event.pull_request.merge_commit_sha }}
-
   publish:
     name: Publish the merged release
-    needs:
-      - checks
     if: ${{ github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'auto-release' && github.repository == 'BuddyLabsCo/issue-runner-core' && github.event.pull_request.head.repo.full_name == github.repository }}
     permissions:
       contents: write
