@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.4
+## 1.0.0
 
 - - fix: [issue-328] remove reasons output and aggregation (#329)
 - - docs: [issue-330] add demo GIF to README (#331)
