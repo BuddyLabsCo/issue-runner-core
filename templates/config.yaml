@@ -70,9 +70,7 @@ agents:
     resume: 'claude --resume "{sessionref}" --dangerously-skip-permissions'
     submitKey: Enter
 
-# Positive minutes; Agent thresholds are retained settings, not enforced limits.
+# Timeouts in positive minutes.
 timeouts:
-  agentMinutes: 120 # Required; does not stop long-running Agents.
-  agentIdleMinutes: 10 # Optional, default 10; does not stop idle Agents.
   requiredChecksMinutes: 60 # Required; pause after waiting this long for required checks.
   mergeQueueMinutes: 60 # Required; pause after waiting this long for merge confirmation.

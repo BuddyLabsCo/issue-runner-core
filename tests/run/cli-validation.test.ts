@@ -214,14 +214,6 @@ await test("invalid configuration fails before any external reads or delivery re
       /adminMerge/,
     ],
     [
-      { timeouts: { ...validConfig.timeouts, agentMinutes: 0 } },
-      /agentMinutes/,
-    ],
-    [
-      { timeouts: { ...validConfig.timeouts, agentIdleMinutes: -1 } },
-      /agentIdleMinutes/,
-    ],
-    [
       { timeouts: { ...validConfig.timeouts, requiredChecksMinutes: 0 } },
       /requiredChecksMinutes/,
     ],
