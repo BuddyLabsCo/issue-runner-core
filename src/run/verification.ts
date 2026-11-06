@@ -3,7 +3,12 @@ import type { ExecutionResult } from "../recovery.ts";
 import type { WorkspaceEvidence } from "./contracts.ts";
 
 export function verifyWorkspace(
-  expected: { worktree: string; branch: string; base: string },
+  expected: {
+    worktree: string;
+    branch: string;
+    base: string;
+    targetBase?: string;
+  },
   actual: WorkspaceEvidence,
   result: ExecutionResult,
 ): void {
@@ -32,6 +37,11 @@ export function verifyWorkspace(
     )
   )
     throw new Error("Claimed commits do not match actual Git commits");
-  if (result.outcome === "committed" && !actual.changed)
+  // Conflict merges can preserve the tree; repair callers verify target ancestry.
+  if (
+    result.outcome === "committed" &&
+    !actual.changed &&
+    expected.targetBase === undefined
+  )
     throw new Error("Committed implementation has no actual changes");
 }
