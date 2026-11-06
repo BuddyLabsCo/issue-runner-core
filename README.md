@@ -135,6 +135,25 @@ issue-runner-herdr run --project my-project --document --no-auto-merge # Retain 
 
 Auto-merge defaults on. `--no-auto-merge` applies to numbered Issues and standalone documentation; retained, unmerged work reports `incomplete`. Runner owns push, PR, integration, and tracker operations. Agents report local work through handoffs; a handoff alone does not establish delivery.
 
+## Known issues
+
+### CodeBuddy requires `--port 0`
+
+Add `--port 0` to every CodeBuddy `start` and `resume` command. CodeBuddy 2.181.0 can select the same cached HTTP port in concurrently starting processes. One process then fails with `EADDRINUSE` before its interactive interface is ready, leaving the Session Probe echoed in the terminal. Increasing `agentStartDelay` does not resolve the port conflict.
+
+`--port 0` lets the operating system allocate an available port when the server binds. The Web UI address can change between launches, so external clients must not assume a fixed port. The [configuration template](templates/config.yaml) includes this flag for all CodeBuddy roles.
+
+### Codex enhancement requires `--remote unix://`
+
+When using [issue-runner-agent-codex](https://github.com/BuddyLabsCo/issue-runner-agent-codex), add `--remote unix://` to both Codex `start` and `resume` commands. The enhancement needs access to the same shared Codex app-server as the interactive session for readiness checks and automatic recovery.
+
+Keep your other flags when adding the required connection option:
+
+```sh
+codex --remote unix://
+codex resume "{sessionref}" --remote unix://
+```
+
 ## Troubleshooting
 ### Operator Pause
 
