@@ -66,9 +66,7 @@ Prepare these on the machine and in the shell that runs the terminal command:
 - GitHub CLI (`gh`) on `PATH`, with credentials that can read/write Issues, pull requests, and repository contents and observe required checks
 - An absolute-path repository checkout with working Git/GitHub credentials
 - An installed, authenticated Agent CLI for every configured role, with its own skills, native permissions, and required tools
-- A supported terminal environment; follow the [native Herdr installation instructions](https://herdr.dev/tui/docs/install/) for the example command (the adapter targets Herdr 0.9.5)
-
-Launch the example command inside a live Herdr pane, preserving that pane's inherited environment.
+- A supported terminal multiplexer plugin, e.g. [issue-runner-herdr](https://github.com/BuddyLabsCo/issue-runner-herdr) which use herdr as issue-runner-core environment
 
 ### macOS and Linux
 
@@ -79,9 +77,8 @@ node --version          # At least 22.18.0
 npm --version           # At least 11
 git --version
 gh --version
-herdr --version
-codex --version         # Repeat for each Agent CLI you configure
-export GH_TOKEN='your_github_token' # Use your local secret mechanism
+codex --version         # AI agent cli tool you will use
+export GH_TOKEN='your_github_token' # github token
 npm install --global issue-runner-herdr # Installs Core transitively
 ```
 
@@ -94,17 +91,15 @@ node --version          # At least 22.18.0
 npm --version           # At least 11
 git --version
 gh --version
-herdr --version
 codex --version         # Repeat for each Agent CLI you configure
-$env:GH_TOKEN = 'your_github_token' # Use your local secret mechanism
+$env:GH_TOKEN = 'your_github_token' # github token
 npm install --global issue-runner-herdr # Installs Core transitively
 ```
 
-Keep credentials out of Git. The repository's automated matrix covers Ubuntu and Windows; it does not establish native macOS acceptance.
-
 ### Install the handoff skill
 
-Install the bundled [issue-runner-handoff](skills/issue-runner-handoff/SKILL.md) skill.
+Install the bundled [issue-runner-handoff](skills/issue-runner-handoff/SKILL.md) skill.  
+
 Runner workflow context handover is based on this skill, make sure it's accessible in your ai agent.
 
 ### Optional Agent enhancements
