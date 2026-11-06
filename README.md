@@ -145,11 +145,15 @@ CodeBuddy can select the same cached HTTP port in concurrently starting processe
 
 `--port 0` lets the operating system allocate an available port when the server binds. The Web UI address can change between launches, so external clients must not assume a fixed port.
 
+### Disable Codex startup update checks
+
+Codex can show an interactive update prompt at startup, interrupting Runner's automated input. Add `-c check_for_update_on_startup=false` to both Codex `start` and `resume` commands to disable this check. The [configuration template](templates/config.yaml) includes this setting.
+
 ### Codex enhancement requires `--remote unix://`
 
-Codex use `-c model_reasoning_effort="high"` to start codex session with specified model. But when `-c` passed in, codex by default will use embedded app-server, causing [issue-runner-agent-codex](https://github.com/BuddyLabsCo/issue-runner-agent-codex) unable to monitor.
+In Codex 0.167.0, CLI overrides such as `-c model_reasoning_effort="high"` and `-c check_for_update_on_startup=false` select an embedded app-server unless a remote endpoint is explicitly selected. This prevents [issue-runner-agent-codex](https://github.com/BuddyLabsCo/issue-runner-agent-codex) from monitoring the interactive session through the shared app-server.
 
-When using [issue-runner-agent-codex](https://github.com/BuddyLabsCo/issue-runner-agent-codex), add `--remote unix://` to Codex `start` commands. The enhancement needs access to the same shared Codex app-server as the interactive session for readiness checks.
+When using this enhancement with these overrides, add `--remote unix://` to both Codex `start` and `resume` commands. The enhancement needs the same shared app-server as the interactive session for readiness checks and automatic recovery. The template includes both the remote endpoint and the update-check override in both commands.
 
 ## Troubleshooting
 ### Operator Pause

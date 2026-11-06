@@ -49,8 +49,8 @@ agents:
     # options: {} # Optional native config; does not become command flags.
   review: # Required when workflow.review is true.
     agent: codex
-    start: 'codex --remote unix:// --model gpt-6.1-sol -c model_reasoning_effort="high" --dangerously-bypass-approvals-and-sandbox'
-    resume: 'codex resume "{sessionref}" --dangerously-bypass-approvals-and-sandbox'
+    start: 'codex --remote unix:// --model gpt-6.1-sol -c model_reasoning_effort="high" -c check_for_update_on_startup=false --dangerously-bypass-approvals-and-sandbox'
+    resume: 'codex resume "{sessionref}" --remote unix:// -c check_for_update_on_startup=false --dangerously-bypass-approvals-and-sandbox'
     submitKey: Enter
   ciRepair: # Required CI repair role.
     agent: codebuddy
