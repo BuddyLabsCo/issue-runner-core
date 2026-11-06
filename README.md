@@ -124,6 +124,8 @@ issue-runner-herdr init --project my-project # Creates config and three prompts 
 
 Edit `my-project/config.yaml` using its comments, replace its placeholders, and adapt the Agent commands to your shell. The [shipped configuration template](templates/config.yaml) contains all field guidance. Edit the three Project prompts under `my-project/prompts/` for implementation, Review, and documentation instructions. Run from the same Launch Directory; Runner looks only in its selected Project child directory.
 
+Make sure your AI agent cli can start from the configured checkout folder without interactive popup e.g. Trust folder, Trust hooks. 
+
 ```sh
 issue-runner-herdr run --project my-project --parent 42 # Deliver eligible children
 issue-runner-herdr run --project my-project --issue 43  # Deliver one Issue
@@ -134,6 +136,24 @@ issue-runner-herdr run --project my-project --document --no-auto-merge # Retain 
 ```
 
 Auto-merge defaults on. `--no-auto-merge` applies to numbered Issues and standalone documentation; retained, unmerged work reports `incomplete`. Runner owns push, PR, integration, and tracker operations. Agents report local work through handoffs; a handoff alone does not establish delivery.
+
+## Known issues
+
+### CodeBuddy requires `--port 0`
+
+CodeBuddy can select the same cached HTTP port in concurrently starting processes. One process then fails with `EADDRINUSE` before its interactive interface is ready, leaving the Session Probe echoed in the terminal.  
+
+`--port 0` lets the operating system allocate an available port when the server binds. The Web UI address can change between launches, so external clients must not assume a fixed port.
+
+### Disable Codex startup update checks
+
+Codex can show an interactive update prompt at startup, interrupting Runner's automated input. Add `-c check_for_update_on_startup=false` to both Codex `start` and `resume` commands to disable this check. The [configuration template](templates/config.yaml) includes this setting.
+
+### Codex enhancement requires `--remote unix://`
+
+In Codex 0.167.0, CLI overrides such as `-c model_reasoning_effort="high"` and `-c check_for_update_on_startup=false` select an embedded app-server unless a remote endpoint is explicitly selected. This prevents [issue-runner-agent-codex](https://github.com/BuddyLabsCo/issue-runner-agent-codex) from monitoring the interactive session through the shared app-server.
+
+When using this enhancement with these overrides, add `--remote unix://` to both Codex `start` and `resume` commands. The enhancement needs the same shared app-server as the interactive session for readiness checks and automatic recovery. The template includes both the remote endpoint and the update-check override in both commands.
 
 ## Troubleshooting
 ### Operator Pause

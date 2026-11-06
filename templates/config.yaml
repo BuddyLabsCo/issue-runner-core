@@ -42,27 +42,27 @@ agents:
     agent: codebuddy # Identifier used to find optional issue-runner-agent-<agent> packages.
     # Windows PowerShell: start/resume use $env:CODEBUDDY_IS_SANDBOX="1"; codebuddy ...
     # Full shell command, sent unchanged; adapt quoting and flags to your shell.
-    start: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --model deepseek-v4.1-flash --effort max --dangerously-skip-permissions'
+    start: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --port 0 --model deepseek-v4.1-flash --effort max --dangerously-skip-permissions'
     # Must contain {sessionref}; Runner replaces it with the saved native reference.
-    resume: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --resume "{sessionref}" --dangerously-skip-permissions'
+    resume: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --port 0 --resume "{sessionref}" --dangerously-skip-permissions'
     submitKey: Enter # Task-input chord; defaults to Enter. Commands always launch with Enter.
     # options: {} # Optional native config; does not become command flags.
   review: # Required when workflow.review is true.
     agent: codex
-    start: 'codex --remote unix:// --model gpt-6.1-sol -c model_reasoning_effort="high" --dangerously-bypass-approvals-and-sandbox'
-    resume: 'codex resume "{sessionref}" --dangerously-bypass-approvals-and-sandbox'
+    start: 'codex --remote unix:// --model gpt-6.1-sol -c model_reasoning_effort="high" -c check_for_update_on_startup=false --dangerously-bypass-approvals-and-sandbox'
+    resume: 'codex resume "{sessionref}" --remote unix:// -c check_for_update_on_startup=false --dangerously-bypass-approvals-and-sandbox'
     submitKey: Enter
   ciRepair: # Required CI repair role.
     agent: codebuddy
     # Windows PowerShell: start/resume use $env:CODEBUDDY_IS_SANDBOX="1"; codebuddy ...
-    start: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --model deepseek-v4.1-flash --effort max --dangerously-skip-permissions'
-    resume: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --resume "{sessionref}" --dangerously-skip-permissions'
+    start: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --port 0 --model deepseek-v4.1-flash --effort max --dangerously-skip-permissions'
+    resume: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --port 0 --resume "{sessionref}" --dangerously-skip-permissions'
     submitKey: Enter
   conflictRepair: # Required merge-conflict repair role.
     agent: codebuddy
     # Windows PowerShell: start/resume use $env:CODEBUDDY_IS_SANDBOX="1"; codebuddy ...
-    start: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --model deepseek-v4.1-flash --effort max --dangerously-skip-permissions'
-    resume: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --resume "{sessionref}" --dangerously-skip-permissions'
+    start: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --port 0 --model deepseek-v4.1-flash --effort max --dangerously-skip-permissions'
+    resume: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --port 0 --resume "{sessionref}" --dangerously-skip-permissions'
     submitKey: Enter
   documentation: # Required for --document or automatic documentation.
     agent: claude
