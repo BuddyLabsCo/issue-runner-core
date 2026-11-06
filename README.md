@@ -233,6 +233,6 @@ access and dynamic loading. These checks support the
 
 Run `npm run test:package` to build and install the package in isolated consumer and global prefixes. It checks the public CLI and terminal types, terminal-owned executable, bundled prompts and handoff skill asset. These checks require no Agent account, model call or Herdr installation. Real Agent execution remains separate acceptance work.
 
-## Releases
+Release automation follows the [pinned Sandcastle baseline](https://github.com/BuddyLabsCo/sandcastle-runner/tree/55c66eb88ba94272a51563666fe2ca19ece38224/scripts/release). The publication workflow retains the verified candidate and its identity as `verified-core-release`. Its output supplies bootstrap instructions, integrity, release commit, version, workflow run and Trusted Publisher settings. Finish partial-publication recovery before advancing another release; the source's separate concurrency groups remain unchanged.
 
-See [Release Core](docs/releases.md) for Release PRs, candidate verification, first-publication bootstrap and recovery.
+Local checks establish implementation readiness only. First-publication bootstrap, a subsequent genuine OpenID Connect (OIDC) publication, and real npm installation/operation acceptance each require separate evidence. Existing consumer CI owns registry-consumption evidence.
