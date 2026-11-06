@@ -232,3 +232,7 @@ access and dynamic loading. These checks support the
 ## Verify packaged assets
 
 Run `npm run test:package` to build and install the package in isolated consumer and global prefixes. It checks the public CLI and terminal types, terminal-owned executable, bundled prompts and handoff skill asset. These checks require no Agent account, model call or Herdr installation. Real Agent execution remains separate acceptance work.
+
+## Releases
+
+See [Release Core](docs/releases.md) for Release PRs, candidate verification, first-publication bootstrap and recovery.

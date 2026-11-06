@@ -7,9 +7,10 @@ Run `npm test` for all tests, or `npm run verify` to include formatting, lint, a
 | `npm run test:workflow` | Handoff parsing and application workflows, including recovery |
 | `npm run test:adapters` | Real Git and scripted GitHub command boundaries |
 | `npm run test:package` | Build, pack, install, public types, terminal command shims, public CLI API, bundled assets |
+| `RELEASE_TARBALL=<candidate.tgz> npm run release:accept` | Verify the supplied Core candidate without repacking it |
 | `npm run check` | Formatting, lint, and TypeScript |
 
-`npm test` also includes architecture-rule checks. CI runs every behavioral suite on Linux and Windows. Static checks run once on Linux. Package tests invoke `prepack`; no separate build is needed before testing.
+`npm test` also includes architecture-rule checks. CI runs on Linux and Windows; release-script tests use POSIX command substitutes and skip Windows. Static checks run once on Linux. Development package tests invoke `prepack`; no separate build is needed before testing.
 
 ## Coverage map
 
@@ -31,6 +32,7 @@ Run `npm test` for all tests, or `npm run verify` to include formatting, lint, a
 | `adapters/*-git*`, `adapters/cli-worktree-paths*` | Real commits, ancestry, dirty work, isolated configuration and path aliases |
 | `adapters/*-host*` | GitHub command arguments and response interpretation |
 | `package.test.mjs`, `package/` | Installed consumer and global package contracts |
+| `release/` | Release proposals, exact-candidate rejection, merge identity, bootstrap handoff, credential isolation and partial-publication recovery |
 | `static-checks.test.mjs` | Project architecture restrictions |
 
 ## Consolidation decisions

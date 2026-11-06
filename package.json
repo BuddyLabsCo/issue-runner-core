@@ -1,6 +1,6 @@
 {
   "name": "issue-runner-core",
-  "version": "0.0.0-contract.1",
+  "version": "0.1.0",
   "description": "Issue Runner CLI startup and public terminal plugin contract",
   "type": "module",
   "exports": {
@@ -33,12 +33,13 @@
     "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}\" --no-error-on-unmatched-pattern",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
-    "test": "node --test --test-concurrency=4 \"tests/*.test.mjs\" \"tests/agent/*.test.ts\" \"tests/run/*.test.ts\" \"tests/adapters/*.test.ts\"",
+    "test": "node --test --test-concurrency=4 \"tests/*.test.mjs\" \"tests/agent/*.test.ts\" \"tests/run/*.test.ts\" \"tests/adapters/*.test.ts\" \"tests/release/*.test.ts\"",
     "test:package": "node --test tests/package.test.mjs",
     "prepack": "npm run build",
     "verify": "npm run check && npm test",
     "test:workflow": "node --test --test-concurrency=4 \"tests/agent/*.test.ts\" \"tests/run/*.test.ts\"",
-    "test:adapters": "node --test --test-concurrency=4 \"tests/adapters/*.test.ts\""
+    "test:adapters": "node --test --test-concurrency=4 \"tests/adapters/*.test.ts\"",
+    "release:accept": "node --test tests/package.test.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
@@ -52,5 +53,16 @@
   "dependencies": {
     "cac": "7.0.0",
     "yaml": "2.9.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BuddyLabsCo/issue-runner-core.git"
+  },
+  "homepage": "https://github.com/BuddyLabsCo/issue-runner-core#readme",
+  "bugs": {
+    "url": "https://github.com/BuddyLabsCo/issue-runner-core/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

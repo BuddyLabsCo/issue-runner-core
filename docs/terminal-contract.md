@@ -42,7 +42,7 @@ Copy the full tarball to the terminal package repository and install it as a
 runtime dependency:
 
 ```sh
-npm install --save ../artifacts/issue-runner-core-0.0.0-contract.1.tgz
+npm install --save ../artifacts/issue-runner-core-0.1.0.tgz
 ```
 
 Use the actual tarball's portable relative or absolute path, including quotes
