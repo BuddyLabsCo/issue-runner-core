@@ -1,17 +1,18 @@
 # Issue Runner Core
 
-Issue Runner coordinates AI work on GitHub Issues: it selects eligible work, creates isolated Worktrees, verifies commits, publishes pull requests, waits for checks, and coordinates integration and Issue closure. AI handles implementation, Review, and repairs; Runner handles the workflow.
+Issue Runner coordinates AI work on GitHub Issues: it selects eligible work, creates isolated Worktrees, verifies commits, publishes pull requests, waits for checks, and coordinates integration and Issue closure. AI focus on implementation, Review, and repairs; Runner handles the workflow.
 
-Core is a library. A terminal package owns the command and terminal I/O; [issue-runner-herdr](https://github.com/BuddyLabsCo/issue-runner-herdr) is the command-entry example below. Optional Agent enhancements add native readiness and recovery support.
+Core is a library only. You need to install terminal plugin to use issue-runner, e.g. [issue-runner-herdr](https://github.com/BuddyLabsCo/issue-runner-herdr)  
+You can use issue runner with all AI agents supporting interactive session, e.g. claude, pi, codex, etc...
 
-Demonstration GIF remains outstanding. Missing inputs: the maintainer's screen recording and selected start/end time intervals showing Runner output, created terminal tabs, and AI conversations starting execution.
+[demo gif place holder]
 
 ## Workflow overview
 
 <details>
 <summary>Expand the Parent Run workflow</summary>
 
-Adapted from [Sandcastle Runner's workflow overview](https://github.com/BuddyLabsCo/sandcastle-runner#what-can-it-do). This example delivers three eligible children with two Issues per Batch and automatic documentation triggered by #44. Agent names come from your configuration; `AI:` marks Agent work.
+This example delivers three eligible children with two Issues per Batch and automatic documentation triggered by #44. `AI:` marks Agent work.
 
 ```mermaid
 flowchart TD
@@ -103,33 +104,27 @@ Keep credentials out of Git. The repository's automated matrix covers Ubuntu and
 
 ### Install the handoff skill
 
-Install the bundled [issue-runner-handoff](skills/issue-runner-handoff/SKILL.md) skill for every Agent CLI used by Runner:
-
-1. Locate Core under the globally installed terminal package. Start with `npm root --global`; Core can be nested at `issue-runner-herdr/node_modules/issue-runner-core` or hoisted into the global modules directory.
-2. Copy Core's entire `skills/issue-runner-handoff` directory unchanged into each Agent's documented user skill directory. The result is `<agent-skills-directory>/issue-runner-handoff/SKILL.md`.
-3. Reload skills or restart that Agent CLI and verify explicit invocation is available.
-
-`init` creates Project files; it does not install this skill or authenticate Agents.
+Install the bundled [issue-runner-handoff](skills/issue-runner-handoff/SKILL.md) skill.
+Runner workflow context handover is based on this skill, make sure it's accessible in your ai agent.
 
 ### Optional Agent enhancements
 
-Base startup works without an enhancement. To add Codex-specific readiness, trust preparation, and recovery, install [issue-runner-agent-codex](https://github.com/BuddyLabsCo/issue-runner-agent-codex) in the same global npm prefix as Herdr:
+Base startup works without an enhancement.  
+You can install [issue-runner-agent-codex](https://github.com/BuddyLabsCo/issue-runner-agent-codex) for extra codex auto-recover ability
 
 ```sh
 npm install --global issue-runner-agent-codex
 ```
 
-Use the same `--prefix` for both packages when using a custom prefix. Core discovers enhancements for configured Agent identifiers; incompatible contract versions fall back to base startup with a diagnostic. Broken installations fail startup. See the [discovery contract](docs/terminal-contract.md#enhancement-discovery-and-compatibility) for integration details.
-
 ## Getting started
 
-Run these from the directory that will contain your Project:
+Use the runner in a clean folder.
 
 ```sh
 issue-runner-herdr --help          # Command overview; -h also works
 issue-runner-herdr --version       # Terminal command and loaded Core versions
 issue-runner-herdr run --help      # Run selectors and options
-issue-runner-herdr init --project my-project # Creates config and three prompts
+issue-runner-herdr init --project my-project # Creates config and three prompts template
 ```
 
 Edit `my-project/config.yaml` using its comments, replace its placeholders, and adapt the Agent commands to your shell. The [shipped configuration template](templates/config.yaml) contains all field guidance. Edit the three Project prompts under `my-project/prompts/` for implementation, Review, and documentation instructions. Run from the same Launch Directory; Runner looks only in its selected Project child directory.
@@ -146,25 +141,22 @@ issue-runner-herdr run --project my-project --document --no-auto-merge # Retain 
 Auto-merge defaults on. `--no-auto-merge` applies to numbered Issues and standalone documentation; retained, unmerged work reports `incomplete`. Runner owns push, PR, integration, and tracker operations. Agents report local work through handoffs; a handoff alone does not establish delivery.
 
 ## Troubleshooting
-
-Use the native Agent conversation for approvals, questions, and missing output. Use Runner's terminal for an Operator Pause.
-
 ### Operator Pause
 
 Runner pauses when an operation needs a decision, such as exhausted API/Git retries, resource creation failure, uncertain command delivery, or rejected enhancement readiness. Inspect the reported target and any partial effects before pressing Enter to retry or continue. `q` or EOF cancels; Issue-scoped pauses also allow `s` to skip and retain that Issue's resources. Audit recovery retries logging only. Continuing an uncertain command does not replay it.
 
 ### Folder or hook trust blocks startup
 
-Without an enhancement, Runner waits the base startup delay and sends an identity-only Session Probe. If folder trust, hook trust, or native permissions block the Agent, approve them in that Runner Tab. Conversation text cannot approve native dialogs. Complete native trust setup before retrying; Runner sends no missing-output reminders.
+Without an enhancement e.g. issue-runner-agent-codex, Runner waits the base startup delay and sends an identity-only Session Probe. Folder trust, hook trust, or native permissions will block the Agent session.  
+Make sure there is no startup blockers when running your agent cli from the checkout folder configured in config.yaml.
 
 ### Continue a stopped conversation
 
-If the Agent stopped midway, ask it to `continue` in its existing Runner Tab, preserving the current task and handoff path. If Runner itself stopped, close leftover Agent tabs and stop their sessions before rerunning, retaining native history and working resources. Rerun the same command with unchanged arguments and configuration. Runner resumes saved native references in the original Worktrees; it does not adopt surviving tabs.
-
-Changed command names, arguments, or configuration bytes select new progress. If Runner prints `unable to recover`, Enter restarts the affected Issue from implementation with fresh resources; `q` or EOF exits. Failed resources remain available. Inspect the `Retained` report and Project recovery files before manual cleanup.
+AI session might stop midway requiring user input, you can always go to related tab and interact with AI there to resolve the blocker manually.
 
 ### Request an omitted handoff
 
+Runner workflow is based on handoff file. It will monitor if handover file generated on required path, then it will know current ai session is over and move to next step.  
 When the Agent finishes without a handoff, find the active absolute path in Runner's `handoff=` output or the task's `Handoff path:` line. Explicitly invoke the installed skill in that same native conversation using that Agent's skill syntax, for example:
 
 ```text
@@ -172,7 +164,7 @@ When the Agent finishes without a handoff, find the active absolute path in Runn
 /issue-runner-handoff "D:\Runner Work\project\handoffs\current-assignment.json"
 ```
 
-Pass the current output path verbatim, including quotes around spaces. If that invocation needs correction, invoke the skill again at the same path. Runner assigns a fresh path for later invocations and automatic corrections. The skill writes atomically and leaves the handoff unwritten while human action is required. Invalid handoffs get specific feedback; missing files cause no reminders.
+This might happen when context too huge causing AI forgets how to do the correct hand over as requested initially.
 
 ## Developing Core
 
