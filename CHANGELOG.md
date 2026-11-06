@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- - ci: [issue-317] skip duplicate checks after release merges (#318)
+- - chore: propose release v0.1.0 (#316)
 - - chore: [issue-311] add npm package keywords (#315)
 - - feat: [issue-311] automate stable Core releases (#314)
 - - feat: [issue-273] configure Issue label filtering and Codex startup (#275)
