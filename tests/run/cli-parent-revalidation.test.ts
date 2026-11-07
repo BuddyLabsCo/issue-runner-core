@@ -137,7 +137,7 @@ await test("parent cancellation during native startup prevents implementation di
 });
 
 for (const operation of ["addLabel", "addAssignee"] as const) {
-  for (const change of ["cancelled", "reservation"] as const) {
+  for (const change of ["cancelled", "ownership"] as const) {
     await test(`${operation} retry stops when eligibility becomes ${change} during backoff`, async (t) => {
       const ticket = child(51);
       const fixture = await parentDeliveryRun(t, [ticket]);
@@ -163,8 +163,8 @@ for (const operation of ["addLabel", "addAssignee"] as const) {
       fixture.dependencies.clock.sleep = async (ms) => {
         assert.equal(ms, 1000);
         changed = true;
-        if (change === "reservation") {
-          if (operation === "addLabel") ticket.assignees = ["runner"];
+        if (change === "ownership") {
+          if (operation === "addLabel") ticket.assignees = ["developer"];
           else ticket.labels = ["ready-for-agent"];
         }
       };
