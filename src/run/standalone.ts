@@ -388,7 +388,7 @@ async function executeStandalone(
     return summary;
   }
   if (restored && restored.phase !== "reserved") return run(restored);
-  if (!input.documentation && !ownsReservation && (hasRunner || hasLabel)) {
+  if (!input.documentation && !ownsReservation && hasLabel) {
     report.detail = `existing Reservation${hasRunner !== hasLabel ? " (partial)" : ""}; no recorded ownership for this Run`;
     return summary;
   }
@@ -400,12 +400,11 @@ async function executeStandalone(
       async () => {
         selected = await inspect();
         if (selected.reason) return;
-        if (selected.ticket.assignees?.includes(runnerAccount)) {
+        if (selected.ticket.labels?.includes(reservationLabel)) {
           selected.reason = "Reservation changed before label";
           return;
         }
-        if (!selected.ticket.labels?.includes(reservationLabel))
-          await tracker.addLabel(repository, number, reservationLabel);
+        await tracker.addLabel(repository, number, reservationLabel);
       },
       {
         reconcile: async () => {

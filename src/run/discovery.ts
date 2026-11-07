@@ -174,11 +174,11 @@ export async function selectIssueBatch(input: {
       (config.issueList.length > 0 &&
         input.issueTicket === undefined &&
         !config.issueList.includes(child.number)) ||
-      hasRunner !== hasLabel
+      (hasLabel && !hasRunner)
     )
       continue;
     if (
-      hasRunner &&
+      hasLabel &&
       !(await readHandoff(
         path.join(
           loaded.directory,

@@ -136,11 +136,11 @@ await test("parent reads every child and blocker page before selecting across la
   await fixture.run();
   assert.deepEqual(
     [...fixture.dispatched].sort((a, b) => a - b),
-    [57, 60],
+    [54, 57, 60],
   );
   assert.deepEqual(
     [...fixture.writes].sort(),
-    ["label:57", "assignee:57", "label:60", "assignee:60"].sort(),
+    ["label:54", "label:57", "assignee:57", "label:60", "assignee:60"].sort(),
   );
   assert.deepEqual(childPages.slice(0, 3), [1, 2, 3]);
   assert.deepEqual(blockerPages.slice(0, 13), [

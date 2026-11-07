@@ -113,7 +113,7 @@ await test("list discovery filters blocked, externally owned, unready and reserv
 
   assert.deepEqual(
     [...fixture.dispatched].sort((a, b) => a - b),
-    [57, 60],
+    [54, 57],
   );
   assert.deepEqual(
     [...new Set(pages)],

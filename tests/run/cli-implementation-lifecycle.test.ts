@@ -146,9 +146,21 @@ await test("operator-authorized close retry never repeats the accepted implement
   assert.equal(fixture.state.taskCount, 1);
 });
 
+await test("a fresh Run picks up an Issue assigned only to the configured runner without a Reservation label", async (t) => {
+  const fixture = await implementationRun(t);
+  fixture.state.ticket.assignees = ["runner"];
+
+  await fixture.run();
+
+  assert.equal(fixture.state.taskCount, 1);
+  assert.deepEqual(fixture.state.ticket.assignees, ["runner"]);
+  assert.ok(fixture.state.ticket.labels!.includes("sandcastle:reserved"));
+});
+
 for (const selection of [
   "not_ready",
   "foreign_owner",
+  "mixed_owner",
   "partial",
   "unrecorded",
   "blocked",
@@ -158,6 +170,8 @@ for (const selection of [
     if (selection === "not_ready") fixture.state.ticket.labels = [];
     if (selection === "foreign_owner")
       fixture.state.ticket.assignees = ["another-runner"];
+    if (selection === "mixed_owner")
+      fixture.state.ticket.assignees = ["runner", "another-runner"];
     if (selection === "partial" || selection === "unrecorded")
       fixture.state.ticket.labels!.push("sandcastle:reserved");
     if (selection === "unrecorded") fixture.state.ticket.assignees = ["runner"];
