@@ -1,6 +1,6 @@
 {
   "name": "issue-runner-core",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Issue Runner CLI startup and public terminal plugin contract",
   "keywords": [
     "issue-runner",
