@@ -30,11 +30,17 @@ codeHost:
   tokenEnv: GH_TOKEN # Environment variable holding the GitHub PR/checks/merge token.
   adminMerge: false # Use GitHub's administrator merge flag.
 
-# Terminal-specific options; optional generic settings shown below.
-terminalPlugins: {}
-# terminalPlugins:
-#   agentStartDelay: 10 # Seconds after command submission without an enhancement (0..2147483.647).
-#   enhancements: {} # Shared options passed unchanged to every selected Agent enhancement.
+# Herdr + issue-runner-agent-codex example; values below are the current defaults.
+# Herdr uses inherited HERDR_* environment variables and has no additional YAML settings.
+terminalPlugins:
+  agentStartDelay: 10 # Seconds after command submission for Agents without an enhancement (0..2147483.647).
+  # Shared options passed unchanged to every selected Agent enhancement; no Agent namespace.
+  # Codex options apply when issue-runner-agent-codex is installed in the terminal's global npm prefix.
+  enhancements:
+    readyTimeout: 20 # Seconds per readiness attempt; finite, positive number.
+    retryLimit: 3 # Recovery requests per Assignment, separately for errors and missing handoffs; 0 disables both.
+    retryDelay: [10, 20, 40] # Seconds before error recovery; nonempty, nonnegative list; last value repeats.
+    handoffRecoveryDelaySeconds: 120 # Seconds before each missing-handoff recovery request; finite, nonnegative number.
 
 # Each role runs the configured shell commands; install and authenticate its Agent first.
 agents:
@@ -46,7 +52,6 @@ agents:
     # Must contain {sessionref}; Runner replaces it with the saved native reference.
     resume: 'CODEBUDDY_IS_SANDBOX=1 codebuddy --port 0 --resume "{sessionref}" --dangerously-skip-permissions'
     submitKey: Enter # Task-input chord; defaults to Enter. Commands always launch with Enter.
-    # options: {} # Optional native config; does not become command flags.
   review: # Required when workflow.review is true.
     agent: codex
     start: 'codex --remote unix:// --model gpt-6.1-sol -c model_reasoning_effort="high" -c check_for_update_on_startup=false --dangerously-bypass-approvals-and-sandbox'
