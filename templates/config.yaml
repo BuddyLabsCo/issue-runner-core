@@ -30,12 +30,9 @@ codeHost:
   tokenEnv: GH_TOKEN # Environment variable holding the GitHub PR/checks/merge token.
   adminMerge: false # Use GitHub's administrator merge flag.
 
-# Herdr + issue-runner-agent-codex example; values below are the current defaults.
-# Herdr uses inherited HERDR_* environment variables and has no additional YAML settings.
 terminalPlugins:
   agentStartDelay: 10 # Seconds after command submission for Agents without an enhancement (0..2147483.647).
-  # Shared options passed unchanged to every selected Agent enhancement; no Agent namespace.
-  # Codex options apply when issue-runner-agent-codex is installed in the terminal's global npm prefix.
+  # Shared options passed unchanged to every loaded Agent enhancement;
   enhancements:
     readyTimeout: 20 # Seconds per readiness attempt; finite, positive number.
     retryLimit: 3 # Recovery requests per Assignment, separately for errors and missing handoffs; 0 disables both.
