@@ -1,3 +1,5 @@
+import type { ConfirmationStatus } from "./confirmations.ts";
+
 // Source workflow boundaries, extracted as needed by the supported Run slice.
 export interface Ticket {
   number: number;
@@ -160,6 +162,7 @@ export interface OperatorIO {
   skipScope?: string;
   intervene?(): () => void;
   write(message: string): void;
+  confirmationStatus?(status: ConfirmationStatus): void;
   // Close active input when the supplied signal is cancelled.
   pause(message: string, signal?: AbortSignal): Promise<string | null>;
 }
