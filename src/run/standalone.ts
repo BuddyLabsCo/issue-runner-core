@@ -224,6 +224,7 @@ async function executeStandalone(
     })).terminal,
     submitText: (action) => tabs!.submitText(action),
     ...(context.enhancements ? { enhancements: context.enhancements } : {}),
+    ...(context.confirmations ? { confirmations: context.confirmations } : {}),
     clock: context.clock,
     operator: context.operator,
     ...(context.signal ? { signal: context.signal } : {}),

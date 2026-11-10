@@ -250,12 +250,16 @@ for (const method of [
   "startMonitoring",
   "waitUntilReady",
   "onAssignment",
+  "enhancementResume",
   "stop",
 ]) {
   await test(`invalid enhancement ${method} retains initialization error and reports usable cleanup failure`, async (t) => {
     const fixture = await implementationRun(t);
     let stops = 0;
     const invalid: Record<string, unknown> = {
+      enhancementResume() {
+        return Promise.resolve();
+      },
       async startMonitoring() {
         assert.fail("invalid monitoring");
       },
@@ -275,7 +279,7 @@ for (const method of [
       ...fixture.dependencies,
       enhancements: {
         "custom-agent": {
-          contractVersion: 2 as const,
+          contractVersion: 3 as const,
           async createEnhancement() {
             return invalid as unknown as import("../../src/terminal.ts").Enhancement;
           },
@@ -312,9 +316,12 @@ for (const identity of [
       ...fixture.dependencies,
       enhancements: {
         "custom-agent": {
-          contractVersion: 2 as const,
+          contractVersion: 3 as const,
           async createEnhancement() {
             return {
+              enhancementResume() {
+                return Promise.resolve();
+              },
               async startMonitoring() {
                 return;
               },

@@ -330,7 +330,7 @@ export async function testEnhancements(
   for (const [name, source, expected] of [
     [
       "default-only exports",
-      "export default { contractVersion: 2, createEnhancement() {} };",
+      "export default { contractVersion: 3, createEnhancement() {} };",
       "contractVersion",
     ],
     [
@@ -354,7 +354,7 @@ export async function testEnhancements(
     ]),
     [
       "missing factory",
-      "export const contractVersion = 2;",
+      "export const contractVersion = 3;",
       "createEnhancement",
     ],
     [
@@ -364,7 +364,7 @@ export async function testEnhancements(
     ],
     [
       "non-callable factory",
-      "export const contractVersion = 2; export const createEnhancement = 1;",
+      "export const contractVersion = 3; export const createEnhancement = 1;",
       "createEnhancement",
     ],
     [
@@ -390,23 +390,25 @@ export async function testEnhancements(
       },
     );
   }
-  await t.test(
-    "valid contract mismatch diagnoses and never invokes the factory",
-    () => {
-      const installation = fresh();
-      installEnhancement(
-        installation.modules,
-        genericEnhancement
-          .replace("contractVersion = 2", "contractVersion = 99")
-          .replace(
-            'events.push(["factory", config]);',
-            'throw new Error("mismatched factory called");',
-          ),
-      );
-      check(
-        installation,
-        `assert.deepEqual(Object.keys(await discover()), []); assert.equal(messages.length, 1); assert.match(messages[0], /contractVersion 99.*incompatible with 2.*base startup/);`,
-      );
-    },
-  );
+  for (const version of [2, 99]) {
+    await t.test(
+      `valid contract ${version} mismatch diagnoses and never invokes the factory`,
+      () => {
+        const installation = fresh();
+        installEnhancement(
+          installation.modules,
+          genericEnhancement
+            .replace("contractVersion = 3", `contractVersion = ${version}`)
+            .replace(
+              'events.push(["factory", config]);',
+              'throw new Error("mismatched factory called");',
+            ),
+        );
+        check(
+          installation,
+          `assert.deepEqual(Object.keys(await discover()), []); assert.equal(messages.length, 1); assert.match(messages[0], /contractVersion ${version}.*incompatible with 3.*base startup/);`,
+        );
+      },
+    );
+  }
 }

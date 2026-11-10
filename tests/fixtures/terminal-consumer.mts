@@ -26,7 +26,7 @@ export type ContractChecks = [
   Assert<
     Equal<
       typeof import("issue-runner-core/terminal").enhancementContractVersion,
-      2
+      3
     >
   >,
   Assert<
@@ -45,6 +45,7 @@ export type ContractChecks = [
       {
         readonly cwd: string;
         readonly env: Readonly<Record<string, string>>;
+        enhancementPause(assignmentId: string, message: string): void;
       }
     >
   >,
@@ -55,6 +56,7 @@ export type ContractChecks = [
         startMonitoring(sessionref?: string): Promise<void>;
         waitUntilReady(): Promise<string>;
         onAssignment(assignment: { id: string; expectedFile: string }): void;
+        enhancementResume(assignmentId: string): Promise<void>;
         stop(): Promise<void>;
       }
     >
@@ -63,7 +65,7 @@ export type ContractChecks = [
     Equal<
       EnhancementModule,
       {
-        readonly contractVersion: 2;
+        readonly contractVersion: 3;
         createEnhancement(
           io: TerminalIO,
           requestRecovery: RequestRecovery,

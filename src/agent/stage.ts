@@ -9,6 +9,7 @@ import type {
   StageProgress,
 } from "../recovery.ts";
 import type { Clock, OperatorIO, Ticket } from "../run/contracts.ts";
+import type { TerminalConfirmations } from "../run/confirmations.ts";
 import {
   OperatorCancelled,
   TicketSkipped,
@@ -39,6 +40,7 @@ export interface IssueStageContext {
   ) => Promise<T>;
   terminal: TerminalPlugin;
   enhancements?: Readonly<Record<string, EnhancementModule>>;
+  confirmations?: TerminalConfirmations;
   submitText?: (action: () => Promise<void>) => Promise<void>;
   clock: Clock;
   operator: OperatorIO;
@@ -118,6 +120,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
     signal,
     (message) => operator.write(message),
     input.submitText,
+    input.confirmations,
   );
   const persist = input.persist;
   const assignment = (phase: string) =>

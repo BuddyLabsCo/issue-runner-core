@@ -341,7 +341,7 @@ await test("enhanced startup completes preflight and monitoring before command, 
     ...fixture.dependencies,
     enhancements: {
       "custom-agent": {
-        contractVersion: 2 as const,
+        contractVersion: 3 as const,
         async createEnhancement(
           io: import("../../src/terminal.ts").TerminalIO,
           _recover: import("../../src/terminal.ts").RequestRecovery,
@@ -359,6 +359,9 @@ await test("enhanced startup completes preflight and monitoring before command, 
             custom: [1, "x"],
           });
           return {
+            enhancementResume() {
+              return Promise.resolve();
+            },
             async startMonitoring(ref?: string) {
               assert.equal(ref, undefined);
               order.push("monitor");
@@ -425,13 +428,16 @@ for (const choice of ["", "s", "q", null]) {
       ...fixture.dependencies,
       enhancements: {
         "custom-agent": {
-          contractVersion: 2 as const,
+          contractVersion: 3 as const,
           async createEnhancement(
             io: import("../../src/terminal.ts").TerminalIO,
           ) {
             counts.factories++;
             bound = io;
             return {
+              enhancementResume() {
+                return Promise.resolve();
+              },
               async startMonitoring() {
                 counts.monitors++;
               },

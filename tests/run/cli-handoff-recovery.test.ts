@@ -199,13 +199,16 @@ await test("enhancement recovery uses Core wording and correction Assignments ex
     ...fixture.dependencies,
     enhancements: {
       "custom-agent": {
-        contractVersion: 2 as const,
+        contractVersion: 3 as const,
         async createEnhancement(
           _io: import("../../src/terminal.ts").TerminalIO,
           callback: import("../../src/terminal.ts").RequestRecovery,
         ) {
           recover = callback;
           return {
+            enhancementResume() {
+              return Promise.resolve();
+            },
             async startMonitoring() {
               return;
             },

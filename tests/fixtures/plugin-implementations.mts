@@ -81,6 +81,10 @@ export const enhancementModule: EnhancementModule = {
       onAssignment(assignment) {
         assignmentId = assignment.id;
         events.push(["assignment", assignment]);
+        context.enhancementPause(assignment.id, "Human action needed");
+      },
+      async enhancementResume(id) {
+        events.push(["resume", id]);
       },
       async stop() {
         monitoring = false;

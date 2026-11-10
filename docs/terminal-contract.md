@@ -9,7 +9,7 @@ Terminal packages own the executable and terminal I/O. Core owns the workflow an
 import { runCli, type CliOptions } from "issue-runner-core/cli";
 import {
   terminalContractVersion, // 2; independent of npm version
-  enhancementContractVersion, // 2; independent of terminal contract version
+  enhancementContractVersion, // 3; independent of terminal contract version
 } from "issue-runner-core/terminal";
 // Type-only consumers can declare Core in devDependencies.
 import type {
@@ -136,7 +136,7 @@ Scoped terminal packages and command names differing from package names are supp
 ## Enhancement interfaces
 
 ```typescript
-export const enhancementContractVersion = 2 as const;
+export const enhancementContractVersion = 3 as const;
 
 // Submit Core's recovery text for the current live Assignment; reject real input errors.
 // Unknown, superseded, accepted or revoked IDs resolve without input or retries.
@@ -145,6 +145,7 @@ export type RequestRecovery = (assignmentId: string) => Promise<void>;
 export interface EnhancementContext {
   readonly cwd: string; // Tab's working directory.
   readonly env: Readonly<Record<string, string>>; // Tab's environment overlay.
+  enhancementPause(assignmentId: string, message: string): void;
 }
 
 export interface EnhancementModule {
@@ -161,7 +162,7 @@ export interface EnhancementModule {
 ```
 
 ```typescript
-// Core validates all four methods before use; stage exit stops monitoring even if retaining the tab.
+// Core validates all five methods before use; stage exit stops monitoring even if retaining the tab.
 export interface Enhancement {
   // Start before command submission; sessionref is the saved native identity on resume.
   startMonitoring(sessionref?: string): Promise<void>;
@@ -171,11 +172,29 @@ export interface Enhancement {
   // Synchronous, immediately before input; fresh ID even when expectedFile repeats.
   // Applies to tasks, continuations, corrections and Probes, not readiness/recovery input.
   onAssignment(assignment: { id: string; expectedFile: string }): void;
+  // One-shot notification after Enter; Core never waits for or retries its result.
+  enhancementResume(assignmentId: string): Promise<void>;
   // Release enhancement resources; preserve interactive Agents, other tabs and shared infrastructure.
   // Prior readiness/input failures must not prevent cleanup.
   stop(): Promise<void>;
 }
 ```
+
+### Enhancement Pause
+
+An enhancement that has paused its own automation can call `context.enhancementPause(currentId, message)`. Core displays the supplied message with the originating task and stage. The capability belongs to that Runner Tab and enhancement instance. Requests before an Assignment, for stale IDs, or after revocation do nothing.
+
+Enhancement Pause shares the Run's FIFO confirmation queue with Operator Pause, without preemption. It never enters the workflow intervention gate: other Issues and handoff observation continue. Operator Pause retains its existing retry, skip, quit, cancellation, and intervention policy even while queued.
+
+Only an empty submitted line acknowledges Enhancement Pause. Nonempty input, including `s` and `q`, leaves the same confirmation waiting. EOF ends its input wait without a callback, retry loop, or new Run cancellation. Process cancellation signals still apply.
+
+Core consumes the confirmation before notifying exactly the originating instance with `enhancementResume(assignmentId)`. It ignores synchronous throws, rejected Promises, and never-settling Promises; none delays another confirmation or cleanup. A synchronous new request from the callback joins the FIFO tail and needs another Enter. Duplicate active or queued requests for the same instance and Assignment retain the original message and position.
+
+Assignment completion or replacement, enhancement stop, owned Tab closure, and Run cancellation invalidate pending confirmations. Queued invalidations need no Enter. An active invalidation closes its input wait and appends `[Enhancement Pause ended]` with task identity and reason, preserving printed history. Late input never resumes stale work. Core uses known lifecycle events; it does not detect manually closed native Tabs.
+
+Core stores confirmation state only. It does not inspect Agent replies or decide whether recovery is eligible. `requestRecovery` retains its existing delivery and cancellation rules. Confirmation state and acknowledgments are never persisted; a new Run restores task progress through the existing native resume, readiness, and continuation flow.
+
+Enhancements must export contract version 3 and implement `enhancementResume`. Core skips version 2 enhancements with a compatibility diagnostic and uses base startup. The independent terminal contract remains version 2 with unchanged I/O.
 
 ## Lifecycle and failure flows
 

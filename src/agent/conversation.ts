@@ -7,10 +7,12 @@ import type {
   TerminalPlugin,
 } from "../terminal.ts";
 import { boundedOperation, cancellableOperation } from "../run/operations.ts";
+import type { TerminalConfirmations } from "../run/confirmations.ts";
 
 export type ConversationTab = Awaited<ReturnType<TerminalPlugin["createTab"]>>;
 
 interface TabState {
+  label: string;
   controller: AbortController;
   signal: AbortSignal;
   queue: Promise<void>;
@@ -23,6 +25,7 @@ interface TabState {
   commanded: boolean;
   readiness?: { identity: string | undefined };
   assignment?: { id: string; expectedFile: string; recoveryText: string };
+  confirmation?: { assignmentId: string; controller: AbortController };
 }
 
 export class NativeConversations {
@@ -31,6 +34,7 @@ export class NativeConversations {
   private readonly signal: AbortSignal | undefined;
   private readonly report: (message: string) => void;
   private readonly submitText: (action: () => Promise<void>) => Promise<void>;
+  private readonly confirmations: TerminalConfirmations | undefined;
 
   constructor(
     plugin: TerminalPlugin,
@@ -38,11 +42,13 @@ export class NativeConversations {
     report: (message: string) => void = () => undefined,
     submitText: (action: () => Promise<void>) => Promise<void> = (action) =>
       action(),
+    confirmations?: TerminalConfirmations,
   ) {
     this.plugin = plugin;
     this.signal = signal;
     this.report = report;
     this.submitText = submitText;
+    this.confirmations = confirmations;
   }
 
   async create(
@@ -59,6 +65,7 @@ export class NativeConversations {
     ]);
     const tab = await this.plugin.createTab({ ...options, signal });
     const state: TabState = {
+      label: options.label,
       controller,
       signal,
       queue: Promise.resolve(),
@@ -69,12 +76,18 @@ export class NativeConversations {
     };
     this.tabs.set(tab, state);
     if (module) {
+      let enhancement: Enhancement | undefined;
       const initializing = Promise.resolve().then(async () => {
         signal.throwIfAborted();
         const instance: unknown = await module.createEnhancement(
           tab.io,
           (id) => this.recover(tab, id),
-          { cwd: options.cwd, env: options.env },
+          {
+            cwd: options.cwd,
+            env: options.env,
+            enhancementPause: (id, message) =>
+              this.pause(tab, enhancement, id, message),
+          },
           config,
         );
         if (typeof instance === "object" && instance !== null) {
@@ -82,14 +95,21 @@ export class NativeConversations {
           if (typeof candidate.stop === "function")
             state.cleanup = () => candidate.stop!();
           if (
-            ["startMonitoring", "waitUntilReady", "onAssignment", "stop"].some(
+            [
+              "startMonitoring",
+              "waitUntilReady",
+              "onAssignment",
+              "enhancementResume",
+              "stop",
+            ].some(
               (method) => typeof Reflect.get(instance, method) !== "function",
             )
           )
             throw new Error(
-              "Invalid enhancement: all four lifecycle methods must be callable",
+              "Invalid enhancement: all five lifecycle methods must be callable",
             );
           state.enhancement = candidate as Enhancement;
+          enhancement = state.enhancement;
         } else throw new Error("Invalid enhancement: expected an object");
       });
       // A cancelled factory still owns its resources until it transfers an instance.
@@ -174,6 +194,7 @@ export class NativeConversations {
           this.enqueue(tab, async () => {
             const state = this.state(tab);
             if (assignment) {
+              this.endPause(state, "Assignment replaced");
               state.assignment = { ...assignment, id: randomUUID() };
               state.enhancement?.onAssignment({
                 id: state.assignment.id,
@@ -186,6 +207,74 @@ export class NativeConversations {
         this.state(tab).signal,
       ),
     );
+  }
+
+  private pause(
+    tab: ConversationTab,
+    enhancement: Enhancement | undefined,
+    assignmentId: string,
+    message: string,
+  ): void {
+    const state = this.state(tab);
+    if (
+      !this.confirmations ||
+      !enhancement ||
+      state.enhancement !== enhancement ||
+      state.signal.aborted ||
+      state.closed ||
+      state.assignment?.id !== assignmentId ||
+      state.confirmation?.assignmentId === assignmentId
+    )
+      return;
+    const controller = new AbortController();
+    const confirmation = { assignmentId, controller };
+    state.confirmation = confirmation;
+    const signal = AbortSignal.any([state.signal, controller.signal]);
+    const id = randomUUID();
+    const identity = state.label;
+    const ended = () => {
+      if (this.confirmations!.status.active?.id === id)
+        this.report(
+          `[Enhancement Pause ended] ${identity}: ${String(signal.reason)}`,
+        );
+    };
+    signal.addEventListener("abort", ended, { once: true });
+    void this.confirmations
+      .request({
+        id,
+        message: `[Enhancement Pause] ${identity}: ${message}\nEnter to continue. Other input is unsupported.`,
+        accepts: (response) => response === "",
+        signal,
+      })
+      .then((response) => {
+        if (state.confirmation === confirmation) delete state.confirmation;
+        if (
+          response !== "" ||
+          signal.aborted ||
+          state.closed ||
+          state.enhancement !== enhancement ||
+          state.assignment?.id !== assignmentId
+        )
+          return;
+        // Consume first: a reentrant callback may request a fresh confirmation.
+        try {
+          void Promise.resolve(
+            enhancement.enhancementResume(assignmentId),
+          ).catch(() => undefined);
+        } catch {
+          // Resume is a one-shot notification; its result cannot affect the Run.
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        signal.removeEventListener("abort", ended);
+        if (state.confirmation === confirmation) delete state.confirmation;
+      });
+  }
+
+  private endPause(state: TabState, reason: string): void {
+    state.confirmation?.controller.abort(new Error(reason));
+    delete state.confirmation;
   }
 
   private recover(tab: ConversationTab, id: string): Promise<void> {
@@ -230,6 +319,7 @@ export class NativeConversations {
     return cancellableOperation(
       () =>
         this.enqueue(tab, () => {
+          this.endPause(this.state(tab), "Assignment completed");
           delete this.state(tab).assignment;
           return Promise.resolve();
         }),
@@ -239,6 +329,10 @@ export class NativeConversations {
 
   stop(tab: ConversationTab): Promise<void> {
     const state = this.state(tab);
+    this.endPause(
+      state,
+      "Enhancement stopped; Runner Tab capabilities revoked",
+    );
     state.controller.abort(
       new Error("Runner Tab automatic capabilities revoked"),
     );
