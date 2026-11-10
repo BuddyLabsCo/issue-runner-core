@@ -43,10 +43,7 @@ export async function runStandalone(input: {
   codeHost: CodeHost;
   autoMerge: boolean;
   onDelivery?: (labels: string[]) => void;
-  deferIntegration?: (
-    pullRequest: number,
-    complete: () => Promise<RunSummary>,
-  ) => void;
+  deferIntegration?: (pr: number, complete: () => Promise<RunSummary>) => void;
 }): Promise<RunSummary> {
   return reportTicket(input, (issue, report) =>
     recoverIssue(issue, (attempt, restarting) =>
@@ -61,13 +58,17 @@ async function executeStandalone(
   restarting = false,
 ): Promise<RunSummary> {
   const { number, loaded, tracker, summary } = input;
+  const purpose = input.documentation ? "documentation" : "implement";
+  let execution: ImplementationProgress | undefined;
   const context = {
     ...input.context,
-    operator: input.documentation
-      ? input.context.operator
-      : scopeOperator(input.context.operator, `Issue #${number}`),
+    operator: scopeOperator(
+      input.context.operator,
+      input.documentation ? undefined : `Issue #${number}`,
+      () =>
+        `Issue #${number} ${execution?.phase ?? purpose}${execution?.publication ? ` publication ${execution.publication.phase}` : ""}`,
+    ),
   };
-  let execution: ImplementationProgress | undefined;
   const read = recoveringRead({
     read: input.read,
     current: () => execution,
@@ -76,7 +77,6 @@ async function executeStandalone(
   });
   const { config, directory: root } = loaded;
   const { runnerAccount, reservationLabel } = config.tracker;
-  const purpose = input.documentation ? "documentation" : "implement";
   const repository = config.repository;
   const accept = async (progress: ImplementationProgress, text: string) => {
     const result = parsePRExecution(text);

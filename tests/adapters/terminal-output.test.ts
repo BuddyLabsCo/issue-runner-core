@@ -3,6 +3,11 @@ import { PassThrough } from "node:stream";
 import test from "node:test";
 import { TerminalOperator } from "../../src/adapters/terminal.ts";
 import { TerminalConfirmations } from "../../src/run/confirmations.ts";
+import {
+  pauseForOperator,
+  scopeOperator,
+  serializeOperator,
+} from "../../src/run/operations.ts";
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 
@@ -26,11 +31,16 @@ await test("Core output redraws the active task and pending count without replac
     terminal.input.destroy();
   });
   const { input, queue, operator } = terminal;
-  const first = queue.request({
-    id: "operator",
-    message: "[Operator Pause] Issue #351 implement: choose Enter, s or q",
-    accepts: (response) => ["", "s", "q"].includes(response),
-  });
+  let stage = "implement";
+  const scoped = scopeOperator(
+    serializeOperator(operator, terminal.run, terminal.run.signal, queue),
+    "Issue #351",
+    () => `Issue #351 ${stage}`,
+  );
+  const first = assert.rejects(
+    pauseForOperator(scoped, "Git unavailable.", terminal.run.signal, true),
+    /skipped Issue #351/u,
+  );
   await tick();
   const second = queue.request({
     id: "enhancement",
@@ -38,6 +48,7 @@ await test("Core output redraws the active task and pending count without replac
     accepts: (response) => response === "",
   });
   await tick();
+  stage = "review";
   input.write("sq\u001b[D");
   const before = terminal.output().length;
   operator.write("Issue #353 completed\r\nMore progress");
@@ -49,11 +60,11 @@ await test("Core output redraws the active task and pending count without replac
     /Still working[\s\S]*Issue #351 implement[\s\S]*1 pending/u,
   );
   assert.doesNotMatch(redrawn, /Issue #352 review/u);
-  assert.equal(input.listenerCount("keypress"), 1);
-  assert.equal(queue.status.active?.id, "operator");
+  assert.equal(input.listenerCount("data"), 1);
+  assert.match(queue.status.active!.message, /Issue #351 implement/u);
   // Delete q at the preserved cursor, leaving the supported Operator Pause response s.
   input.write("\u001b[3~\r");
-  assert.equal(await first, "s");
+  await first;
   await tick();
   assert.match(terminal.output(), /Issue #352 review/u);
   const enhancementOutput = terminal.output().length;
@@ -68,7 +79,7 @@ await test("Core output redraws the active task and pending count without replac
   );
   input.write("\r");
   assert.equal(await second, "");
-  assert.equal(input.listenerCount("keypress"), 0);
+  assert.equal(input.listenerCount("data"), 0);
   const ended = terminal.output().length;
   operator.write("All done");
   assert.equal(terminal.output().slice(ended), "All done\n");
@@ -232,3 +243,49 @@ await test("redraw retains wrapped Unicode input and its editing cursor", async 
     /Other Issue completed[\s\S]*More progress[\s\S]*Issue #351 implement/u,
   );
 });
+
+for (const tty of [false, true]) {
+  await test(`a split CRLF belongs only to the request that consumed its CR (TTY=${tty})`, async (t) => {
+    const { input, queue, run } = terminalHarness(tty);
+    t.after(() => {
+      run.abort();
+      input.destroy();
+    });
+    const acknowledged: string[] = [];
+    const request = (id: string) =>
+      queue
+        .request({
+          id,
+          message: id,
+          accepts: (line) => line === "",
+        })
+        .then((line) => {
+          assert.equal(line, "");
+          acknowledged.push(id);
+        });
+    let reentrant: Promise<void> | undefined;
+    const first = request("first").then(() => {
+      reentrant = request("reentrant");
+    });
+    const second = request("second");
+    await tick();
+    input.write("\r");
+    await first;
+    await tick();
+    assert.equal(queue.status.active?.id, "second");
+    input.write("\n");
+    await tick();
+    assert.deepEqual(acknowledged, ["first"]);
+    assert.equal(queue.status.active?.id, "second");
+    input.write("\r");
+    await second;
+    await tick();
+    assert.equal(queue.status.active?.id, "reentrant");
+    input.write("\n");
+    await tick();
+    assert.deepEqual(acknowledged, ["first", "second"]);
+    input.write("\n");
+    await reentrant;
+    assert.deepEqual(acknowledged, ["first", "second", "reentrant"]);
+  });
+}

@@ -1,15 +1,18 @@
 import { clearScreenDown, cursorTo, moveCursor } from "node:readline";
 import { createInterface, type Interface } from "node:readline/promises";
-import type { Readable, Writable } from "node:stream";
+import { Transform, type Readable, type Writable } from "node:stream";
+import type { ReadStream } from "node:tty";
 
 import type { ConfirmationStatus } from "../run/confirmations.ts";
 import type { OperatorIO } from "../run/contracts.ts";
 
 export class TerminalOperator implements OperatorIO {
   private readonly signal: AbortSignal | undefined;
-  private readonly input: Readable;
+  private readonly input: Readable &
+    Partial<Pick<ReadStream, "isRaw" | "setRawMode">>;
   private readonly output: Writable & { isTTY?: boolean };
   private status: ConfirmationStatus = { active: undefined, pending: [] };
+  private trailingCR = false;
   private waiting:
     | { terminal: Interface; message: string; signal: AbortSignal | undefined }
     | undefined;
@@ -81,10 +84,26 @@ export class TerminalOperator implements OperatorIO {
       this.input.destroyed
     )
       return null;
-    const terminal = createInterface({
-      input: this.input,
-      output: this.output,
+    const input = new Transform({
+      transform: (chunk: Buffer, _encoding, done) => {
+        // A CRLF remains one Enter even if its LF arrives in a later request.
+        const pairedLF = this.trailingCR && chunk[0] === 10;
+        this.trailingCR = chunk.at(-1) === 13;
+        done(null, pairedLF ? chunk.subarray(1) : chunk);
+      },
     });
+    Object.defineProperties(input, {
+      isRaw: { get: () => this.input.isRaw },
+      setRawMode: {
+        value: (enabled: boolean) => this.input.setRawMode?.(enabled),
+      },
+    });
+    const terminal = createInterface({
+      input,
+      output: this.output,
+      crlfDelay: Infinity,
+    });
+    this.input.pipe(input);
     const closed = new Promise<null>((resolve) => {
       terminal.once("close", () => resolve(null));
     });
@@ -103,7 +122,9 @@ export class TerminalOperator implements OperatorIO {
       return null;
     } finally {
       this.waiting = undefined;
+      this.input.unpipe(input);
       terminal.close();
+      input.destroy();
       if (!this.output.isTTY) this.output.write("\n");
     }
   }

@@ -117,6 +117,10 @@ await test("uncertain PR creation with no exact match requires operator authoriz
     throw new Error("unknown creation outcome");
   };
   fixture.dependencies.operator.pause = async (message) => {
+    assert.match(
+      message,
+      /\[Operator Pause\] Issue #50 .*publication pending_pr/u,
+    );
     assert.match(message, /creation outcome is uncertain/u);
     assert.equal(state.creations, 1);
     return "q";

@@ -164,7 +164,11 @@ export interface OperatorIO {
   write(message: string): void;
   confirmationStatus?(status: ConfirmationStatus): void;
   // Close active input when the supplied signal is cancelled.
-  pause(message: string, signal?: AbortSignal): Promise<string | null>;
+  pause(
+    message: string,
+    signal?: AbortSignal,
+    identity?: string,
+  ): Promise<string | null>;
 }
 
 export interface RetryPolicy {
