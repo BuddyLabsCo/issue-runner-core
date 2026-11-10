@@ -240,7 +240,8 @@ for (const enhancementFirst of [true, false]) {
               Date.now() < deadline,
               "Operator Pause must be admitted behind Enhancement Pause",
             );
-            await new Promise<void>((resolve) => setImmediate(resolve));
+            // Allow checkpoint replacement between reads on Windows.
+            await new Promise<void>((resolve) => setTimeout(resolve, 100));
           }
         }
         assert.equal(
