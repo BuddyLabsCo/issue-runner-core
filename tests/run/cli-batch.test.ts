@@ -339,7 +339,7 @@ await test("a failed Issue cancels a sibling's delayed startup and waits for its
   );
 });
 
-await test("concurrent Git failures serialize non-Agent Operator Pauses before retrying", async (t) => {
+await test("concurrent Git failures keep FIFO Operator Pauses and sibling gating through unsupported input", async (t) => {
   const fixture = await parentRun(t, [child(51), child(52)], {
     ...validConfig,
     operationRetry: 0,
@@ -348,15 +348,23 @@ await test("concurrent Git failures serialize non-Agent Operator Pauses before r
     fixture.dependencies.gitWorkspace,
   );
   const failed = new Set<string>();
+  const siblingInspecting = deferred<void>();
+  const firstPause = deferred<void>();
   fixture.dependencies.gitWorkspace.inspect = async (input) => {
     if (!failed.has(input.worktree)) {
       failed.add(input.worktree);
-      throw new Error("Git temporarily unavailable");
+      if (input.worktree.endsWith("ticket-51")) {
+        await siblingInspecting.promise;
+      } else {
+        siblingInspecting.resolve();
+        await firstPause.promise;
+      }
+      throw new Error(`Git temporarily unavailable: ${input.worktree}`);
     }
     return inspect(input);
   };
   let active = 0;
-  let pauses = 0;
+  const prompts: number[] = [];
   fixture.dependencies.operator.pause = async (message) => {
     if (message.includes("Integration is not scripted in this fixture"))
       return "s";
@@ -366,10 +374,16 @@ await test("concurrent Git failures serialize non-Agent Operator Pauses before r
       1,
       "only one question may read operator input at a time",
     );
-    pauses += 1;
+    prompts.push(Number(/ticket-(\d+)/u.exec(message)![1]));
+    firstPause.resolve();
+    assert.deepEqual(
+      fixture.dispatched,
+      [],
+      "queued pauses retain intervention",
+    );
     await new Promise<void>((resolve) => setTimeout(resolve, 100));
     active -= 1;
-    return "";
+    return prompts.length === 1 ? "unsupported" : "";
   };
   const result = await fixture.run();
   assert.equal(
@@ -377,25 +391,32 @@ await test("concurrent Git failures serialize non-Agent Operator Pauses before r
     "incomplete",
     JSON.stringify(result.summary),
   );
-  assert.equal(pauses, 2);
+  assert.deepEqual(prompts, [51, 51, 52]);
+  assert.ok(fixture.dependencies.messages.includes("Unsupported input."));
   assert.deepEqual([...fixture.dispatched].sort(), [51, 52]);
 });
 
-await test("q at an Operator Pause cancels the Batch before queued questions or retries", async (t) => {
-  const fixture = await parentRun(t, [child(51), child(52)], {
-    ...validConfig,
-    operationRetry: 0,
+for (const response of ["q", null]) {
+  await test(`${response === null ? "EOF" : "q"} at an Operator Pause cancels the Batch before queued questions or retries`, async (t) => {
+    const fixture = await parentRun(t, [child(51), child(52)], {
+      ...validConfig,
+      operationRetry: 0,
+    });
+    fixture.dependencies.gitWorkspace.inspect = async () => {
+      throw new Error("Git unavailable");
+    };
+    let pauses = 0;
+    fixture.dependencies.operator.pause = async () => {
+      assert.equal(
+        ++pauses,
+        1,
+        "queued questions must stop after cancellation",
+      );
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+      return response;
+    };
+    assert.equal((await fixture.run()).summary.outcome, "cancelled");
+    assert.equal(pauses, 1);
+    assert.deepEqual(fixture.dispatched, []);
   });
-  fixture.dependencies.gitWorkspace.inspect = async () => {
-    throw new Error("Git unavailable");
-  };
-  let pauses = 0;
-  fixture.dependencies.operator.pause = async () => {
-    assert.equal(++pauses, 1, "queued questions must stop after cancellation");
-    await new Promise<void>((resolve) => setTimeout(resolve, 100));
-    return "q";
-  };
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  assert.equal(pauses, 1);
-  assert.deepEqual(fixture.dispatched, []);
-});
+}

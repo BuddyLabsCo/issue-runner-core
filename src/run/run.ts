@@ -4,6 +4,7 @@ import {
   type RetainedEvidence,
 } from "./report.ts";
 import type { LoadedProject } from "../config.ts";
+import { TerminalConfirmations } from "./confirmations.ts";
 import type {
   Tracker,
   CodeHost,
@@ -37,6 +38,7 @@ export interface RunContext {
   runArguments: readonly string[];
   clock: Clock;
   operator: OperatorIO;
+  confirmations?: TerminalConfirmations;
   git: GitWorkspace;
   terminal: TerminalPlugin;
   enhancements?: Readonly<
@@ -118,7 +120,13 @@ async function executeProject(
   const signal = context.signal
     ? AbortSignal.any([context.signal, controller.signal])
     : controller.signal;
-  const operator = serializeOperator(context.operator, controller, signal);
+  const confirmations = new TerminalConfirmations(context.operator, signal);
+  const operator = serializeOperator(
+    context.operator,
+    controller,
+    signal,
+    confirmations,
+  );
   const host = codeHost;
   codeHost = {
     resolveTargetBranch: (repository) => host.resolveTargetBranch(repository),
@@ -139,6 +147,7 @@ async function executeProject(
     ...context,
     signal,
     operator,
+    confirmations,
     clock: {
       now: () => clock.now(),
       sleep: (ms) => cancellableSleep(clock, ms, signal),
