@@ -1,9 +1,17 @@
 # Changelog
 
+## 1.0.2
+
+- - fix: [issue-355] enable long paths for worktree operations (#356)
+- - feat: [issue-351] redraw active confirmations after Core output (#357)
+- - feat: [issue-350] support Assignment-scoped Enhancement Pause (#354)
+- - refactor: [issue-349] separate terminal confirmations from intervention (#352)
+
 ## 1.0.1
 
 - - docs: [issue-336] show complete Herdr and Codex configuration (#337)
 - - fix: [issue-333] allow pickup of runner-assigned issues (#334)
+
 
 ## 1.0.0
 
@@ -11,9 +19,11 @@
 - - docs: [issue-330] add demo GIF to README (#331)
 
 
+
 ## 0.1.3
 
 - - fix: [issue-325] unblock conflict repairs and document agent startup (#326)
+
 
 
 
@@ -24,9 +34,11 @@
 
 
 
+
 ## 0.1.1
 
 - - docs: [issue-313] consolidate Core documentation (#320)
+
 
 
 
