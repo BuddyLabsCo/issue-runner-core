@@ -1,4 +1,5 @@
 import type { AuditEvent, AuditLog } from "../audit.ts";
+import type { TerminalConfirmations } from "./confirmations.ts";
 import type { OperationProgress } from "../recovery.ts";
 import type { Clock, OperatorIO, RetryPolicy } from "./contracts.ts";
 
@@ -95,8 +96,9 @@ export function serializeOperator(
   operator: OperatorIO,
   controller: AbortController,
   signal: AbortSignal,
+  confirmations: TerminalConfirmations,
 ): OperatorIO & { advance<T>(action: () => Promise<T>): Promise<T> } {
-  let pending: Promise<unknown> = Promise.resolve();
+  let requests = 0;
   let pauses = 0;
   let resumed: Promise<void>;
   let resume!: () => void;
@@ -117,52 +119,25 @@ export function serializeOperator(
       return action();
     },
     write: (message) => operator.write(message),
-    pause(message) {
+    async pause(message, requestSignal) {
       const release = intervene();
-      const next = pending
-        .then(async () => {
-          signal.throwIfAborted();
-          let abort!: () => void;
-          const cancelled = new Promise<never>((_resolve, reject) => {
-            abort = () => {
-              const reason: unknown = signal.reason;
-              reject(
-                reason instanceof Error ? reason : new Error(String(reason)),
-              );
-            };
-            signal.addEventListener("abort", abort, { once: true });
-          });
-          try {
-            for (;;) {
-              const response = await Promise.race([
-                Promise.resolve().then(() => {
-                  signal.throwIfAborted();
-                  return operator.pause(message, signal);
-                }),
-                cancelled,
-              ]);
-              signal.throwIfAborted();
-              if (response === "q" || response === null)
-                controller.abort(new OperatorCancelled("operator cancelled"));
-              if (
-                response === "" ||
-                response === "s" ||
-                response === "q" ||
-                response === null
-              )
-                return response;
-              operator.write("Unsupported input.");
-            }
-          } catch (error) {
-            controller.abort(error);
-            throw error;
-          } finally {
-            signal.removeEventListener("abort", abort);
-          }
-        })
-        .finally(release);
-      pending = next.catch(() => undefined);
-      return next;
+      try {
+        const response = await confirmations.request({
+          id: `operator:${++requests}`,
+          message,
+          accepts: (response) =>
+            response === "" || response === "s" || response === "q",
+          ...(requestSignal ? { signal: requestSignal } : {}),
+        });
+        if (response === "q" || response === null)
+          controller.abort(new OperatorCancelled("operator cancelled"));
+        return response;
+      } catch (error) {
+        if (!requestSignal?.aborted) controller.abort(error);
+        throw error;
+      } finally {
+        release();
+      }
     },
   };
 }
