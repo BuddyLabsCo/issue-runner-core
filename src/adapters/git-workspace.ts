@@ -112,6 +112,8 @@ export class LocalGitWorkspace implements GitWorkspace {
   }): Promise<void> {
     await mkdir(path.dirname(input.worktree), { recursive: true });
     await this.command(input.checkout, [
+      "-c",
+      "core.longpaths=true",
       "worktree",
       "add",
       "-b",
@@ -150,7 +152,14 @@ export class LocalGitWorkspace implements GitWorkspace {
     if (head && head !== headSha)
       throw new Error("Cleanup branch head changed; retaining resources");
     const entries = (
-      await this.command(checkout, ["worktree", "list", "--porcelain", "-z"])
+      await this.command(checkout, [
+        "-c",
+        "core.longpaths=true",
+        "worktree",
+        "list",
+        "--porcelain",
+        "-z",
+      ])
     ).split("\0\0");
     const expectedPath = await resolveWorktreePath(worktree);
     let owned: string | undefined;
@@ -171,7 +180,14 @@ export class LocalGitWorkspace implements GitWorkspace {
         throw new Error(
           "Cleanup Worktree ownership changed; retaining resources",
         );
-      await this.command(checkout, ["worktree", "remove", "--", worktree]);
+      await this.command(checkout, [
+        "-c",
+        "core.longpaths=true",
+        "worktree",
+        "remove",
+        "--",
+        worktree,
+      ]);
     }
     if (head) await this.command(checkout, ["branch", "-D", "--", branch]);
   }
