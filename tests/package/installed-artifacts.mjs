@@ -177,7 +177,8 @@ export async function testInstalledArtifacts(
           }
         });
         const { terminal } = execution;
-        const context = { cwd: process.cwd(), env: { CUSTOM: "literal $&" } };
+        const pauses = [];
+        const context = { cwd: process.cwd(), env: { CUSTOM: "literal $&" }, enhancementPause: (id, message) => pauses.push([id, message]) };
         const options = { ...context, label: "consumer", submitKey: "Shift+Enter", signal: new AbortController().signal };
         const { handle: tab, io } = await terminal.createTab(options);
         assert.equal(await terminal.execute(tab, "configured start"), undefined);
@@ -208,6 +209,8 @@ export async function testInstalledArtifacts(
         assert.equal(await enhancement.waitUntilReady(), "native-ref");
         assert.equal(await enhancement.waitUntilReady(), "native-ref");
         assert.equal(enhancement.onAssignment({ id: "assignment-1", expectedFile: "/assigned.json" }), undefined);
+        await enhancement.enhancementResume("assignment-1");
+        assert.deepEqual(pauses, [["assignment-1", "Human action needed"]]);
         output = "";
         await assert.rejects(enhancement.waitUntilReady(), /Not ready/);
         await enhancement.stop();
@@ -216,7 +219,7 @@ export async function testInstalledArtifacts(
         await enhancement.startMonitoring("saved-ref");
         assert.equal(await enhancement.waitUntilReady(), "saved-ref");
         await enhancement.stop();
-        assert.deepEqual(events, [["enhancement factory", context, { enabled: true }], ["assignment", { id: "assignment-1", expectedFile: "/assigned.json" }]]);
+        assert.deepEqual(events, [["enhancement factory", context, { enabled: true }], ["assignment", { id: "assignment-1", expectedFile: "/assigned.json" }], ["resume", "assignment-1"]]);
         assert.deepEqual(hostEvents, [
           ["keys", ["Right", "Enter"]], ["text", "readiness marker"], ["recovery", "assignment-1"],
           ["keys", ["Right", "Enter"]], ["text", "readiness marker"]

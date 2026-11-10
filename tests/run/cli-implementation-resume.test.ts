@@ -300,13 +300,16 @@ for (const mismatch of [false, true]) {
       signal: new AbortController().signal,
       enhancements: {
         "custom-agent": {
-          contractVersion: 2 as const,
+          contractVersion: 3 as const,
           async createEnhancement(
             _io: import("../../src/terminal.ts").TerminalIO,
             callback: import("../../src/terminal.ts").RequestRecovery,
           ) {
             recover = callback;
             return {
+              enhancementResume() {
+                return Promise.resolve();
+              },
               async startMonitoring(ref?: string) {
                 assert.equal(ref, native);
               },

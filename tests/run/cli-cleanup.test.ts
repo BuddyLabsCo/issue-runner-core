@@ -310,9 +310,12 @@ await test("enhancement cleanup failure retries before closing without replaying
     ...fixture.dependencies,
     enhancements: {
       "custom-agent": {
-        contractVersion: 2 as const,
+        contractVersion: 3 as const,
         async createEnhancement() {
           return {
+            enhancementResume() {
+              return Promise.resolve();
+            },
             async startMonitoring() {
               return;
             },

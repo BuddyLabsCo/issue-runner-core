@@ -57,7 +57,7 @@ export function terminalInstallation(
 }
 
 export const genericEnhancement = `
-export const contractVersion = 2;
+export const contractVersion = 3;
 export const events = [];
 export async function createEnhancement(io, recover, context, config) {
   events.push(["factory", config]);
@@ -65,6 +65,7 @@ export async function createEnhancement(io, recover, context, config) {
     async startMonitoring(ref) { events.push(["monitor", ref]); },
     async waitUntilReady() { return "discovered-native"; },
     onAssignment(assignment) { events.push(["assignment", assignment.expectedFile]); },
+    async enhancementResume(id) { events.push(["resume", id]); },
     async stop() { events.push(["stop"]); },
   };
 }

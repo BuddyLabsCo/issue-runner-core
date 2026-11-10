@@ -99,10 +99,13 @@ await test("recovery retains Assignment A through adapter-delayed input before s
   const tab = await conversations.create(
     { cwd: "/worktree", env: {}, label: "Agent", submitKey: "Enter" },
     {
-      contractVersion: 2,
+      contractVersion: 3,
       async createEnhancement(_io, callback) {
         recover = callback;
         return {
+          enhancementResume() {
+            return Promise.resolve();
+          },
           async startMonitoring() {
             return;
           },
@@ -187,10 +190,13 @@ await test("cleanup attempts are shared, retryable and independent of recovery i
   const tab = await conversations.create(
     { cwd: "/worktree", env: {}, label: "Agent", submitKey: "Enter" },
     {
-      contractVersion: 2,
+      contractVersion: 3,
       async createEnhancement(_io, callback) {
         recover = callback;
         return {
+          enhancementResume() {
+            return Promise.resolve();
+          },
           async startMonitoring() {
             return;
           },
@@ -281,11 +287,14 @@ await test("revocation reaches adapter-queued I/O while an already-started text/
   const tab = await conversations.create(
     { cwd: "/worktree", env: {}, label: "Agent", submitKey: "Shift+Enter" },
     {
-      contractVersion: 2,
+      contractVersion: 3,
       async createEnhancement(io, callback) {
         bound = io;
         recover = callback;
         return {
+          enhancementResume() {
+            return Promise.resolve();
+          },
           async startMonitoring() {
             return;
           },
@@ -356,10 +365,13 @@ await test("one instance's pending cleanup cannot revoke or stall another instan
   });
   let count = 0;
   const module = {
-    contractVersion: 2 as const,
+    contractVersion: 3 as const,
     async createEnhancement() {
       const index = count++;
       return {
+        enhancementResume() {
+          return Promise.resolve();
+        },
         async startMonitoring() {
           return;
         },
@@ -433,10 +445,13 @@ await test("a real backend recovery failure still rejects after cancellation", a
   const tab = await conversations.create(
     { cwd: "/worktree", env: {}, label: "Agent", submitKey: "Enter" },
     {
-      contractVersion: 2,
+      contractVersion: 3,
       async createEnhancement(_io, callback) {
         recover = callback;
         return {
+          enhancementResume() {
+            return Promise.resolve();
+          },
           async startMonitoring() {
             return;
           },

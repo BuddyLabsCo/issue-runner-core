@@ -231,7 +231,7 @@ await test("cancellation leaves a pending enhancement factory behind and cleans 
     ...fixture.dependencies,
     enhancements: {
       "custom-agent": {
-        contractVersion: 2 as const,
+        contractVersion: 3 as const,
         async createEnhancement() {
           entered.resolve();
           return factory.promise;
@@ -245,6 +245,9 @@ await test("cancellation leaves a pending enhancement factory behind and cleans 
   assert.equal((await running).summary.outcome, "cancelled");
   assert.equal(fixture.state.tabOptions[0]!.signal?.aborted, true);
   factory.resolve({
+    enhancementResume() {
+      return Promise.resolve();
+    },
     async startMonitoring() {
       assert.fail("late monitoring");
     },
@@ -277,9 +280,12 @@ for (const phase of ["monitoring", "readiness"] as const) {
       ...fixture.dependencies,
       enhancements: {
         "custom-agent": {
-          contractVersion: 2 as const,
+          contractVersion: 3 as const,
           async createEnhancement() {
             return {
+              enhancementResume() {
+                return Promise.resolve();
+              },
               async startMonitoring() {
                 if (phase === "monitoring") {
                   entered.resolve();
@@ -335,7 +341,7 @@ for (const failure of ["factory", "cleanup"] as const) {
       ...fixture.dependencies,
       enhancements: {
         "custom-agent": {
-          contractVersion: 2 as const,
+          contractVersion: 3 as const,
           async createEnhancement() {
             entered.resolve();
             return pending.promise;
@@ -351,6 +357,9 @@ for (const failure of ["factory", "cleanup"] as const) {
       pending.reject(new Error("late factory failure"));
     else
       pending.resolve({
+        enhancementResume() {
+          return Promise.resolve();
+        },
         async startMonitoring() {
           assert.fail("late monitoring");
         },

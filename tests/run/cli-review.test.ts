@@ -329,11 +329,14 @@ for (const purpose of ["review", "ci", "conflict", "documentation"] as const) {
     const stopped: number[] = [];
     const assigned: number[] = [];
     const module = {
-      contractVersion: 2 as const,
+      contractVersion: 3 as const,
       async createEnhancement() {
         const instance = ++created;
         let native = `native-${instance}`;
         return {
+          enhancementResume() {
+            return Promise.resolve();
+          },
           async startMonitoring(ref?: string) {
             if (ref) native = ref;
           },

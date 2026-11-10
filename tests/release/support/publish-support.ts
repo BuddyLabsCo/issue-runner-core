@@ -42,7 +42,7 @@ export const readyPackage = {
     "dist/cli-entry.js": "export async function runCli() {}\n",
     "dist/cli-entry.d.ts": "export declare function runCli(): Promise<void>;\n",
     "dist/terminal.js":
-      "export const terminalContractVersion = 2; export const enhancementContractVersion = 2;\n",
+      "export const terminalContractVersion = 2; export const enhancementContractVersion = 3;\n",
     "dist/terminal.d.ts": "export declare const terminalContractVersion = 2;\n",
     // The package check inspects supplied bytes; external services remain substitutes.
     "scripts/release-accept.mjs": [
@@ -61,7 +61,7 @@ export const readyPackage = {
       '  assert.equal(process.listenerCount("SIGINT"), before);',
       '  const terminal = await import(pathToFileURL(join(directory, "package/dist/terminal.js")));',
       "  assert.equal(terminal.terminalContractVersion, 2);",
-      "  assert.equal(terminal.enhancementContractVersion, 2);",
+      "  assert.equal(terminal.enhancementContractVersion, 3);",
       "} finally { rmSync(directory, { recursive: true, force: true }); }",
       "",
     ].join("\n"),

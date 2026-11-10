@@ -97,17 +97,23 @@ for (const [name, source, expected, tabs] of [
   ["import failure", 'throw new Error("import failed");', /import failed/, 0],
   [
     "initialization failure",
-    'export const contractVersion = 2; export function createEnhancement() { throw new Error("preflight failed"); }',
+    'export const contractVersion = 3; export function createEnhancement() { throw new Error("preflight failed"); }',
     /preflight failed/,
     1,
   ],
   [
     "invalid instance",
-    "export const contractVersion = 2; export function createEnhancement() { return null; }",
+    "export const contractVersion = 3; export function createEnhancement() { return null; }",
     /expected an object/,
     1,
   ],
-  ...["startMonitoring", "waitUntilReady", "onAssignment", "stop"].map(
+  ...[
+    "startMonitoring",
+    "waitUntilReady",
+    "onAssignment",
+    "enhancementResume",
+    "stop",
+  ].map(
     (method) =>
       [
         `missing ${method}`,

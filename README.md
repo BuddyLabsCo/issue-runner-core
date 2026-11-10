@@ -162,6 +162,12 @@ When using this enhancement with these overrides, add `--remote unix://` to both
 
 Runner pauses when an operation needs a decision, such as exhausted API/Git retries, resource creation failure, uncertain command delivery, or rejected enhancement readiness. Inspect the reported target and any partial effects before pressing Enter to retry or continue. `q` or EOF cancels; Issue-scoped pauses also allow `s` to skip and retain that Issue's resources. Audit recovery retries logging only. Continuing an uncertain command does not replay it.
 
+### Enhancement Pause
+
+An enhancement can request confirmation after pausing its own automation. Runner displays `[Enhancement Pause]` with the originating Issue, stage, and message. Resolve the reported blocker, then press Enter to notify that enhancement once. Other input, including `s` and `q`, leaves it waiting; EOF ends the confirmation without notifying the enhancement or cancelling the Run. Process cancellation signals still apply.
+
+Other Issues and handoff observation continue. Enhancement Pause and Operator Pause share FIFO input; Operator Pause retains its workflow intervention while queued. If the displayed confirmation’s Assignment ends, Runner appends `[Enhancement Pause ended]` and invalidates its input without resuming it. New Runs restore task progress without restoring confirmations. See the [enhancement integration contract](docs/terminal-contract.md#enhancement-pause).
+
 ### Folder or hook trust blocks startup
 
 Without an enhancement e.g. issue-runner-agent-codex, Runner waits the base startup delay and sends an identity-only Session Probe. Folder trust, hook trust, or native permissions will block the Agent session.  

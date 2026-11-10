@@ -1,5 +1,5 @@
 export const terminalContractVersion = 2 as const;
-export const enhancementContractVersion = 2 as const;
+export const enhancementContractVersion = 3 as const;
 
 // Opaque, plugin-instance-owned reference; Core must not inspect or persist it.
 export type TabHandle = object;
@@ -36,12 +36,14 @@ export type RequestRecovery = (assignmentId: string) => Promise<void>;
 export interface EnhancementContext {
   readonly cwd: string;
   readonly env: Readonly<Record<string, string>>;
+  enhancementPause(assignmentId: string, message: string): void;
 }
 
 export interface Enhancement {
   startMonitoring(sessionref?: string): Promise<void>;
   waitUntilReady(): Promise<string>;
   onAssignment(assignment: { id: string; expectedFile: string }): void;
+  enhancementResume(assignmentId: string): Promise<void>;
   stop(): Promise<void>;
 }
 
