@@ -6,6 +6,11 @@ interface ConfirmationIdentity {
   message: string;
 }
 
+export interface ConfirmationStatus {
+  active: ConfirmationIdentity | undefined;
+  pending: readonly ConfirmationIdentity[];
+}
+
 interface ConfirmationRequest extends ConfirmationIdentity {
   accepts(response: string): boolean;
   signal?: AbortSignal;
@@ -22,21 +27,21 @@ interface PendingConfirmation {
 export class TerminalConfirmations {
   private readonly pending: PendingConfirmation[] = [];
   private active: PendingConfirmation | undefined;
-  private readonly operator: Pick<OperatorIO, "pause" | "write">;
+  private readonly operator: Pick<
+    OperatorIO,
+    "pause" | "write" | "confirmationStatus"
+  >;
   private readonly signal: AbortSignal;
 
   constructor(
-    operator: Pick<OperatorIO, "pause" | "write">,
+    operator: Pick<OperatorIO, "pause" | "write" | "confirmationStatus">,
     signal: AbortSignal,
   ) {
     this.operator = operator;
     this.signal = signal;
   }
 
-  get status(): {
-    active: ConfirmationIdentity | undefined;
-    pending: readonly ConfirmationIdentity[];
-  } {
+  get status(): ConfirmationStatus {
     const identity = ({ request }: PendingConfirmation) => ({
       id: request.id,
       message: request.message,
@@ -67,6 +72,7 @@ export class TerminalConfirmations {
           const index = this.pending.indexOf(entry);
           if (index < 0) return;
           this.pending.splice(index, 1);
+          this.operator.confirmationStatus?.(this.status);
           signal.removeEventListener("abort", entry.cancel);
           const reason: unknown = signal.reason;
           reject(reason instanceof Error ? reason : new Error(String(reason)));
@@ -74,6 +80,7 @@ export class TerminalConfirmations {
       };
       signal.addEventListener("abort", entry.cancel, { once: true });
       this.pending.push(entry);
+      this.operator.confirmationStatus?.(this.status);
       void this.advance();
     });
   }
@@ -84,12 +91,14 @@ export class TerminalConfirmations {
     if (!entry) return;
     entry.signal.removeEventListener("abort", entry.cancel);
     this.active = entry;
+    this.operator.confirmationStatus?.(this.status);
     try {
       entry.resolve(await this.read(entry));
     } catch (error) {
       entry.reject(error);
     } finally {
       this.active = undefined;
+      this.operator.confirmationStatus?.(this.status);
       void this.advance();
     }
   }

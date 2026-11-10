@@ -233,7 +233,7 @@ for (const missing of [
     await publish(path.join(recovery, `${old.input_hash}-51.json`), old);
     await publish(path.join(recovery, `${other.input_hash}-52.json`), other);
     fixture.dependencies.operator.pause = async (message) => {
-      if (message.startsWith("Operation failed:")) return "s";
+      if (message.includes("Operation failed:")) return "s";
       assert.equal(
         message,
         "Enter to restart the entire Issue #51, or q to exit Runner.",

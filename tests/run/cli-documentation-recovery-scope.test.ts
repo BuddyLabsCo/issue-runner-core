@@ -43,7 +43,7 @@ await test("completed documentation from another Run cannot satisfy a Batch clos
   fixture.dependencies.operator.pause = async (message) => {
     assert.equal(
       message,
-      "Enter to restart the entire Documentation Maintenance occurrence, or q to exit Runner.",
+      "[Operator Pause] the current Documentation Maintenance occurrence: Enter to restart the entire Documentation Maintenance occurrence, or q to exit Runner.",
     );
     return "q";
   };
@@ -91,7 +91,7 @@ await test("restarted automatic documentation keeps its Batch association throug
   fixture.dependencies.operator.pause = async (message) => {
     assert.equal(
       message,
-      "Enter to restart the entire Documentation Maintenance occurrence, or q to exit Runner.",
+      "[Operator Pause] the current Documentation Maintenance occurrence: Enter to restart the entire Documentation Maintenance occurrence, or q to exit Runner.",
     );
     return "";
   };

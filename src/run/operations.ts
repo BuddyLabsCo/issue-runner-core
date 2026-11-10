@@ -83,12 +83,17 @@ export async function boundedOperation<T>(
   }
 }
 
-export function scopeOperator(operator: OperatorIO, scope: string): OperatorIO {
+export function scopeOperator(
+  operator: OperatorIO,
+  scope: string | undefined = operator.skipScope,
+  identity: () => string = () => scope ?? "Run",
+): OperatorIO {
   return {
-    skipScope: scope,
+    ...(scope === undefined ? {} : { skipScope: scope }),
     ...(operator.intervene ? { intervene: () => operator.intervene!() } : {}),
     write: (message) => operator.write(message),
-    pause: (message, signal) => operator.pause(message, signal),
+    pause: (message, signal, origin) =>
+      operator.pause(message, signal, origin ?? identity()),
   };
 }
 
@@ -119,12 +124,15 @@ export function serializeOperator(
       return action();
     },
     write: (message) => operator.write(message),
-    async pause(message, requestSignal) {
+    async pause(message, requestSignal, identity) {
       const release = intervene();
       try {
         const response = await confirmations.request({
           id: `operator:${++requests}`,
-          message,
+          message:
+            identity === undefined
+              ? message
+              : `[Operator Pause] ${identity}: ${message}`,
           accepts: (response) =>
             response === "" || response === "s" || response === "q",
           ...(requestSignal ? { signal: requestSignal } : {}),
