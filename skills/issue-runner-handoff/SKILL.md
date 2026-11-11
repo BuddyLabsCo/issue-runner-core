@@ -24,7 +24,9 @@ Only after the assigned work is complete, write the applicable final JSON schema
 For implementation and documentation assignments, include the nonempty `pr_title`
 and `pr_body` strings generated from the completed work and repository Pull Request
 conventions. These assignments require both fields for `committed` and `no_change`.
-Review, Review-fix, CI-repair, and conflict-repair assignments use only `outcome`,
+The first implementation after no-change Review findings is an implementation
+assignment: return `committed` and fresh PR metadata describing the actual changes.
+Review, ordinary Review-fix, CI-repair, and conflict-repair assignments use only `outcome`,
 `summary`, `commits`, and `findings_file`; omit PR metadata for those purposes.
 
 For implementation or documentation, write one JSON object with exactly these fields:
@@ -54,6 +56,8 @@ For implementation or documentation, write one JSON object with exactly these fi
 `summary`: briefly explain what was implemented or reviewed and why the
 outcome applies. Include verification actually performed, its results,
 and relevant limitations. Report only work and checks actually performed.
+For no-change assessments and reviews, state why requirements are satisfied,
+the actual checks and results, and any limitations.
 
 `commits` depends on `outcome`:
 

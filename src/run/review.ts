@@ -22,15 +22,46 @@ import type { ReadOperation } from "./discovery.ts";
 import { verifyWorkspace } from "./verification.ts";
 
 export function verifiedImplementation(progress: ImplementationProgress) {
+  const implementation = progress.noChange?.fix?.result ?? progress.result!;
   return {
-    ...progress.result!,
+    ...implementation,
     commits: [
-      ...progress.result!.commits,
+      ...implementation.commits,
       ...(progress.reviews ?? []).flatMap(
         (round) => round.fix?.result?.commits ?? [],
       ),
     ],
   };
+}
+
+export function validateReviewStage(
+  value: StageProgress<unknown>,
+  loaded: LoadedProject,
+): void {
+  const invalid = () =>
+    new Error("unable to recover: incomplete or invalid Review/fix context");
+  const directory = path.join(loaded.directory, "handoffs");
+  const owned = (file: unknown): file is string =>
+    nonempty(file) && path.isAbsolute(file) && path.dirname(file) === directory;
+  const stage = object(value);
+  if (
+    !Array.isArray(stage.superseded) ||
+    !stage.superseded.every(owned) ||
+    (stage.pendingPrompt !== undefined && !nonempty(stage.pendingPrompt))
+  )
+    throw invalid();
+  for (const [key, id] of [
+    ["probe", undefined],
+    ["invocation", "invocation_id"],
+  ] as const) {
+    if (stage[key] === undefined) continue;
+    const assignment = object(stage[key]);
+    if (
+      (id !== undefined && !nonempty(assignment[id])) ||
+      !owned(assignment.path)
+    )
+      throw invalid();
+  }
 }
 
 export function validateReviewContext(
@@ -39,12 +70,23 @@ export function validateReviewContext(
 ): void {
   const invalid = () =>
     new Error("unable to recover: incomplete or invalid Review/fix context");
+  const directory = path.join(loaded.directory, "handoffs");
+  const owned = (file: unknown): file is string =>
+    nonempty(file) && path.isAbsolute(file) && path.dirname(file) === directory;
   if (progress.reviews === undefined) {
     if (
       ![
         "worktree_created",
         "implementing",
         "implementation_completed",
+        ...(progress.noChange?.review
+          ? [
+              "reviewing",
+              "review_completed",
+              "fixing_review",
+              "fix_review_completed",
+            ]
+          : []),
         "repairing_ci",
         "ci_repair_completed",
         "repairing_conflict",
@@ -54,30 +96,6 @@ export function validateReviewContext(
       throw invalid();
     return;
   }
-  const directory = path.join(loaded.directory, "handoffs");
-  const owned = (file: unknown): file is string =>
-    nonempty(file) && path.isAbsolute(file) && path.dirname(file) === directory;
-  const validateStage = (value: StageProgress<unknown>) => {
-    const stage = object(value);
-    if (
-      !Array.isArray(stage.superseded) ||
-      !stage.superseded.every(owned) ||
-      (stage.pendingPrompt !== undefined && !nonempty(stage.pendingPrompt))
-    )
-      throw invalid();
-    for (const [key, id] of [
-      ["probe", undefined],
-      ["invocation", "invocation_id"],
-    ] as const) {
-      if (stage[key] === undefined) continue;
-      const assignment = object(stage[key]);
-      if (
-        (id !== undefined && !nonempty(assignment[id])) ||
-        !owned(assignment.path)
-      )
-        throw invalid();
-    }
-  };
   if (
     !Array.isArray(progress.reviews) ||
     progress.reviews.length === 0 ||
@@ -101,14 +119,14 @@ export function validateReviewContext(
       (index > 0 && progress.reviews[index - 1]!.fix?.result === undefined)
     )
       throw invalid();
-    validateStage(round);
+    validateReviewStage(round, loaded);
     if (round.result !== undefined) {
       round.result = parseReview(JSON.stringify(round.result), round.findings);
       if (!round.invocation) throw invalid();
     }
     if (round.fix !== undefined) {
       if (round.result?.outcome !== "findings") throw invalid();
-      validateStage(round.fix);
+      validateReviewStage(round.fix, loaded);
       if (round.fix.result !== undefined) {
         const result = parseExecution(JSON.stringify(round.fix.result));
         if (result.outcome !== "committed" || !round.fix.invocation)

@@ -191,7 +191,7 @@ await test("releasing a Reservation after the handoff does not report successful
   assert.equal(fixture.state.ticket.state, "open");
 });
 
-await test("an ordinary no_change handoff reports no delivery credit", async (t) => {
+await test("a delivered ordinary no_change handoff reports completion without a PR", async (t) => {
   const fixture = await implementationRun(t);
   fixture.state.onTask = async (file) => {
     fixture.state.evidence.changed = false;
@@ -204,17 +204,26 @@ await test("an ordinary no_change handoff reports no delivery credit", async (t)
       findings_file: null,
     });
   };
+  Object.assign(fixture.dependencies.tracker, {
+    async commentTicket() {
+      /* Scripted successful comment. */
+    },
+    async closeTicket() {
+      fixture.state.ticket.state = "closed";
+      fixture.state.ticket.stateReason = "completed";
+    },
+  });
   const result = await fixture.run();
-  assert.equal(result.summary.outcome, "incomplete");
+  assert.equal(result.summary.outcome, "succeeded");
   assert.equal((await fixture.snapshot()).phase, "implementation_completed");
   assert.match(
     result.summary.tickets![0]!.detail,
-    /no_change.*no Issue delivery/,
+    /no_change.*Review disabled/,
   );
-  assert.equal(result.exitCode, 1);
-  assert.equal(result.summary.tickets?.[0]?.status, "no_change");
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.summary.tickets?.[0]?.status, "completed");
   assert.equal(result.summary.tickets?.[0]?.pullRequest, null);
-  assert.equal(fixture.state.ticket.state, "open");
+  assert.equal(fixture.state.ticket.state, "closed");
 });
 
 await test("progress stays silent during Probes and reports native identity and task correction paths", async (t) => {

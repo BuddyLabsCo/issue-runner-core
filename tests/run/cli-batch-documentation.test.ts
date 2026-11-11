@@ -157,10 +157,13 @@ await test("work cancelled after merge never triggers documentation", async (t) 
   assert.equal(fixture.maintenance.length, 0);
 });
 
-await test("ordinary implementation no_change earns no delivery trigger", async (t) => {
+await test("ordinary implementation no_change delivers and triggers documentation", async (t) => {
   const fixture = await batchDocumentationRun(t, [
     child(51, { labels: ["ready-for-agent", "Docs"] }),
   ]);
+  fixture.dependencies.tracker.commentTicket = async () => {
+    /* Scripted successful comment. */
+  };
   const submit = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
@@ -170,9 +173,9 @@ await test("ordinary implementation no_change earns no delivery trigger", async 
       await publish(assignment.path, documentationNoChange);
     } else await submit(tab, text);
   };
-  assert.equal((await fixture.run()).summary.outcome, "incomplete");
+  assert.equal((await fixture.run()).summary.outcome, "succeeded");
   assert.equal(fixture.merged.size, 0);
-  assert.equal(fixture.maintenance.length, 0);
+  assert.equal(fixture.maintenance.length, 1);
 });
 
 await test("a command version upgrade recovers pending documentation before parent discovery with its saved Batch association", async (t) => {

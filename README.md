@@ -55,7 +55,7 @@ flowchart TD
     T45 --> F["Rescan children; close Parent #42"]
 ```
 
-Review can be disabled. An ordinary Issue with no changes receives no delivery credit; verified documentation with no changes closes its Maintenance Ticket without a PR. Unfinished work retains its resources.
+For an ordinary Issue with no changes, Runner independently reviews existing behavior before publishing an explanatory comment and closing the Issue. With Review disabled, Runner uses the implementation assessment directly and records that Review was skipped. No-change completion cleans owned resources without waiting for peer PRs in the Batch. Findings return to the original implementation conversation, then ordinary Review starts at round 1 after commits are accepted. Verified documentation with no changes closes its Maintenance Ticket without a PR. Unfinished work retains its resources.
 
 </details>
 
@@ -125,6 +125,8 @@ issue-runner-herdr init --project my-project # Creates config and three prompts 
 ```
 
 Edit `my-project/config.yaml` using its comments, replace its placeholders, and adapt the Agent commands to your shell. The [shipped configuration template](templates/config.yaml) contains all field guidance. Edit the three Project prompts under `my-project/prompts/` for implementation, Review, and documentation instructions. Run from the same Launch Directory; Runner looks only in its selected Project child directory.
+
+Optionally add `prompts/no-change-review.md` to supply Project instructions for the dedicated no-change review. Existing Projects use Core's default prompt without this file. Runner always attempts closure of open delivered Issues; legacy closure settings are ignored without rewriting configuration.
 
 Make sure your AI agent cli can start from the configured checkout folder without interactive popup e.g. Trust folder, Trust hooks. 
 

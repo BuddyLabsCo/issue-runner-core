@@ -34,7 +34,6 @@ export const validConfig = {
     requiredChecksMinutes: 60,
     mergeQueueMinutes: 60,
   },
-  ticketClosure: "runner",
   operationRetry: 1,
   operationRetryDelay: [1],
 };

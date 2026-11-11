@@ -64,8 +64,11 @@ export function createCliDependencies(launchDirectory: string) {
       > {
         assert.fail("unexpected Maintenance Ticket creation");
       },
-      async closeTicket() {
+      async closeTicket(): Promise<void> {
         assert.fail("unexpected Issue closure");
+      },
+      async commentTicket(): Promise<void> {
+        assert.fail("unexpected Issue comment");
       },
       async getTicket(_repository: string, ticket: number) {
         return { number: ticket, state: "open" as const, stateReason: null };

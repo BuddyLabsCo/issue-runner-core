@@ -6,6 +6,7 @@ import type { TabHandle, TerminalPlugin } from "../terminal.ts";
 import type { GitWorkspace } from "./contracts.ts";
 import type { ReadOperation } from "./discovery.ts";
 import { publishedHead, verifiedPublication } from "./publication.ts";
+import { validateNoChangeContext } from "./no-change-validation.ts";
 import { verifiedImplementation } from "./review.ts";
 
 export function executionTerminal(input: {
@@ -80,7 +81,9 @@ export async function cleanupExecution(input: {
   persist: () => Promise<void>;
 }): Promise<void> {
   const { progress, loaded, git, read, persist } = input;
+  validateNoChangeContext(progress, loaded);
   if (
+    progress.noChange?.delivery?.phase !== "delivered" &&
     !(
       progress.purpose === "documentation" &&
       progress.noChangeClosure === "completed"
@@ -129,6 +132,8 @@ export async function cleanupExecution(input: {
     throw new Error("Cleanup Worktree ownership mismatch");
   const stages = [
     progress,
+    ...(progress.noChange?.review ? [progress.noChange.review] : []),
+    ...(progress.noChange?.fix ? [progress.noChange.fix] : []),
     ...(progress.reviews ?? []).flatMap((round) => [
       round,
       ...(round.fix ? [round.fix] : []),
@@ -151,7 +156,15 @@ export async function cleanupExecution(input: {
     )
   )
     throw new Error("Cleanup handoff ownership mismatch");
-  const files = [...new Set(assigned.flatMap((file) => [file, `${file}.tmp`]))];
+  const findings = progress.noChange?.review?.findings;
+  const files = [
+    ...new Set(
+      [...assigned, ...(findings ? [findings] : [])].flatMap((file) => [
+        file,
+        `${file}.tmp`,
+      ]),
+    ),
+  ];
   const cleanup = (progress.cleanup ??= { worktrees: [], files: [] });
   if (
     !Array.isArray(cleanup.worktrees) ||

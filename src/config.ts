@@ -5,7 +5,6 @@ import path from "node:path";
 import { parse } from "yaml";
 
 import type { RetryPolicy } from "./run/contracts.ts";
-type TicketClosurePolicy = "runner" | "code_host";
 
 const documentationConfigurationError =
   "Documentation Maintenance is enabled; supply agents.documentation and prompts/documentation.md";
@@ -53,7 +52,6 @@ export interface ProjectConfig {
     requiredChecksMinutes: number;
     mergeQueueMinutes: number;
   };
-  ticketClosure: TicketClosurePolicy;
   operationRetry: number;
   operationRetryDelay: number[];
   maintenanceTicket: { title: string; body: string; label: string };
@@ -197,9 +195,9 @@ function parseConfig(
       "workflow",
       "agents",
       "timeouts",
-      "ticketClosure",
       "operationRetry",
       // Accepted only so unchanged legacy config can recover matching Runs.
+      "ticketClosure",
       "agentRetry",
       "operationRetryDelay",
       "agentRetryDelay",
@@ -263,9 +261,6 @@ function parseConfig(
   if (!path.isAbsolute(checkout)) throw new Error("checkout must be absolute");
   if (typeof codeHost.adminMerge !== "boolean")
     throw new Error("codeHost.adminMerge is required");
-  if (input.ticketClosure !== "runner" && input.ticketClosure !== "code_host") {
-    throw new Error("ticketClosure is unsupported");
-  }
   if (
     workflow.docMaintainTriggerLabel !== undefined &&
     typeof workflow.docMaintainTriggerLabel !== "string"
@@ -350,7 +345,6 @@ function parseConfig(
         "timeouts.mergeQueueMinutes",
       ),
     },
-    ticketClosure: input.ticketClosure,
     ...retryPolicy,
     maintenanceTicket: {
       title: documentationRequired

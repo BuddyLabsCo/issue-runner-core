@@ -31,6 +31,11 @@ export interface Tracker {
     label: string,
   ): Promise<Ticket>;
   closeTicket(repository: string, ticket: number): Promise<void>;
+  commentTicket(
+    repository: string,
+    ticket: number,
+    body: string,
+  ): Promise<void>;
   getTicket(repository: string, ticket: number): Promise<Ticket>;
   listBlockersPage(
     repository: string,

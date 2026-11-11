@@ -69,16 +69,17 @@ export async function reviewRun(
   fixture.dependencies.terminalPlugin.onInput = async (tab, text, chord) => {
     await submit(tab, text, chord);
     const round = (await fixture.snapshot()).reviews?.at(-1);
+    if (!round) return;
     if (text.startsWith("Review assignment\n")) {
-      state.reviews.push(round!);
-      await state.onReview(round!);
+      state.reviews.push(round);
+      await state.onReview(round);
     } else if (text.startsWith("Fix assignment\n")) {
-      state.fixes.push(round!);
-      await state.onFix(round!);
+      state.fixes.push(round);
+      await state.onFix(round);
     } else if (text.startsWith("Correct the Review handoff:")) {
-      await state.onCorrection(round!, "review");
+      await state.onCorrection(round, "review");
     } else if (text.startsWith("Correct the Review fix handoff:")) {
-      await state.onCorrection(round!, "fix");
+      await state.onCorrection(round, "fix");
     }
   };
   return { ...fixture, reviewState: state };

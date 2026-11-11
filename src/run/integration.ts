@@ -252,27 +252,24 @@ export async function integrateImplementation(input: {
     return selected.ticket;
   };
   for (;;) {
-    if (loaded.config.ticketClosure === "code_host") await sleep(10_000);
     let current = await completion();
     if (current.state !== "closed") {
-      if (loaded.config.ticketClosure === "runner")
-        await read(
-          "close_ticket",
-          target,
-          async () => {
-            if ((await completion()).state === "closed") return;
-            await tracker.closeTicket(repository, ticket);
-            if ((await completion()).state !== "closed")
-              throw new Error("Issue closure has not been confirmed");
-          },
-          {
-            reconcile: async () =>
-              (await completion()).state === "closed"
-                ? { outcome: "completed", result: undefined }
-                : { outcome: "pending" },
-          },
-        );
-      else await sleep(30_000);
+      await read(
+        "close_ticket",
+        target,
+        async () => {
+          if ((await completion()).state === "closed") return;
+          await tracker.closeTicket(repository, ticket);
+          if ((await completion()).state !== "closed")
+            throw new Error("Issue closure has not been confirmed");
+        },
+        {
+          reconcile: async () =>
+            (await completion()).state === "closed"
+              ? { outcome: "completed", result: undefined }
+              : { outcome: "pending" },
+        },
+      );
       current = await completion();
     }
     if (current.state === "closed") {

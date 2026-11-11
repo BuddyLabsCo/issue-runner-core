@@ -212,29 +212,13 @@ await test("with no default cap, every findings round receives a fix and later R
   );
 });
 
-await test("disabled Review and initial no_change never start a reviewer", async (t) => {
+await test("disabled Review never starts a reviewer", async (t) => {
   const disabled = await implementationRun(t);
   const result = await disabled.run();
   assert.equal(result.summary.outcome, "incomplete");
   assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
   assert.equal(disabled.state.closedTabs.length, 1);
   assert.equal((await disabled.snapshot()).reviews, undefined);
-
-  const unchanged = await reviewRun(t);
-  unchanged.state.onTask = async (file) => {
-    unchanged.state.evidence.changed = false;
-    await publish(file, {
-      outcome: "no_change",
-      summary: "Nothing to implement.",
-      pr_title: "feat: implement",
-      pr_body: "Closes #50",
-      commits: [],
-      findings_file: null,
-    });
-  };
-  assert.equal((await unchanged.run()).summary.outcome, "incomplete");
-  assert.equal(unchanged.reviewState.reviews.length, 0);
-  assert.equal(unchanged.state.closedTabs.length, 1);
 });
 
 await test("cap=1 still fixes final findings in the exact implementation conversation before publication eligibility", async (t) => {

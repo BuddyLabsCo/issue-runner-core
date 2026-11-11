@@ -11,6 +11,7 @@ import {
   readHandoff,
 } from "../agent/handoff.ts";
 import { validateReviewContext } from "./review.ts";
+import { validateNoChangeContext } from "./no-change-validation.ts";
 import { validateRepairContext } from "./repair.ts";
 import type { OperatorIO } from "./contracts.ts";
 import type { ReadOperation } from "./discovery.ts";
@@ -256,6 +257,7 @@ export async function restoreExecution(input: {
             ) ||
           saved.branch !== `issue-runner/${restored.run_id}/ticket-${number}` ||
           saved.reviews !== undefined ||
+          saved.noChange !== undefined ||
           !restored.superseded.every(owned) ||
           (restored.probe !== undefined && !owned(restored.probe.path)) ||
           (restored.invocation !== undefined &&
@@ -283,13 +285,17 @@ export async function restoreExecution(input: {
       if (
         restored.phase !== "reserved" &&
         restored.noChangeClosure !== "completed" &&
+        restored.noChange?.delivery?.phase !== "delivered" &&
         restored.publication?.phase !== "delivered" &&
         !existsSync(restored.worktree)
       )
         throw new Error(
           `unable to recover: original ${documentation ? "documentation " : ""}Worktree is missing`,
         );
-      if (!documentation) validateReviewContext(restored, loaded);
+      if (!documentation) {
+        validateNoChangeContext(restored, loaded);
+        validateReviewContext(restored, loaded);
+      }
       validateRepairContext(restored, loaded);
       validateRetryProgress(restored, loaded);
       return restored;
@@ -311,6 +317,8 @@ function validateRetryProgress(
   try {
     const stages = [
       progress,
+      ...(progress.noChange?.review ? [progress.noChange.review] : []),
+      ...(progress.noChange?.fix ? [progress.noChange.fix] : []),
       ...(progress.reviews ?? []).flatMap((round) => [
         round,
         ...(round.fix ? [round.fix] : []),
