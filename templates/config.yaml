@@ -19,7 +19,7 @@ maintenanceTicket:
   label: doc-maintain
 workflow:
   review: true # Review implementations; requires agents.review and its prompt.
-  # maxReviewRounds: 1 # Optional positive cap; final findings still receive a fix.
+  maxReviewRounds: 2 # Optional positive cap; final findings still receive a fix.
   docMaintainTriggerLabel: "" # Run documentation after a Batch delivers this label; empty disables.
 tracker:
   tokenEnv: GH_TOKEN # Environment variable holding the GitHub Issue token; never put tokens here.
