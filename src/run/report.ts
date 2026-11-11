@@ -85,7 +85,11 @@ export async function reportTicket(
       report.retainedWorktrees = resources
         .map((resource) => resource.worktree)
         .filter(existsSync);
-      if (progress?.result?.outcome === "no_change" && result)
+      if (
+        progress?.result?.outcome === "no_change" &&
+        result &&
+        (input.documentation || result.outcome !== "succeeded")
+      )
         report.status = "no_change";
       else if (
         result?.outcome === "incomplete" &&
@@ -121,6 +125,8 @@ export function reportRetained(context: RunContext, summary: RunSummary): void {
     const resources = progress ? [progress, ...repairs] : [];
     const stages = [
       ...resources,
+      progress?.noChange?.review,
+      progress?.noChange?.fix,
       ...(progress?.reviews ?? []).flatMap((round) => [round, round.fix]),
     ];
     const paths = [
@@ -140,6 +146,12 @@ export function reportRetained(context: RunContext, summary: RunSummary): void {
         round.findings,
         `${round.findings}.tmp`,
       ]),
+      ...(progress?.noChange?.review
+        ? [
+            progress.noChange.review.findings,
+            `${progress.noChange.review.findings}.tmp`,
+          ]
+        : []),
     ].filter(existsSync);
     if (paths.length === 0) continue;
     (summary.retainedEvidence ??= []).push({

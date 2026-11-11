@@ -2,10 +2,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { existsSync } from "node:fs";
 import type { LoadedProject } from "../config.ts";
-import {
-  closeDocumentationNoChange,
-  integrateImplementation,
-} from "./integration.ts";
+import { integrateImplementation } from "./integration.ts";
 import { saveProgress, type ImplementationProgress } from "../recovery.ts";
 import { runIssueStage, type IssueStageContext } from "../agent/stage.ts";
 import { executionPrompt } from "../prompts/implement.ts";
@@ -23,6 +20,7 @@ import { cleanupExecution, executionTerminal } from "./cleanup.ts";
 import type { RunContext, RunSummary } from "./run.ts";
 import { reportTicket, type TicketReport } from "./report.ts";
 import { hasOpenBlocker, readChildren } from "./discovery.ts";
+import { completeNoChange } from "./no-change.ts";
 import type { ReadOperation } from "./discovery.ts";
 import {
   OperationStopped,
@@ -185,7 +183,8 @@ async function executeStandalone(
   };
   let selected = await inspect();
   const completed =
-    restored?.publication !== undefined &&
+    (restored?.publication !== undefined ||
+      restored?.noChange?.delivery !== undefined) &&
     selected.ticket.state === "closed" &&
     selected.ticket.stateReason === "completed";
   const hasRunner = selected.ticket.assignees?.includes(runnerAccount) ?? false;
@@ -318,6 +317,7 @@ async function executeStandalone(
   async function run(progress: ImplementationProgress): Promise<RunSummary> {
     if (progress.result) {
       if (
+        progress.noChange?.delivery?.phase !== "delivered" &&
         [
           "implementation_completed",
           "documentation_completed",
@@ -345,9 +345,26 @@ async function executeStandalone(
         accept: (text) => accept(progress, text),
       });
     }
-    const committed = progress.result?.outcome === "committed";
     const needsReview =
       !input.documentation && config.workflow.review && !progress.publication;
+    if (progress.result?.outcome === "no_change") {
+      const result = await completeNoChange({
+        ...stageInput(progress),
+        git: context.git,
+        tracker,
+        read,
+        inspectTicket: inspect,
+        verify: async () => {
+          await accept(progress, JSON.stringify(progress.result));
+        },
+        summary,
+        report,
+        closeResidual: () => tabs!.closeResidual(),
+        ...(input.onDelivery ? { onDelivery: input.onDelivery } : {}),
+      });
+      if (result) return result;
+    }
+    const committed = progress.result?.outcome === "committed";
     if (committed && needsReview)
       await reviewImplementation({
         ...stageInput(progress),
@@ -363,25 +380,9 @@ async function executeStandalone(
         return summary;
       }
     }
-    if (input.documentation && progress.result?.outcome === "no_change") {
-      await closeDocumentationNoChange({
-        ...stageInput(progress),
-        tracker,
-        read,
-        inspectTicket: inspect,
-        verify: async () => {
-          await accept(progress, JSON.stringify(progress.result));
-        },
-      });
-      await tabs?.closeResidual();
-      report.detail = `Completed Maintenance Ticket ${number} with no changes`;
-      return { ...summary, outcome: "succeeded" };
-    }
     report.detail =
       selected.reason ??
-      (progress.result?.outcome === "no_change"
-        ? "Implementation completed with no_change; no Issue delivery"
-        : "Implementation stage completed; Issue delivery remains incomplete");
+      "Implementation stage completed; Issue delivery remains incomplete";
     return summary;
   }
   if (!input.documentation && restored && !completed && !reserved) {

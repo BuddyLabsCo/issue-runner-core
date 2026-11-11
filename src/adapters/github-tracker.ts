@@ -170,6 +170,21 @@ export class GitHubTracker implements Tracker {
     ]);
   }
 
+  async commentTicket(
+    repository: string,
+    ticket: number,
+    body: string,
+  ): Promise<void> {
+    await this.client.request([
+      "api",
+      "--method",
+      "POST",
+      `repos/${repository}/issues/${ticket}/comments`,
+      "-f",
+      `body=${body}`,
+    ]);
+  }
+
   async listBlockersPage(repository: string, ticket: number, page: number) {
     const value = JSON.parse(
       await this.client.request([

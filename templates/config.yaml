@@ -11,7 +11,6 @@ targetBranch: main # PR target; omit to use the repository's default branch.
 
 operationRetry: 4 # Additional non-Agent operation attempts; nonnegative integer.
 operationRetryDelay: [10, 20, 40, 80] # Retry delays in seconds; last value repeats.
-ticketClosure: runner # runner closes delivered Issues; code_host waits for host closure.
 
 # Maintenance Issue created by --document or the automatic trigger; all fields required when enabled.
 maintenanceTicket:

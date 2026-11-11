@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import { child, parentRun } from "../support/parent-run.ts";
+import { child, parentRun, parentDeliveryRun } from "../support/parent-run.ts";
 import {
   committed,
   publish,
@@ -143,7 +143,7 @@ await test("cancellation inside the dispatch gate retains the known unsent assig
 
 await test("valid output at a pending assignment completes without reopening its conversation", async (t) => {
   const ticket = child(51);
-  const fixture = await parentRun(t, [ticket]);
+  const fixture = await parentDeliveryRun(t, [ticket]);
   const submitText = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
@@ -162,11 +162,14 @@ await test("valid output at a pending assignment completes without reopening its
     commits: [],
     findings_file: null,
   });
+  fixture.dependencies.tracker.commentTicket = async () => {
+    /* Scripted successful comment. */
+  };
   ticket.labels!.push("ready-for-agent");
   fixture.dependencies.terminalPlugin.createTab = async () => {
     assert.fail("valid retained output does not need another prompt");
   };
-  assert.equal((await fixture.run()).summary.outcome, "incomplete");
+  assert.equal((await fixture.run()).summary.outcome, "succeeded");
   const after = await implementationProgress(fixture.directory, 51);
   assert.equal(after.phase, "implementation_completed");
   assert.equal(after.pendingPrompt, undefined);
@@ -175,7 +178,10 @@ await test("valid output at a pending assignment completes without reopening its
 });
 
 await test("a transport attempt is not replayed as a known unsent assignment after interruption", async (t) => {
-  const fixture = await parentRun(t, [child(51)]);
+  const fixture = await parentDeliveryRun(t, [child(51)]);
+  fixture.dependencies.tracker.commentTicket = async () => {
+    /* Scripted successful comment. */
+  };
   const submitted: string[] = [];
   const submitText = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
@@ -207,7 +213,7 @@ await test("a transport attempt is not replayed as a known unsent assignment aft
   const before = await implementationProgress(fixture.directory, 51);
   assert.equal(before.pendingPrompt, undefined);
   const resumedAt = submitted.length;
-  assert.equal((await fixture.run()).summary.outcome, "incomplete");
+  assert.equal((await fixture.run()).summary.outcome, "succeeded");
   assert.deepEqual(submitted.slice(resumedAt), [
     'any-cli --resume "native-51"',
     "continue",

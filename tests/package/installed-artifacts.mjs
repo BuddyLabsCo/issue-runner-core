@@ -235,6 +235,8 @@ export async function testInstalledArtifacts(
       "prompts/implement.md",
       "prompts/review.md",
       "prompts/review-fix.md",
+      "prompts/no-change-review.md",
+      "prompts/no-change-fix.md",
       "prompts/documentation.md",
       "prompts/ci-repair.md",
       "prompts/conflict-repair.md",

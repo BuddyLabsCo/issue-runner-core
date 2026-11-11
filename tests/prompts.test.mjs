@@ -26,6 +26,8 @@ await test("each task template includes its complete assignment and handoff", ()
     documentation: "Documentation",
     review: "Review",
     "review-fix": "Fix",
+    "no-change-review": "No-change review",
+    "no-change-fix": "No-change fix",
     "ci-repair": "CI repair",
     "conflict-repair": "Conflict repair",
   })) {

@@ -111,7 +111,6 @@ await test("invalid configuration fails before any external reads or delivery re
     ),
     [{ operationRetry: -1 }, /operationRetry/],
     [{ operationRetryDelay: [] }, /operationRetryDelay/],
-    [{ ticketClosure: "agent" }, /ticketClosure/],
     [{ workflow: { review: "false" } }, /workflow.review/],
     [{ workflow: { maxReviewRounds: 0 } }, /maxReviewRounds/],
     [
@@ -474,3 +473,21 @@ await test("Agent retry settings are optional and legacy values are ignored", as
     assert.equal(result.summary.outcome, "no_work", JSON.stringify(result));
   }
 });
+
+for (const ticketClosure of ["runner", "code_host"] as const) {
+  await test(`legacy ${ticketClosure} closure loads unchanged bytes without exposing a runtime option`, async (t) => {
+    const { root, directory } = await createProject(t, {
+      ...validConfig,
+      ticketClosure,
+    });
+    const file = path.join(directory, "config.yaml");
+    const bytes = await readFile(file);
+    const loaded = await loadProject(root, "demo", {
+      TRACKER_TOKEN: "tracker",
+      HOST_TOKEN: "host",
+    });
+    assert.equal("ticketClosure" in loaded.config, false);
+    assert.deepEqual(Buffer.from(loaded.configBytes), bytes);
+    assert.deepEqual(await readFile(file), bytes);
+  });
+}

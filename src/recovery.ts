@@ -66,10 +66,24 @@ export interface OperationProgress {
   notBefore?: number;
 }
 
+export interface NoChangeProgress {
+  assessment: PRExecutionResult;
+  head: string;
+  review?: StageProgress<ReviewResult> & { findings: string };
+  fix?: StageProgress<PRExecutionResult>;
+  delivery?: {
+    phase: "pending_comment" | "commented" | "delivered";
+    comment: string;
+    closure?: { state: "closed"; stateReason: "completed" };
+    deliveryLabels?: string[];
+  };
+}
+
 export interface ImplementationProgress extends StageProgress<PRExecutionResult> {
   operations?: Record<string, OperationProgress>;
   purpose?: "documentation";
   noChangeClosure?: "pending" | "completed";
+  noChange?: NoChangeProgress;
   run_id: string;
   run_arguments: readonly string[];
   input_hash: string;

@@ -235,26 +235,14 @@ await test("a changed observed HEAD pauses without merging or closing the Issue"
   assert.equal(fixture.integrationState.closures, 0);
 });
 
-await test("code_host closure that remains open pauses and observes again without issuing tracker writes", async (t) => {
-  const fixture = await integrationRun(t, {
+await test("legacy code_host configuration still attempts Runner closure", async (t) => {
+  const legacyConfig = {
     ...validConfig,
     ticketClosure: "code_host",
-  });
-  let pauses = 0;
-  fixture.dependencies.operator.pause = async (message) => {
-    assert.match(message, /not closed as completed/u);
-    pauses++;
-    fixture.state.ticket.state = "closed";
-    fixture.state.ticket.stateReason = "completed";
-    return "";
   };
+  const fixture = await integrationRun(t, legacyConfig);
   assert.equal((await fixture.run()).summary.outcome, "succeeded");
-  assert.equal(pauses, 1);
-  assert.equal(fixture.integrationState.closures, 0);
-  assert.deepEqual(
-    fixture.state.sleeps,
-    [10_000, 30_000, 10_000, 30_000, 10_000],
-  );
+  assert.equal(fixture.integrationState.closures, 1);
 });
 
 await test("an interrupted queue resumes its existing request and deadline without another Agent or merge request", async (t) => {
