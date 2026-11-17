@@ -50,6 +50,42 @@ export function createCliDependencies(launchDirectory: string) {
     reads,
     pauses,
     tracker: {
+      async observeParent(repository: string, ticket: number) {
+        const parent = await this.getParent(repository, ticket);
+        const children: import("../../src/run/contracts.ts").Ticket[] = [];
+        let page: number | null = 1;
+        const childPages = new Set<number>();
+        while (page !== null) {
+          if (!Number.isSafeInteger(page) || page <= 0 || childPages.has(page))
+            throw new Error("invalid child pagination");
+          childPages.add(page);
+          const result = await this.listChildrenPage(repository, ticket, page);
+          children.push(...result.children);
+          page = result.nextPage;
+        }
+        for (const child of children.sort((a, b) => a.number - b.number)) {
+          child.blockers = [];
+          let blockerPage: number | null = 1;
+          const blockerPages = new Set<number>();
+          while (blockerPage !== null) {
+            if (
+              !Number.isSafeInteger(blockerPage) ||
+              blockerPage <= 0 ||
+              blockerPages.has(blockerPage)
+            )
+              throw new Error("invalid blocker pagination");
+            blockerPages.add(blockerPage);
+            const result = await this.listBlockersPage(
+              repository,
+              child.number,
+              blockerPage,
+            );
+            child.blockers.push(...result.blockers);
+            blockerPage = result.nextPage;
+          }
+        }
+        return { parent, tickets: children };
+      },
       async createLabel() {
         assert.fail("unexpected maintenance label creation");
       },
@@ -73,7 +109,15 @@ export function createCliDependencies(launchDirectory: string) {
       async getTicket(_repository: string, ticket: number) {
         return { number: ticket, state: "open" as const, stateReason: null };
       },
-      async listBlockersPage() {
+      async listBlockersPage(
+        _repository?: string,
+        _ticket?: number,
+        _page?: number,
+      ): Promise<{
+        blockers: import("../../src/run/contracts.ts").Ticket[];
+        nextPage: number | null;
+      }> {
+        void [_repository, _ticket, _page];
         return { blockers: [], nextPage: null };
       },
       async addAssignee() {

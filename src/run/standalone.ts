@@ -151,7 +151,8 @@ async function executeStandalone(
     );
     if (
       ticket.number !== number ||
-      (ticket.repository !== undefined && ticket.repository !== repository)
+      (ticket.repository !== undefined &&
+        ticket.repository.toLowerCase() !== repository.toLowerCase())
     )
       throw new Error("Unexpected Issue ownership");
     if (ticket.state === "closed") {

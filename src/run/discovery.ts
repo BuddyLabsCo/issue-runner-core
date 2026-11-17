@@ -37,7 +37,7 @@ export async function readChildren(
     page = current.nextPage;
   }
   const foreignChild = children.find(
-    (child) => child.repository !== repository,
+    (child) => child.repository?.toLowerCase() !== repository.toLowerCase(),
   );
   if (foreignChild)
     throw new Error(
@@ -74,6 +74,22 @@ export async function hasOpenBlocker(
     page = current.nextPage;
   }
   return blocked;
+}
+
+async function childBlocked(
+  child: Ticket,
+  repository: string,
+  tracker: Tracker,
+  read: ReadOperation,
+): Promise<boolean> {
+  if (!child.blockers)
+    return hasOpenBlocker(repository, child.number, tracker, read);
+  for (const blocker of child.blockers)
+    if (blocker.state === "closed" && blocker.stateReason === null)
+      throw new Error(
+        `blocker ${blocker.number} has an unsupported terminal state`,
+      );
+  return child.blockers.some((blocker) => blocker.state === "open");
 }
 
 function parseBatch(
@@ -146,9 +162,9 @@ export async function selectIssueBatch(input: {
   for (const child of [...(tickets ?? [])].sort(
     (a, b) => a.number - b.number,
   )) {
-    const isBlocked = await hasOpenBlocker(
+    const isBlocked = await childBlocked(
+      child,
       config.repository,
-      child.number,
       tracker,
       read,
     );

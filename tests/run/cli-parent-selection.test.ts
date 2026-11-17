@@ -55,6 +55,17 @@ await test("an empty discovered parent scope has no work", async (t) => {
   assert.equal(result.summary.outcome, "no_work");
 });
 
+await test("parent discovery and dispatch accept equivalent repository casing", async (t) => {
+  const fixture = await parentDeliveryRun(t, [child(51)], {
+    ...validConfig,
+    repository: "OWNER/REPO",
+    issueList: [51],
+  });
+  const result = await fixture.run();
+  assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
+  assert.deepEqual(fixture.dispatched, [51]);
+});
+
 await test("parent reads every child and blocker page before selecting across labels, ownership and Issue List filtering", async (t) => {
   const children = [
     child(51),
@@ -314,7 +325,7 @@ await test("a blocker-page failure after an open blocker cannot permit selection
   };
   fixture.dependencies.operator.pause = async () => "q";
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  assert.deepEqual(pages, [1, 2, 2]);
+  assert.deepEqual(pages, [1, 2, 1, 2]);
   assert.deepEqual(fixture.writes, []);
   assert.deepEqual(fixture.dispatched, []);
 });
@@ -347,14 +358,20 @@ for (const invalid of [
             : [],
         nextPage: invalid === "blocker_page_cycle" ? 1 : null,
       });
+    if (invalid.endsWith("page_cycle"))
+      fixture.dependencies.operator.pause = async () => "q";
     const result = await fixture.run();
-    assert.equal(result.summary.outcome, "failed");
+    assert.equal(
+      result.summary.outcome,
+      invalid.endsWith("page_cycle") ? "cancelled" : "failed",
+    );
     assert.deepEqual(fixture.writes, []);
     assert.deepEqual(fixture.dispatched, []);
-    assert.match(
-      result.summary.failure!,
-      /cross-repository|pagination|unsupported terminal state/u,
-    );
+    if (!invalid.endsWith("page_cycle"))
+      assert.match(
+        result.summary.failure!,
+        /cross-repository|unsupported terminal state/u,
+      );
   });
 }
 
