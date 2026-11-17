@@ -27,7 +27,7 @@ import {
 } from "./operations.ts";
 import { runBatch } from "./batch.ts";
 import { runStandalone } from "./standalone.ts";
-import { runParent } from "./parent.ts";
+import { readParentScope, runParent } from "./parent.ts";
 import { runDocumentation } from "./documentation.ts";
 import { selectIssueBatch, type ReadOperation } from "./discovery.ts";
 
@@ -315,10 +315,28 @@ async function executeProject(
   };
   const pending = await selectBatch();
   if (pending.batch.length > 0) {
+    const observed =
+      options.selector === "parent" && !pending.documentation
+        ? await readParentScope(
+            {
+              repository: loaded.config.repository,
+              parentTicket: summary.parentTicket,
+              tracker,
+              read,
+            },
+            true,
+          )
+        : undefined;
     const result = await batch(
       pending.documentation
         ? []
-        : await Promise.all(pending.batch.map(readTicket)),
+        : await Promise.all(
+            pending.batch.map(
+              async (number) =>
+                observed?.tickets.find((ticket) => ticket.number === number) ??
+                (await readTicket(number)),
+            ),
+          ),
       pending,
     );
     if (result.outcome !== "succeeded" || options.issueTicket !== undefined)

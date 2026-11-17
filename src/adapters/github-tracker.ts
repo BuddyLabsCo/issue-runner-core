@@ -1,3 +1,4 @@
+import { observeParent } from "./github-parent-observation.ts";
 import type { ChildPage, Ticket, Tracker } from "../run/contracts.ts";
 import { GitHubClient, type GitHubCommand } from "./github-client.ts";
 type ClosureReason = Ticket["stateReason"];
@@ -87,6 +88,10 @@ export class GitHubTracker implements Tracker {
 
   constructor(token: string, command?: GitHubCommand) {
     this.client = new GitHubClient(token, command);
+  }
+
+  observeParent(repository: string, parentTicket: number) {
+    return observeParent(this.client, repository, parentTicket);
   }
 
   async listLabelsPage(repository: string, page: number) {

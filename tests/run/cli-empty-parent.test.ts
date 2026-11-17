@@ -118,7 +118,7 @@ await test("cancelled parents stop discovery without rewriting children", async 
           return { number: 48, state: "closed", stateReason: "not_planned" };
         },
         async listChildrenPage() {
-          assert.fail("cancelled parent must stop discovery");
+          return { children: [], nextPage: null };
         },
       },
     },

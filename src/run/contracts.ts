@@ -3,6 +3,10 @@ import type { ConfirmationStatus } from "./confirmations.ts";
 // Source workflow boundaries, extracted as needed by the supported Run slice.
 export interface Ticket {
   number: number;
+  id?: string;
+  repositoryId?: string;
+  labelIds?: Record<string, string>;
+  assigneeIds?: Record<string, string>;
   state: "open" | "closed";
   stateReason: "completed" | "not_planned" | null;
   repository?: string;
@@ -11,6 +15,7 @@ export interface Ticket {
   source?: string;
   assignees?: string[];
   labels?: string[];
+  blockers?: Ticket[];
 }
 
 export interface ChildPage {
@@ -19,6 +24,10 @@ export interface ChildPage {
 }
 
 export interface Tracker {
+  observeParent(
+    repository: string,
+    parentTicket: number,
+  ): Promise<{ parent: Ticket; tickets: Ticket[] }>;
   createLabel(repository: string, label: string): Promise<void>;
   listLabelsPage(
     repository: string,

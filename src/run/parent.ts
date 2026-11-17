@@ -14,21 +14,40 @@ interface ParentScope {
   read: ReadOperation;
 }
 
-async function readParentScope(input: ParentScope): Promise<{
+export async function readParentScope(
+  input: ParentScope,
+  discovery = false,
+): Promise<{
   parent: Ticket;
   tickets: Ticket[];
 }> {
   const { repository, parentTicket, tracker, read } = input;
-  const parent = await read("read_parent", `parent:${parentTicket}`, () =>
-    tracker.getParent(repository, parentTicket),
-  );
+  const observed = discovery
+    ? await read("observe_parent", `parent:${parentTicket}`, () =>
+        tracker.observeParent(repository, parentTicket),
+      )
+    : undefined;
+  const parent =
+    observed?.parent ??
+    (await read("read_parent", `parent:${parentTicket}`, () =>
+      tracker.getParent(repository, parentTicket),
+    ));
   if (parent.state === "closed" && parent.stateReason === "not_planned")
     throw new OperatorCancelled("Parent Ticket is cancelled");
   if (parent.state === "closed" && parent.stateReason === null)
     throw new OperationStopped(
       "closed Parent Ticket has no supported closure reason",
     );
-  const tickets = await readChildren(repository, parentTicket, tracker, read);
+  const tickets =
+    observed?.tickets ??
+    (await readChildren(repository, parentTicket, tracker, read));
+  const foreignChild = tickets.find(
+    (ticket) => ticket.repository !== repository,
+  );
+  if (foreignChild)
+    throw new Error(
+      `cross-repository child ${foreignChild.repository}#${foreignChild.number} is unsupported`,
+    );
   if (
     parent.state === "closed" &&
     tickets.some((ticket) => ticket.state === "open")
@@ -83,7 +102,7 @@ export async function runParent(
   for (;;) {
     if (input.maintenancePending())
       return { ...input.summary, outcome: "incomplete" };
-    const { parent, tickets } = await readParentScope(input);
+    const { parent, tickets } = await readParentScope(input, true);
     hadChildren ||= tickets.length > 0;
     if (parent.state === "closed")
       return {
