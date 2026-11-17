@@ -164,8 +164,7 @@ for (const operation of ["addLabel", "addAssignee"] as const) {
         assert.equal(ms, 1000);
         changed = true;
         if (change === "ownership") {
-          if (operation === "addLabel") ticket.assignees = ["developer"];
-          else ticket.labels = ["ready-for-agent"];
+          ticket.assignees = ["developer"];
         }
       };
       const result = await fixture.run();

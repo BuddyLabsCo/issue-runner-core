@@ -38,6 +38,7 @@ export interface RunContext {
   runArguments: readonly string[];
   clock: Clock;
   operator: OperatorIO;
+  advance?: <T>(action: () => Promise<T>) => Promise<T>;
   confirmations?: TerminalConfirmations;
   git: GitWorkspace;
   terminal: TerminalPlugin;
@@ -147,6 +148,7 @@ async function executeProject(
     ...context,
     signal,
     operator,
+    advance: (action) => operator.advance(action),
     confirmations,
     clock: {
       now: () => clock.now(),

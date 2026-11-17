@@ -50,6 +50,76 @@ export function createCliDependencies(launchDirectory: string) {
     reads,
     pauses,
     tracker: {
+      async observeStart(input: {
+        repository: string;
+        number: number;
+        parent?: number;
+        runner: string;
+        label: string;
+      }) {
+        const ticket = {
+          ...(await this.getTicket(input.repository, input.number)),
+          id: `issue-${input.number}`,
+          blockers: [] as import("../../src/run/contracts.ts").Ticket[],
+        };
+        let page: number | null = 1;
+        while (page !== null) {
+          const result = await this.listBlockersPage(
+            input.repository,
+            input.number,
+            page,
+          );
+          ticket.blockers.push(...result.blockers);
+          page = result.nextPage;
+        }
+        let parent;
+        let children;
+        if (input.parent !== undefined) {
+          const observation = await this.observeParent(
+            input.repository,
+            input.parent,
+          );
+          parent = observation.parent;
+          children = observation.tickets;
+        }
+        return {
+          ticket,
+          ...(parent && children ? { parent, children } : {}),
+          labelId: input.label,
+          runnerId: input.runner,
+        };
+      },
+      async reserveStart(input: {
+        ticket: import("../../src/run/contracts.ts").Ticket & { id: string };
+        labelId?: string;
+        runnerId?: string;
+        label: string;
+        runner: string;
+      }) {
+        if (input.labelId)
+          await this.addLabel(
+            input.ticket.repository ?? "owner/repo",
+            input.ticket.number,
+            input.label,
+          );
+        if (input.runnerId)
+          await this.addAssignee(
+            input.ticket.repository ?? "owner/repo",
+            input.ticket.number,
+            input.runner,
+          );
+        const ticket = (await this.getTicket(
+          input.ticket.repository ?? "owner/repo",
+          input.ticket.number,
+        )) as import("../../src/run/contracts.ts").Ticket;
+        if (
+          !ticket.labels?.includes(input.label) ||
+          !ticket.assignees?.includes(input.runner) ||
+          ticket.assignees.some((account) => account !== input.runner)
+        )
+          throw new Error("GitHub did not confirm Reservation");
+        return ticket;
+      },
       async observeParent(repository: string, ticket: number) {
         const parent = await this.getParent(repository, ticket);
         const children: import("../../src/run/contracts.ts").Ticket[] = [];
@@ -120,7 +190,12 @@ export function createCliDependencies(launchDirectory: string) {
         void [_repository, _ticket, _page];
         return { blockers: [], nextPage: null };
       },
-      async addAssignee() {
+      async addAssignee(
+        _repository?: string,
+        _number?: number,
+        _account?: string,
+      ) {
+        void [_repository, _number, _account];
         effects.push("assign");
       },
       async getParent(repository: string, ticket: number) {
@@ -138,7 +213,8 @@ export function createCliDependencies(launchDirectory: string) {
       async closeParent() {
         effects.push("close_parent");
       },
-      async addLabel() {
+      async addLabel(_repository?: string, _number?: number, _label?: string) {
+        void [_repository, _number, _label];
         effects.push("reserve");
       },
     },
