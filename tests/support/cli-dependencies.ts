@@ -50,6 +50,12 @@ export function createCliDependencies(launchDirectory: string) {
     reads,
     pauses,
     tracker: {
+      async observeDelivery(
+        repository: string,
+        number: number,
+      ): Promise<import("../../src/run/contracts.ts").Ticket> {
+        return this.getTicket(repository, number);
+      },
       async observeStart(input: {
         repository: string;
         number: number;

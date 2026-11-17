@@ -23,6 +23,16 @@ for (const unfinished of [false, true]) {
       ...validConfig,
       maxBatchSize: 2,
     });
+    const observeStart = fixture.dependencies.tracker.observeStart.bind(
+      fixture.dependencies.tracker,
+    );
+    if (unfinished) {
+      const observe = observeStart;
+      fixture.dependencies.tracker.observeStart = async (input) => {
+        if (input.number === 52) tickets[1]!.assignees = ["outside-owner"];
+        return observe(input);
+      };
+    }
     const comments: number[] = [];
     fixture.dependencies.tracker.commentTicket = async (
       _repository,
@@ -44,8 +54,6 @@ for (const unfinished of [false, true]) {
           });
           return;
         }
-        if (unfinished && assignment.ticket === 52)
-          tickets[1]!.assignees = ["outside-owner"];
       }
       await submit(tab, text, chord);
     };
@@ -69,7 +77,8 @@ for (const unfinished of [false, true]) {
       assert.equal(tickets[1]!.state, "open");
       assert.equal(tickets[2]!.state, "open");
       assert.equal(fixture.merged.size, 0);
-      tickets[1]!.assignees = ["runner"];
+      tickets[1]!.assignees = [];
+      fixture.dependencies.tracker.observeStart = observeStart;
       fixture.dependencies.signal = new AbortController().signal;
       assert.equal((await fixture.run()).summary.outcome, "succeeded");
       assert.deepEqual(comments, [51]);

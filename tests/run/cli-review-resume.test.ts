@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import { terminalModule } from "../support/cli-dependencies.ts";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { access, mkdir, readdir, rmdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
@@ -215,21 +217,44 @@ for (const missing of [
   });
 }
 
-await test("a withheld Review assignment retains its invocation and resumes only its reviewer when eligibility returns", async (t) => {
+await test("an interrupted Review assignment retains its invocation and resumes its reviewer", async (t) => {
   const fixture = await reviewRun(t, 1);
-  const probe = fixture.state.onProbe;
-  fixture.state.onProbe = async (assignment) => {
-    await probe(assignment);
-    if (assignment.role === "review")
-      fixture.state.ticket.labels = ["sandcastle:reserved"];
-  };
-  assert.equal((await fixture.run()).summary.outcome, "incomplete");
+  const rename = fs.promises.rename;
+  let interrupted = false;
+  t.mock.method(
+    fs.promises,
+    "rename",
+    async (...args: Parameters<typeof rename>) => {
+      if (!interrupted && String(args[1]).endsWith("-50.json")) {
+        const progress = JSON.parse(
+          await fs.promises.readFile(args[0], "utf8"),
+        ) as { reviews?: { pendingPrompt?: string }[] };
+        if (
+          progress.reviews?.[0]?.pendingPrompt?.startsWith(
+            "Review assignment\n",
+          )
+        ) {
+          interrupted = true;
+          await rename(...args);
+          fixture.controller.abort();
+          return;
+        }
+      }
+      await rename(...args);
+    },
+  );
+  syncBuiltinESMExports();
+  t.after(() => {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+  });
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
   const saved = await fixture.snapshot();
   const pending = saved.reviews![0]!.pendingPrompt;
   assert.match(pending!, /^Review assignment\n/u);
   assert.equal(fixture.reviewState.reviews.length, 0);
   const before = fixture.state.submissions.length;
-  fixture.state.ticket.labels!.push("ready-for-agent");
+  fixture.dependencies.signal = new AbortController().signal;
   const result = await fixture.run();
   assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
   assert.deepEqual(

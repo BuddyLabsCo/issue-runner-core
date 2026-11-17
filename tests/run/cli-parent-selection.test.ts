@@ -171,19 +171,6 @@ await test("parent reads every child and blocker page before selecting across la
   ]);
 });
 
-await test("parent cancellation after a combined Reservation prevents dispatch", async (t) => {
-  const fixture = await parentRun(t, [child(51)]);
-  fixture.dependencies.tracker.getParent = async () => ({
-    number: 48,
-    state: fixture.writes.length ? "closed" : "open",
-    stateReason: fixture.writes.length ? "not_planned" : null,
-  });
-  const result = await fixture.run();
-  assert.equal(result.summary.outcome, "cancelled");
-  assert.deepEqual(fixture.writes, ["label:51", "assignee:51"]);
-  assert.deepEqual(fixture.dispatched, []);
-});
-
 await test("a lost Reservation label is added again after fresh observation", async (t) => {
   const ticket = child(51);
   const fixture = await parentRun(t, [ticket]);
@@ -294,23 +281,6 @@ await test("failed assignee writes retain a partial Reservation without automati
   );
   assert.deepEqual(fixture.writes, ["label:51"]);
   assert.deepEqual(fixture.dispatched, []);
-});
-
-await test("lost readiness after Reservation prevents dispatch and retains ownership markers", async (t) => {
-  const ticket = child(51);
-  const fixture = await parentDeliveryRun(t, [ticket]);
-  const assign = fixture.dependencies.tracker.addAssignee.bind(
-    fixture.dependencies.tracker,
-  );
-  fixture.dependencies.tracker.addAssignee = async (...args) => {
-    await assign(...args);
-    ticket.labels = ["sandcastle:reserved"];
-  };
-  assert.equal((await fixture.run()).summary.outcome, "incomplete");
-  assert.deepEqual(fixture.closures, []);
-  assert.deepEqual(fixture.writes, ["label:51", "assignee:51"]);
-  assert.deepEqual(fixture.dispatched, []);
-  assert.deepEqual(ticket.labels, ["sandcastle:reserved"]);
 });
 
 await test("a blocker-page failure after an open blocker cannot permit selection", async (t) => {

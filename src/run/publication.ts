@@ -30,8 +30,7 @@ export async function publishImplementation(input: {
   autoMerge: boolean;
   stageInput: IssueStageContext;
 }): Promise<string> {
-  const { progress, loaded, context, codeHost, read, persist, beforeDispatch } =
-    input;
+  const { progress, loaded, context, codeHost, read, persist } = input;
   const repository = progress.repository;
   const target = `ticket:${progress.ticket}`;
   const result = verifiedImplementation(progress);
@@ -40,10 +39,14 @@ export async function publishImplementation(input: {
     throw new Error(
       "Publication requires verified commits and accepted business handoff metadata",
     );
-  const verify = async (requireEligibility = true) => {
-    if (requireEligibility && !(await beforeDispatch()))
+  const verify = async (checkMaintenance = true) => {
+    if (
+      checkMaintenance &&
+      progress.purpose === "documentation" &&
+      !(await input.beforeDispatch())
+    )
       throw new OperationStopped(
-        "Issue eligibility changed before publication",
+        "Maintenance Ticket changed before publication",
       );
     verifyWorkspace(progress, await context.git.inspect(progress), result);
     const repairs = progress.publication

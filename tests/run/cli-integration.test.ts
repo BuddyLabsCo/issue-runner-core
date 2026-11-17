@@ -62,6 +62,25 @@ await test("delivery requires confirmed squash integration and completed tracker
   );
 });
 
+await test("committed delivery does not repeat eligibility reads after start", async (t) => {
+  const fixture = await integrationRun(t);
+  const tracker = fixture.dependencies.tracker;
+  const reserve = tracker.reserveStart.bind(tracker);
+  let started = false;
+  tracker.reserveStart = async (input) => {
+    const result = await reserve(input);
+    started = true;
+    return result;
+  };
+  tracker.getTicket = async () => {
+    if (started) throw new Error("post-start eligibility read");
+    return structuredClone(fixture.state.ticket);
+  };
+  tracker.observeDelivery = async () => structuredClone(fixture.state.ticket);
+  assert.equal((await fixture.run()).summary.outcome, "succeeded");
+  assert.equal(started, true);
+});
+
 await test("queue admission receives no delivery credit before the configured merge confirmation timeout", async (t) => {
   const fixture = await integrationRun(t, {
     ...validConfig,
@@ -106,7 +125,7 @@ await test("a queued squash is observed as merged before runner closure, includi
   assert.equal((await fixture.snapshot()).publication?.merge?.merged, true);
 });
 
-for (const changed of ["not_planned", "reservation"] as const) {
+for (const changed of ["not_planned"] as const) {
   await test(`${changed} after merge earns no delivery credit`, async (t) => {
     const fixture = await integrationRun(t);
     fixture.integrationState.onMerge = async () => {

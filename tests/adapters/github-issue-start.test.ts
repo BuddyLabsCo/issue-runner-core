@@ -186,3 +186,40 @@ await test("an incomplete Reservation confirmation cannot establish ownership", 
     /incomplete/u,
   );
 });
+
+await test("delivery observation drains labels without eligibility connections", async () => {
+  const queries: string[] = [];
+  const tracker = new GitHubTracker("secret", async (_args, options) => {
+    const { query } = JSON.parse(options.input!) as { query: string };
+    queries.push(query);
+    return JSON.stringify({
+      data:
+        queries.length === 1
+          ? {
+              repository: {
+                ...repository,
+                issue: {
+                  ...issue,
+                  state: "CLOSED",
+                  stateReason: "COMPLETED",
+                  labels: {
+                    nodes: [{ id: "a", name: "one" }],
+                    pageInfo: { hasNextPage: true, endCursor: "next" },
+                  },
+                },
+              },
+            }
+          : {
+              node: {
+                id: "issue",
+                labels: connection([{ id: "b", name: "two" }]),
+              },
+            },
+    });
+  });
+  const result = await tracker.observeDelivery("owner/repo", 2);
+  assert.equal(result.stateReason, "completed");
+  assert.deepEqual(result.labels, ["one", "two"]);
+  assert.equal(queries.length, 2);
+  assert.doesNotMatch(queries.join(" "), /blockedBy|assignees|subIssues/u);
+});

@@ -218,7 +218,10 @@ async function executeStandalone(
     progress,
     ticket: selected.ticket,
     persist: () => persist(progress),
-    beforeDispatch,
+    beforeDispatch:
+      input.documentation || progress.result?.outcome === "no_change"
+        ? beforeDispatch
+        : () => Promise.resolve(true),
     closeTab: (close) =>
       read(
         `close_${progress.phase.replace("_completed", "")}_tab`,
@@ -247,6 +250,10 @@ async function executeStandalone(
       autoMerge: input.autoMerge,
       stageInput: stageInput(progress),
     });
+  const observeTicket = () =>
+    read("read_delivery_issue", `ticket:${number}`, () =>
+      tracker.observeDelivery(repository, number),
+    );
   const integrate = async (
     progress: ImplementationProgress,
     publicationReason?: string,
@@ -267,7 +274,7 @@ async function executeStandalone(
           codeHost: input.codeHost,
           tracker,
           read,
-          inspectTicket: inspect,
+          observeTicket,
           continuePublication: () => publish(progress),
         });
         if (delivery.outcome === "succeeded") {
@@ -364,6 +371,7 @@ async function executeStandalone(
         tracker,
         read,
         inspectTicket: inspect,
+        beforeDispatch,
         verify: async () => {
           await accept(progress, JSON.stringify(progress.result));
         },

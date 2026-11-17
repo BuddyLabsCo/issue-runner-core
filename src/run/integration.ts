@@ -20,7 +20,7 @@ export async function integrateImplementation(input: {
   persist: () => Promise<void>;
   beforeDispatch: () => Promise<boolean>;
   continuePublication: () => Promise<string>;
-  inspectTicket: () => Promise<{ ticket: Ticket; reason?: string }>;
+  observeTicket: () => Promise<Ticket>;
 }): Promise<{ outcome: "succeeded" | "incomplete"; reason: string }> {
   const { progress, loaded, context, codeHost, tracker, read, persist } = input;
   const publication = verifiedPublication(progress);
@@ -78,9 +78,12 @@ export async function integrateImplementation(input: {
         await persist();
         break;
       }
-      if (!(await input.beforeDispatch()))
+      if (
+        progress.purpose === "documentation" &&
+        !(await input.beforeDispatch())
+      )
         throw new OperationStopped(
-          "Issue eligibility changed before integration",
+          "Maintenance Ticket changed before integration",
         );
       if (
         publication.conflictRepair?.retryAuthorized &&
@@ -141,9 +144,12 @@ export async function integrateImplementation(input: {
             state = await observe();
             if (state.merged || state.mergeRequested)
               return { outcome: "accepted" as const };
-            if (!(await input.beforeDispatch()))
+            if (
+              progress.purpose === "documentation" &&
+              !(await input.beforeDispatch())
+            )
               throw new OperationStopped(
-                "Issue eligibility changed before merge request",
+                "Maintenance Ticket changed before merge request",
               );
             if (state.mergeable === "conflicting")
               return {
@@ -190,9 +196,12 @@ export async function integrateImplementation(input: {
       for (;;) {
         state = await observe();
         if (state.merged) break;
-        if (!(await input.beforeDispatch()))
+        if (
+          progress.purpose === "documentation" &&
+          !(await input.beforeDispatch())
+        )
           throw new OperationStopped(
-            "Issue eligibility changed while awaiting integration",
+            "Maintenance Ticket changed while awaiting integration",
           );
         if (!state.mergeRequested && state.mergeable === "conflicting") {
           await repair("Pull Request has an explicit merge conflict");
@@ -226,7 +235,7 @@ export async function integrateImplementation(input: {
       throw new Error(
         "Delivery requires persisted completed tracker state and labels",
       );
-    const current = (await input.inspectTicket()).ticket;
+    const current = await input.observeTicket();
     if (current.state !== "closed" || current.stateReason !== "completed")
       throw new OperationStopped(
         "Previously delivered Issue is no longer closed/completed; retained delivery evidence",
@@ -237,19 +246,20 @@ export async function integrateImplementation(input: {
     };
   }
   const completion = async () => {
-    const selected = await input.inspectTicket();
-    if (selected.ticket.state === "closed") {
-      if (selected.ticket.stateReason !== "completed")
+    const current = await input.observeTicket();
+    if (current.state === "closed") {
+      if (current.stateReason !== "completed")
         throw new OperationStopped(
           "Issue was cancelled after merge; no delivery credit",
         );
-      return selected.ticket;
     }
-    if (selected.reason || !(await input.beforeDispatch()))
-      throw new OperationStopped(
-        selected.reason ?? "Reservation changed after merge",
-      );
-    return selected.ticket;
+    if (
+      current.state === "open" &&
+      progress.purpose === "documentation" &&
+      !(await input.beforeDispatch())
+    )
+      throw new OperationStopped("Maintenance Ticket changed after merge");
+    return current;
   };
   for (;;) {
     let current = await completion();

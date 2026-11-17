@@ -114,6 +114,48 @@ function validateIdentity(
   )
     throw new Error("Unexpected Issue ownership");
 }
+export async function observeDelivery(
+  client: GitHubClient,
+  repository: string,
+  number: number,
+): Promise<Ticket> {
+  const [owner, name] = repository.split("/");
+  const data = await request(
+    client,
+    `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){id nameWithOwner issue(number:$number){${identity} labels(first:100){nodes{id name} ${pageInfo}}}}}`,
+    { owner, name, number },
+  );
+  const repo = object(data.repository);
+  const repositoryId = text(repo.id);
+  if (text(repo.nameWithOwner).toLowerCase() !== repository.toLowerCase())
+    throw new Error("Unexpected repository identity");
+  const root = object(repo.issue);
+  const ticket = parseIssueFact(root);
+  validateIdentity(ticket, repository, number, repositoryId);
+  ticket.labels = [];
+  const drain = new ConnectionDrain();
+  const add = (value: unknown) =>
+    drain.add(ticket.id, "labels", value, (item) => {
+      const label = object(item);
+      text(label.id);
+      ticket.labels!.push(text(label.name));
+    });
+  add(root.labels);
+  while (drain.pending.length) {
+    const next = drain.pending.shift()!;
+    const page = await request(
+      client,
+      `query($id:ID!,$after:String!){node(id:$id){... on Issue{id labels(first:100,after:$after){nodes{id name} ${pageInfo}}}}}`,
+      { id: ticket.id, after: next.cursor },
+    );
+    const node = object(page.node);
+    if (text(node.id) !== ticket.id)
+      throw new Error("GitHub returned mismatched connection owner");
+    add(node.labels);
+  }
+  return ticket;
+}
+
 export async function observeStart(
   client: GitHubClient,
   input: StartInput,
