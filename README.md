@@ -1,6 +1,6 @@
 # Issue Runner Core
 
-Current version: 1.1.0
+Current version: 1.2.0
 
 Issue Runner coordinates AI work on GitHub Issues: it selects eligible work, creates isolated Worktrees, verifies commits, publishes pull requests, waits for checks, and coordinates integration and Issue closure. AI focus on implementation, Review, and repairs; Runner handles the workflow.
 
