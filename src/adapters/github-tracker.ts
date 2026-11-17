@@ -1,5 +1,6 @@
 import {
   observeStart,
+  observeDelivery,
   reserveStart,
   type StartInput,
 } from "./github-issue-start.ts";
@@ -93,6 +94,10 @@ export class GitHubTracker implements Tracker {
 
   constructor(token: string, command?: GitHubCommand) {
     this.client = new GitHubClient(token, command);
+  }
+
+  observeDelivery(repository: string, number: number) {
+    return observeDelivery(this.client, repository, number);
   }
 
   observeStart(input: StartInput) {

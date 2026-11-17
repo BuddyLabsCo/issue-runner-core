@@ -66,6 +66,7 @@ export interface Tracker {
     body: string,
   ): Promise<void>;
   getTicket(repository: string, ticket: number): Promise<Ticket>;
+  observeDelivery(repository: string, ticket: number): Promise<Ticket>;
   listBlockersPage(
     repository: string,
     ticket: number,

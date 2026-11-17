@@ -62,6 +62,25 @@ await test("delivery requires confirmed squash integration and completed tracker
   );
 });
 
+await test("committed delivery does not repeat eligibility reads after start", async (t) => {
+  const fixture = await integrationRun(t);
+  const tracker = fixture.dependencies.tracker;
+  const reserve = tracker.reserveStart.bind(tracker);
+  let started = false;
+  tracker.reserveStart = async (input) => {
+    const result = await reserve(input);
+    started = true;
+    return result;
+  };
+  tracker.getTicket = async () => {
+    if (started) throw new Error("post-start eligibility read");
+    return structuredClone(fixture.state.ticket);
+  };
+  tracker.observeDelivery = async () => structuredClone(fixture.state.ticket);
+  assert.equal((await fixture.run()).summary.outcome, "succeeded");
+  assert.equal(started, true);
+});
+
 await test("queue admission receives no delivery credit before the configured merge confirmation timeout", async (t) => {
   const fixture = await integrationRun(t, {
     ...validConfig,
@@ -106,7 +125,7 @@ await test("a queued squash is observed as merged before runner closure, includi
   assert.equal((await fixture.snapshot()).publication?.merge?.merged, true);
 });
 
-for (const changed of ["not_planned", "reservation"] as const) {
+for (const changed of ["not_planned"] as const) {
   await test(`${changed} after merge earns no delivery credit`, async (t) => {
     const fixture = await integrationRun(t);
     fixture.integrationState.onMerge = async () => {
@@ -180,6 +199,33 @@ await test("non-conflict rejection retains the original error and cannot trigger
   assert.equal(fixture.integrationState.requests.length, 2);
   assert.equal(fixture.integrationState.closures, 0);
 });
+
+for (const change of ["reservation", "owner", "blocker"] as const) {
+  await test(`restart after merge stops when ${change} fails fresh validation`, async (t) => {
+    const fixture = await integrationRun(t);
+    fixture.integrationState.onClose = async () => {
+      fixture.controller.abort();
+    };
+    assert.equal((await fixture.run()).summary.outcome, "cancelled");
+    assert.equal((await fixture.snapshot()).publication?.phase, "merged");
+    if (change === "reservation")
+      fixture.state.ticket.labels = ["ready-for-agent"];
+    if (change === "owner") fixture.state.ticket.assignees = ["outside-owner"];
+    if (change === "blocker")
+      fixture.dependencies.tracker.listBlockersPage = async () => ({
+        blockers: [{ number: 99, state: "open", stateReason: null }],
+        nextPage: null,
+      });
+    fixture.dependencies.signal = new AbortController().signal;
+    const observations = fixture.integrationState.observations;
+    const result = await fixture.run();
+    assert.equal(result.summary.outcome, "incomplete");
+    assert.equal(fixture.integrationState.observations, observations);
+    assert.equal(fixture.integrationState.requests.length, 1);
+    assert.equal(fixture.integrationState.closures, 1);
+    assert.equal((await fixture.snapshot()).publication?.phase, "merged");
+  });
+}
 
 await test("recovery after a confirmed merge skips Agent and merge work and finishes tracker confirmation", async (t) => {
   const fixture = await integrationRun(t);
@@ -263,6 +309,13 @@ await test("an interrupted queue resumes its existing request and deadline witho
   );
   const deadline = (await fixture.snapshot()).publication!.mergeDeadline;
   fixture.dependencies.signal = new AbortController().signal;
+  const labels = [...fixture.state.ticket.labels!];
+  fixture.state.ticket.labels = ["ready-for-agent"];
+  const observations = fixture.integrationState.observations;
+  assert.equal((await fixture.run()).summary.outcome, "incomplete");
+  assert.equal(fixture.integrationState.observations, observations);
+  assert.equal(fixture.integrationState.requests.length, 1);
+  fixture.state.ticket.labels = labels;
   fixture.state.onSleep = async () => {
     fixture.integrationState.pullRequest.merged = true;
   };

@@ -4,7 +4,6 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import test, { type TestContext } from "node:test";
-import { AuditLog, type AuditEvent } from "../../src/audit.ts";
 import type { ImplementationProgress } from "../../src/recovery.ts";
 import type {
   CodeHost,
@@ -396,58 +395,3 @@ for (const failure of ["rejected", "conflict"] as const) {
     }
   });
 }
-
-await test("an incomplete PR keeps its ownership diagnostic when a sibling later fails", async (t) => {
-  const fixture = await parentDeliveryRun(t, [child(51), child(52)], {
-    ...validConfig,
-    operationRetry: 0,
-  });
-  const publicationStopped = deferred<void>();
-  // eslint-disable-next-line @typescript-eslint/unbound-method -- Rebound to each audit instance with call below.
-  const append = AuditLog.prototype.append;
-  t.mock.method(
-    AuditLog.prototype,
-    "append",
-    async function (this: AuditLog, event: AuditEvent) {
-      await append.call(this, event);
-      if (
-        event.target === "ticket:51" &&
-        event.operation === "confirm_publication" &&
-        event.result === "failed"
-      ) {
-        // Let the recorded stop unwind into the Issue report before failing its sibling.
-        setImmediate(() => publicationStopped.resolve());
-      }
-    },
-  );
-  Object.assign(fixture.dependencies.codeHost, {
-    async getRequiredChecks(
-      _repository: string,
-      number: number,
-    ): Promise<RequiredCheck[]> {
-      const pr = (await fixture.dependencies.codeHost.listPullRequests()).find(
-        (pr) => pr.number === number,
-      )!;
-      if (pr.branch.endsWith("/ticket-51")) {
-        fixture.children[0]!.assignees = ["outside-owner"];
-        return [
-          { name: "test", state: "PENDING", link: "", bucket: "pending" },
-        ];
-      }
-      await publicationStopped.promise;
-      throw new Error("Issue 52 check lookup failed");
-    },
-  });
-  fixture.dependencies.operator.pause = async (message) => {
-    assert.match(message, /Issue 52 check lookup failed/u);
-    throw new Error("Issue 52 check lookup failed");
-  };
-  const result = await fixture.run();
-  assert.equal(result.summary.outcome, "failed");
-  assert.equal(result.summary.tickets?.[0]?.status, "incomplete");
-  assert.equal(result.summary.tickets[0].detail, "Issue is externally owned");
-
-  const output = fixture.dependencies.messages.at(-1)!;
-  assert.match(output, /^51\s+incomplete\s+.*feat: \[issue-51\] implement$/mu);
-  assert.match(output, /Issue 52 check lookup failed/u);
-});

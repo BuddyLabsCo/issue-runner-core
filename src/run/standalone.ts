@@ -200,7 +200,8 @@ async function executeStandalone(
     (restored?.publication !== undefined ||
       restored?.noChange?.delivery !== undefined) &&
     selected.ticket.state === "closed" &&
-    selected.ticket.stateReason === "completed";
+    selected.ticket.stateReason === "completed" &&
+    selected.reason === "Issue is already terminal";
   const beforeDispatch = async () => {
     selected = await inspect();
     if (
@@ -218,7 +219,10 @@ async function executeStandalone(
     progress,
     ticket: selected.ticket,
     persist: () => persist(progress),
-    beforeDispatch,
+    beforeDispatch:
+      input.documentation || progress.result?.outcome === "no_change"
+        ? beforeDispatch
+        : () => Promise.resolve(true),
     closeTab: (close) =>
       read(
         `close_${progress.phase.replace("_completed", "")}_tab`,
@@ -247,6 +251,10 @@ async function executeStandalone(
       autoMerge: input.autoMerge,
       stageInput: stageInput(progress),
     });
+  const observeTicket = () =>
+    read("read_delivery_issue", `ticket:${number}`, () =>
+      tracker.observeDelivery(repository, number),
+    );
   const integrate = async (
     progress: ImplementationProgress,
     publicationReason?: string,
@@ -267,7 +275,7 @@ async function executeStandalone(
           codeHost: input.codeHost,
           tracker,
           read,
-          inspectTicket: inspect,
+          observeTicket,
           continuePublication: () => publish(progress),
         });
         if (delivery.outcome === "succeeded") {
@@ -299,17 +307,6 @@ async function executeStandalone(
     return complete();
   };
   if (
-    restored?.publication &&
-    [
-      "conflict_repair",
-      "pending_merge",
-      "merge_requested",
-      "merged",
-      "delivered",
-    ].includes(restored.publication.phase)
-  )
-    return integrate(restored);
-  if (
     selected.reason &&
     !completed &&
     !(
@@ -324,6 +321,17 @@ async function executeStandalone(
       outcome: selected.ticket.state === "closed" ? "no_work" : "incomplete",
     };
   }
+  if (
+    restored?.publication &&
+    [
+      "conflict_repair",
+      "pending_merge",
+      "merge_requested",
+      "merged",
+      "delivered",
+    ].includes(restored.publication.phase)
+  )
+    return integrate(restored);
   async function run(progress: ImplementationProgress): Promise<RunSummary> {
     if (progress.result) {
       if (
@@ -364,6 +372,7 @@ async function executeStandalone(
         tracker,
         read,
         inspectTicket: inspect,
+        beforeDispatch,
         verify: async () => {
           await accept(progress, JSON.stringify(progress.result));
         },
