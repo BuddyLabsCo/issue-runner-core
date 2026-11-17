@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import type {
   CommitEvidence,
-  PullRequestIdentity,
+  PublicationPullRequest,
   RequiredCheck,
   PullRequestState,
 } from "./run/contracts.ts";
@@ -141,7 +141,8 @@ export interface PublicationProgress {
   title: string;
   body: string;
   commits: CommitEvidence[];
-  pullRequest?: PullRequestIdentity;
+  repositoryId: string;
+  pullRequest?: PublicationPullRequest;
   creationAttempted?: boolean;
   discoveryNotBefore?: number;
   checksDeadline?: number;

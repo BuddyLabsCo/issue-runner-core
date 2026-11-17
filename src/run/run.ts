@@ -134,6 +134,9 @@ async function executeProject(
     getRemoteBranchHead: (repository, branch) =>
       host.getRemoteBranchHead(repository, branch),
     listPullRequests: (repository) => host.listPullRequests(repository),
+    observePublicationBranch: (repository, branch) =>
+      host.observePublicationBranch(repository, branch),
+    observePublication: (input) => host.observePublication(input),
     getRequiredChecks: (repository, pullRequest) =>
       host.getRequiredChecks(repository, pullRequest),
     createPullRequest: (input) =>

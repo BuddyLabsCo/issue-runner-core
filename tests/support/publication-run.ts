@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import type { TestContext } from "node:test";
 import { executeCli } from "../../src/cli.ts";
 import type {
-  PullRequestRecord,
+  PublicationPullRequest,
   RequiredCheck,
 } from "../../src/run/contracts.ts";
 import {
@@ -20,7 +20,7 @@ export async function publicationRun(
   let now = 0;
   const state = {
     branches: new Map<string, string>(),
-    pullRequests: [] as PullRequestRecord[],
+    pullRequests: [] as PublicationPullRequest[],
     checks: [] as RequiredCheck[],
     pushes: 0,
     creations: 0,
@@ -67,7 +67,10 @@ export async function publicationRun(
     assert.equal(input.body, saved.pr_body);
     state.creations++;
     const number = state.creations + 80;
-    const pullRequest: PullRequestRecord = {
+    const pullRequest: PublicationPullRequest = {
+      id: `PR_${number}`,
+      createdAt: "2026-10-30T00:00:00Z",
+      draft: false,
       number,
       url: `https://github.com/owner/repo/pull/${number}`,
       branch: input.branch,
@@ -77,7 +80,7 @@ export async function publicationRun(
     };
     state.pullRequests.push(pullRequest);
     await state.onCreate();
-    return { number, url: pullRequest.url };
+    return pullRequest;
   };
   codeHost.getRequiredChecks = async () => {
     state.discoveries.push(now);

@@ -23,7 +23,7 @@ for (const interruption of [
     const onPush = state.onPush;
     const onCreate = state.onCreate;
     const onChecks = state.onChecks;
-    const list = fixture.dependencies.codeHost.listPullRequests.bind(
+    const observe = fixture.dependencies.codeHost.observePublication.bind(
       fixture.dependencies.codeHost,
     );
     if (interruption === "intent")
@@ -35,9 +35,10 @@ for (const interruption of [
         fixture.controller.abort();
       };
     else if (interruption === "pushed")
-      fixture.dependencies.codeHost.listPullRequests = async () => {
+      fixture.dependencies.codeHost.observePublication = async (input) => {
+        const result = await observe(input);
         fixture.controller.abort();
-        return [];
+        return result;
       };
     else if (interruption === "creation")
       state.onCreate = async () => fixture.controller.abort();
@@ -69,7 +70,7 @@ for (const interruption of [
     state.onPush = onPush;
     state.onCreate = onCreate;
     state.onChecks = onChecks;
-    fixture.dependencies.codeHost.listPullRequests = list;
+    fixture.dependencies.codeHost.observePublication = observe;
     const result = await fixture.run();
     assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
     assert.equal(state.pushes, 1);
@@ -138,6 +139,8 @@ for (const conflict of [
   "absent",
   "number",
   "url",
+  "id",
+  "createdAt",
   "duplicate",
   "closed",
   "draft",
@@ -159,6 +162,9 @@ for (const conflict of [
     else if (conflict === "number") record.number = 999;
     else if (conflict === "url")
       record.url = "https://github.com/owner/repo/pull/999";
+    else if (conflict === "id") record.id = "PR_other";
+    else if (conflict === "createdAt")
+      record.createdAt = "2026-10-31T00:00:00Z";
     else if (conflict === "duplicate")
       state.pullRequests.push({ ...record, number: 999 });
     else if (conflict === "closed") record.state = "closed";

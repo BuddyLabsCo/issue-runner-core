@@ -4,7 +4,7 @@ import { access, rename } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { executeCli } from "../../src/cli.ts";
-import type { PullRequestRecord } from "../../src/run/contracts.ts";
+import type { PublicationPullRequest } from "../../src/run/contracts.ts";
 import { publicationRun } from "../support/publication-run.ts";
 import { validConfig } from "../support/cli-project.ts";
 import {
@@ -18,7 +18,7 @@ await test("no-auto-merge publishes fixed Probe metadata, waits for checks, and 
   const effects: string[] = [];
   let remote: string | null = null;
   let created: unknown;
-  const pullRequests: PullRequestRecord[] = [];
+  const pullRequests: PublicationPullRequest[] = [];
   const result = await executeCli(
     [...implementationCommand, "--no-auto-merge"],
     {
@@ -44,15 +44,19 @@ await test("no-auto-merge publishes fixed Probe metadata, waits for checks, and 
           assert.equal(remote, implementationCommit.sha);
           effects.push("create");
           created = input;
-          pullRequests.push({
+          const record: PublicationPullRequest = {
+            id: "PR_81",
+            createdAt: "2026-10-30T00:00:00Z",
+            draft: false,
             number: 81,
             url: "https://github.com/owner/repo/pull/81",
             branch: input.branch,
             targetBranch: input.targetBranch,
             headSha: remote,
             state: "open",
-          });
-          return { number: 81, url: "https://github.com/owner/repo/pull/81" };
+          };
+          pullRequests.push(record);
+          return record;
         },
         async getRequiredChecks() {
           assert.equal(fixture.state.sleeps.at(-1), 30_000);
@@ -66,6 +70,7 @@ await test("no-auto-merge publishes fixed Probe metadata, waits for checks, and 
   const saved = await fixture.snapshot();
   assert.deepEqual(created, {
     repository: "owner/repo",
+    repositoryId: "REPO_1",
     targetBranch: "default-branch",
     branch: saved.branch,
     title: "feat: [issue-50] implement the Issue",
@@ -313,4 +318,23 @@ await test("an existing remote head cannot be adopted without recorded publicati
   assert.equal(fixture.publicationState.pushes, 0);
   assert.equal(fixture.publicationState.creations, 0);
   assert.equal((await fixture.snapshot()).publication, undefined);
+});
+
+await test("a returned PR at the wrong head is reconciled before another create", async (t) => {
+  const fixture = await publicationRun(t);
+  const state = fixture.publicationState;
+  const create = fixture.dependencies.codeHost.createPullRequest.bind(
+    fixture.dependencies.codeHost,
+  );
+  fixture.dependencies.codeHost.createPullRequest = async (input) => {
+    const result = await create(input);
+    return { ...result, headSha: "f".repeat(40) };
+  };
+  const result = await fixture.run();
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
+  assert.equal(state.creations, 1);
+  assert.equal(
+    (await fixture.snapshot()).publication?.pullRequest?.headSha,
+    implementationCommit.sha,
+  );
 });
