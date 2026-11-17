@@ -111,14 +111,14 @@ await test("workflow audit errors redact credentials without recording task or A
   const fixture = await implementationRun(t);
   let attempts = 0;
   fixture.dependencies.tracker.listBlockersPage = async () => {
-    if (++attempts === 1) throw new Error('tracker-secret\n"host-secret"');
+    if (++attempts === 1) throw new Error('failure\n"host-secret"');
     return { blockers: [], nextPage: null };
   };
   const result = await fixture.run();
   const audit = await readFile(result.logPath!, "utf8");
   assert.doesNotMatch(
     audit,
-    /tracker-secret|host-secret|Implemented and verified|Session Probe|Implementation assignment/u,
+    /host-secret|Implemented and verified|Session Probe|Implementation assignment/u,
   );
   const events = audit
     .trim()

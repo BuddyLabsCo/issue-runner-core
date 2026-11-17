@@ -202,7 +202,7 @@ await test("invalid configuration fails before any external reads or delivery re
     ],
     [
       { tracker: { ...validConfig.tracker, tokenEnv: "MISSING" } },
-      /missing credential MISSING/,
+      /unknown field tokenEnv/,
     ],
     [
       { tracker: { ...validConfig.tracker, extra: true } },
