@@ -200,7 +200,8 @@ async function executeStandalone(
     (restored?.publication !== undefined ||
       restored?.noChange?.delivery !== undefined) &&
     selected.ticket.state === "closed" &&
-    selected.ticket.stateReason === "completed";
+    selected.ticket.stateReason === "completed" &&
+    selected.reason === "Issue is already terminal";
   const beforeDispatch = async () => {
     selected = await inspect();
     if (
@@ -306,17 +307,6 @@ async function executeStandalone(
     return complete();
   };
   if (
-    restored?.publication &&
-    [
-      "conflict_repair",
-      "pending_merge",
-      "merge_requested",
-      "merged",
-      "delivered",
-    ].includes(restored.publication.phase)
-  )
-    return integrate(restored);
-  if (
     selected.reason &&
     !completed &&
     !(
@@ -331,6 +321,17 @@ async function executeStandalone(
       outcome: selected.ticket.state === "closed" ? "no_work" : "incomplete",
     };
   }
+  if (
+    restored?.publication &&
+    [
+      "conflict_repair",
+      "pending_merge",
+      "merge_requested",
+      "merged",
+      "delivered",
+    ].includes(restored.publication.phase)
+  )
+    return integrate(restored);
   async function run(progress: ImplementationProgress): Promise<RunSummary> {
     if (progress.result) {
       if (

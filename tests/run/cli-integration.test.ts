@@ -200,6 +200,33 @@ await test("non-conflict rejection retains the original error and cannot trigger
   assert.equal(fixture.integrationState.closures, 0);
 });
 
+for (const change of ["reservation", "owner", "blocker"] as const) {
+  await test(`restart after merge stops when ${change} fails fresh validation`, async (t) => {
+    const fixture = await integrationRun(t);
+    fixture.integrationState.onClose = async () => {
+      fixture.controller.abort();
+    };
+    assert.equal((await fixture.run()).summary.outcome, "cancelled");
+    assert.equal((await fixture.snapshot()).publication?.phase, "merged");
+    if (change === "reservation")
+      fixture.state.ticket.labels = ["ready-for-agent"];
+    if (change === "owner") fixture.state.ticket.assignees = ["outside-owner"];
+    if (change === "blocker")
+      fixture.dependencies.tracker.listBlockersPage = async () => ({
+        blockers: [{ number: 99, state: "open", stateReason: null }],
+        nextPage: null,
+      });
+    fixture.dependencies.signal = new AbortController().signal;
+    const observations = fixture.integrationState.observations;
+    const result = await fixture.run();
+    assert.equal(result.summary.outcome, "incomplete");
+    assert.equal(fixture.integrationState.observations, observations);
+    assert.equal(fixture.integrationState.requests.length, 1);
+    assert.equal(fixture.integrationState.closures, 1);
+    assert.equal((await fixture.snapshot()).publication?.phase, "merged");
+  });
+}
+
 await test("recovery after a confirmed merge skips Agent and merge work and finishes tracker confirmation", async (t) => {
   const fixture = await integrationRun(t);
   fixture.integrationState.onClose = async () => {
@@ -282,6 +309,13 @@ await test("an interrupted queue resumes its existing request and deadline witho
   );
   const deadline = (await fixture.snapshot()).publication!.mergeDeadline;
   fixture.dependencies.signal = new AbortController().signal;
+  const labels = [...fixture.state.ticket.labels!];
+  fixture.state.ticket.labels = ["ready-for-agent"];
+  const observations = fixture.integrationState.observations;
+  assert.equal((await fixture.run()).summary.outcome, "incomplete");
+  assert.equal(fixture.integrationState.observations, observations);
+  assert.equal(fixture.integrationState.requests.length, 1);
+  fixture.state.ticket.labels = labels;
   fixture.state.onSleep = async () => {
     fixture.integrationState.pullRequest.merged = true;
   };
