@@ -171,7 +171,7 @@ await test("parent reads every child and blocker page before selecting across la
   ]);
 });
 
-await test("parent cancellation after a partial Reservation prevents assignment and dispatch", async (t) => {
+await test("parent cancellation after a combined Reservation prevents dispatch", async (t) => {
   const fixture = await parentRun(t, [child(51)]);
   fixture.dependencies.tracker.getParent = async () => ({
     number: 48,
@@ -180,25 +180,27 @@ await test("parent cancellation after a partial Reservation prevents assignment 
   });
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "cancelled");
-  assert.deepEqual(fixture.writes, ["label:51"]);
+  assert.deepEqual(fixture.writes, ["label:51", "assignee:51"]);
   assert.deepEqual(fixture.dispatched, []);
 });
 
-await test("a lost Reservation label prevents creating a partial assignee Reservation", async (t) => {
+await test("a lost Reservation label is added again after fresh observation", async (t) => {
   const ticket = child(51);
   const fixture = await parentRun(t, [ticket]);
   const addLabel = fixture.dependencies.tracker.addLabel.bind(
     fixture.dependencies.tracker,
   );
+  let first = true;
   fixture.dependencies.tracker.addLabel = async (...args) => {
     await addLabel(...args);
-    ticket.labels = ["ready-for-agent"];
+    if (first) {
+      first = false;
+      ticket.labels = ["ready-for-agent"];
+    }
   };
-  const result = await fixture.run();
-  assert.equal(result.summary.outcome, "incomplete");
-  assert.deepEqual(fixture.writes, ["label:51"]);
-  assert.deepEqual(fixture.dispatched, []);
-  assert.match(result.summary.tickets![0]!.detail, /Reservation changed/u);
+  await fixture.run();
+  assert.deepEqual(fixture.writes, ["label:51", "assignee:51", "label:51"]);
+  assert.deepEqual(fixture.dispatched, [51]);
 });
 
 await test("matching parent progress continues only recorded Reservations among unrelated residual markers", async (t) => {

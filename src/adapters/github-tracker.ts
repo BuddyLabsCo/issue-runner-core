@@ -1,3 +1,8 @@
+import {
+  observeStart,
+  reserveStart,
+  type StartInput,
+} from "./github-issue-start.ts";
 import { observeParent } from "./github-parent-observation.ts";
 import type { ChildPage, Ticket, Tracker } from "../run/contracts.ts";
 import { GitHubClient, type GitHubCommand } from "./github-client.ts";
@@ -88,6 +93,14 @@ export class GitHubTracker implements Tracker {
 
   constructor(token: string, command?: GitHubCommand) {
     this.client = new GitHubClient(token, command);
+  }
+
+  observeStart(input: StartInput) {
+    return observeStart(this.client, input);
+  }
+
+  reserveStart(input: Parameters<typeof reserveStart>[1]) {
+    return reserveStart(this.client, input);
   }
 
   observeParent(repository: string, parentTicket: number) {

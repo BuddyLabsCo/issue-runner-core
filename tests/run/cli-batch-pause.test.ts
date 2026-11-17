@@ -3,8 +3,8 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
-import test from "node:test";
 import type { AuditEvent } from "../../src/audit.ts";
+import test from "node:test";
 import { validConfig } from "../support/cli-project.ts";
 import {
   deferred,
@@ -32,7 +32,7 @@ await test(
     );
     let siblingReads = 0;
     fixture.dependencies.tracker.getTicket = async (repository, number) => {
-      if (number === 52 && ++siblingReads === 3) {
+      if (number === 52 && ++siblingReads === 1) {
         siblingHeld.resolve();
         await releaseSibling.promise;
       }
@@ -81,8 +81,7 @@ await test(
           .map((line) => JSON.parse(line) as AuditEvent)
           .filter(
             (event) =>
-              event.operation === "read_blockers" &&
-              event.target === "ticket:52:page:1",
+              event.operation === "start_issue" && event.target === "ticket:52",
           );
         if (
           events.filter((event) => event.result === "started").length >
@@ -91,7 +90,7 @@ await test(
           break;
         assert.ok(
           Date.now() < until,
-          "sibling blocker observation must reach the paused gate",
+          "sibling start must reach the paused gate",
         );
         await new Promise<void>((resolve) => setImmediate(resolve));
       }

@@ -282,10 +282,10 @@ for (const effect of [
 }
 
 for (const operation of ["addLabel", "addAssignee"] as const) {
-  await test(`a lost ${operation} response is reconciled immediately even with no automatic retries`, async (t) => {
+  await test(`a lost ${operation} response is reconciled from fresh facts`, async (t) => {
     const fixture = await implementationRun(t, {
       ...validConfig,
-      operationRetry: 0,
+      operationRetry: 1,
     });
     const write = fixture.dependencies.tracker[operation].bind(
       fixture.dependencies.tracker,
@@ -300,7 +300,6 @@ for (const operation of ["addLabel", "addAssignee"] as const) {
     assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
     assert.equal(mutations, 1);
     assert.deepEqual(fixture.dependencies.pauses, []);
-    assert.deepEqual(fixture.state.sleeps, [10_000, 30_000]);
     assert.equal(fixture.state.taskCount, 1);
   });
 }

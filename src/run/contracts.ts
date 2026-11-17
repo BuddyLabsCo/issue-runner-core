@@ -24,6 +24,26 @@ export interface ChildPage {
 }
 
 export interface Tracker {
+  observeStart(input: {
+    repository: string;
+    number: number;
+    parent?: number;
+    runner: string;
+    label: string;
+  }): Promise<{
+    ticket: Ticket & { id: string };
+    parent?: Ticket;
+    children?: Ticket[];
+    labelId?: string;
+    runnerId?: string;
+  }>;
+  reserveStart(input: {
+    ticket: Ticket & { id: string };
+    labelId?: string;
+    runnerId?: string;
+    label: string;
+    runner: string;
+  }): Promise<Ticket>;
   observeParent(
     repository: string,
     parentTicket: number,
