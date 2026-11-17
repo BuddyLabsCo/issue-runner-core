@@ -4,7 +4,7 @@ import type { CreateTabOptions, TabHandle } from "../../src/terminal.ts";
 import { LocalGitWorkspace } from "../../src/adapters/git-workspace.ts";
 import type {
   CodeHost,
-  PullRequestRecord,
+  PublicationPullRequest,
   RequiredCheck,
   PullRequestState,
   MergeRequestResult,
@@ -29,7 +29,7 @@ export function createCliDependencies(launchDirectory: string) {
   const reads: string[] = [];
   const pauses: string[] = [];
   const remoteBranches = new Map<string, string>();
-  const pullRequests: PullRequestRecord[] = [];
+  const pullRequests: PublicationPullRequest[] = [];
   const terminalPlugin = createTestTerminal();
   terminalPlugin.onInput = async () => {
     effects.push("submit");
@@ -256,8 +256,23 @@ export function createCliDependencies(launchDirectory: string) {
       ): Promise<string | null> {
         return remoteBranches.get(branch) ?? null;
       },
-      async listPullRequests(): Promise<PullRequestRecord[]> {
+      async listPullRequests(): Promise<PublicationPullRequest[]> {
         return structuredClone(pullRequests);
+      },
+      async observePublicationBranch(repository: string, branch: string) {
+        return {
+          repositoryId: "REPO_1",
+          head: await this.getRemoteBranchHead(repository, branch),
+        };
+      },
+      async observePublication(
+        input: Parameters<CodeHost["observePublication"]>[0],
+      ) {
+        return {
+          repositoryId: "REPO_1",
+          head: await this.getRemoteBranchHead(input.repository, input.branch),
+          candidates: await this.listPullRequests(),
+        };
       },
       async createPullRequest(
         input: Parameters<CodeHost["createPullRequest"]>[0],
@@ -267,7 +282,10 @@ export function createCliDependencies(launchDirectory: string) {
           input.branch,
         ))!;
         const number = 81 + pullRequests.length;
-        const record: PullRequestRecord = {
+        const record: PublicationPullRequest = {
+          id: `PR_${number}`,
+          createdAt: "2026-10-30T00:00:00Z",
+          draft: false,
           number,
           url: `https://github.com/${input.repository}/pull/${number}`,
           branch: input.branch,
@@ -276,7 +294,7 @@ export function createCliDependencies(launchDirectory: string) {
           state: "open",
         };
         pullRequests.push(record);
-        return { number, url: record.url };
+        return record;
       },
       async getRequiredChecks(): Promise<RequiredCheck[]> {
         return [];

@@ -102,14 +102,24 @@ export interface CodeHost {
     repository: string,
     branch: string,
   ): Promise<string | null>;
-  listPullRequests(repository: string): Promise<PullRequestRecord[]>;
+  listPullRequests(repository: string): Promise<PublicationPullRequest[]>;
+  observePublicationBranch(
+    repository: string,
+    branch: string,
+  ): Promise<{ repositoryId: string; head: string | null }>;
+  observePublication(input: {
+    repository: string;
+    branch: string;
+    targetBranch: string;
+  }): Promise<PublicationObservation>;
   createPullRequest(input: {
+    repositoryId: string;
     repository: string;
     targetBranch: string;
     branch: string;
     title: string;
     body: string;
-  }): Promise<PullRequestIdentity>;
+  }): Promise<PublicationPullRequest>;
   getRequiredChecks(
     repository: string,
     pullRequest: number,
@@ -140,6 +150,18 @@ export interface PullRequestRecord extends PullRequestIdentity {
   headSha: string;
   state: "open" | "closed" | "merged";
   draft?: boolean;
+}
+
+export interface PublicationPullRequest extends PullRequestRecord {
+  id: string;
+  createdAt: string;
+  draft: boolean;
+}
+
+export interface PublicationObservation {
+  repositoryId: string;
+  head: string | null;
+  candidates: PublicationPullRequest[];
 }
 
 export interface RequiredCheck {

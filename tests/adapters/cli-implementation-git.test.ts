@@ -75,7 +75,7 @@ for (const scenario of [
           "--format=%(objectname)",
           `refs/heads/${branch}`,
         )) || null;
-      if (scenario === "remote-advance" && ++observations === 2) {
+      if (scenario === "remote-advance" && ++observations === 1) {
         // Advance after the observation, before Core's real non-forced push.
         await git(origin, "switch", "-c", branch);
         await writeFile(path.join(origin, "someone-else.txt"), "remote work\n");

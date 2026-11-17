@@ -18,7 +18,6 @@ for (const response of ["", "q", null] as const) {
     const answer = deferred<string | null>();
     let failed = false;
     let waiting = false;
-    let listings = 0;
     let creations = 0;
     const inspect = fixture.dependencies.gitWorkspace.inspect.bind(
       fixture.dependencies.gitWorkspace,
@@ -41,13 +40,12 @@ for (const response of ["", "q", null] as const) {
       return result;
     };
     const host = fixture.dependencies.codeHost;
-    const list = host.listPullRequests.bind(host);
-    host.listPullRequests = async () => {
-      if (++listings === 2) {
-        releaseInspection.resolve();
-        await paused.promise;
-      }
-      return list();
+    const observe = host.observePublication.bind(host);
+    host.observePublication = async (input) => {
+      const observation = await observe(input);
+      releaseInspection.resolve();
+      await paused.promise;
+      return observation;
     };
     const create = host.createPullRequest.bind(host);
     host.createPullRequest = (input) => {
