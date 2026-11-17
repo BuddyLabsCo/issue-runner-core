@@ -22,21 +22,21 @@ export class GitHubCodeHost implements CodeHost {
     pullRequest: number,
   ): Promise<PullRequestState> {
     const [owner, name] = repository.split("/");
-    const response = JSON.parse(
-      await this.client.request([
-        "api",
-        "graphql",
-        "-f",
-        "query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid createdAt state mergedAt mergeable autoMergeRequest{enabledAt} mergeQueueEntry{id}}}}",
-        "-f",
-        `owner=${owner}`,
-        "-f",
-        `name=${name}`,
-        "-F",
-        `number=${pullRequest}`,
-      ]),
-    ) as { data?: { repository?: { pullRequest?: Record<string, unknown> } } };
-    return parsePullRequestState(response, pullRequest);
+    const response = await this.client.graphql(
+      "query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid createdAt state mergedAt mergeable autoMergeRequest{enabledAt} mergeQueueEntry{id}}}}",
+      { owner, name, number: pullRequest },
+    );
+    if (response.commandError || response.errors !== undefined) {
+      throw new Error("GitHub returned an incomplete Pull Request response", {
+        cause: response,
+      });
+    }
+    return parsePullRequestState(
+      response as {
+        data?: { repository?: { pullRequest?: Record<string, unknown> } };
+      },
+      pullRequest,
+    );
   }
 
   async requestSquashMerge(

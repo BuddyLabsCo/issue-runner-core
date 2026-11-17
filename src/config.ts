@@ -31,7 +31,6 @@ export interface ProjectConfig {
     enhancements: Record<string, unknown>;
   };
   tracker: {
-    tokenEnv: string;
     runnerAccount: string;
     reservationLabel: string;
   };
@@ -61,7 +60,6 @@ export interface LoadedProject {
   config: ProjectConfig;
   configBytes: Uint8Array;
   directory: string;
-  trackerToken: string;
   codeHostToken: string;
 }
 
@@ -208,11 +206,7 @@ function parseConfig(
   const tracker = record(input.tracker, "tracker");
   const codeHost = record(input.codeHost, "codeHost");
   const agents = record(input.agents, "agents");
-  knownFields(
-    tracker,
-    ["tokenEnv", "runnerAccount", "reservationLabel"],
-    "tracker",
-  );
+  knownFields(tracker, ["runnerAccount", "reservationLabel"], "tracker");
   knownFields(codeHost, ["tokenEnv", "adminMerge"], "codeHost");
   knownFields(
     agents,
@@ -312,7 +306,6 @@ function parseConfig(
       ? {}
       : { targetBranch: text(input.targetBranch, "targetBranch") }),
     tracker: {
-      tokenEnv: text(tracker.tokenEnv, "tracker.tokenEnv"),
       runnerAccount: text(tracker.runnerAccount, "tracker.runnerAccount"),
       reservationLabel: text(
         tracker.reservationLabel,
@@ -419,13 +412,10 @@ export async function loadProject(
       throw new Error(reviewConfigurationError);
     }
   }
-  const trackerToken = env[config.tracker.tokenEnv];
   const codeHostToken = env[config.codeHost.tokenEnv];
-  if (!trackerToken?.trim())
-    throw new Error(`missing credential ${config.tracker.tokenEnv}`);
   if (!codeHostToken?.trim())
     throw new Error(`missing credential ${config.codeHost.tokenEnv}`);
-  return { config, configBytes, directory, trackerToken, codeHostToken };
+  return { config, configBytes, directory, codeHostToken };
 }
 
 // `--project` is a key for one child of the launch directory, never a path.

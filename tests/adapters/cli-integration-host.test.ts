@@ -30,9 +30,14 @@ await test("GitHub integration uses squash, observed HEAD, admin policy, queue o
     }
     assert.equal(args[0], "api");
     assert.equal(args[1], "graphql");
-    assert.ok(args.includes("number=81"));
-    assert.ok(args.includes("owner=owner"));
-    assert.ok(args.includes("name=repo"));
+    assert.deepEqual(
+      (JSON.parse(options.input!) as { variables: unknown }).variables,
+      {
+        owner: "owner",
+        name: "repo",
+        number: 81,
+      },
+    );
     return JSON.stringify({
       data: {
         repository: {
