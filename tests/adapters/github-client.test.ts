@@ -1,9 +1,13 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundary. */
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import {
   GitHubClient,
   GitHubCommandError,
+  runGitHubCommand,
 } from "../../src/adapters/github-client.ts";
 
 await test("GraphQL retains partial data, error paths, and failed command evidence", async () => {
@@ -45,3 +49,32 @@ await test("GraphQL distinguishes missing or invalid responses from empty data",
     (error) => error === failure,
   );
 });
+
+await test(
+  "real gh failures distinguish timeouts and redact partial output",
+  { skip: process.platform === "win32" },
+  async (t) => {
+    const directory = await mkdtemp(path.join(tmpdir(), "fake-gh-"));
+    const previousPath = process.env.PATH;
+    t.after(async () => {
+      process.env.PATH = previousPath;
+      await rm(directory, { recursive: true, force: true });
+    });
+    await writeFile(
+      path.join(directory, "gh"),
+      `#!/bin/sh\nprintf '{"data":{"first":"secret"}}'\nprintf 'secret error' >&2\nexec sleep 10\n`,
+      { mode: 0o755 },
+    );
+    process.env.PATH = `${directory}${path.delimiter}${previousPath ?? ""}`;
+    await assert.rejects(
+      runGitHubCommand([], { token: "secret", timeout: 200 }),
+      (error: unknown) => {
+        assert.ok(error instanceof GitHubCommandError);
+        assert.equal(error.timedOut, true);
+        assert.doesNotMatch(error.message + error.stdout, /secret/u);
+        assert.match(error.stdout, /redacted/u);
+        return true;
+      },
+    );
+  },
+);

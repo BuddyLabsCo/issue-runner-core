@@ -14,7 +14,7 @@ export type GitHubCommand = (
   options: GitHubCommandOptions,
 ) => Promise<string>;
 
-const runGitHubCommand: GitHubCommand = (
+export const runGitHubCommand: GitHubCommand = (
   args,
   { token, timeout, allowedExitCodes = [], input },
 ) =>
@@ -57,6 +57,7 @@ const runGitHubCommand: GitHubCommand = (
           new GitHubCommandError(
             `gh command failed: ${detail}`,
             stdout.replaceAll(token, "[redacted]"),
+            error.killed === true,
           ),
         );
       },
@@ -71,10 +72,12 @@ const runGitHubCommand: GitHubCommand = (
 
 export class GitHubCommandError extends Error {
   readonly stdout: string;
+  readonly timedOut: boolean;
 
-  constructor(message: string, stdout: string) {
+  constructor(message: string, stdout: string, timedOut = false) {
     super(message);
     this.stdout = stdout;
+    this.timedOut = timedOut;
   }
 }
 
