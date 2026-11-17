@@ -38,7 +38,7 @@ await test("parent observation drains independent cursors before returning facts
           repository: {
             ...repo,
             issue: {
-              ...issue("parent", 1),
+              ...child("parent", 1),
               subIssues: connection([child("child", 2)], "children-next"),
             },
           },
@@ -65,6 +65,9 @@ await test("parent observation drains independent cursors before returning facts
     });
   });
   const result = await observeParent(client, "owner/repo", 1);
+  assert.deepEqual(result.parent.labels, ["ready", "reserved"]);
+  assert.deepEqual(result.parent.assignees, ["runner"]);
+  assert.equal(result.parent.blockers?.[0]?.state, "closed");
   assert.deepEqual(result.tickets[0]?.labels, ["ready", "reserved"]);
   assert.deepEqual(result.tickets[0]?.assignees, ["runner"]);
   assert.equal(result.tickets[0]?.blockers[0]?.state, "closed");
@@ -73,6 +76,9 @@ await test("parent observation drains independent cursors before returning facts
     new Set([
       "root:first",
       "parent:children-next",
+      "parent:labels-next",
+      "parent:assignees-next",
+      "parent:blockers-next",
       "child:labels-next",
       "child:assignees-next",
       "child:blockers-next",
@@ -94,7 +100,7 @@ await test("parent observation rejects incomplete responses and repeated cursors
             repository: {
               ...repo,
               issue: {
-                ...issue("parent", 1),
+                ...child("parent", 1),
                 subIssues: connection([], "again"),
               },
             },
@@ -108,5 +114,35 @@ await test("parent observation rejects incomplete responses and repeated cursors
       observeParent(client, "owner/repo", 1),
       /incomplete|non-advancing/u,
     );
+  }
+});
+
+await test("parent observation accepts canonical repository casing for empty and populated parents", async () => {
+  for (const nodes of [[], [child("child", 2)]]) {
+    const client = new GitHubClient("token", async (_args, options) => {
+      const { variables } = JSON.parse(options.input!) as {
+        variables: { id?: string; after?: string };
+      };
+      if (!variables.id)
+        return JSON.stringify({
+          data: {
+            repository: {
+              ...repo,
+              issue: { ...child("parent", 1), subIssues: connection(nodes) },
+            },
+          },
+        });
+      const field =
+        variables.after === "labels-next"
+          ? "labels"
+          : variables.after === "assignees-next"
+            ? "assignees"
+            : "blockedBy";
+      return JSON.stringify({
+        data: { node: { id: variables.id, [field]: connection([]) } },
+      });
+    });
+    const result = await observeParent(client, "OWNER/REPO", 1);
+    assert.equal(result.tickets.length, nodes.length);
   }
 });

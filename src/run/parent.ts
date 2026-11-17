@@ -42,7 +42,7 @@ export async function readParentScope(
     observed?.tickets ??
     (await readChildren(repository, parentTicket, tracker, read));
   const foreignChild = tickets.find(
-    (ticket) => ticket.repository !== repository,
+    (ticket) => ticket.repository?.toLowerCase() !== repository.toLowerCase(),
   );
   if (foreignChild)
     throw new Error(

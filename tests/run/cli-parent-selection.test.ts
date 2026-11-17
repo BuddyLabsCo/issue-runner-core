@@ -55,6 +55,17 @@ await test("an empty discovered parent scope has no work", async (t) => {
   assert.equal(result.summary.outcome, "no_work");
 });
 
+await test("parent discovery and dispatch accept equivalent repository casing", async (t) => {
+  const fixture = await parentDeliveryRun(t, [child(51)], {
+    ...validConfig,
+    repository: "OWNER/REPO",
+    issueList: [51],
+  });
+  const result = await fixture.run();
+  assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
+  assert.deepEqual(fixture.dispatched, [51]);
+});
+
 await test("parent reads every child and blocker page before selecting across labels, ownership and Issue List filtering", async (t) => {
   const children = [
     child(51),

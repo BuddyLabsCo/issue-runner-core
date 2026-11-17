@@ -49,6 +49,17 @@ export function parseIssueFact(value: unknown): Ticket & { id: string } {
   };
 }
 
+function withConnections(ticket: Ticket & { id: string }) {
+  return {
+    ...ticket,
+    labels: [] as string[],
+    assignees: [] as string[],
+    labelIds: Object.create(null) as Record<string, string>,
+    assigneeIds: Object.create(null) as Record<string, string>,
+    blockers: [] as Ticket[],
+  };
+}
+
 export class ConnectionDrain {
   private readonly cursors = new Map<string, Set<string>>();
   readonly pending: { owner: string; field: string; cursor: string }[] = [];
@@ -96,18 +107,21 @@ export async function observeParent(
     return object(response.data);
   };
   const data = await request(
-    `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){id nameWithOwner issue(number:$number){${identity} ${children}}}}`,
+    `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){id nameWithOwner issue(number:$number){${identity} ${nested} ${children}}}}`,
     { owner, name, number },
   );
   const repo = object(data.repository);
   const repositoryId = text(repo.id);
-  if (text(repo.nameWithOwner) !== repository)
+  if (text(repo.nameWithOwner).toLowerCase() !== repository.toLowerCase())
     throw new Error("Unexpected repository identity");
   const root = object(repo.issue);
   if (text(object(root.repository).id) !== repositoryId)
     throw new Error("Unexpected parent repository identity");
-  const parent = parseIssueFact(root);
-  if (parent.number !== number || parent.repository !== repository)
+  const parent = withConnections(parseIssueFact(root));
+  if (
+    parent.number !== number ||
+    parent.repository?.toLowerCase() !== repository.toLowerCase()
+  )
     throw new Error("Unexpected parent identity");
   const tickets = new Map<
     string,
@@ -119,11 +133,9 @@ export async function observeParent(
     const node = object(value);
     const parsed = parseIssueFact(node);
     if (
-      parsed.repository === repository &&
-      text(object(node.repository).id) !== repositoryId
+      parsed.repository?.toLowerCase() !== repository.toLowerCase() ||
+      parsed.repositoryId !== repositoryId
     )
-      throw new Error("Unexpected child repository identity");
-    if (parsed.repository !== repository)
       throw new Error(
         `cross-repository child ${parsed.repository}#${parsed.number} is unsupported`,
       );
@@ -138,20 +150,13 @@ export async function observeParent(
         throw new Error("GitHub returned inconsistent child identity");
       return;
     }
-    ticket = {
-      ...parsed,
-      labels: [],
-      assignees: [],
-      labelIds: Object.create(null) as Record<string, string>,
-      assigneeIds: Object.create(null) as Record<string, string>,
-      blockers: [],
-    };
+    ticket = withConnections(parsed);
     tickets.set(parsed.id, ticket);
     for (const field of ["labels", "assignees", "blockedBy"])
       acceptConnection(parsed.id, field, node[field]);
   }
   function acceptConnection(id: string, field: string, value: unknown) {
-    const ticket = tickets.get(id);
+    const ticket = id === parent.id ? parent : tickets.get(id);
     if (!ticket) throw new Error("GitHub returned unknown connection owner");
     const key = `${id}:${field}`;
     const seen = identities.get(key) ?? new Set<string>();
@@ -172,6 +177,8 @@ export async function observeParent(
       } else ticket.blockers.push(parseIssueFact(node));
     });
   }
+  for (const field of ["labels", "assignees", "blockedBy"])
+    acceptConnection(parent.id, field, root[field]);
   drain.add(parent.id, "subIssues", root.subIssues, acceptChild);
   while (drain.pending.length) {
     const next = drain.pending.shift()!;
