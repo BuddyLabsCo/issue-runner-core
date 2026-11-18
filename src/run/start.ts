@@ -10,6 +10,7 @@ export function startIssue(input: {
   config: ProjectConfig;
   tracker: Tracker;
   read: ReadOperation;
+  advance<T>(action: () => Promise<T>): Promise<T>;
   restored: boolean;
   restarting: boolean;
 }): Promise<{ ticket: Ticket; reason?: string }> {
@@ -83,14 +84,16 @@ export function startIssue(input: {
     if ((label && !label.id) || (runner && !runner.id))
       throw new Error("Missing Reservation marker identity");
     if (label || runner) {
-      initiated = true;
-      await tracker.addReservation(
-        ticket,
-        label as { id: string; name: string } | undefined,
-        runner as { id: string; login: string } | undefined,
-        reservationLabel,
-        runnerAccount,
-      );
+      await input.advance(() => {
+        initiated = true;
+        return tracker.addReservation(
+          ticket,
+          label as { id: string; name: string } | undefined,
+          runner as { id: string; login: string } | undefined,
+          reservationLabel,
+          runnerAccount,
+        );
+      });
     }
     return { ticket };
   });

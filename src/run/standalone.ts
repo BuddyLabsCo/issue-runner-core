@@ -192,6 +192,7 @@ async function executeStandalone(
     config,
     tracker,
     read,
+    advance: context.advance!,
     restored: restored !== undefined,
     restarting,
   });

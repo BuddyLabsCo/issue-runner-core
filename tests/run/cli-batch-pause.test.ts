@@ -23,21 +23,18 @@ await test(
     const secondPause = deferred<void>();
     const firstAnswer = deferred<string>();
     const secondAnswer = deferred<string>();
-    const add = fixture.dependencies.tracker.addReservation.bind(
+    const readStart = fixture.dependencies.tracker.readStart.bind(
       fixture.dependencies.tracker,
     );
-    fixture.dependencies.tracker.addReservation = async (
-      ticket,
-      label,
-      runner,
-      requiredLabel,
-      requiredRunner,
-    ) => {
-      if (ticket.number === 52) {
+    const siblingReadFinished = deferred<void>();
+    fixture.dependencies.tracker.readStart = async (...args) => {
+      const result = await readStart(...args);
+      if (args[1] === 52) {
         siblingHeld.resolve();
         await releaseSibling.promise;
+        siblingReadFinished.resolve();
       }
-      await add(ticket, label, runner, requiredLabel, requiredRunner);
+      return result;
     };
     fixture.dependencies.gitWorkspace.fetchTargetBranch = async () => {
       await siblingHeld.promise;
@@ -57,10 +54,13 @@ await test(
     const running = fixture.run();
     try {
       await firstPause.promise;
-      releaseSibling.resolve();
       firstAnswer.resolve("s");
       await secondPause.promise;
-      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+      releaseSibling.resolve();
+      await siblingReadFinished.promise;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      assert.equal(fixture.writes.includes("label:52"), false);
+      assert.equal(fixture.writes.includes("assignee:52"), false);
       assert.deepEqual(fixture.dispatched, []);
     } finally {
       releaseSibling.resolve();
@@ -69,9 +69,68 @@ await test(
       await running;
     }
     assert.equal((await running).summary.outcome, "cancelled");
+    assert.equal(fixture.writes.includes("label:52"), false);
+    assert.equal(fixture.writes.includes("assignee:52"), false);
     assert.equal(pauses, 2);
   },
 );
+
+await test("a Reservation waiting at the pause gate proceeds after retry", async (t) => {
+  const fixture = await parentRun(t, [child(51), child(52)], {
+    ...validConfig,
+    operationRetry: 0,
+  });
+  const held = deferred<void>();
+  const release = deferred<void>();
+  const returned = deferred<void>();
+  const paused = deferred<void>();
+  const answer = deferred<string>();
+  const readStart = fixture.dependencies.tracker.readStart.bind(
+    fixture.dependencies.tracker,
+  );
+  fixture.dependencies.tracker.readStart = async (...args) => {
+    const result = await readStart(...args);
+    if (args[1] === 52) {
+      held.resolve();
+      await release.promise;
+      returned.resolve();
+    }
+    return result;
+  };
+  let attempts = 0;
+  fixture.dependencies.gitWorkspace.fetchTargetBranch = async () => {
+    await held.promise;
+    if (++attempts === 1) throw new Error("shared Target Branch unavailable");
+    return "a".repeat(40);
+  };
+  fixture.dependencies.operator.pause = async (message) => {
+    if (!message.includes("shared Target Branch unavailable")) return "s";
+    paused.resolve();
+    return answer.promise;
+  };
+  const running = fixture.run();
+  try {
+    await paused.promise;
+    release.resolve();
+    await returned.promise;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(fixture.writes.includes("label:52"), false);
+    assert.equal(fixture.writes.includes("assignee:52"), false);
+  } finally {
+    release.resolve();
+    answer.resolve("");
+  }
+  await running;
+  assert.equal(
+    fixture.writes.filter((write) => write === "label:52").length,
+    1,
+  );
+  assert.equal(
+    fixture.writes.filter((write) => write === "assignee:52").length,
+    1,
+  );
+  assert.ok(fixture.dispatched.includes(52));
+});
 
 for (const response of ["", "q"] as const) {
   await test(`a non-Agent pause gates sibling operations and dispatch until ${response === "" ? "retry" : "cancellation"}`, async (t) => {
