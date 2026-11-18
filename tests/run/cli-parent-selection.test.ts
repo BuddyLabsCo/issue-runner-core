@@ -314,7 +314,7 @@ await test("a blocker-page failure after an open blocker cannot permit selection
   };
   fixture.dependencies.operator.pause = async () => "q";
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  assert.deepEqual(pages, [1, 2, 2]);
+  assert.deepEqual(pages, [1, 2, 1, 2]);
   assert.deepEqual(fixture.writes, []);
   assert.deepEqual(fixture.dispatched, []);
 });
@@ -347,14 +347,29 @@ for (const invalid of [
             : [],
         nextPage: invalid === "blocker_page_cycle" ? 1 : null,
       });
+    const pauses: string[] = [];
+    fixture.dependencies.operator.pause = async (message) => {
+      pauses.push(message);
+      return "q";
+    };
     const result = await fixture.run();
-    assert.equal(result.summary.outcome, "failed");
+    const expected = {
+      foreign_child: /cross-repository child outside\/repo#51/u,
+      child_page_cycle: /invalid child pagination/u,
+      blocker_page_cycle: /invalid blocker pagination/u,
+      blocker_closure: /unsupported terminal state/u,
+      child_closure: /Delivery Ticket 51 has an unsupported terminal state/u,
+    }[invalid];
+    assert.match(
+      invalid === "child_closure" ? result.summary.failure! : pauses.join("\n"),
+      expected,
+    );
+    assert.equal(
+      result.summary.outcome,
+      invalid === "child_closure" ? "failed" : "cancelled",
+    );
     assert.deepEqual(fixture.writes, []);
     assert.deepEqual(fixture.dispatched, []);
-    assert.match(
-      result.summary.failure!,
-      /cross-repository|pagination|unsupported terminal state/u,
-    );
   });
 }
 
@@ -403,4 +418,20 @@ await test("cancellation after one child completes prevents subsequent Batch dis
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   assert.deepEqual(fixture.dispatched, [51]);
   assert.deepEqual(fixture.writes, ["label:51", "assignee:51"]);
+});
+
+await test("parent discovery accepts repository casing returned by GitHub", async (t) => {
+  const fixture = await parentRun(t, [child(51, { repository: "Owner/Repo" })]);
+  const result = await fixture.run();
+  assert.equal(result.summary.outcome, "incomplete");
+  assert.deepEqual(fixture.dispatched, [51]);
+});
+
+await test("canonical repository casing permits delivery and parent completion", async (t) => {
+  const fixture = await parentDeliveryRun(t, [
+    child(51, { repository: "Owner/Repo" }),
+  ]);
+  const result = await fixture.run();
+  assert.equal(result.summary.outcome, "succeeded");
+  assert.deepEqual(fixture.closures, [51, 48]);
 });

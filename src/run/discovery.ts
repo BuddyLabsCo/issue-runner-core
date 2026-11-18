@@ -37,7 +37,7 @@ export async function readChildren(
     page = current.nextPage;
   }
   const foreignChild = children.find(
-    (child) => child.repository !== repository,
+    (child) => child.repository?.toLowerCase() !== repository.toLowerCase(),
   );
   if (foreignChild)
     throw new Error(
@@ -146,12 +146,10 @@ export async function selectIssueBatch(input: {
   for (const child of [...(tickets ?? [])].sort(
     (a, b) => a.number - b.number,
   )) {
-    const isBlocked = await hasOpenBlocker(
-      config.repository,
-      child.number,
-      tracker,
-      read,
-    );
+    const isBlocked =
+      child.blockers === undefined
+        ? await hasOpenBlocker(config.repository, child.number, tracker, read)
+        : child.blockers.some((blocker) => blocker.state === "open");
     if (child.state === "closed") {
       if (child.stateReason === null)
         throw new Error(

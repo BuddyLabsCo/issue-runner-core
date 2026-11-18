@@ -308,13 +308,17 @@ async function executeProject(
     if (
       ticket.number !== number ||
       (ticket.repository !== undefined &&
-        ticket.repository !== loaded.config.repository)
+        ticket.repository.toLowerCase() !==
+          loaded.config.repository.toLowerCase())
     )
       throw new Error("Unexpected Issue ownership");
     return ticket;
   };
   const pending = await selectBatch();
-  if (pending.batch.length > 0) {
+  if (
+    pending.batch.length > 0 &&
+    (options.selector !== "parent" || pending.documentation)
+  ) {
     const result = await batch(
       pending.documentation
         ? []
@@ -328,11 +332,14 @@ async function executeProject(
     return runParent({
       repository: loaded.config.repository,
       parentTicket: summary.parentTicket,
+      runner: loaded.config.tracker.runnerAccount,
+      reservation: loaded.config.tracker.reservationLabel,
       tracker,
       read,
       summary,
       runBatch: batch,
       maintenancePending: () => maintenancePending,
+      resumePending: pending.batch.length > 0 && !pending.documentation,
     });
   }
   const tickets: Ticket[] = [];

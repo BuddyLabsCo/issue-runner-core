@@ -10,25 +10,51 @@ import type { RunSummary } from "./run.ts";
 interface ParentScope {
   repository: string;
   parentTicket: number;
+  runner: string;
+  reservation: string;
   tracker: Tracker;
   read: ReadOperation;
 }
 
-async function readParentScope(input: ParentScope): Promise<{
+async function readParentScope(
+  input: ParentScope,
+  discovery = false,
+): Promise<{
   parent: Ticket;
   tickets: Ticket[];
 }> {
   const { repository, parentTicket, tracker, read } = input;
-  const parent = await read("read_parent", `parent:${parentTicket}`, () =>
-    tracker.getParent(repository, parentTicket),
-  );
+  const scope = discovery
+    ? await read("discover_parent", `parent:${parentTicket}`, () =>
+        tracker.discoverParent(
+          repository,
+          parentTicket,
+          input.runner,
+          input.reservation,
+        ),
+      )
+    : undefined;
+  const parent =
+    scope?.parent ??
+    (await read("read_parent", `parent:${parentTicket}`, () =>
+      tracker.getParent(repository, parentTicket),
+    ));
   if (parent.state === "closed" && parent.stateReason === "not_planned")
     throw new OperatorCancelled("Parent Ticket is cancelled");
   if (parent.state === "closed" && parent.stateReason === null)
     throw new OperationStopped(
       "closed Parent Ticket has no supported closure reason",
     );
-  const tickets = await readChildren(repository, parentTicket, tracker, read);
+  const tickets =
+    scope?.tickets ??
+    (await readChildren(repository, parentTicket, tracker, read));
+  const foreignChild = tickets.find(
+    (child) => child.repository?.toLowerCase() !== repository.toLowerCase(),
+  );
+  if (foreignChild)
+    throw new Error(
+      `cross-repository child ${foreignChild.repository}#${foreignChild.number} is unsupported`,
+    );
   if (
     parent.state === "closed" &&
     tickets.some((ticket) => ticket.state === "open")
@@ -71,11 +97,30 @@ function closeParent(input: ParentScope): Promise<boolean> {
   );
 }
 
-export async function runParent(
+async function resumeBatch(
+  input: ParentScope & {
+    resumePending: boolean;
+    runBatch: (tickets: Ticket[]) => Promise<RunSummary>;
+  },
+): Promise<RunSummary | undefined> {
+  if (!input.resumePending) return undefined;
+  const { tickets } = await readParentScope(input, true);
+  return input.runBatch(tickets);
+}
+
+interface ParentRun extends ParentScope {
+  summary: RunSummary;
+  runBatch: (tickets: Ticket[]) => Promise<RunSummary>;
+  maintenancePending: () => boolean;
+  resumePending: boolean;
+}
+
+async function runParentRounds(
   input: ParentScope & {
     summary: RunSummary;
     runBatch: (tickets: Ticket[]) => Promise<RunSummary>;
     maintenancePending: () => boolean;
+    resumePending: boolean;
   },
 ): Promise<RunSummary> {
   let hadChildren = false;
@@ -83,7 +128,7 @@ export async function runParent(
   for (;;) {
     if (input.maintenancePending())
       return { ...input.summary, outcome: "incomplete" };
-    const { parent, tickets } = await readParentScope(input);
+    const { parent, tickets } = await readParentScope(input, true);
     hadChildren ||= tickets.length > 0;
     if (parent.state === "closed")
       return {
@@ -103,4 +148,10 @@ export async function runParent(
       return { ...input.summary, outcome: "incomplete" };
     previous = await input.runBatch(tickets);
   }
+}
+
+export async function runParent(input: ParentRun): Promise<RunSummary> {
+  const resumed = await resumeBatch(input);
+  if (resumed && resumed.outcome !== "succeeded") return resumed;
+  return runParentRounds(input);
 }
