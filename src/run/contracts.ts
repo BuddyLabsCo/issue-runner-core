@@ -18,6 +18,28 @@ export interface ChildPage {
   nextPage: number | null;
 }
 
+export interface IssueFact extends Pick<
+  Ticket,
+  "number" | "state" | "stateReason"
+> {
+  id: string;
+  repository: string;
+  repositoryId: string;
+}
+
+export interface ParentDiscoveryChild extends IssueFact {
+  labels: { id: string; name: string }[];
+  assignees: { id: string; login: string }[];
+  blockers: IssueFact[];
+}
+
+export interface ParentDiscovery {
+  parent: IssueFact;
+  children: ParentDiscoveryChild[];
+  reservation: { id: string; name: string };
+  runner: { id: string; login: string };
+}
+
 export interface Tracker {
   createLabel(repository: string, label: string): Promise<void>;
   listLabelsPage(
@@ -49,6 +71,11 @@ export interface Tracker {
     account: string,
   ): Promise<void>;
   getParent(repository: string, parentTicket: number): Promise<Ticket>;
+  discoverParent(
+    repository: string,
+    parentTicket: number,
+    markers: { reservationLabel: string; runnerAccount: string },
+  ): Promise<ParentDiscovery>;
   listChildrenPage(
     repository: string,
     parentTicket: number,

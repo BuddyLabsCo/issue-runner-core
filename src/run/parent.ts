@@ -2,6 +2,7 @@ import type { Ticket, Tracker } from "./contracts.ts";
 import {
   hasOpenBlocker,
   readChildren,
+  type BatchTicket,
   type ReadOperation,
 } from "./discovery.ts";
 import { OperationStopped, OperatorCancelled } from "./operations.ts";
@@ -14,21 +15,19 @@ interface ParentScope {
   read: ReadOperation;
 }
 
-async function readParentScope(input: ParentScope): Promise<{
-  parent: Ticket;
-  tickets: Ticket[];
-}> {
-  const { repository, parentTicket, tracker, read } = input;
-  const parent = await read("read_parent", `parent:${parentTicket}`, () =>
-    tracker.getParent(repository, parentTicket),
-  );
+function validateParent(parent: Ticket): void {
   if (parent.state === "closed" && parent.stateReason === "not_planned")
     throw new OperatorCancelled("Parent Ticket is cancelled");
   if (parent.state === "closed" && parent.stateReason === null)
     throw new OperationStopped(
       "closed Parent Ticket has no supported closure reason",
     );
-  const tickets = await readChildren(repository, parentTicket, tracker, read);
+}
+
+function validateChildren(
+  parent: Ticket,
+  tickets: Pick<Ticket, "number" | "state" | "stateReason">[],
+): void {
   if (
     parent.state === "closed" &&
     tickets.some((ticket) => ticket.state === "open")
@@ -39,16 +38,20 @@ async function readParentScope(input: ParentScope): Promise<{
       throw new OperationStopped(
         `Delivery Ticket ${ticket.number} has an unsupported terminal state`,
       );
-  return { parent, tickets };
 }
 
 function closeParent(input: ParentScope): Promise<boolean> {
   const { repository, parentTicket, tracker, read } = input;
   const inspect = async () => {
-    const scope = await readParentScope(input);
-    for (const ticket of scope.tickets)
+    const parent = await read("read_parent", `parent:${parentTicket}`, () =>
+      tracker.getParent(repository, parentTicket),
+    );
+    validateParent(parent);
+    const tickets = await readChildren(repository, parentTicket, tracker, read);
+    validateChildren(parent, tickets);
+    for (const ticket of tickets)
       await hasOpenBlocker(repository, ticket.number, tracker, read);
-    return scope;
+    return { parent, tickets };
   };
   return read(
     "close_parent",
@@ -74,24 +77,32 @@ function closeParent(input: ParentScope): Promise<boolean> {
 export async function runParent(
   input: ParentScope & {
     summary: RunSummary;
-    runBatch: (tickets: Ticket[]) => Promise<RunSummary>;
+    markers: Parameters<Tracker["discoverParent"]>[2];
+    runBatch: (tickets: BatchTicket[]) => Promise<RunSummary>;
     maintenancePending: () => boolean;
   },
 ): Promise<RunSummary> {
+  const { read, repository, parentTicket, tracker, markers } = input;
   let hadChildren = false;
   let previous: RunSummary | undefined;
   for (;;) {
     if (input.maintenancePending())
       return { ...input.summary, outcome: "incomplete" };
-    const { parent, tickets } = await readParentScope(input);
-    hadChildren ||= tickets.length > 0;
+    const { parent, children } = await read(
+      "discover_parent",
+      `parent:${parentTicket}`,
+      () => tracker.discoverParent(repository, parentTicket, markers),
+    );
+    validateParent(parent);
+    validateChildren(parent, children);
+    hadChildren ||= children.length > 0;
     if (parent.state === "closed")
       return {
         ...input.summary,
         outcome: "succeeded",
       };
-    if (!hadChildren) return input.runBatch(tickets);
-    if (tickets.every((ticket) => ticket.state === "closed")) {
+    if (!hadChildren) return input.runBatch([]);
+    if (children.every((ticket) => ticket.state === "closed")) {
       if (await closeParent(input))
         return {
           ...input.summary,
@@ -101,6 +112,13 @@ export async function runParent(
     }
     if (previous && previous.outcome !== "succeeded")
       return { ...input.summary, outcome: "incomplete" };
-    previous = await input.runBatch(tickets);
+    previous = await input.runBatch(
+      children.map(({ labels, assignees, blockers, ...ticket }) => ({
+        ...ticket,
+        labels: labels.map((label) => label.name),
+        assignees: assignees.map((assignee) => assignee.login),
+        blocked: blockers.some((blocker) => blocker.state === "open"),
+      })),
+    );
   }
 }

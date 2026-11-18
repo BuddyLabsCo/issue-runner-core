@@ -29,7 +29,11 @@ import { runBatch } from "./batch.ts";
 import { runStandalone } from "./standalone.ts";
 import { runParent } from "./parent.ts";
 import { runDocumentation } from "./documentation.ts";
-import { selectIssueBatch, type ReadOperation } from "./discovery.ts";
+import {
+  selectIssueBatch,
+  type BatchTicket,
+  type ReadOperation,
+} from "./discovery.ts";
 
 export interface RunContext {
   audit: AuditLog;
@@ -281,7 +285,7 @@ async function executeProject(
         : {}),
     });
   const batch = (
-    tickets: Ticket[],
+    tickets: BatchTicket[],
     selection?: Awaited<ReturnType<typeof selectBatch>>,
   ) => {
     base = undefined;
@@ -316,7 +320,7 @@ async function executeProject(
   const pending = await selectBatch();
   if (pending.batch.length > 0) {
     const result = await batch(
-      pending.documentation
+      pending.documentation || options.selector === "parent"
         ? []
         : await Promise.all(pending.batch.map(readTicket)),
       pending,
@@ -330,6 +334,7 @@ async function executeProject(
       parentTicket: summary.parentTicket,
       tracker,
       read,
+      markers: loaded.config.tracker,
       summary,
       runBatch: batch,
       maintenancePending: () => maintenancePending,

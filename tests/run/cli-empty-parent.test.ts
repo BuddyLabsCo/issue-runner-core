@@ -105,7 +105,7 @@ await test("pagination cannot hide ineligible children or turn a nonempty parent
   assert.deepEqual(deps.effects, []);
 });
 
-await test("cancelled parents stop discovery without rewriting children", async (t) => {
+await test("a discovered cancelled parent stops the Run without rewriting children", async (t) => {
   const { root } = await createProject(t);
   const deps = createCliDependencies(root);
   const result = await executeCli(
@@ -116,9 +116,6 @@ await test("cancelled parents stop discovery without rewriting children", async 
         ...deps.tracker,
         async getParent() {
           return { number: 48, state: "closed", stateReason: "not_planned" };
-        },
-        async listChildrenPage() {
-          assert.fail("cancelled parent must stop discovery");
         },
       },
     },

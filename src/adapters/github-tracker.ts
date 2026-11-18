@@ -1,5 +1,7 @@
 import type { ChildPage, Ticket, Tracker } from "../run/contracts.ts";
 import { GitHubClient, type GitHubCommand } from "./github-client.ts";
+import { discoverParent } from "./github-issue-facts.ts";
+
 type ClosureReason = Ticket["stateReason"];
 function parseTicket(value: unknown, includeRepository: boolean): Ticket {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -248,6 +250,14 @@ export class GitHubTracker implements Tracker {
       ) as unknown,
       false,
     );
+  }
+
+  discoverParent(
+    repository: string,
+    parentTicket: number,
+    markers: Parameters<Tracker["discoverParent"]>[2],
+  ) {
+    return discoverParent(this.client, repository, parentTicket, markers);
   }
 
   async listChildrenPage(

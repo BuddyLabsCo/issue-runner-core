@@ -14,6 +14,8 @@ export type ReadOperation = <T>(
   options?: OperationOptions<T>,
 ) => Promise<T>;
 
+export type BatchTicket = Ticket & { blocked?: boolean };
+
 export async function readChildren(
   repository: string,
   parent: number,
@@ -109,7 +111,7 @@ function parseBatch(
 }
 
 export async function selectIssueBatch(input: {
-  tickets: Ticket[] | undefined;
+  tickets: BatchTicket[] | undefined;
   loaded: LoadedProject;
   tracker: Tracker;
   context: RunContext;
@@ -142,16 +144,13 @@ export async function selectIssueBatch(input: {
   const recorded = previous
     ? parseBatch(previous.text, ownership, config.maxBatchSize)
     : undefined;
-  const eligible: Ticket[] = [];
+  const eligible: number[] = [];
   for (const child of [...(tickets ?? [])].sort(
     (a, b) => a.number - b.number,
   )) {
-    const isBlocked = await hasOpenBlocker(
-      config.repository,
-      child.number,
-      tracker,
-      read,
-    );
+    const isBlocked =
+      child.blocked ??
+      (await hasOpenBlocker(config.repository, child.number, tracker, read));
     if (child.state === "closed") {
       if (child.stateReason === null)
         throw new Error(
@@ -188,14 +187,11 @@ export async function selectIssueBatch(input: {
       ))
     )
       continue;
-    eligible.push(child);
+    eligible.push(child.number);
   }
   const batch =
     (recorded && !recorded.completed ? recorded.tickets : undefined) ??
-    [...new Set(eligible.map((ticket) => ticket.number))].slice(
-      0,
-      config.maxBatchSize,
-    );
+    [...new Set(eligible)].slice(0, config.maxBatchSize);
   const progress: BatchProgress = {
     run_id: recorded?.run_id ?? context.runId,
     ...ownership,

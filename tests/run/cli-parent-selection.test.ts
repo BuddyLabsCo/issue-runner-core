@@ -6,6 +6,7 @@ import { stringify } from "yaml";
 import test from "node:test";
 import { validConfig } from "../support/cli-project.ts";
 import { child, parentDeliveryRun, parentRun } from "../support/parent-run.ts";
+import type { ParentDiscovery } from "../../src/run/contracts.ts";
 
 for (const [selector, numbers] of [
   ["parent", [51, 52]],
@@ -53,6 +54,66 @@ await test("an empty discovered parent scope has no work", async (t) => {
   const result = await fixture.run();
 
   assert.equal(result.summary.outcome, "no_work");
+});
+
+await test("parent selects the numerically first eligible Issue from its complete discovery facts", async (t) => {
+  const fixture = await parentRun(
+    t,
+    [child(60), child(53), child(52), child(51)],
+    {
+      ...validConfig,
+      maxBatchSize: 1,
+    },
+  );
+  const identity = (number: number) => ({
+    id: `issue-${number}`,
+    number,
+    repository: "owner/repo",
+    repositoryId: "repo-id",
+    state: "open" as const,
+    stateReason: null,
+  });
+  const ready = { id: "ready-id", name: "ready-for-agent" };
+  const facts: ParentDiscovery = {
+    parent: identity(48),
+    children: [
+      { ...identity(60), labels: [ready], assignees: [], blockers: [] },
+      { ...identity(53), labels: [ready], assignees: [], blockers: [] },
+      {
+        ...identity(51),
+        labels: [ready],
+        assignees: [],
+        blockers: [identity(900)],
+      },
+      {
+        ...identity(52),
+        labels: [ready],
+        assignees: [{ id: "external-id", login: "developer" }],
+        blockers: [],
+      },
+    ],
+    reservation: { id: "reserved-id", name: "sandcastle:reserved" },
+    runner: { id: "runner-id", login: "runner" },
+  };
+  Object.assign(fixture.dependencies.tracker, {
+    async discoverParent() {
+      return facts;
+    },
+  });
+  fixture.dependencies.tracker.listBlockersPage = async (_repo, number) => {
+    assert.equal(
+      number,
+      53,
+      "only the selected Issue needs a separate start read",
+    );
+    return { blockers: [], nextPage: null };
+  };
+
+  const result = await fixture.run();
+
+  assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
+  assert.deepEqual(fixture.dispatched, [53]);
+  assert.deepEqual(fixture.writes, ["label:53", "assignee:53"]);
 });
 
 await test("parent reads every child and blocker page before selecting across labels, ownership and Issue List filtering", async (t) => {
@@ -314,7 +375,7 @@ await test("a blocker-page failure after an open blocker cannot permit selection
   };
   fixture.dependencies.operator.pause = async () => "q";
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  assert.deepEqual(pages, [1, 2, 2]);
+  assert.deepEqual(pages, [1, 2, 1, 2]);
   assert.deepEqual(fixture.writes, []);
   assert.deepEqual(fixture.dispatched, []);
 });
