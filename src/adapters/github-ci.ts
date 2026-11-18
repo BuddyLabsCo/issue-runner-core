@@ -179,7 +179,9 @@ export async function observePullRequest(
         createdAt,
         merged: state === "MERGED" && pr.mergedAt !== null,
         mergeRequested:
-          pr.autoMergeRequest !== null || pr.mergeQueueEntry !== null,
+          pr.autoMergeRequest !== null ||
+          pr.mergeQueueEntry !== null ||
+          pr.isInMergeQueue,
         mergeable:
           mergeable === "MERGEABLE"
             ? "mergeable"

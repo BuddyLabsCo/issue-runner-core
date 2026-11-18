@@ -27,6 +27,21 @@ async function batchRun(t: TestContext) {
   const ready = new Set<number>();
   const merged = new Set<number>();
   const requests: number[] = [];
+  const list = fixture.dependencies.codeHost.listPullRequests.bind(
+    fixture.dependencies.codeHost,
+  );
+  const create = fixture.dependencies.codeHost.createPullRequest.bind(
+    fixture.dependencies.codeHost,
+  );
+  const dated = (pr: Awaited<ReturnType<typeof create>>) => ({
+    ...pr,
+    createdAt:
+      pr.number === 81 ? "2026-10-31T00:00:00Z" : "2026-10-30T00:00:00Z",
+  });
+  fixture.dependencies.codeHost.listPullRequests = async () =>
+    (await list()).map(dated);
+  fixture.dependencies.codeHost.createPullRequest = async (input) =>
+    dated(await create(input));
   const state = {
     onChecks: async (number: number): Promise<RequiredCheck[]> => {
       assert.ok(number >= 81);

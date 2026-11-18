@@ -22,6 +22,32 @@ export function terminalModule(plugin: TestTerminal) {
   };
 }
 
+export async function observeDeliveryFixture(
+  host: CodeHost,
+  tracker: import("../../src/run/contracts.ts").Tracker,
+  repository: string,
+  number: number,
+  ticket: number,
+): ReturnType<CodeHost["observeDelivery"]> {
+  const pr = (await host.listPullRequests(repository)).find(
+    (item) => item.number === number,
+  );
+  if (!pr) throw new Error("Pull Request missing");
+  const merge = await host.getPullRequest(repository, number);
+  return {
+    pullRequest: {
+      ...merge,
+      createdAt: pr.createdAt,
+      id: pr.id,
+      number: pr.number,
+      url: pr.url,
+      branch: pr.branch,
+      targetBranch: pr.targetBranch,
+    },
+    ticket: await tracker.getDeliveryTicket(repository, ticket),
+  };
+}
+
 async function discoverParentFixture(
   this: import("../../src/run/contracts.ts").Tracker,
   repository: string,
@@ -97,7 +123,7 @@ export function createCliDependencies(launchDirectory: string) {
   terminalPlugin.closeTab = async () => {
     effects.push("close_tab");
   };
-  return {
+  const dependencies = {
     launchDirectory,
     env: { HOST_TOKEN: "host-secret" },
     messages,
@@ -207,6 +233,31 @@ export function createCliDependencies(launchDirectory: string) {
       },
     },
     codeHost: {
+      async observeDelivery(
+        repository: string,
+        pullRequest: number,
+        ticket: number,
+      ): ReturnType<CodeHost["observeDelivery"]> {
+        const pr = (await this.listPullRequests()).find(
+          (item) => item.number === pullRequest,
+        );
+        if (!pr) throw new Error("Pull Request missing");
+        const merge = await this.getPullRequest(repository, pullRequest);
+        return {
+          pullRequest: {
+            ...merge,
+            id: pr.id,
+            number: pr.number,
+            url: pr.url,
+            branch: pr.branch,
+            targetBranch: pr.targetBranch,
+          },
+          ticket: await dependencies.tracker.getDeliveryTicket(
+            repository,
+            ticket,
+          ),
+        };
+      },
       async observePullRequest(
         repository: string,
         branch: string,
@@ -248,7 +299,7 @@ export function createCliDependencies(launchDirectory: string) {
           createdAt: "2026-10-30T00:00:00Z",
           merged: false,
           mergeRequested: false,
-          mergeable: "unknown",
+          mergeable: "mergeable",
           mergeFailure: null,
         };
       },
@@ -368,6 +419,7 @@ export function createCliDependencies(launchDirectory: string) {
       },
     },
   };
+  return dependencies;
 }
 
 export function createTestTerminal() {

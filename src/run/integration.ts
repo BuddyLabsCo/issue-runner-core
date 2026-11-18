@@ -18,9 +18,9 @@ export async function integrateImplementation(input: {
   tracker: Tracker;
   read: ReadOperation;
   persist: () => Promise<void>;
+  freshObservation: boolean;
   beforeDispatch: () => Promise<boolean>;
   continuePublication: () => Promise<string>;
-  inspectTicket: () => Promise<{ ticket: Ticket; reason?: string }>;
 }): Promise<{ outcome: "succeeded" | "incomplete"; reason: string }> {
   const { progress, loaded, context, codeHost, tracker, read, persist } = input;
   const publication = verifiedPublication(progress);
@@ -40,16 +40,30 @@ export async function integrateImplementation(input: {
   const { repository, ticket } = progress;
   const pullRequest = publication.pullRequest;
   const target = `ticket:${ticket}`;
+  let deliveryTicket: Ticket | undefined;
   const observe = () =>
     read("confirm_merge", target, async () => {
-      const state = await codeHost.getPullRequest(
+      const result = await codeHost.observeDelivery(
         repository,
         pullRequest.number,
+        ticket,
       );
+      const state = result.pullRequest;
+      if (
+        state.id !== pullRequest.id ||
+        state.number !== pullRequest.number ||
+        state.url !== pullRequest.url ||
+        state.branch !== publication.branch ||
+        state.targetBranch !== publication.targetBranch ||
+        state.createdAt !== pullRequest.createdAt ||
+        result.ticket.number !== ticket
+      )
+        throw new Error("Delivery observation identity changed");
       if (state.headSha !== head)
         throw new Error(
           "Pull Request head changed before integration confirmation",
         );
+      deliveryTicket = result.ticket;
       return state;
     });
   const repair = async (reason: string) => {
@@ -75,8 +89,13 @@ export async function integrateImplementation(input: {
       throw new OperationStopped("Recorded Pull Request is no longer merged");
   }
   if (publication.phase !== "merged" && publication.phase !== "delivered") {
+    let initial =
+      input.freshObservation && publication.phase === "checks_ready"
+        ? publication.ciObservation
+        : undefined;
     for (;;) {
-      let state = await observe();
+      let state = initial ?? (await observe());
+      initial = undefined;
       if (state.merged) {
         publication.merge = state;
         publication.phase = "merged";
@@ -122,7 +141,11 @@ export async function integrateImplementation(input: {
           continue;
         }
       }
-      if (!state.mergeRequested && state.mergeable === "conflicting") {
+      if (
+        !state.mergeRequested &&
+        (state.mergeable === "conflicting" ||
+          state.mergeStateStatus === "DIRTY")
+      ) {
         await repair(
           publication.conflict ?? "Pull Request has an explicit merge conflict",
         );
@@ -143,9 +166,6 @@ export async function integrateImplementation(input: {
           "request_squash_merge",
           target,
           async () => {
-            state = await observe();
-            if (state.merged || state.mergeRequested)
-              return { outcome: "accepted" as const };
             if (!(await input.beforeDispatch()))
               throw new OperationStopped(
                 "Issue eligibility changed before merge request",
@@ -157,13 +177,41 @@ export async function integrateImplementation(input: {
               };
             if (state.mergeFailure !== null)
               throw new Error(state.mergeFailure);
+            if (state.mergeStateStatus === "DIRTY")
+              return {
+                outcome: "conflict" as const,
+                error: new Error("Pull Request has an explicit merge conflict"),
+              };
+            if (
+              !state.isMergeQueueEnabled &&
+              !loaded.config.codeHost.adminMerge &&
+              ["BLOCKED", "BEHIND"].includes(state.mergeStateStatus ?? "")
+            )
+              throw new Error(
+                `Pull Request merge is ${state.mergeStateStatus}`,
+              );
             const result = await codeHost.requestSquashMerge({
               repository,
               pullRequest: pullRequest.number,
+              pullRequestId: pullRequest.id,
               headSha: state.headSha,
               admin: loaded.config.codeHost.adminMerge,
+              queue: state.isMergeQueueEnabled === true,
             });
-            if (result.outcome === "rejected") throw result.error;
+            if (result.outcome !== "accepted") {
+              state = await observe();
+              if (state.merged || state.mergeRequested)
+                return { outcome: "accepted" as const };
+              if (
+                result.outcome === "conflict" ||
+                state.mergeable === "conflicting" ||
+                state.mergeStateStatus === "DIRTY"
+              )
+                return { outcome: "conflict" as const, error: result.error };
+              if (state.mergeable === "unknown")
+                return { outcome: "wait" as const };
+              throw result.error;
+            }
             return result;
           },
           {
@@ -174,10 +222,44 @@ export async function integrateImplementation(input: {
                     outcome: "completed",
                     result: { outcome: "accepted" as const },
                   }
-                : { outcome: "pending" };
+                : state.mergeable === "conflicting" ||
+                    state.mergeStateStatus === "DIRTY"
+                  ? {
+                      outcome: "completed",
+                      result: {
+                        outcome: "conflict" as const,
+                        error: new Error(
+                          "Pull Request has an explicit merge conflict",
+                        ),
+                      },
+                    }
+                  : state.mergeable === "unknown"
+                    ? {
+                        outcome: "completed",
+                        result: { outcome: "wait" as const },
+                      }
+                    : { outcome: "pending" };
             },
           },
         );
+        if (request.outcome === "wait") {
+          publication.mergeDeadline ??=
+            context.clock.now().getTime() +
+            loaded.config.timeouts.mergeQueueMinutes * 60_000;
+          const remaining =
+            publication.mergeDeadline - context.clock.now().getTime();
+          await persist();
+          if (remaining <= 0) {
+            await pauseForOperator(
+              context.operator,
+              "Mergeability observation timed out.",
+              context.signal,
+            );
+            delete publication.mergeDeadline;
+            await persist();
+          } else await sleep(Math.min(10_000, remaining));
+          continue;
+        }
         if (request.outcome === "conflict") {
           await repair(
             request.error instanceof Error
@@ -199,7 +281,11 @@ export async function integrateImplementation(input: {
           throw new OperationStopped(
             "Issue eligibility changed while awaiting integration",
           );
-        if (!state.mergeRequested && state.mergeable === "conflicting") {
+        if (
+          !state.mergeRequested &&
+          (state.mergeable === "conflicting" ||
+            state.mergeStateStatus === "DIRTY")
+        ) {
           await repair("Pull Request has an explicit merge conflict");
           break;
         }
@@ -218,6 +304,12 @@ export async function integrateImplementation(input: {
         }
         await sleep(Math.min(10_000, remaining));
       }
+      if (state.merged) {
+        publication.merge = state;
+        publication.phase = "merged";
+        await persist();
+        break;
+      }
     }
   }
   if (!publication.merge?.merged || publication.merge.headSha !== head)
@@ -231,7 +323,7 @@ export async function integrateImplementation(input: {
       throw new Error(
         "Delivery requires persisted completed tracker state and labels",
       );
-    const current = (await input.inspectTicket()).ticket;
+    const current = deliveryTicket!;
     if (current.state !== "closed" || current.stateReason !== "completed")
       throw new OperationStopped(
         "Previously delivered Issue is no longer closed/completed; retained delivery evidence",
@@ -242,22 +334,30 @@ export async function integrateImplementation(input: {
     };
   }
   const completion = async () => {
-    const selected = await input.inspectTicket();
-    if (selected.ticket.state === "closed") {
-      if (selected.ticket.stateReason !== "completed")
+    if (!(await observe()).merged)
+      throw new OperationStopped("Recorded Pull Request is no longer merged");
+    const current = deliveryTicket!;
+    if (current.state === "closed") {
+      if (current.stateReason !== "completed")
         throw new OperationStopped(
           "Issue was cancelled after merge; no delivery credit",
         );
-      return selected.ticket;
+      return current;
     }
-    if (selected.reason || !(await input.beforeDispatch()))
-      throw new OperationStopped(
-        selected.reason ?? "Reservation changed after merge",
-      );
-    return selected.ticket;
+    if (!(await input.beforeDispatch()))
+      throw new OperationStopped("Reservation changed after merge");
+    return current;
   };
   for (;;) {
-    let current = await completion();
+    let current = deliveryTicket ?? (await completion());
+    if (current.state === "closed" && current.stateReason !== "completed")
+      throw new OperationStopped(
+        "Issue was cancelled after merge; no delivery credit",
+      );
+    if (current.state !== "closed") {
+      await sleep(10_000);
+      current = await completion();
+    }
     if (current.state !== "closed") {
       await read(
         "close_ticket",
@@ -279,7 +379,10 @@ export async function integrateImplementation(input: {
     }
     if (current.state === "closed") {
       publication.closure = { state: "closed", stateReason: "completed" };
-      if (!Array.isArray(current.labels))
+      if (
+        !Array.isArray(current.labels) ||
+        current.labels.some((label) => typeof label !== "string" || !label)
+      )
         throw new Error("Delivery requires observed Issue labels");
       publication.deliveryLabels = [...current.labels];
       publication.phase = "delivered";
@@ -301,14 +404,14 @@ export async function integrateBatch(input: {
   batch: number[];
   ready: Map<
     number,
-    { pullRequest: number; complete: () => Promise<RunSummary> }
+    {
+      pullRequest: import("./contracts.ts").PullRequestIdentity;
+      complete: () => Promise<RunSummary>;
+    }
   >;
   results: RunSummary[];
-  repository: string;
-  codeHost: CodeHost;
-  read: ReadOperation;
 }): Promise<RunSummary[]> {
-  const { batch, ready, results, repository, codeHost, read } = input;
+  const { batch, ready, results } = input;
   if (
     batch.some(
       (number, index) =>
@@ -318,20 +421,15 @@ export async function integrateBatch(input: {
     )
   )
     return results;
-  const ordered = await Promise.all(
-    [...ready].map(async ([number, integration]) => {
-      const observed = await read("integration_order", `ticket:${number}`, () =>
-        codeHost.getPullRequest(repository, integration.pullRequest),
-      );
-      return {
-        number,
-        ...integration,
-        createdAt: Date.parse(observed.createdAt),
-      };
-    }),
-  );
+  const ordered = [...ready].map(([number, integration]) => ({
+    number,
+    ...integration,
+  }));
   ordered.sort(
-    (a, b) => a.createdAt - b.createdAt || a.pullRequest - b.pullRequest,
+    (a, b) =>
+      Date.parse(a.pullRequest.createdAt) -
+        Date.parse(b.pullRequest.createdAt) ||
+      a.pullRequest.number - b.pullRequest.number,
   );
   for (const integration of ordered) {
     const index = batch.indexOf(integration.number);

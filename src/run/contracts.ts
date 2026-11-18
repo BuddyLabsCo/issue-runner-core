@@ -93,6 +93,20 @@ export interface Tracker {
 }
 
 export interface CodeHost {
+  observeDelivery(
+    repository: string,
+    pullRequest: number,
+    ticket: number,
+  ): Promise<{
+    pullRequest: PullRequestState & {
+      id: string;
+      number: number;
+      url: string;
+      branch: string;
+      targetBranch: string;
+    };
+    ticket: Ticket;
+  }>;
   observePullRequest(
     repository: string,
     branch: string,
@@ -105,8 +119,10 @@ export interface CodeHost {
   requestSquashMerge(input: {
     repository: string;
     pullRequest: number;
+    pullRequestId: string;
     headSha: string;
     admin: boolean;
+    queue: boolean;
   }): Promise<MergeRequestResult>;
   resolveTargetBranch(repository: string): Promise<string>;
   getRemoteBranchHead(

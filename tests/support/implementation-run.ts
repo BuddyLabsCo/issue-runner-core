@@ -15,6 +15,7 @@ import type {
 import { createProject, validConfig } from "./cli-project.ts";
 import {
   createCliDependencies,
+  observeDeliveryFixture,
   terminalModule,
   type TestTerminal,
 } from "./cli-dependencies.ts";
@@ -214,6 +215,14 @@ export async function implementationRun(
       },
     },
   };
+  dependencies.codeHost.observeDelivery = (repository, number, ticket) =>
+    observeDeliveryFixture(
+      dependencies.codeHost,
+      dependencies.tracker,
+      repository,
+      number,
+      ticket,
+    );
   return {
     state,
     dependencies,
