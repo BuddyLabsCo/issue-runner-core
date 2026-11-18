@@ -1,7 +1,8 @@
-import type { Ticket, Tracker } from "./contracts.ts";
+import type { ParentDiscovery, Ticket, Tracker } from "./contracts.ts";
 import {
   hasOpenBlocker,
   readChildren,
+  validateChildRepositories,
   type BatchTicket,
   type ReadOperation,
 } from "./discovery.ts";
@@ -74,10 +75,28 @@ function closeParent(input: ParentScope): Promise<boolean> {
   );
 }
 
+function parentBatchTickets({
+  children,
+  reservation,
+  runner,
+}: ParentDiscovery): BatchTicket[] {
+  if (!reservation || !runner)
+    throw new OperationStopped(
+      "GitHub did not resolve the configured Reservation label or Runner account",
+    );
+  return children.map(({ labels, assignees, blockers, ...ticket }) => ({
+    ...ticket,
+    labels: labels.map((label) => label.name),
+    assignees: assignees.map((assignee) => assignee.login),
+    blocked: blockers.some((blocker) => blocker.state === "open"),
+  }));
+}
+
 export async function runParent(
   input: ParentScope & {
     summary: RunSummary;
     markers: Parameters<Tracker["discoverParent"]>[2];
+    signal: AbortSignal;
     runBatch: (tickets: BatchTicket[]) => Promise<RunSummary>;
     maintenancePending: () => boolean;
   },
@@ -88,12 +107,15 @@ export async function runParent(
   for (;;) {
     if (input.maintenancePending())
       return { ...input.summary, outcome: "incomplete" };
-    const { parent, children } = await read(
+    const observation = await read(
       "discover_parent",
       `parent:${parentTicket}`,
-      () => tracker.discoverParent(repository, parentTicket, markers),
+      () =>
+        tracker.discoverParent(repository, parentTicket, markers, input.signal),
     );
+    const { parent, children } = observation;
     validateParent(parent);
+    validateChildRepositories(repository, children, parent.repositoryId);
     validateChildren(parent, children);
     hadChildren ||= children.length > 0;
     if (parent.state === "closed")
@@ -112,13 +134,6 @@ export async function runParent(
     }
     if (previous && previous.outcome !== "succeeded")
       return { ...input.summary, outcome: "incomplete" };
-    previous = await input.runBatch(
-      children.map(({ labels, assignees, blockers, ...ticket }) => ({
-        ...ticket,
-        labels: labels.map((label) => label.name),
-        assignees: assignees.map((assignee) => assignee.login),
-        blocked: blockers.some((blocker) => blocker.state === "open"),
-      })),
-    );
+    previous = await input.runBatch(parentBatchTickets(observation));
   }
 }

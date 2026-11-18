@@ -38,14 +38,26 @@ export async function readChildren(
     children.push(...current.children);
     page = current.nextPage;
   }
+  validateChildRepositories(repository, children);
+  return children;
+}
+
+export function validateChildRepositories(
+  repository: string,
+  children: (Pick<Ticket, "repository" | "number"> & {
+    repositoryId?: string;
+  })[],
+  repositoryId?: string,
+): void {
   const foreignChild = children.find(
-    (child) => child.repository !== repository,
+    (child) =>
+      child.repository !== repository ||
+      (repositoryId !== undefined && child.repositoryId !== repositoryId),
   );
   if (foreignChild)
     throw new Error(
       `cross-repository child ${foreignChild.repository}#${foreignChild.number} is unsupported`,
     );
-  return children;
 }
 
 export async function hasOpenBlocker(

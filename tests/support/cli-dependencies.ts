@@ -54,10 +54,6 @@ async function discoverParent(
   });
   const children: ParentDiscovery["children"] = [];
   for (const ticket of tickets.sort((a, b) => a.number - b.number)) {
-    if (ticket.repository !== repository)
-      throw new OperationStopped(
-        `cross-repository child ${ticket.repository}#${ticket.number} is unsupported`,
-      );
     const blockers = await scriptedPages(async (page) => {
       const result = await this.listBlockersPage(
         repository,

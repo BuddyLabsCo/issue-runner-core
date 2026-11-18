@@ -335,6 +335,7 @@ async function executeProject(
       tracker,
       read,
       markers: loaded.config.tracker,
+      signal,
       summary,
       runBatch: batch,
       maintenancePending: () => maintenancePending,

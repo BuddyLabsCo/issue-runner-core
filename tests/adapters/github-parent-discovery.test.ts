@@ -1,8 +1,11 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted GitHub command. */
 import assert from "node:assert/strict";
 import test from "node:test";
+import { executeCli } from "../../src/cli.ts";
 import { GitHubTracker } from "../../src/adapters/github-tracker.ts";
 import type { GitHubCommand } from "../../src/adapters/github-client.ts";
+import { createCliDependencies } from "../support/cli-dependencies.ts";
+import { createProject, validConfig } from "../support/cli-project.ts";
 
 const repository = { id: "repo-id", nameWithOwner: "owner/repo" };
 const reservation = { id: "reserved-id", name: "runner:reserved" };
@@ -26,7 +29,7 @@ function issue(number: number, fields: Record<string, unknown> = {}) {
 function connection(
   nodes: object[],
   totalCount = nodes.length,
-  cursor: string | null = null,
+  cursor: string | null = nodes.length ? "page-end" : null,
   hasNextPage = false,
 ) {
   return { nodes, totalCount, pageInfo: { hasNextPage, endCursor: cursor } };
@@ -55,6 +58,29 @@ function observation(subIssues: object) {
 }
 
 await test("parent discovery returns complete facts and mutation IDs from one single-page query", async () => {
+  const issueIdentity =
+    "id number state stateReason repository { id nameWithOwner }";
+  const pageInfo = "totalCount pageInfo { hasNextPage endCursor }";
+  const selection = `{
+      repository(owner: $owner, name: $name) {
+        id nameWithOwner
+        label(name: $reservation) { id name }
+        issue(number: $number) {
+          ${issueIdentity}
+          subIssues(first: 100) {
+            nodes {
+              ${issueIdentity}
+              labels(first: 100) { nodes { id name } ${pageInfo} }
+              assignees(first: 100) { nodes { id login } ${pageInfo} }
+              blockedBy(first: 100) { nodes { ${issueIdentity} } ${pageInfo} }
+            }
+            ${pageInfo}
+          }
+        }
+      }
+      user(login: $runner) { id login }
+    }`;
+  const tokens = /\w+|[^\s]/gu;
   let requests = 0;
   const command: GitHubCommand = async (args, { input }) => {
     requests++;
@@ -67,15 +93,10 @@ await test("parent discovery returns complete facts and mutation IDs from one si
       "-",
     ]);
     const { query } = JSON.parse(input!) as { query: string };
-    for (const field of [
-      "subIssues",
-      "labels",
-      "assignees",
-      "blockedBy",
-      "user",
-      "label",
-    ])
-      assert.match(query, new RegExp(`\\b${field}\\(`, "u"));
+    assert.deepEqual(
+      query.slice(query.indexOf("{")).match(tokens),
+      selection.match(tokens),
+    );
     return JSON.stringify(
       observation(
         connection(
@@ -174,8 +195,9 @@ await test("discovery drains child and eligibility pages independently by node I
     ],
     [
       "issue-51:blockedBy:blockers-next",
-      connection([issue(93)], 3, "blockers-end"),
+      connection([issue(93)], 3, "blockers-next-again", true),
     ],
+    ["issue-51:blockedBy:blockers-next-again", connection([], 3)],
     ["issue-52:labels:shared", connection([ready], 1, "labels-end")],
   ]);
   const command: GitHubCommand = async (_args, { input }) => {
@@ -288,13 +310,6 @@ for (const [name, facts, message] of [
     /invalid blockedBy cursor/u,
   ],
   [
-    "foreign child",
-    child(51, {
-      repository: { id: "foreign-id", nameWithOwner: "outside/repo" },
-    }),
-    /cross-repository child/u,
-  ],
-  [
     "unsupported closed child",
     child(51, { state: "CLOSED", stateReason: "DUPLICATE" }),
     /unsupported terminal state/u,
@@ -316,5 +331,161 @@ for (const [name, facts, message] of [
       ),
       message,
     );
+  });
+}
+
+for (const [name, duplicate, error] of [
+  [
+    "a null blocker page",
+    child(51, { blockedBy: null }),
+    /Expected a JSON object/u,
+  ],
+  [
+    "conflicting blockers",
+    child(51, { blockedBy: connection([issue(52)]) }),
+    /conflicting.*subIssues/u,
+  ],
+  [
+    "conflicting assignees",
+    child(51, { assignees: connection([runner]) }),
+    /conflicting.*subIssues/u,
+  ],
+] as const) {
+  await test(`discovery rejects a repeated child with ${name}`, async () => {
+    let requests = 0;
+    const command: GitHubCommand = async () =>
+      JSON.stringify(
+        requests++ === 0
+          ? observation(connection([child(51)], 1, "child-first", true))
+          : {
+              data: {
+                node: { id: "issue-48", subIssues: connection([duplicate]) },
+              },
+            },
+      );
+    await assert.rejects(
+      new GitHubTracker("fake-token", command).discoverParent(
+        "owner/repo",
+        48,
+        config,
+      ),
+      error,
+    );
+    assert.equal(requests, 2);
+  });
+}
+
+await test("discovery rejects a nonempty final continuation with a null end cursor", async () => {
+  let requests = 0;
+  const command: GitHubCommand = async () =>
+    JSON.stringify(
+      requests++ === 0
+        ? observation(connection([child(51)], 2, "child-first", true))
+        : {
+            data: {
+              node: {
+                id: "issue-48",
+                subIssues: connection([child(52)], 2, null),
+              },
+            },
+          },
+    );
+  await assert.rejects(
+    new GitHubTracker("fake-token", command).discoverParent(
+      "owner/repo",
+      48,
+      config,
+    ),
+    /invalid subIssues cursor/u,
+  );
+  assert.equal(requests, 2);
+});
+
+for (const { name, subIssues, parentFields, label, outcome, error, cancel } of [
+  {
+    name: "a readable foreign child fails the Run without pause or retry",
+    subIssues: connection([
+      child(48, {
+        id: "foreign-issue",
+        repository: { id: "foreign-repo", nameWithOwner: "outside/repo" },
+      }),
+    ]),
+    outcome: "failed",
+    error: /cross-repository child outside\/repo#48/u,
+  },
+  {
+    name: "an empty parent has no work when the Reservation label is absent",
+    subIssues: connection([]),
+    label: null,
+    outcome: "no_work",
+  },
+  {
+    name: "a completed parent needs no Reservation label",
+    subIssues: connection([
+      child(51, { state: "CLOSED", stateReason: "COMPLETED" }),
+    ]),
+    parentFields: { state: "CLOSED", stateReason: "COMPLETED" },
+    label: null,
+    outcome: "succeeded",
+  },
+  {
+    name: "an open child cannot start when the configured Reservation label is absent",
+    subIssues: connection([
+      child(51, {
+        labels: connection([{ id: "ready-id", name: "ready-for-agent" }]),
+      }),
+    ]),
+    label: null,
+    outcome: "failed",
+    error: /configured Reservation label/u,
+  },
+  {
+    name: "cancellation during the first discovery request prevents every continuation",
+    subIssues: connection([child(51)], 2, "child-next", true),
+    outcome: "cancelled",
+    cancel: true,
+  },
+]) {
+  await test(name, async (t) => {
+    const { root } = await createProject(t, {
+      ...validConfig,
+      tracker: config,
+    });
+    const dependencies = createCliDependencies(root);
+    const controller = new AbortController();
+    let requests = 0;
+    const command: GitHubCommand = async (args) => {
+      requests++;
+      assert.equal(args[1], "graphql");
+      if (cancel) controller.abort();
+      const result = observation(subIssues);
+      return JSON.stringify({
+        data: {
+          ...result.data,
+          repository: {
+            ...result.data.repository,
+            label: label === undefined ? reservation : label,
+            issue: { ...result.data.repository.issue, ...parentFields },
+          },
+        },
+      });
+    };
+    const result = await executeCli(
+      ["run", "--project", "demo", "--parent", "48"],
+      {
+        ...dependencies,
+        signal: controller.signal,
+        tracker: new GitHubTracker("fake-token", command),
+      },
+    );
+    assert.equal(
+      result.summary.outcome,
+      outcome,
+      JSON.stringify(result.summary),
+    );
+    if (error) assert.match(result.summary.failure!, error);
+    assert.equal(requests, 1);
+    assert.deepEqual(dependencies.pauses, []);
+    assert.deepEqual(dependencies.effects, []);
   });
 }

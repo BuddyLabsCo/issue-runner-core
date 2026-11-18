@@ -256,8 +256,15 @@ export class GitHubTracker implements Tracker {
     repository: string,
     parentTicket: number,
     markers: Parameters<Tracker["discoverParent"]>[2],
+    signal?: AbortSignal,
   ) {
-    return discoverParent(this.client, repository, parentTicket, markers);
+    return discoverParent(
+      this.client,
+      repository,
+      parentTicket,
+      markers,
+      signal,
+    );
   }
 
   async listChildrenPage(

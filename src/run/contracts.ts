@@ -36,8 +36,8 @@ export interface ParentDiscoveryChild extends IssueFact {
 export interface ParentDiscovery {
   parent: IssueFact;
   children: ParentDiscoveryChild[];
-  reservation: { id: string; name: string };
-  runner: { id: string; login: string };
+  reservation: { id: string; name: string } | null;
+  runner: { id: string; login: string } | null;
 }
 
 export interface Tracker {
@@ -75,6 +75,7 @@ export interface Tracker {
     repository: string,
     parentTicket: number,
     markers: { reservationLabel: string; runnerAccount: string },
+    signal?: AbortSignal,
   ): Promise<ParentDiscovery>;
   listChildrenPage(
     repository: string,

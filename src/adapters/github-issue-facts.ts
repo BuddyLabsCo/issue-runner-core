@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { nonempty, object } from "../agent/handoff.ts";
 import type {
   IssueFact,
@@ -51,8 +52,11 @@ async function readIssueGraphQL(
   client: GitHubClient,
   query: string,
   variables: Record<string, unknown>,
+  signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
+  signal?.throwIfAborted();
   const { response, commandError } = await client.graphql(query, variables);
+  signal?.throwIfAborted();
   if (response.errors?.length)
     throw new Error(
       `GitHub GraphQL Issue read failed: ${JSON.stringify(response.errors)}`,
@@ -78,53 +82,82 @@ function issueConnectionFields(
   }`;
 }
 
+function parseIssuePage<T>(
+  value: unknown,
+  owner: string,
+  connection: Connection,
+  parse: (node: Record<string, unknown>) => T,
+) {
+  const page = object(value);
+  const { nodes, totalCount } = page;
+  const { hasNextPage, endCursor } = object(page.pageInfo);
+  if (
+    !Array.isArray(nodes) ||
+    typeof totalCount !== "number" ||
+    !Number.isSafeInteger(totalCount) ||
+    totalCount < 0 ||
+    typeof hasNextPage !== "boolean"
+  )
+    throw new Error(
+      `GitHub returned invalid ${connection} pagination for Issue ${owner}`,
+    );
+  if (
+    !nonempty(endCursor) &&
+    (endCursor !== null || hasNextPage || nodes.length > 0)
+  )
+    throw new Error(
+      `GitHub returned invalid ${connection} cursor for Issue ${owner}`,
+    );
+  return {
+    nodes: nodes.map((node) => parse(object(node))),
+    totalCount,
+    hasNextPage,
+    endCursor,
+  };
+}
+
+type ReadIssueGraphQL = (
+  query: string,
+  variables: Record<string, unknown>,
+) => Promise<Record<string, unknown>>;
+
 async function readIssueConnection<T extends { id: string }>(
-  client: GitHubClient,
+  read: ReadIssueGraphQL,
   owner: string,
   connection: Connection,
   fields: string,
-  initialPage: unknown,
+  initialPage: ReturnType<typeof parseIssuePage<T>>,
   parse: (node: Record<string, unknown>) => T,
 ): Promise<T[]> {
   const entries = new Map<string, T>();
   const cursors = new Set<string>();
-  let total: number | undefined;
-  let page = object(initialPage);
+  let page = initialPage;
   for (;;) {
-    const { nodes, totalCount } = page;
-    const { hasNextPage, endCursor } = object(page.pageInfo);
-    if (
-      !Array.isArray(nodes) ||
-      typeof totalCount !== "number" ||
-      !Number.isSafeInteger(totalCount) ||
-      totalCount < 0 ||
-      (total !== undefined && total !== totalCount) ||
-      typeof hasNextPage !== "boolean" ||
-      (endCursor !== null && !nonempty(endCursor))
-    )
+    const { nodes, totalCount, hasNextPage, endCursor } = page;
+    if (totalCount !== initialPage.totalCount)
       throw new Error(
         `GitHub returned invalid ${connection} pagination for Issue ${owner}`,
       );
-    if (
-      (hasNextPage && endCursor === null) ||
-      (endCursor !== null && cursors.has(endCursor))
-    )
+    if (endCursor !== null && cursors.has(endCursor))
       throw new Error(
         `GitHub returned invalid ${connection} cursor for Issue ${owner}`,
       );
-    total = totalCount;
-    for (const node of nodes) {
-      const entry = parse(object(node));
-      if (!entries.has(entry.id)) entries.set(entry.id, entry);
+    for (const entry of nodes) {
+      const previous = entries.get(entry.id);
+      if (previous && !isDeepStrictEqual(previous, entry))
+        throw new Error(
+          `GitHub returned conflicting ${connection} facts for node ${entry.id}`,
+        );
+      entries.set(entry.id, entry);
     }
     if (!hasNextPage) {
-      if (entries.size !== total)
+      if (entries.size !== totalCount)
         throw new Error(
           `GitHub returned incomplete ${connection} for Issue ${owner}`,
         );
       return [...entries.values()];
     }
-    if (entries.size > total)
+    if (entries.size > totalCount)
       throw new Error(
         `GitHub returned inconsistent ${connection} for Issue ${owner}`,
       );
@@ -134,8 +167,7 @@ async function readIssueConnection<T extends { id: string }>(
         `GitHub returned invalid ${connection} cursor for Issue ${owner}`,
       );
     cursors.add(endCursor);
-    const data = await readIssueGraphQL(
-      client,
+    const data = await read(
       `query IssueConnection($owner: ID!, $after: String!) {
         node(id: $owner) {
           ... on Issue {
@@ -151,7 +183,7 @@ async function readIssueConnection<T extends { id: string }>(
       throw new Error(
         `GitHub returned the wrong Issue for ${connection} pagination`,
       );
-    page = object(issue[connection]);
+    page = parseIssuePage(issue[connection], owner, connection, parse);
   }
 }
 
@@ -172,7 +204,10 @@ export async function discoverParent(
   repository: string,
   parentTicket: number,
   { reservationLabel, runnerAccount }: Parameters<Tracker["discoverParent"]>[2],
+  signal?: AbortSignal,
 ) {
+  const read: ReadIssueGraphQL = (query, variables) =>
+    readIssueGraphQL(client, query, variables, signal);
   const [owner, name] = repository.split("/");
   const childFields = `
     ${issueFields}
@@ -180,8 +215,7 @@ export async function discoverParent(
     ${issueConnectionFields("assignees", "id login")}
     ${issueConnectionFields("blockedBy", issueFields)}
   `;
-  const data = await readIssueGraphQL(
-    client,
+  const data = await read(
     `query ParentDiscovery($owner: String!, $name: String!, $number: Int!, $reservation: String!, $runner: String!) {
       repository(owner: $owner, name: $name) {
         id nameWithOwner
@@ -211,72 +245,78 @@ export async function discoverParent(
     repo.id !== parent.repositoryId
   )
     throw new Error("Unexpected Parent Ticket ownership");
-  const reservation = parseLabel(object(repo.label));
-  const runner = parseAssignee(object(data.user));
+  const reservation =
+    repo.label === null ? null : parseLabel(object(repo.label));
+  const runner = data.user === null ? null : parseAssignee(object(data.user));
   if (
-    reservation.name !== reservationLabel ||
-    runner.login.toLowerCase() !== runnerAccount.toLowerCase()
+    (reservation && reservation.name !== reservationLabel) ||
+    (runner && runner.login.toLowerCase() !== runnerAccount.toLowerCase())
   )
     throw new Error("GitHub returned unexpected Reservation marker identities");
 
-  const numbers = new Map([[parent.number, parent.id]]);
-  const ids = new Map([[parent.id, parent.number]]);
+  const numbers = new Map([
+    [`${parent.repositoryId}#${parent.number}`, parent.id],
+  ]);
+  const parseChild = (raw: Record<string, unknown>) => {
+    const child = parseIssueFact(raw);
+    const identity = `${child.repositoryId}#${child.number}`;
+    const seen = numbers.get(identity);
+    if (child.id === parent.id || (seen !== undefined && seen !== child.id))
+      throw new Error(
+        `GitHub returned an inconsistent child identity for #${child.number}`,
+      );
+    numbers.set(identity, child.id);
+    return {
+      ...child,
+      labels: parseIssuePage(raw.labels, child.id, "labels", parseLabel),
+      assignees: parseIssuePage(
+        raw.assignees,
+        child.id,
+        "assignees",
+        parseAssignee,
+      ),
+      blockers: parseIssuePage(
+        raw.blockedBy,
+        child.id,
+        "blockedBy",
+        parseIssueFact,
+      ),
+    };
+  };
   const observed = await readIssueConnection(
-    client,
+    read,
     parent.id,
     "subIssues",
     childFields,
-    issue.subIssues,
-    (raw) => {
-      const child = parseIssueFact(raw);
-      if (
-        child.repository !== repository ||
-        child.repositoryId !== parent.repositoryId
-      )
-        throw new Error(
-          `cross-repository child ${child.repository}#${child.number} is unsupported`,
-        );
-      const seen = numbers.get(child.number);
-      const seenNumber = ids.get(child.id);
-      if (
-        child.number === parent.number ||
-        (seen !== undefined && seen !== child.id) ||
-        (seenNumber !== undefined && seenNumber !== child.number)
-      )
-        throw new Error(
-          `GitHub returned an inconsistent child identity for #${child.number}`,
-        );
-      numbers.set(child.number, child.id);
-      ids.set(child.id, child.number);
-      return { id: child.id, child, raw };
-    },
+    parseIssuePage(issue.subIssues, parent.id, "subIssues", parseChild),
+    parseChild,
   );
   const children: ParentDiscoveryChild[] = [];
-  for (const { id, child, raw } of observed) {
+  for (const child of observed) {
     children.push({
       ...child,
       labels: await readIssueConnection(
-        client,
-        id,
+        read,
+        child.id,
         "labels",
         "id name",
-        raw.labels,
+        child.labels,
         parseLabel,
       ),
       assignees: await readIssueConnection(
-        client,
-        id,
+        read,
+        child.id,
         "assignees",
         "id login",
-        raw.assignees,
+        child.assignees,
         parseAssignee,
       ),
       blockers: await readIssueConnection(
-        client,
-        id,
+        read,
+        child.id,
         "blockedBy",
         issueFields,
-        raw.blockedBy,
+        child.blockers,
         parseIssueFact,
       ),
     });
