@@ -69,6 +69,37 @@ await test("publication sends accepted multiline metadata directly and validates
           },
         });
       }
+      if (request.query.includes("statusCheckRollup")) {
+        operations.push("poll");
+        return envelope({
+          repository: {
+            ...repository,
+            ref: { target: { oid: saved.publication!.headSha } },
+            pullRequest: row(81, {
+              headRefName: saved.branch,
+              baseRefName: "default-branch",
+              headRefOid: saved.publication!.headSha,
+              mergedAt: null,
+              mergeable: "MERGEABLE",
+              mergeStateStatus: "CLEAN",
+              isInMergeQueue: false,
+              isMergeQueueEnabled: false,
+              autoMergeRequest: null,
+              mergeQueueEntry: null,
+              commits: {
+                nodes: [
+                  {
+                    commit: {
+                      oid: saved.publication!.headSha,
+                      statusCheckRollup: null,
+                    },
+                  },
+                ],
+              },
+            }),
+          },
+        });
+      }
       if (!request.query.includes("source:pullRequests")) {
         operations.push("pre-push");
         return envelope({ repository: { ...repository, ref: null } });
@@ -120,7 +151,7 @@ await test("publication sends accepted multiline metadata directly and validates
     /CI-ready/u,
     JSON.stringify(result),
   );
-  assert.deepEqual(operations, ["pre-push", "observe", "create"]);
+  assert.deepEqual(operations, ["pre-push", "observe", "create", "poll"]);
   assert.equal(
     (await fixture.snapshot()).publication?.pullRequest?.id,
     "PR_81",
@@ -277,6 +308,181 @@ await test("an inaccessible repository or missing ref field cannot establish an 
     );
     await assert.rejects(
       adapter.observePublicationBranch("owner/repo", "feature"),
+    );
+  }
+});
+
+await test("CI observation drains contexts, deduplicates reruns before filtering, and preserves status contexts", async () => {
+  const requests: Record<string, unknown>[] = [];
+  const check = (
+    name: string,
+    required: boolean,
+    startedAt: string,
+    conclusion: string,
+  ) => ({
+    __typename: "CheckRun",
+    name,
+    isRequired: required,
+    startedAt,
+    completedAt: startedAt,
+    status: "COMPLETED",
+    conclusion,
+    detailsUrl: null,
+    checkSuite: { workflowRun: { event: "push", workflow: { name: "CI" } } },
+  });
+  const adapter = new GitHubCodeHost("token", async (_args, options) => {
+    const request = JSON.parse(options.input!) as {
+      variables: Record<string, unknown>;
+    };
+    requests.push(request.variables);
+    const first = requests.length === 1;
+    const contexts = first
+      ? [
+          check("build", true, "2026-01-01T00:00:00Z", "FAILURE"),
+          {
+            __typename: "StatusContext",
+            context: "build",
+            state: "SUCCESS",
+            targetUrl: "https://example.com/status",
+            createdAt: "2026-01-01T00:00:00Z",
+            isRequired: true,
+          },
+        ]
+      : [
+          check("build", false, "2026-01-02T00:00:00Z", "SUCCESS"),
+          check("test", true, "2026-01-02T00:00:00Z", "NEUTRAL"),
+        ];
+    return envelope({
+      repository: {
+        ...repository,
+        ref: { target: { oid: head } },
+        pullRequest: row(1, {
+          mergedAt: null,
+          mergeable: "UNKNOWN",
+          mergeStateStatus: "BLOCKED",
+          isInMergeQueue: false,
+          isMergeQueueEnabled: true,
+          autoMergeRequest: null,
+          mergeQueueEntry: null,
+          commits: {
+            nodes: [
+              {
+                commit: {
+                  oid: head,
+                  statusCheckRollup: {
+                    contexts: page(contexts, 4, first ? "next" : null),
+                  },
+                },
+              },
+            ],
+          },
+        }),
+      },
+    });
+  });
+  const result = await adapter.observeCi({
+    repository: "owner/repo",
+    branch: "feature",
+    number: 1,
+  });
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1]!.after, "next");
+  assert.deepEqual(result.checks, [
+    {
+      name: "build",
+      state: "SUCCESS",
+      link: "https://example.com/status",
+      bucket: "pass",
+    },
+    { name: "test", state: "NEUTRAL", link: "", bucket: "skipping" },
+  ]);
+  assert.equal(result.state.mergeable, "unknown");
+  assert.equal(result.state.isMergeQueueEnabled, true);
+});
+
+await test("CI observation restarts after a head changes during pagination", async () => {
+  let calls = 0;
+  const nextHead = "b".repeat(40);
+  const adapter = new GitHubCodeHost("token", async () => {
+    calls++;
+    const current = calls === 1 ? head : nextHead;
+    return envelope({
+      repository: {
+        ...repository,
+        ref: { target: { oid: current } },
+        pullRequest: row(1, {
+          headRefOid: current,
+          mergedAt: null,
+          mergeable: "MERGEABLE",
+          mergeStateStatus: "CLEAN",
+          isInMergeQueue: false,
+          isMergeQueueEnabled: false,
+          autoMergeRequest: null,
+          mergeQueueEntry: null,
+          commits: {
+            nodes: [
+              {
+                commit: {
+                  oid: current,
+                  statusCheckRollup:
+                    calls === 3
+                      ? null
+                      : {
+                          contexts: page(
+                            [
+                              {
+                                __typename: "StatusContext",
+                                context: "test",
+                                state: "PENDING",
+                                targetUrl: null,
+                                createdAt: "2026-01-01T00:00:00Z",
+                                isRequired: true,
+                              },
+                            ],
+                            2,
+                            "next",
+                          ),
+                        },
+                },
+              },
+            ],
+          },
+        }),
+      },
+    });
+  });
+  const result = await adapter.observeCi({
+    repository: "owner/repo",
+    branch: "feature",
+    number: 1,
+  });
+  assert.equal(calls, 3);
+  assert.equal(result.lastCommit, nextHead);
+  assert.deepEqual(result.checks, []);
+});
+
+await test("CI rejects missing commits and GraphQL errors rather than reporting no checks", async () => {
+  for (const response of [
+    { data: { repository: null }, errors: [{ message: "denied" }] },
+    {
+      data: {
+        repository: {
+          ...repository,
+          ref: { target: { oid: head } },
+          pullRequest: row(1, { commits: { nodes: [] } }),
+        },
+      },
+    },
+  ]) {
+    const adapter = new GitHubCodeHost("token", async () =>
+      JSON.stringify(response),
+    );
+    await assert.rejects(
+      adapter.observeCi({
+        repository: "owner/repo",
+        branch: "feature",
+        number: 1,
+      }),
     );
   }
 });

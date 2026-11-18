@@ -59,6 +59,16 @@ export async function publicationRun(
   codeHost.getRemoteBranchHead = async (_repo, branch) =>
     state.branches.get(branch) ?? null;
   codeHost.listPullRequests = async () => structuredClone(state.pullRequests);
+  codeHost.getPullRequest = async (_repository, number) => ({
+    headSha:
+      state.pullRequests.find((pr) => pr.number === number)?.headSha ??
+      "b".repeat(40),
+    createdAt: "2026-10-30T00:00:00Z",
+    merged: false,
+    mergeRequested: false,
+    mergeable: "unknown",
+    mergeFailure: null,
+  });
   codeHost.createPullRequest = async (input) => {
     const saved = await fixture.snapshot();
     assert.equal(saved.publication?.phase, "pending_pr");
@@ -81,6 +91,27 @@ export async function publicationRun(
     state.pullRequests.push(pullRequest);
     await state.onCreate();
     return pullRequest;
+  };
+  codeHost.observeCi = async (input) => {
+    const saved = await fixture.snapshot();
+    const pr = (await codeHost.listPullRequests(input.repository)).find(
+      (item) => item.number === input.number,
+    );
+    if (!pr) throw new Error("Recorded Pull Request is missing");
+    return {
+      repositoryId: "REPO_1",
+      remoteHead: await codeHost.getRemoteBranchHead(
+        input.repository,
+        input.branch,
+      ),
+      lastCommit: pr.headSha,
+      pullRequest: pr,
+      state: await codeHost.getPullRequest(input.repository, input.number),
+      checks:
+        saved.publication?.phase === "pr_created" && pr.state !== "merged"
+          ? await codeHost.getRequiredChecks(input.repository, input.number)
+          : state.checks,
+    };
   };
   codeHost.getRequiredChecks = async () => {
     state.discoveries.push(now);

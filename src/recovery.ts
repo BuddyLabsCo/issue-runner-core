@@ -147,6 +147,7 @@ export interface PublicationProgress {
   discoveryNotBefore?: number;
   checksDeadline?: number;
   checks?: RequiredCheck[];
+  ci?: PullRequestState;
   mergeDeadline?: number;
   merge?: PullRequestState;
   closure?: { state: "closed"; stateReason: "completed" };
