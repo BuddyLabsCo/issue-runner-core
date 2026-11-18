@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, type ExecFileException } from "node:child_process";
 
 import { formatToolError } from "./process-errors.ts";
 
@@ -12,7 +12,10 @@ export interface GitHubCommandOptions {
 export type GitHubCommand = (
   args: string[],
   options: GitHubCommandOptions,
-) => Promise<string | { stdout: string; error: Error }>;
+) => Promise<
+  | string
+  | { stdout: string; error: Error; exitCode?: ExecFileException["code"] }
+>;
 
 interface GraphQLResponse {
   data?: Record<string, unknown> | null;
@@ -64,7 +67,11 @@ const runGitHubCommand: GitHubCommand = (
         const failure = new Error(detail.replaceAll(token, "[redacted]"));
         // A failed command can still carry a GraphQL envelope on stdout.
         if (input !== undefined && stdout.trim()) {
-          resolve({ stdout, error: failure });
+          resolve({
+            stdout,
+            error: failure,
+            exitCode: timedOut ? undefined : error?.code,
+          });
           return;
         }
         reject(failure);
@@ -103,6 +110,7 @@ export class GitHubClient {
   ): Promise<{
     response: GraphQLResponse;
     commandError: Error | null;
+    exitCode?: ExecFileException["code"];
   }> {
     const result = await this.command(
       ["api", "graphql", "--method", "POST", "--input", "-"],
@@ -131,7 +139,12 @@ export class GitHubClient {
       throw new Error("GitHub returned an invalid GraphQL envelope", {
         cause: commandError,
       });
-    return { response, commandError };
+    const exitCode = typeof result === "string" ? undefined : result.exitCode;
+    return {
+      response,
+      commandError,
+      ...(exitCode === undefined ? {} : { exitCode }),
+    };
   }
 }
 

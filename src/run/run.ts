@@ -30,6 +30,7 @@ import { runStandalone } from "./standalone.ts";
 import { runParent } from "./parent.ts";
 import { runDocumentation } from "./documentation.ts";
 import {
+  eligibleIssueNumbers,
   selectIssueBatch,
   type BatchTicket,
   type ReadOperation,
@@ -272,7 +273,7 @@ async function executeProject(
     return result;
   };
   if (options.selector === "document") return document();
-  const selectBatch = (tickets?: Ticket[]) =>
+  const selectBatch = (tickets?: BatchTicket[], eligible?: number[]) =>
     selectIssueBatch({
       tickets,
       loaded,
@@ -280,6 +281,7 @@ async function executeProject(
       context,
       read,
       targetBranch,
+      ...(eligible ? { eligible } : {}),
       ...(options.issueTicket !== undefined
         ? { issueTicket: options.issueTicket }
         : {}),
@@ -337,7 +339,10 @@ async function executeProject(
       markers: loaded.config.tracker,
       signal,
       summary,
-      runBatch: batch,
+      eligibleIssues: (tickets) =>
+        eligibleIssueNumbers({ tickets, loaded, tracker, context, read }),
+      runBatch: async (tickets, eligible) =>
+        batch(tickets, await selectBatch(tickets, eligible)),
       maintenancePending: () => maintenancePending,
     });
   }

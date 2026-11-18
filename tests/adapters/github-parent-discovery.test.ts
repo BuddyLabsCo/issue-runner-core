@@ -1,86 +1,115 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted GitHub command. */
 import assert from "node:assert/strict";
 import test from "node:test";
-import { executeCli } from "../../src/cli.ts";
 import { GitHubTracker } from "../../src/adapters/github-tracker.ts";
 import type { GitHubCommand } from "../../src/adapters/github-client.ts";
-import { createCliDependencies } from "../support/cli-dependencies.ts";
-import { createProject, validConfig } from "../support/cli-project.ts";
+import {
+  child,
+  config,
+  connection,
+  issue,
+  observation,
+  repository,
+  reservation,
+  runner,
+  runnerNotFound,
+} from "../support/github-parent-discovery.ts";
 
-const repository = { id: "repo-id", nameWithOwner: "owner/repo" };
-const reservation = { id: "reserved-id", name: "runner:reserved" };
-const runner = { id: "runner-id", login: "runner" };
-const config = {
-  reservationLabel: reservation.name,
-  runnerAccount: runner.login,
-};
-
-function issue(number: number, fields: Record<string, unknown> = {}) {
-  return {
-    id: `issue-${number}`,
-    number,
-    repository,
-    state: "OPEN",
-    stateReason: null,
-    ...fields,
-  };
-}
-
-function connection(
-  nodes: object[],
-  totalCount = nodes.length,
-  cursor: string | null = nodes.length ? "page-end" : null,
-  hasNextPage = false,
-) {
-  return { nodes, totalCount, pageInfo: { hasNextPage, endCursor: cursor } };
-}
-
-function child(number: number, fields: Record<string, unknown> = {}) {
-  return issue(number, {
-    labels: connection([]),
-    assignees: connection([]),
-    blockedBy: connection([]),
-    ...fields,
+function assertDiscoveryRequest({
+  query,
+  variables,
+}: {
+  query: string;
+  variables: unknown;
+}) {
+  assert.deepEqual(variables, {
+    owner: "owner",
+    name: "repo",
+    number: 48,
+    reservation: "runner:reserved",
+    runner: "runner",
   });
-}
-
-function observation(subIssues: object) {
-  return {
-    data: {
-      repository: {
-        ...repository,
-        label: reservation,
-        issue: issue(48, { subIssues }),
-      },
-      user: runner,
-    },
-  };
+  const fields = new Map<string, Record<string, string>>();
+  const parents: string[] = [];
+  // This query uses named fields, variable or integer arguments, and nested selections.
+  for (const [, field, args = "", nested, close] of query
+    .slice(query.indexOf("{") + 1)
+    .matchAll(/(\w+)(?:\s*\(([^()]*)\))?\s*(\{)?|(\})/gu)) {
+    if (close) {
+      parents.pop();
+      continue;
+    }
+    const path = [...parents, field].join(".");
+    fields.set(
+      path,
+      Object.fromEntries<string>(
+        [...args.matchAll(/(\w+)\s*:\s*(\$?\w+)/gu)].map(([, key, value]) => [
+          key!,
+          value!,
+        ]),
+      ),
+    );
+    if (nested) parents.push(field!);
+  }
+  const parent = "repository.issue";
+  const children = `${parent}.subIssues`;
+  const child = `${children}.nodes`;
+  const blockers = `${child}.blockedBy`;
+  const identity = [
+    "id",
+    "number",
+    "state",
+    "stateReason",
+    "repository.id",
+    "repository.nameWithOwner",
+  ];
+  for (const path of [
+    "repository.id",
+    "repository.nameWithOwner",
+    "repository.label.id",
+    "repository.label.name",
+    "user.id",
+    "user.login",
+    `${child}.labels.nodes.id`,
+    `${child}.labels.nodes.name`,
+    `${child}.assignees.nodes.id`,
+    `${child}.assignees.nodes.login`,
+    ...[parent, child, `${blockers}.nodes`].flatMap((owner) =>
+      identity.map((field) => `${owner}.${field}`),
+    ),
+  ])
+    assert.ok(fields.has(path), `missing selection ${path}`);
+  for (const connection of [
+    children,
+    `${child}.labels`,
+    `${child}.assignees`,
+    blockers,
+  ]) {
+    assert.match(
+      fields.get(connection)?.first ?? "",
+      /^[1-9]\d*$/u,
+      `missing page size for ${connection}`,
+    );
+    for (const field of [
+      "totalCount",
+      "pageInfo.hasNextPage",
+      "pageInfo.endCursor",
+    ])
+      assert.ok(
+        fields.has(`${connection}.${field}`),
+        `missing selection ${connection}.${field}`,
+      );
+  }
+  assert.deepEqual(fields.get("repository"), {
+    owner: "$owner",
+    name: "$name",
+  });
+  assert.deepEqual(fields.get(parent), { number: "$number" });
+  assert.deepEqual(fields.get("repository.label"), { name: "$reservation" });
+  assert.deepEqual(fields.get("user"), { login: "$runner" });
 }
 
 await test("parent discovery returns complete facts and mutation IDs from one single-page query", async () => {
-  const issueIdentity =
-    "id number state stateReason repository { id nameWithOwner }";
-  const pageInfo = "totalCount pageInfo { hasNextPage endCursor }";
-  const selection = `{
-      repository(owner: $owner, name: $name) {
-        id nameWithOwner
-        label(name: $reservation) { id name }
-        issue(number: $number) {
-          ${issueIdentity}
-          subIssues(first: 100) {
-            nodes {
-              ${issueIdentity}
-              labels(first: 100) { nodes { id name } ${pageInfo} }
-              assignees(first: 100) { nodes { id login } ${pageInfo} }
-              blockedBy(first: 100) { nodes { ${issueIdentity} } ${pageInfo} }
-            }
-            ${pageInfo}
-          }
-        }
-      }
-      user(login: $runner) { id login }
-    }`;
-  const tokens = /\w+|[^\s]/gu;
   let requests = 0;
   const command: GitHubCommand = async (args, { input }) => {
     requests++;
@@ -92,10 +121,8 @@ await test("parent discovery returns complete facts and mutation IDs from one si
       "--input",
       "-",
     ]);
-    const { query } = JSON.parse(input!) as { query: string };
-    assert.deepEqual(
-      query.slice(query.indexOf("{")).match(tokens),
-      selection.match(tokens),
+    assertDiscoveryRequest(
+      JSON.parse(input!) as { query: string; variables: unknown },
     );
     return JSON.stringify(
       observation(
@@ -297,6 +324,45 @@ await test("discovery rejects partial GraphQL output with a required field error
   );
 });
 
+for (const [scenario, errors, exitCode] of [
+  [
+    "a missing user alongside a required field error",
+    [
+      runnerNotFound,
+      {
+        type: "FORBIDDEN",
+        path: ["repository", "issue"],
+        message: "access denied",
+      },
+    ],
+    1,
+  ],
+  [
+    "a missing-user envelope from a timed-out command",
+    [runnerNotFound],
+    undefined,
+  ],
+] as const) {
+  await test(`discovery rejects ${scenario}`, async () => {
+    const command: GitHubCommand = async () => ({
+      stdout: JSON.stringify({
+        data: { ...observation(connection([])).data, user: null },
+        errors,
+      }),
+      error: new Error("gh failed"),
+      ...(exitCode === undefined ? {} : { exitCode }),
+    });
+    await assert.rejects(
+      new GitHubTracker("fake-token", command).discoverParent(
+        "owner/repo",
+        48,
+        config,
+      ),
+      /GitHub GraphQL Issue read failed/u,
+    );
+  });
+}
+
 for (const [name, facts, message] of [
   ["null labels", child(51, { labels: null }), /Expected a JSON object/u],
   [
@@ -400,92 +466,3 @@ await test("discovery rejects a nonempty final continuation with a null end curs
   );
   assert.equal(requests, 2);
 });
-
-for (const { name, subIssues, parentFields, label, outcome, error, cancel } of [
-  {
-    name: "a readable foreign child fails the Run without pause or retry",
-    subIssues: connection([
-      child(48, {
-        id: "foreign-issue",
-        repository: { id: "foreign-repo", nameWithOwner: "outside/repo" },
-      }),
-    ]),
-    outcome: "failed",
-    error: /cross-repository child outside\/repo#48/u,
-  },
-  {
-    name: "an empty parent has no work when the Reservation label is absent",
-    subIssues: connection([]),
-    label: null,
-    outcome: "no_work",
-  },
-  {
-    name: "a completed parent needs no Reservation label",
-    subIssues: connection([
-      child(51, { state: "CLOSED", stateReason: "COMPLETED" }),
-    ]),
-    parentFields: { state: "CLOSED", stateReason: "COMPLETED" },
-    label: null,
-    outcome: "succeeded",
-  },
-  {
-    name: "an open child cannot start when the configured Reservation label is absent",
-    subIssues: connection([
-      child(51, {
-        labels: connection([{ id: "ready-id", name: "ready-for-agent" }]),
-      }),
-    ]),
-    label: null,
-    outcome: "failed",
-    error: /configured Reservation label/u,
-  },
-  {
-    name: "cancellation during the first discovery request prevents every continuation",
-    subIssues: connection([child(51)], 2, "child-next", true),
-    outcome: "cancelled",
-    cancel: true,
-  },
-]) {
-  await test(name, async (t) => {
-    const { root } = await createProject(t, {
-      ...validConfig,
-      tracker: config,
-    });
-    const dependencies = createCliDependencies(root);
-    const controller = new AbortController();
-    let requests = 0;
-    const command: GitHubCommand = async (args) => {
-      requests++;
-      assert.equal(args[1], "graphql");
-      if (cancel) controller.abort();
-      const result = observation(subIssues);
-      return JSON.stringify({
-        data: {
-          ...result.data,
-          repository: {
-            ...result.data.repository,
-            label: label === undefined ? reservation : label,
-            issue: { ...result.data.repository.issue, ...parentFields },
-          },
-        },
-      });
-    };
-    const result = await executeCli(
-      ["run", "--project", "demo", "--parent", "48"],
-      {
-        ...dependencies,
-        signal: controller.signal,
-        tracker: new GitHubTracker("fake-token", command),
-      },
-    );
-    assert.equal(
-      result.summary.outcome,
-      outcome,
-      JSON.stringify(result.summary),
-    );
-    if (error) assert.match(result.summary.failure!, error);
-    assert.equal(requests, 1);
-    assert.deepEqual(dependencies.pauses, []);
-    assert.deepEqual(dependencies.effects, []);
-  });
-}

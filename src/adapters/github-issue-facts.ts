@@ -48,22 +48,45 @@ function parseIssueFact(issue: Record<string, unknown>): IssueFact {
   };
 }
 
+function missingRunnerError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "type" in error &&
+    error.type === "NOT_FOUND" &&
+    "path" in error &&
+    isDeepStrictEqual(error.path, ["user"])
+  );
+}
+
 async function readIssueGraphQL(
   client: GitHubClient,
   query: string,
   variables: Record<string, unknown>,
   signal?: AbortSignal,
+  allowMissingRunner = false,
 ): Promise<Record<string, unknown>> {
   signal?.throwIfAborted();
-  const { response, commandError } = await client.graphql(query, variables);
+  const { response, commandError, exitCode } = await client.graphql(
+    query,
+    variables,
+  );
   signal?.throwIfAborted();
-  if (response.errors?.length)
+  if (response.errors?.length) {
+    if (
+      allowMissingRunner &&
+      response.data?.user === null &&
+      response.errors.every(missingRunnerError) &&
+      (!commandError || exitCode === 1)
+    )
+      return object(response.data);
     throw new Error(
       `GitHub GraphQL Issue read failed: ${JSON.stringify(response.errors)}`,
       {
         cause: commandError,
       },
     );
+  }
   if (commandError) throw commandError;
   return object(response.data);
 }
@@ -119,6 +142,7 @@ function parseIssuePage<T>(
 type ReadIssueGraphQL = (
   query: string,
   variables: Record<string, unknown>,
+  allowMissingRunner?: boolean,
 ) => Promise<Record<string, unknown>>;
 
 async function readIssueConnection<T extends { id: string }>(
@@ -206,8 +230,8 @@ export async function discoverParent(
   { reservationLabel, runnerAccount }: Parameters<Tracker["discoverParent"]>[2],
   signal?: AbortSignal,
 ) {
-  const read: ReadIssueGraphQL = (query, variables) =>
-    readIssueGraphQL(client, query, variables, signal);
+  const read: ReadIssueGraphQL = (query, variables, allowMissingRunner) =>
+    readIssueGraphQL(client, query, variables, signal, allowMissingRunner);
   const [owner, name] = repository.split("/");
   const childFields = `
     ${issueFields}
@@ -234,6 +258,7 @@ export async function discoverParent(
       reservation: reservationLabel,
       runner: runnerAccount,
     },
+    true,
   );
   const repo = object(data.repository);
   const issue = object(repo.issue);

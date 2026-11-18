@@ -4,7 +4,7 @@ import type { LoadedProject } from "../config.ts";
 import { nonempty, object, readHandoff } from "../agent/handoff.ts";
 import { saveProgress, type BatchProgress } from "../recovery.ts";
 import type { ChildPage, Ticket, Tracker } from "./contracts.ts";
-import type { OperationOptions } from "./operations.ts";
+import { OperationStopped, type OperationOptions } from "./operations.ts";
 import type { RunContext } from "./run.ts";
 
 export type ReadOperation = <T>(
@@ -55,7 +55,7 @@ export function validateChildRepositories(
       (repositoryId !== undefined && child.repositoryId !== repositoryId),
   );
   if (foreignChild)
-    throw new Error(
+    throw new OperationStopped(
       `cross-repository child ${foreignChild.repository}#${foreignChild.number} is unsupported`,
     );
 }
@@ -122,40 +122,16 @@ function parseBatch(
   return saved as unknown as BatchProgress;
 }
 
-export async function selectIssueBatch(input: {
+export async function eligibleIssueNumbers(input: {
   tickets: BatchTicket[] | undefined;
   loaded: LoadedProject;
   tracker: Tracker;
   context: RunContext;
   read: ReadOperation;
-  targetBranch: string;
   issueTicket?: number;
-}): Promise<{
-  batch: number[];
-  runId: string;
-  documentation?: string;
-  scheduleDocumentation: () => Promise<string>;
-  complete: () => Promise<void>;
-}> {
+}): Promise<number[]> {
   const { tickets, loaded, tracker, context, read } = input;
   const config = loaded.config;
-  const batchFile = path.join(
-    loaded.directory,
-    "recovery",
-    `${context.inputHash}-batch.json`,
-  );
-  const previous = await read("read_batch_checkpoint", batchFile, () =>
-    readHandoff(batchFile),
-  );
-  const ownership = {
-    input_hash: context.inputHash,
-    run_arguments: context.runArguments,
-    repository: config.repository,
-    target_branch: input.targetBranch,
-  };
-  const recorded = previous
-    ? parseBatch(previous.text, ownership, config.maxBatchSize)
-    : undefined;
   const eligible: number[] = [];
   for (const child of [...(tickets ?? [])].sort(
     (a, b) => a.number - b.number,
@@ -201,6 +177,41 @@ export async function selectIssueBatch(input: {
       continue;
     eligible.push(child.number);
   }
+  return eligible;
+}
+
+export async function selectIssueBatch(
+  input: Parameters<typeof eligibleIssueNumbers>[0] & {
+    targetBranch: string;
+    eligible?: number[];
+  },
+): Promise<{
+  batch: number[];
+  runId: string;
+  documentation?: string;
+  scheduleDocumentation: () => Promise<string>;
+  complete: () => Promise<void>;
+}> {
+  const { loaded, context, read } = input;
+  const config = loaded.config;
+  const batchFile = path.join(
+    loaded.directory,
+    "recovery",
+    `${context.inputHash}-batch.json`,
+  );
+  const previous = await read("read_batch_checkpoint", batchFile, () =>
+    readHandoff(batchFile),
+  );
+  const ownership = {
+    input_hash: context.inputHash,
+    run_arguments: context.runArguments,
+    repository: config.repository,
+    target_branch: input.targetBranch,
+  };
+  const recorded = previous
+    ? parseBatch(previous.text, ownership, config.maxBatchSize)
+    : undefined;
+  const eligible = input.eligible ?? (await eligibleIssueNumbers(input));
   const batch =
     (recorded && !recorded.completed ? recorded.tickets : undefined) ??
     [...new Set(eligible)].slice(0, config.maxBatchSize);

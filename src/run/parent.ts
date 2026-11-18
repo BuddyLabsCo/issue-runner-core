@@ -75,15 +75,9 @@ function closeParent(input: ParentScope): Promise<boolean> {
   );
 }
 
-function parentBatchTickets({
-  children,
-  reservation,
-  runner,
-}: ParentDiscovery): BatchTicket[] {
-  if (!reservation || !runner)
-    throw new OperationStopped(
-      "GitHub did not resolve the configured Reservation label or Runner account",
-    );
+function parentBatchTickets(
+  children: ParentDiscovery["children"],
+): BatchTicket[] {
   return children.map(({ labels, assignees, blockers, ...ticket }) => ({
     ...ticket,
     labels: labels.map((label) => label.name),
@@ -92,39 +86,59 @@ function parentBatchTickets({
   }));
 }
 
-export async function runParent(
-  input: ParentScope & {
-    summary: RunSummary;
-    markers: Parameters<Tracker["discoverParent"]>[2];
-    signal: AbortSignal;
-    runBatch: (tickets: BatchTicket[]) => Promise<RunSummary>;
-    maintenancePending: () => boolean;
-  },
-): Promise<RunSummary> {
+interface ParentRun extends ParentScope {
+  summary: RunSummary;
+  markers: Parameters<Tracker["discoverParent"]>[2];
+  signal: AbortSignal;
+  eligibleIssues: (tickets: BatchTicket[]) => Promise<number[]>;
+  runBatch: (tickets: BatchTicket[], eligible: number[]) => Promise<RunSummary>;
+  maintenancePending: () => boolean;
+}
+
+function discoverBatch(input: ParentRun, select: boolean) {
   const { read, repository, parentTicket, tracker, markers } = input;
-  let hadChildren = false;
-  let previous: RunSummary | undefined;
-  for (;;) {
-    if (input.maintenancePending())
-      return { ...input.summary, outcome: "incomplete" };
-    const observation = await read(
-      "discover_parent",
-      `parent:${parentTicket}`,
-      () =>
-        tracker.discoverParent(repository, parentTicket, markers, input.signal),
-    );
-    const { parent, children } = observation;
+  return read("discover_parent", `parent:${parentTicket}`, async () => {
+    const { parent, children, reservation, runner } =
+      await tracker.discoverParent(
+        repository,
+        parentTicket,
+        markers,
+        input.signal,
+      );
     validateParent(parent);
     validateChildRepositories(repository, children, parent.repositoryId);
     validateChildren(parent, children);
-    hadChildren ||= children.length > 0;
+    const tickets = parentBatchTickets(children);
+    const eligible =
+      select && parent.state === "open"
+        ? await input.eligibleIssues(tickets)
+        : [];
+    if (eligible.length && !(reservation && runner))
+      throw new Error(
+        "GitHub did not resolve the configured Reservation label or Runner account",
+      );
+    return { parent, tickets, eligible };
+  });
+}
+
+export async function runParent(input: ParentRun): Promise<RunSummary> {
+  let hadChildren = false;
+  let selectBatch = true;
+  for (;;) {
+    if (input.maintenancePending())
+      return { ...input.summary, outcome: "incomplete" };
+    const { parent, tickets, eligible } = await discoverBatch(
+      input,
+      selectBatch,
+    );
+    hadChildren ||= tickets.length > 0;
     if (parent.state === "closed")
       return {
         ...input.summary,
         outcome: "succeeded",
       };
-    if (!hadChildren) return input.runBatch([]);
-    if (children.every((ticket) => ticket.state === "closed")) {
+    if (!hadChildren) return input.runBatch(tickets, eligible);
+    if (tickets.every((ticket) => ticket.state === "closed")) {
       if (await closeParent(input))
         return {
           ...input.summary,
@@ -132,8 +146,8 @@ export async function runParent(
         };
       continue;
     }
-    if (previous && previous.outcome !== "succeeded")
-      return { ...input.summary, outcome: "incomplete" };
-    previous = await input.runBatch(parentBatchTickets(observation));
+    if (!selectBatch) return { ...input.summary, outcome: "incomplete" };
+    selectBatch =
+      (await input.runBatch(tickets, eligible)).outcome === "succeeded";
   }
 }
