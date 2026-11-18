@@ -79,6 +79,12 @@ Runner uses it for GitHub API calls and Git operations. In existing configuratio
 Editing `config.yaml` changes the input hash Runner uses to resume a Run.
 
 Use a GitHub App installation access token scoped to the configured repository.
+The token expires one hour after GitHub issues it. [GitHub installation token lifetime](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app#generating-an-installation-access-token)
+
+Runner reads the token at startup and reuses it for retries. If the token expires
+during a Run, set a fresh token in the environment and restart Runner with the
+same command, arguments, and `config.yaml`.
+
 Grant the app read access to repository metadata and the permissions below.
 
 - **Issues** read/write to read Issues and manage assignments, labels, comments, and closure.
