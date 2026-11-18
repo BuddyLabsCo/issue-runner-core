@@ -2,14 +2,90 @@
 import assert from "node:assert/strict";
 import type { CreateTabOptions, TabHandle } from "../../src/terminal.ts";
 import { LocalGitWorkspace } from "../../src/adapters/git-workspace.ts";
+import { OperationStopped } from "../../src/run/operations.ts";
 import type {
   CodeHost,
+  ParentDiscovery,
+  Ticket,
+  Tracker,
   PullRequestRecord,
   PublicationQuery,
   RequiredCheck,
   PullRequestState,
   MergeRequestResult,
 } from "../../src/run/contracts.ts";
+
+async function scriptedPages(
+  read: (
+    page: number,
+  ) => Promise<{ tickets: Ticket[]; nextPage: number | null }>,
+) {
+  const tickets: Ticket[] = [];
+  const seen = new Set<number>();
+  let page: number | null = 1;
+  while (page !== null) {
+    if (seen.has(page))
+      throw new OperationStopped("invalid scripted pagination");
+    seen.add(page);
+    const result = await read(page);
+    tickets.push(...result.tickets);
+    page = result.nextPage;
+  }
+  return tickets;
+}
+
+async function discoverParent(
+  this: Pick<Tracker, "getParent" | "listChildrenPage" | "listBlockersPage">,
+  repository: string,
+  parentTicket: number,
+  { reservationLabel, runnerAccount }: Parameters<Tracker["discoverParent"]>[2],
+): Promise<ParentDiscovery> {
+  const identity = (ticket: Ticket) => ({
+    number: ticket.number,
+    state: ticket.state,
+    stateReason: ticket.stateReason,
+    repository: ticket.repository ?? repository,
+    repositoryId: ticket.repository ?? repository,
+    id: `${ticket.repository ?? repository}#${ticket.number}`,
+  });
+  const parent = identity(await this.getParent(repository, parentTicket));
+  const tickets = await scriptedPages(async (page) => {
+    const result = await this.listChildrenPage(repository, parentTicket, page);
+    return { tickets: result.children, nextPage: result.nextPage };
+  });
+  const children: ParentDiscovery["children"] = [];
+  for (const ticket of tickets.sort((a, b) => a.number - b.number)) {
+    const blockers = await scriptedPages(async (page) => {
+      const result = await this.listBlockersPage(
+        repository,
+        ticket.number,
+        page,
+      );
+      return { tickets: result.blockers, nextPage: result.nextPage };
+    });
+    if (
+      blockers.some(
+        (blocker) => blocker.state === "closed" && blocker.stateReason === null,
+      )
+    )
+      throw new OperationStopped("blocker has an unsupported terminal state");
+    children.push({
+      ...identity(ticket),
+      labels: (ticket.labels ?? []).map((name) => ({ id: name, name })),
+      assignees: (ticket.assignees ?? []).map((login) => ({
+        id: login,
+        login,
+      })),
+      blockers: blockers.map(identity),
+    });
+  }
+  return {
+    parent,
+    children,
+    reservation: { id: reservationLabel, name: reservationLabel },
+    runner: { id: runnerAccount, login: runnerAccount },
+  };
+}
 
 export function terminalModule(plugin: TestTerminal) {
   const calls: unknown[][] = [];
@@ -84,6 +160,7 @@ export function createCliDependencies(launchDirectory: string) {
         reads.push(`${repository}#${ticket}`);
         return { number: ticket, state: "open" as const, stateReason: null };
       },
+      discoverParent,
       async listChildrenPage(
         _repository: string,
         _ticket: number,

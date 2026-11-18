@@ -47,6 +47,7 @@ await test("GraphQL preserves the response and timeout when the child exits zero
 
   const client = new GitHubClient("fixture-credential");
   const result = await client.graphql("query Example { nodes }", {});
+  assert.equal(result.exitCode, undefined);
   assert.deepEqual(result.response, response);
   assert.match(result.commandError?.message ?? "", /timed out after 60000 ms/u);
   await assert.rejects(
@@ -109,6 +110,7 @@ await executableTest(
       body: "Line one\n\n{owner} の本文\r\nCloses #369\n",
     };
     const partial = await client.graphql(query, { scenario: "partial", input });
+    assert.equal(partial.exitCode, 1);
     assert.deepEqual(partial.response, {
       data: { reserved: { input, query }, assigned: null },
       errors: [

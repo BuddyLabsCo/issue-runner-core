@@ -1,6 +1,5 @@
-import type { Ticket } from "./contracts.ts";
 import type { RunOptions, RunSummary } from "./run.ts";
-import { selectIssueBatch } from "./discovery.ts";
+import { selectIssueBatch, type BatchTicket } from "./discovery.ts";
 import { integrateBatch } from "./integration.ts";
 import { runStandalone } from "./standalone.ts";
 import { TicketSkipped } from "./operations.ts";
@@ -8,7 +7,7 @@ import { TicketSkipped } from "./operations.ts";
 export async function runBatch(
   input: Omit<Parameters<typeof runStandalone>[0], "number"> & {
     options: RunOptions;
-    tickets: Ticket[];
+    tickets: BatchTicket[];
     selection?: Awaited<ReturnType<typeof selectIssueBatch>>;
     controller: AbortController;
     document: (batch: string, runId: string) => Promise<RunSummary>;

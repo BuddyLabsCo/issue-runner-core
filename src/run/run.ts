@@ -29,7 +29,12 @@ import { runBatch } from "./batch.ts";
 import { runStandalone } from "./standalone.ts";
 import { runParent } from "./parent.ts";
 import { runDocumentation } from "./documentation.ts";
-import { selectIssueBatch, type ReadOperation } from "./discovery.ts";
+import {
+  eligibleIssueNumbers,
+  selectIssueBatch,
+  type BatchTicket,
+  type ReadOperation,
+} from "./discovery.ts";
 
 export interface RunContext {
   audit: AuditLog;
@@ -269,7 +274,7 @@ async function executeProject(
     return result;
   };
   if (options.selector === "document") return document();
-  const selectBatch = (tickets?: Ticket[]) =>
+  const selectBatch = (tickets?: BatchTicket[], eligible?: number[]) =>
     selectIssueBatch({
       tickets,
       loaded,
@@ -277,12 +282,13 @@ async function executeProject(
       context,
       read,
       targetBranch,
+      ...(eligible ? { eligible } : {}),
       ...(options.issueTicket !== undefined
         ? { issueTicket: options.issueTicket }
         : {}),
     });
   const batch = (
-    tickets: Ticket[],
+    tickets: BatchTicket[],
     selection?: Awaited<ReturnType<typeof selectBatch>>,
   ) => {
     base = undefined;
@@ -317,7 +323,7 @@ async function executeProject(
   const pending = await selectBatch();
   if (pending.batch.length > 0) {
     const result = await batch(
-      pending.documentation
+      pending.documentation || options.selector === "parent"
         ? []
         : await Promise.all(pending.batch.map(readTicket)),
       pending,
@@ -331,8 +337,13 @@ async function executeProject(
       parentTicket: summary.parentTicket,
       tracker,
       read,
+      markers: loaded.config.tracker,
+      signal,
       summary,
-      runBatch: batch,
+      eligibleIssues: (tickets) =>
+        eligibleIssueNumbers({ tickets, loaded, tracker, context, read }),
+      runBatch: async (tickets, eligible) =>
+        batch(tickets, await selectBatch(tickets, eligible)),
       maintenancePending: () => maintenancePending,
     });
   }
