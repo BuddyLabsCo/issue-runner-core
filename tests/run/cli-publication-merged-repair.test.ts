@@ -53,6 +53,7 @@ for (const kind of ["ci", "conflict"] as const) {
       assert.equal(fixture.repairs.tasks.length, 1);
       state.pullRequests[0]!.state = "merged";
       const mergedHead = state.pullRequests[0]!.headSha;
+      if (interruption === "push") state.branches.delete(before.branch);
       merged = true;
       fixture.repairs.onTask = task;
       fixture.dependencies.signal = new AbortController().signal;
@@ -67,7 +68,10 @@ for (const kind of ["ci", "conflict"] as const) {
       assert.equal(fixture.repairs.probes.length, 1);
       assert.equal(state.pushes, interruption === "assignment" ? 1 : 2);
       assert.equal(state.creations, 1);
-      assert.equal(state.branches.get(before.branch), mergedHead);
+      assert.equal(
+        state.branches.get(before.branch),
+        interruption === "push" ? undefined : mergedHead,
+      );
       const after = await fixture.snapshot();
       assert.equal(after.publication!.merge!.headSha, mergedHead);
       assert.equal(after.publication!.phase, "delivered");
@@ -116,7 +120,7 @@ for (const moment of ["discovery", "repair_push"] as const) {
     assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
     assert.equal(state.pushes, 1);
     assert.equal(state.creations, 1);
-    assert.equal(state.discoveries.length, moment === "discovery" ? 0 : 1);
+    assert.equal(state.discoveries.length, moment === "discovery" ? 1 : 2);
     assert.equal(fixture.repairs.continuations.length, 0);
     assert.equal(fixture.repairs.tasks.length, moment === "discovery" ? 0 : 1);
     assert.equal(fixture.repairs.probes.length, moment === "discovery" ? 0 : 1);

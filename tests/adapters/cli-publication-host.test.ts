@@ -17,7 +17,6 @@ await test("publication uses direct composed observations and preserves multilin
     assert.equal(options.token, "host-secret");
     if (args[1] === "--method")
       return JSON.stringify({ default_branch: "default-branch" });
-    if (args[1] === "checks") return "[]";
     if (args[1]?.includes("/git/ref/heads/")) {
       const saved = await fixture.snapshot();
       return JSON.stringify({
@@ -44,6 +43,31 @@ await test("publication uses direct composed observations and preserves multilin
       isDraft: false,
       createdAt: "2026-01-01T00:00:00Z",
     };
+    if (request.query.includes("query Poll(")) {
+      operations.push("poll");
+      return JSON.stringify({
+        data: {
+          repository: {
+            id: "repo-id",
+            nameWithOwner: "Owner/Repo",
+            ref: { target: { oid: head } },
+            pullRequest: {
+              ...record,
+              mergedAt: null,
+              mergeable: "MERGEABLE",
+              mergeStateStatus: "CLEAN",
+              isInMergeQueue: false,
+              isMergeQueueEnabled: false,
+              autoMergeRequest: null,
+              mergeQueueEntry: null,
+              commits: {
+                nodes: [{ commit: { oid: head, statusCheckRollup: null } }],
+              },
+            },
+          },
+        },
+      });
+    }
     if (request.query.includes("PrePush")) operations.push("branch");
     else if (request.query.includes("query Publication("))
       operations.push("observe");
@@ -89,7 +113,7 @@ await test("publication uses direct composed observations and preserves multilin
     /CI-ready/u,
     JSON.stringify(result),
   );
-  assert.deepEqual(operations.slice(0, 3), ["branch", "observe", "create"]);
+  assert.deepEqual(operations, ["branch", "observe", "create", "poll"]);
   assert.equal(
     (await fixture.snapshot()).publication?.pullRequest?.id,
     "pr-81",

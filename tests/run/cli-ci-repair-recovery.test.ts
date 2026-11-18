@@ -315,6 +315,17 @@ await test("repair Worktree creation interrupted after its side effect reconcile
     .attempts[0]!;
   assert.equal(pending.worktreeCreated, undefined);
   fixture.dependencies.signal = new AbortController().signal;
+  const branch = (await fixture.snapshot()).branch;
+  fixture.publicationState.branches.set(branch, "d".repeat(40));
+  fixture.dependencies.operator.pause = async (message) => {
+    assert.match(message, /identity or head mismatch/u);
+    return "q";
+  };
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  assert.equal(fixture.repairs.tasks.length, 0);
+  fixture.publicationState.branches.set(branch, pending.base);
+  fixture.dependencies.signal = new AbortController().signal;
+  fixture.dependencies.operator.pause = async () => "";
   assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/u);
   assert.equal(repairCreates, 1);
   assert.equal(
@@ -332,7 +343,7 @@ await test("unexpected remote advancement after repair completion never overwrit
     }
   };
   fixture.dependencies.operator.pause = async (message) => {
-    assert.match(message, /advanced/u);
+    assert.match(message, /identity or head mismatch/u);
     return "q";
   };
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
@@ -379,7 +390,7 @@ await test("repair pushes retain the discovery deadline across cancellation and 
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   const before = await fixture.snapshot();
   assert.equal(before.publication!.ciRepair!.attempts[0]!.pushed, true);
-  assert.equal(fixture.publicationState.discoveries.length, 1);
+  assert.equal(fixture.publicationState.discoveries.length, 2);
   fixture.dependencies.signal = new AbortController().signal;
   fixture.state.onSleep = async () => {
     /* Cancellation is disabled for recovery. */

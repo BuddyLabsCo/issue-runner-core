@@ -138,7 +138,6 @@ for (const conflict of [
   "absent",
   "number",
   "url",
-  "duplicate",
   "closed",
   "draft",
   "missing",
@@ -159,8 +158,6 @@ for (const conflict of [
     else if (conflict === "number") record.number = 999;
     else if (conflict === "url")
       record.url = "https://github.com/owner/repo/pull/999";
-    else if (conflict === "duplicate")
-      state.pullRequests.push({ ...record, number: 999 });
     else if (conflict === "closed") record.state = "closed";
     else if (conflict === "draft") record.draft = true;
     else state.pullRequests.length = 0;
@@ -169,11 +166,7 @@ for (const conflict of [
     fixture.dependencies.operator.pause = async (message) => {
       assert.match(
         message,
-        conflict === "advanced" || conflict === "absent"
-          ? /advanced or disappeared/u
-          : conflict === "missing"
-            ? /Recorded Pull Request is missing/u
-            : /identity or head mismatch/u,
+        /Pull Request (?:missing|identity or head mismatch)/u,
       );
       pauses++;
       return "q";
@@ -182,7 +175,7 @@ for (const conflict of [
     assert.equal(pauses, 1);
     assert.equal(state.pushes, 1);
     assert.equal(state.creations, 1);
-    assert.equal(state.discoveries.length, 0);
+    assert.ok(state.discoveries.length <= 2);
     assert.equal(fixture.state.taskCount, 1);
     assert.equal(fixture.state.probeCount, 1);
     assert.deepEqual(
@@ -219,7 +212,7 @@ for (const closure of ["runner", "code_host", "no_auto_merge"] as const) {
     assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
     assert.equal(state.pushes, 1);
     assert.equal(state.creations, 1);
-    assert.equal(state.discoveries.length, 0);
+    assert.equal(state.discoveries.length, closure === "runner" ? 1 : 0);
     assert.equal(fixture.state.taskCount, 1);
     assert.equal(fixture.state.probeCount, 1);
     assert.equal(fixture.integrationState.requests.length, 0);

@@ -147,6 +147,11 @@ export interface PublicationProgress {
   discoveryNotBefore?: number;
   checksDeadline?: number;
   checks?: RequiredCheck[];
+  ciObservation?: PullRequestState & {
+    mergeStateStatus: string;
+    isInMergeQueue: boolean;
+    isMergeQueueEnabled: boolean;
+  };
   mergeDeadline?: number;
   merge?: PullRequestState;
   closure?: { state: "closed"; stateReason: "completed" };

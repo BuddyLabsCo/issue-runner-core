@@ -195,6 +195,14 @@ await test("changed local work after the completed tab closes cannot be pushed",
 
 await test("required checks wait 30 seconds for discovery, then poll pending checks until all pass", async (t) => {
   const fixture = await publicationRun(t);
+  let observations = 0;
+  const observe = fixture.dependencies.codeHost.observePullRequest.bind(
+    fixture.dependencies.codeHost,
+  );
+  fixture.dependencies.codeHost.observePullRequest = async (...args) => {
+    observations++;
+    return observe(...args);
+  };
   let calls = 0;
   fixture.publicationState.onChecks = async () => [
     {
@@ -207,11 +215,45 @@ await test("required checks wait 30 seconds for discovery, then poll pending che
   const result = await fixture.run();
   assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
   assert.deepEqual(fixture.publicationState.discoveries, [40_000, 50_000]);
+  assert.equal(observations, 2);
   assert.deepEqual(fixture.state.sleeps, [10_000, 30_000, 10_000]);
   assert.equal(
     (await fixture.snapshot()).publication?.checks?.[0]?.bucket,
     "pass",
   );
+});
+
+await test("an incomplete CI observation is retried before checks can become ready", async (t) => {
+  const fixture = await publicationRun(t);
+  const observe = fixture.dependencies.codeHost.observePullRequest.bind(
+    fixture.dependencies.codeHost,
+  );
+  let observations = 0;
+  fixture.dependencies.codeHost.observePullRequest = async (...args) => {
+    if (++observations === 1)
+      throw new Error("CI observation head changed during pagination");
+    return observe(...args);
+  };
+  assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/u);
+  assert.equal(observations, 2);
+});
+
+await test("repeated incomplete CI observations reach the operator after the configured retries", async (t) => {
+  const fixture = await publicationRun(t);
+  let observations = 0;
+  fixture.dependencies.codeHost.observePullRequest = async () => {
+    observations++;
+    throw new Error("CI observation head changed during pagination");
+  };
+  fixture.dependencies.operator.pause = async (message) => {
+    assert.match(message, /head changed during pagination/u);
+    return "q";
+  };
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  assert.equal(observations, validConfig.operationRetry + 1);
+  const saved = await fixture.snapshot();
+  assert.equal(saved.publication?.phase, "pr_created");
+  assert.equal(saved.publication?.ciRepair, undefined);
 });
 
 await test("required-check timeout uses configured minutes and operator retry without another creation", async (t) => {
