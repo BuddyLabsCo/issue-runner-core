@@ -127,3 +127,45 @@ for (const moment of ["discovery", "repair_push"] as const) {
     assert.equal(fixture.state.cleanup.length, moment === "discovery" ? 1 : 2);
   });
 }
+
+await test("a merged pending repair with a deleted branch is recovered at its verified head", async (t) => {
+  const fixture = await ciRepairRun(t);
+  const state = fixture.publicationState;
+  let merged = false;
+  fixture.dependencies.codeHost.getPullRequest = async () => ({
+    headSha: state.pullRequests[0]!.headSha,
+    createdAt: "2026-10-30T00:00:00Z",
+    merged,
+    mergeRequested: false,
+    mergeable: "mergeable",
+    mergeFailure: null,
+  });
+  fixture.dependencies.tracker.closeTicket = async () => {
+    fixture.state.ticket.state = "closed";
+    fixture.state.ticket.stateReason = "completed";
+  };
+  const push = state.onPush;
+  state.onPush = async (branch, head) => {
+    await push(branch, head);
+    if (state.pushes === 2) fixture.controller.abort();
+  };
+  assert.equal(
+    (await executeCli(deliveryCommand, fixture.dependencies)).summary.outcome,
+    "cancelled",
+  );
+  const before = await fixture.snapshot();
+  assert.ok(before.publication!.ciRepair!.attempts[0]!.pendingPush);
+  state.pullRequests[0]!.state = "merged";
+  state.branches.delete(before.branch);
+  merged = true;
+  fixture.dependencies.signal = new AbortController().signal;
+  const result = await executeCli(deliveryCommand, fixture.dependencies);
+  assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
+  const after = await fixture.snapshot();
+  assert.equal(after.publication!.ciRepair!.attempts[0]!.pushed, true);
+  assert.equal(
+    after.publication!.merge!.headSha,
+    state.pullRequests[0]!.headSha,
+  );
+  assert.equal(state.pushes, 2);
+});

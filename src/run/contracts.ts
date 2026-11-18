@@ -120,10 +120,24 @@ export interface CodeHost {
     title: string;
     body: string;
   }): Promise<PublicationPullRequest>;
+  observeCi(input: {
+    repository: string;
+    branch: string;
+    number: number;
+  }): Promise<CiObservation>;
   getRequiredChecks(
     repository: string,
     pullRequest: number,
   ): Promise<RequiredCheck[]>;
+}
+
+export interface CiObservation {
+  repositoryId: string;
+  remoteHead: string | null;
+  lastCommit: string;
+  pullRequest: PublicationPullRequest;
+  state: PullRequestState;
+  checks: RequiredCheck[];
 }
 
 export interface PullRequestState {
@@ -133,6 +147,9 @@ export interface PullRequestState {
   mergeRequested: boolean;
   mergeable: "mergeable" | "conflicting" | "unknown";
   mergeFailure: string | null;
+  mergeStateStatus?: string;
+  isInMergeQueue?: boolean;
+  isMergeQueueEnabled?: boolean;
 }
 
 export type MergeRequestResult =

@@ -256,7 +256,10 @@ export function createCliDependencies(launchDirectory: string) {
       ): Promise<string | null> {
         return remoteBranches.get(branch) ?? null;
       },
-      async listPullRequests(): Promise<PublicationPullRequest[]> {
+      async listPullRequests(
+        _repository?: string,
+      ): Promise<PublicationPullRequest[]> {
+        void _repository;
         return structuredClone(pullRequests);
       },
       async observePublicationBranch(repository: string, branch: string) {
@@ -296,7 +299,28 @@ export function createCliDependencies(launchDirectory: string) {
         pullRequests.push(record);
         return record;
       },
-      async getRequiredChecks(): Promise<RequiredCheck[]> {
+      async observeCi(input: Parameters<CodeHost["observeCi"]>[0]) {
+        const pullRequest = (
+          await this.listPullRequests(input.repository)
+        ).find((pr) => pr.number === input.number);
+        if (!pullRequest) throw new Error("Published Pull Request is missing");
+        return {
+          repositoryId: "REPO_1",
+          remoteHead: await this.getRemoteBranchHead(
+            input.repository,
+            input.branch,
+          ),
+          lastCommit: pullRequest.headSha,
+          pullRequest: structuredClone(pullRequest),
+          state: await this.getPullRequest(input.repository, input.number),
+          checks: await this.getRequiredChecks(input.repository, input.number),
+        };
+      },
+      async getRequiredChecks(
+        _repository?: string,
+        _number?: number,
+      ): Promise<RequiredCheck[]> {
+        void [_repository, _number];
         return [];
       },
     },

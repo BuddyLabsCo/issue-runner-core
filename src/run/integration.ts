@@ -1,4 +1,4 @@
-import { publishedHead, verifiedPublication } from "./publication.ts";
+import { publishedHead, verifiedPublication } from "./publication-evidence.ts";
 import type { LoadedProject } from "../config.ts";
 import type { ImplementationProgress } from "../recovery.ts";
 import type { CodeHost, Ticket, Tracker } from "./contracts.ts";

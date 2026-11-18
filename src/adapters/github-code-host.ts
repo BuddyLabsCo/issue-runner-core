@@ -5,6 +5,7 @@ import type {
   PullRequestState,
   MergeRequestResult,
 } from "../run/contracts.ts";
+import { observeCi } from "./github-ci.ts";
 import { GitHubClient, type GitHubCommand } from "./github-client.ts";
 import {
   observePublicationBranch,
@@ -137,6 +138,10 @@ export class GitHubCodeHost implements CodeHost {
 
   observePublication(input: Parameters<CodeHost["observePublication"]>[0]) {
     return observePublication(this.client, input);
+  }
+
+  observeCi(input: Parameters<CodeHost["observeCi"]>[0]) {
+    return observeCi(this.client, input);
   }
 
   createPullRequest(input: Parameters<CodeHost["createPullRequest"]>[0]) {

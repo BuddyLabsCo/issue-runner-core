@@ -375,6 +375,7 @@ export async function repairPullRequest(
   repair.pushed = true;
   delete repair.pendingPush;
   publication.phase = "pr_created";
+  delete publication.ci;
   delete publication.conflict;
   delete publication.mergeDeadline;
   publication.discoveryNotBefore = input.clock.now().getTime() + 30_000;

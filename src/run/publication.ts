@@ -7,6 +7,7 @@ import type { CodeHost, PublicationPullRequest } from "./contracts.ts";
 import type { ReadOperation } from "./discovery.ts";
 import type { RunContext } from "./run.ts";
 import { nonempty } from "../agent/handoff.ts";
+import { verifiedPublication, publishedHead } from "./publication-evidence.ts";
 import { verifiedImplementation } from "./review.ts";
 import { verifyWorkspace } from "./verification.ts";
 import { OperationStopped, pauseForOperator } from "./operations.ts";
@@ -122,16 +123,6 @@ export async function publishImplementation(input: {
     await persist();
   }
 
-  const matchingPullRequest = async (
-    expectedHead = publishedHead(publication),
-  ): Promise<PublicationPullRequest | undefined> => {
-    context.signal?.throwIfAborted();
-    return matchPublication(
-      publication,
-      await codeHost.listPullRequests(repository),
-      expectedHead,
-    );
-  };
   if (completed) {
     const recovered = await read(
       "reconcile_completed_publication",
@@ -237,43 +228,86 @@ export async function publishImplementation(input: {
   }
   const merged = new OperationStopped("Published Pull Request merged");
   try {
-    const confirm = (expectedHead = publishedHead(publication)) =>
+    const pendingRepair = publication.ciRepair?.attempts.at(-1)?.pendingPush
+      ? publication.ciRepair.attempts.at(-1)
+      : publication.conflictRepair?.attempts.at(-1)?.pendingPush
+        ? publication.conflictRepair.attempts.at(-1)
+        : undefined;
+    const confirm = (requestedHead?: string, reconcilePending = false) =>
       read("confirm_publication", target, async () => {
         await verify();
-        if ((await remoteHead()) !== expectedHead)
-          throw new Error("Remote branch advanced during required checks");
-        const candidate = await matchingPullRequest(expectedHead);
-        if (!candidate) throw new Error("Published Pull Request is missing");
+        const observed = await codeHost.observeCi({
+          repository,
+          branch: publication.branch,
+          number: pullRequest.number,
+        });
+        const candidate = observed.pullRequest;
+        const expectedHead =
+          requestedHead ??
+          (reconcilePending && candidate.headSha === pendingRepair?.pendingPush
+            ? pendingRepair.pendingPush
+            : publishedHead(publication));
+        if (
+          observed.repositoryId !== publication.repositoryId ||
+          !matchPublication(publication, [candidate], expectedHead) ||
+          observed.lastCommit !== expectedHead ||
+          observed.state.headSha !== expectedHead ||
+          observed.state.merged !== (candidate.state === "merged") ||
+          (observed.remoteHead !== expectedHead &&
+            !(candidate.state === "merged" && observed.remoteHead === null))
+        )
+          throw new Error(
+            "Published Pull Request identity or head mismatch, or remote branch advanced during required checks",
+          );
+        if (
+          candidate.state === "merged" &&
+          pendingRepair?.pendingPush === expectedHead
+        ) {
+          if (
+            pendingRepair.base !== publishedHead(publication) ||
+            !pendingRepair.result
+          )
+            throw new Error("Pending repair does not extend the accepted head");
+          verifyWorkspace(
+            pendingRepair,
+            await context.git.inspect(pendingRepair),
+            pendingRepair.result,
+          );
+          verifyRepairAncestry(
+            pendingRepair,
+            await inspectRepairAncestry(context.git, pendingRepair),
+          );
+          pendingRepair.pushed = true;
+          delete pendingRepair.pendingPush;
+        }
+        if (
+          !observed.state.merged &&
+          expectedHead === publishedHead(publication)
+        )
+          publication.ci = observed.state;
         if (
           candidate.state === "merged" &&
           expectedHead === publishedHead(publication)
         ) {
-          const merge = await codeHost.getPullRequest(
-            repository,
-            candidate.number,
-          );
-          if (!merge.merged || merge.headSha !== expectedHead)
+          if (!observed.state.merged || observed.state.headSha !== expectedHead)
             throw new Error(
               "Pull Request merge does not match the recorded publication head",
             );
-          publication.merge = merge;
+          delete publication.ci;
+          publication.merge = observed.state;
           publication.phase = "merged";
           await persist();
-          // Unwind nested repairs before they can dispatch or push again.
           throw merged;
         }
+        return observed.checks;
       });
-    const pendingPush =
-      publication.ciRepair?.attempts.at(-1)?.pendingPush ??
-      publication.conflictRepair?.attempts.at(-1)?.pendingPush;
-    // Let the repair checkpoint a push already confirmed at its recorded head.
-    await confirm(
-      pendingPush &&
-        (await read("read_pending_repair_head", target, remoteHead)) ===
-          pendingPush
-        ? pendingPush
-        : undefined,
-    );
+    if (
+      pendingRepair ||
+      publication.phase === "conflict_repair" ||
+      publication.phase === "checks_failed" ||
+      publication.phase === "checks_ready"
+    )
+      await confirm(undefined, true);
     if (publication.phase === "conflict_repair") {
       do {
         await repairPullRequest({
@@ -281,7 +315,9 @@ export async function publishImplementation(input: {
           kind: "conflict",
           git: context.git,
           read,
-          confirm,
+          confirm: async (head) => {
+            await confirm(head);
+          },
           remoteHead,
         });
       } while (publication.phase === "conflict_repair");
@@ -295,7 +331,9 @@ export async function publishImplementation(input: {
           ...input.stageInput,
           git: context.git,
           read,
-          confirm,
+          confirm: async (head) => {
+            await confirm(head);
+          },
           remoteHead,
         });
       } while (
@@ -312,7 +350,6 @@ export async function publishImplementation(input: {
     )
       await repair();
     for (;;) {
-      await confirm();
       if (publication.phase === "checks_ready") break;
       const wait =
         (publication.discoveryNotBefore ?? 0) - context.clock.now().getTime();
@@ -321,15 +358,13 @@ export async function publishImplementation(input: {
         await context.clock.sleep(wait);
         context.signal?.throwIfAborted();
       }
+      publication.phase = "pr_created";
       publication.checksDeadline ??=
         context.clock.now().getTime() +
         loaded.config.timeouts.requiredChecksMinutes * 60_000;
       await persist();
       for (;;) {
-        await confirm();
-        const checks = await read("required_checks", target, () =>
-          codeHost.getRequiredChecks(repository, pullRequest.number),
-        );
+        const checks = await confirm();
         publication.checks = checks;
         if (
           checks.some(({ bucket }) => bucket === "fail" || bucket === "cancel")
@@ -337,6 +372,8 @@ export async function publishImplementation(input: {
           publication.phase = "checks_failed";
           await persist();
           await repair();
+          if (publication.ciRepair?.retryAuthorized)
+            publication.phase = "pr_created";
           break;
         }
         if (!checks.some(({ bucket }) => bucket === "pending")) {
@@ -404,66 +441,4 @@ function matchPublication<T extends PublicationPullRequest>(
       "Pull Request identity or head mismatch, or multiple matching Pull Requests",
     );
   return candidate;
-}
-
-export function verifiedPublication(progress: ImplementationProgress) {
-  const publication = progress.publication;
-  const result = verifiedImplementation(progress);
-  const head = result.commits.at(-1)?.sha;
-  if (
-    !publication ||
-    !nonempty(publication.repositoryId) ||
-    (publication.creationAttempted !== undefined &&
-      publication.creationAttempted !== true) ||
-    (!["pending_push", "pushed", "pending_pr"].includes(publication.phase) &&
-      !publication.pullRequest) ||
-    (publication.pullRequest !== undefined &&
-      (!nonempty(publication.pullRequest.id) ||
-        !Number.isSafeInteger(publication.pullRequest.number) ||
-        publication.pullRequest.number <= 0 ||
-        !nonempty(publication.pullRequest.url) ||
-        publication.pullRequest.url.toLowerCase() !==
-          `https://github.com/${progress.repository}/pull/${publication.pullRequest.number}`.toLowerCase() ||
-        publication.pullRequest.branch !== publication.branch ||
-        publication.pullRequest.targetBranch !== publication.targetBranch ||
-        !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(
-          publication.pullRequest.headSha,
-        ) ||
-        publication.pullRequest.draft !== false ||
-        !["open", "merged"].includes(publication.pullRequest.state) ||
-        !nonempty(publication.pullRequest.createdAt) ||
-        !Number.isFinite(Date.parse(publication.pullRequest.createdAt)))) ||
-    !head ||
-    publication.branch !== progress.branch ||
-    publication.targetBranch !== progress.target_branch ||
-    publication.headSha !== head ||
-    publication.title !== progress.pr_title ||
-    publication.body !== progress.pr_body ||
-    JSON.stringify(publication.commits) !== JSON.stringify(result.commits) ||
-    ![
-      "pending_push",
-      "pushed",
-      "pending_pr",
-      "pr_created",
-      "checks_ready",
-      "checks_failed",
-      "conflict_repair",
-      "pending_merge",
-      "merge_requested",
-      "merged",
-      "delivered",
-    ].includes(publication.phase)
-  )
-    throw new Error(
-      "Publication evidence does not match the verified execution",
-    );
-
-  return publication;
-}
-
-export function publishedHead(publication: PublicationProgress): string {
-  return (
-    pushedRepairs(publication).at(-1)?.result?.commits.at(-1)?.sha ??
-    publication.headSha
-  );
 }

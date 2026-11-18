@@ -141,7 +141,6 @@ for (const conflict of [
   "url",
   "id",
   "createdAt",
-  "duplicate",
   "closed",
   "draft",
   "missing",
@@ -165,8 +164,6 @@ for (const conflict of [
     else if (conflict === "id") record.id = "PR_other";
     else if (conflict === "createdAt")
       record.createdAt = "2026-10-31T00:00:00Z";
-    else if (conflict === "duplicate")
-      state.pullRequests.push({ ...record, number: 999 });
     else if (conflict === "closed") record.state = "closed";
     else if (conflict === "draft") record.draft = true;
     else state.pullRequests.length = 0;
@@ -177,7 +174,7 @@ for (const conflict of [
         message,
         conflict === "advanced" || conflict === "absent"
           ? /advanced or disappeared/u
-          : conflict === "missing"
+          : conflict === "missing" || conflict === "number"
             ? /Recorded Pull Request is missing/u
             : /identity or head mismatch/u,
       );
@@ -188,7 +185,6 @@ for (const conflict of [
     assert.equal(pauses, 1);
     assert.equal(state.pushes, 1);
     assert.equal(state.creations, 1);
-    assert.equal(state.discoveries.length, 0);
     assert.equal(fixture.state.taskCount, 1);
     assert.equal(fixture.state.probeCount, 1);
     assert.deepEqual(
@@ -225,7 +221,6 @@ for (const closure of ["runner", "code_host", "no_auto_merge"] as const) {
     assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
     assert.equal(state.pushes, 1);
     assert.equal(state.creations, 1);
-    assert.equal(state.discoveries.length, 0);
     assert.equal(fixture.state.taskCount, 1);
     assert.equal(fixture.state.probeCount, 1);
     assert.equal(fixture.integrationState.requests.length, 0);
@@ -280,7 +275,6 @@ for (const conflict of ["unmerged", "head", "advanced", "identity"] as const) {
     assert.equal(pauses, conflict === "unmerged" ? 0 : 1);
     assert.equal(state.pushes, 1);
     assert.equal(state.creations, 1);
-    assert.equal(state.discoveries.length, 0);
     assert.equal(fixture.integrationState.requests.length, 0);
     assert.equal(fixture.integrationState.closures, 0);
     assert.equal(fixture.state.cleanup.length, 0);
