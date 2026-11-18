@@ -85,6 +85,15 @@ export function startIssue(input: {
       return { ticket, reason: "Issue is already terminal" };
     const markerIneligibility = ({ labels, assignees }: ReservationMarkers) => {
       if (
+        runner &&
+        assignees.some(
+          ({ id, login }) =>
+            id === runner.id &&
+            login.toLowerCase() !== runner.login.toLowerCase(),
+        )
+      )
+        throw new Error("Conflicting login for the resolved Runner ID");
+      if (
         config.issueLabel &&
         !labels.some(({ name }) => name === config.issueLabel)
       )

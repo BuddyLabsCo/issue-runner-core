@@ -88,6 +88,37 @@ await test("a Reservation response with the wrong Runner ID prevents Worktree cr
   );
 });
 
+await test("a matching Runner ID with a conflicting login in the write response requires a fresh start read", async (t) => {
+  const fixture = await parentRun(t, [child(51)]);
+  const { tracker, gitWorkspace } = fixture.dependencies;
+  const read = tracker.readIssueStart.bind(tracker);
+  const reserve = tracker.reserveIssue.bind(tracker);
+  const create = gitWorkspace.createWorktree.bind(gitWorkspace);
+  let startReads = 0;
+  tracker.readIssueStart = (...args) => {
+    startReads += 1;
+    return read(...args);
+  };
+  tracker.reserveIssue = async (...args) => {
+    const confirmed = await reserve(...args);
+    return {
+      ...confirmed,
+      assignees: confirmed.assignees.map((runner) => ({
+        ...runner,
+        login: "another-login",
+      })),
+    };
+  };
+  gitWorkspace.createWorktree = (input) => {
+    assert.equal(startReads, 2);
+    return create(input);
+  };
+  const { summary } = await fixture.run(["--issue", "51"]);
+  assert.equal(summary.outcome, "incomplete", JSON.stringify(summary));
+  assert.deepEqual(fixture.writes, ["label:51", "assignee:51"]);
+  assert.deepEqual(fixture.dispatched, [51]);
+});
+
 await test("a differently capitalized Runner login needs only the label and can dispatch", async (t) => {
   const fixture = await parentRun(
     t,
