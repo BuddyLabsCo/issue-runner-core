@@ -44,7 +44,7 @@ export function createCliDependencies(launchDirectory: string) {
   };
   return {
     launchDirectory,
-    env: { TRACKER_TOKEN: "tracker-secret", HOST_TOKEN: "host-secret" },
+    env: { HOST_TOKEN: "host-secret" },
     messages,
     effects,
     reads,

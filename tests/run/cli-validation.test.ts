@@ -12,10 +12,23 @@ import { createCliDependencies } from "../support/cli-dependencies.ts";
 
 const run = ["run", "--project", "demo", "--parent", "48"];
 
+await test("the CLI needs only the credential named by codeHost.tokenEnv", async (t) => {
+  const { root } = await createProject(t);
+  const dependencies = createCliDependencies(root);
+  const result = await executeCli(run, {
+    ...dependencies,
+    env: { HOST_TOKEN: "host-secret" },
+  });
+  assert.equal(result.summary.outcome, "no_work", result.summary.failure);
+
+  const missing = await executeCli(run, { ...dependencies, env: {} });
+  assert.equal(missing.summary.failure, "missing credential HOST_TOKEN");
+  assert.equal(missing.logPath, null);
+});
+
 await test("omitted terminalPlugins supplies Core defaults", async (t) => {
   const { root } = await createProject(t);
   const loaded = await loadProject(root, "demo", {
-    TRACKER_TOKEN: "tracker",
     HOST_TOKEN: "host",
   });
   assert.deepEqual(loaded.config.terminalPlugins, {
@@ -70,7 +83,6 @@ await test("terminalPlugins preserves plugin-owned nested values without install
 `,
   );
   const loaded = await loadProject(root, "demo", {
-    TRACKER_TOKEN: "tracker",
     HOST_TOKEN: "host",
   });
   assert.deepEqual(loaded.config.terminalPlugins, {
@@ -202,7 +214,7 @@ await test("invalid configuration fails before any external reads or delivery re
     ],
     [
       { tracker: { ...validConfig.tracker, tokenEnv: "MISSING" } },
-      /missing credential MISSING/,
+      /tracker contains unknown field tokenEnv/,
     ],
     [
       { tracker: { ...validConfig.tracker, extra: true } },
@@ -483,7 +495,6 @@ for (const ticketClosure of ["runner", "code_host"] as const) {
     const file = path.join(directory, "config.yaml");
     const bytes = await readFile(file);
     const loaded = await loadProject(root, "demo", {
-      TRACKER_TOKEN: "tracker",
       HOST_TOKEN: "host",
     });
     assert.equal("ticketClosure" in loaded.config, false);

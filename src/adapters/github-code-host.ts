@@ -22,21 +22,17 @@ export class GitHubCodeHost implements CodeHost {
     pullRequest: number,
   ): Promise<PullRequestState> {
     const [owner, name] = repository.split("/");
-    const response = JSON.parse(
-      await this.client.request([
-        "api",
-        "graphql",
-        "-f",
-        "query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid createdAt state mergedAt mergeable autoMergeRequest{enabledAt} mergeQueueEntry{id}}}}",
-        "-f",
-        `owner=${owner}`,
-        "-f",
-        `name=${name}`,
-        "-F",
-        `number=${pullRequest}`,
-      ]),
-    ) as { data?: { repository?: { pullRequest?: Record<string, unknown> } } };
-    return parsePullRequestState(response, pullRequest);
+    const result = await this.client.graphql(
+      "query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid createdAt state mergedAt mergeable autoMergeRequest{enabledAt} mergeQueueEntry{id}}}}",
+      { owner, name, number: pullRequest },
+    );
+    if (result.commandError || result.response.errors?.length)
+      throw new Error(
+        result.commandError?.message ??
+          "GitHub returned GraphQL errors for Pull Request state",
+        { cause: result },
+      );
+    return parsePullRequestState(result.response, pullRequest);
   }
 
   async requestSquashMerge(
@@ -257,7 +253,7 @@ function parsePullRequest(value: unknown): {
 
 function parsePullRequestState(
   response: {
-    data?: { repository?: { pullRequest?: Record<string, unknown> } };
+    data?: { repository?: { pullRequest?: Record<string, unknown> } } | null;
   },
   pullRequest: number,
 ): PullRequestState {

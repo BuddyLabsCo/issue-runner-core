@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import assert from "node:assert/strict";
 import test from "node:test";
+import { inspect } from "node:util";
 import { GitHubCodeHost } from "../../src/adapters/github-code-host.ts";
 import { GitHubTracker } from "../../src/adapters/github-tracker.ts";
 import { integrationRun } from "../support/integration-run.ts";
@@ -28,11 +29,18 @@ await test("GitHub integration uses squash, observed HEAD, admin policy, queue o
       queued = true;
       return "";
     }
-    assert.equal(args[0], "api");
-    assert.equal(args[1], "graphql");
-    assert.ok(args.includes("number=81"));
-    assert.ok(args.includes("owner=owner"));
-    assert.ok(args.includes("name=repo"));
+    assert.deepEqual(args, [
+      "api",
+      "graphql",
+      "--method",
+      "POST",
+      "--input",
+      "-",
+    ]);
+    assert.ok(options.input);
+    assert.partialDeepStrictEqual(JSON.parse(options.input), {
+      variables: { owner: "owner", name: "repo", number: 81 },
+    });
     return JSON.stringify({
       data: {
         repository: {
@@ -49,8 +57,8 @@ await test("GitHub integration uses squash, observed HEAD, admin policy, queue o
       },
     });
   });
-  const tracker = new GitHubTracker("tracker-secret", async (args, options) => {
-    assert.equal(options.token, "tracker-secret");
+  const tracker = new GitHubTracker("host-secret", async (args, options) => {
+    assert.equal(options.token, "host-secret");
     assert.equal(merged, true);
     assert.deepEqual(args, [
       "issue",
@@ -106,6 +114,55 @@ for (const [message, outcome] of [
     assert.equal(result.error, cause);
   });
 }
+
+await test("GraphQL field errors prevent a Pull Request observation from confirming delivery", async () => {
+  const credential = "fixture-credential";
+  const path = ["repository", "pullRequest", "state"];
+  const errors = [
+    {
+      message: "state denied",
+      path,
+      extensions: { metadata: { [credential]: credential } },
+    },
+  ];
+  const host = new GitHubCodeHost(credential, async () =>
+    JSON.stringify({
+      data: {
+        repository: {
+          pullRequest: {
+            headRefOid: implementationCommit.sha,
+            createdAt: "2026-10-30T00:00:00Z",
+            state: "MERGED",
+            mergedAt: "2026-10-31T00:00:00Z",
+            mergeable: "MERGEABLE",
+            autoMergeRequest: null,
+            mergeQueueEntry: null,
+          },
+        },
+      },
+      errors,
+    }),
+  );
+  await assert.rejects(
+    host.getPullRequest("owner/repo", 81),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(
+        error.message,
+        "GitHub returned GraphQL errors for Pull Request state",
+      );
+      const cause: unknown = error.cause;
+      assert.ok(
+        !inspect(cause, { depth: null, showHidden: true }).includes(credential),
+      );
+      assert.partialDeepStrictEqual(cause, {
+        response: { errors: [{ path }] },
+        commandError: null,
+      });
+      return true;
+    },
+  );
+});
 
 await test("an invalid GitHub merge observation cannot close the Issue or earn delivery credit", async (t) => {
   const fixture = await integrationRun(t);

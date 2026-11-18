@@ -274,10 +274,7 @@ for (const effect of [
     assert.equal(fixture.state.taskCount, 1);
     assert.equal(fixture.state.closedTabs.length, 1);
     const audit = await readFile(result.logPath!, "utf8");
-    assert.doesNotMatch(
-      audit,
-      /tracker-secret|host-secret|Implementation assignment/,
-    );
+    assert.doesNotMatch(audit, /host-secret|Implementation assignment/);
   });
 }
 

@@ -65,10 +65,39 @@ Prepare these on the machine and in the shell that runs the terminal command:
 
 - Node.js 22.18.0 or later and npm 11 or later, including subsequent major versions
 - Git with Worktree support, configured author identity, and access to push to the repository
-- GitHub CLI (`gh`) on `PATH`, with credentials that can read/write Issues, pull requests, and repository contents and observe required checks
-- An absolute-path repository checkout with working Git/GitHub credentials
+- GitHub CLI (`gh`) on `PATH`
+- An absolute-path repository checkout with a GitHub HTTPS remote for Git operations
 - An installed, authenticated Agent CLI for every configured role, with its own skills, native permissions, and required tools
 - A supported terminal multiplexer plugin, e.g. [issue-runner-herdr](https://github.com/BuddyLabsCo/issue-runner-herdr) which use herdr as issue-runner-core environment
+
+### GitHub credential
+
+Set the environment variable named by `codeHost.tokenEnv` in `config.yaml`.
+The template uses `GH_TOKEN`. Keep the credential value in the environment.
+Runner uses it for GitHub API calls and Git operations. In existing configurations, remove
+`tracker.tokenEnv` and keep `tracker.runnerAccount` and `tracker.reservationLabel`.
+Editing `config.yaml` changes the input hash Runner uses to resume a Run.
+
+Use a GitHub App installation access token scoped to the configured repository.
+The token expires one hour after GitHub issues it. [GitHub installation token lifetime](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app#generating-an-installation-access-token)
+
+Runner reads the token at startup and reuses it for retries. If the token expires
+during a Run, set a fresh token in the environment and restart Runner with the
+same command, arguments, and `config.yaml`.
+
+Grant the app read access to repository metadata and the permissions below.
+
+- **Issues** read/write to read Issues and manage assignments, labels, comments, and closure.
+- **Pull requests** read/write to read and publish PRs.
+- **Checks** and **Commit statuses** read to observe required checks.
+- **Contents** read/write to read refs, fetch and push through Git, and merge PRs.
+
+GitHub lists Checks API access among the limitations of fine-grained personal
+access tokens. [GitHub token limitations](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#fine-grained-personal-access-tokens-limitations)
+
+GitHub enforces repository rules and merge permissions for the identity behind the
+credential. With `codeHost.adminMerge: true`, that identity still needs permission
+to bypass the applicable rules.
 
 ### macOS and Linux
 
