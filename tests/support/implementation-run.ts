@@ -161,6 +161,11 @@ export async function implementationRun(
       async getTicket() {
         return structuredClone(state.ticket);
       },
+      async readIssueDelivery() {
+        const { number, state: issueState, stateReason, labels } = state.ticket;
+        assert.ok(labels);
+        return { number, state: issueState, stateReason, labels: [...labels] };
+      },
       async listBlockersPage() {
         return { blockers: [] as Ticket[], nextPage: null as number | null };
       },

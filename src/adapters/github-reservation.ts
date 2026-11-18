@@ -1,12 +1,8 @@
 import { object } from "../agent/handoff.ts";
 import type { ReservationAdditions } from "../run/contracts.ts";
 import type { GitHubClient } from "./github-client.ts";
-import {
-  issueFields,
-  markerFields,
-  parseIssueFact,
-  readIssueMarkers,
-} from "./github-issue-facts.ts";
+import { markerFields, readIssueMarkers } from "./github-issue-facts.ts";
+import { issueFields, parseIssueFact } from "./github-issue-identity.ts";
 
 export async function reserveIssue(
   client: GitHubClient,

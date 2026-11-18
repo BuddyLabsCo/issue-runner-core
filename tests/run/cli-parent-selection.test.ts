@@ -138,6 +138,15 @@ await test("parent reads every child and blocker page before selecting across la
   });
   const childPages: number[] = [];
   const blockerPages: string[] = [];
+  const { tracker } = fixture.dependencies;
+  const reserveIssue = tracker.reserveIssue.bind(tracker);
+  tracker.reserveIssue = async (...args) => {
+    assert.ok(
+      blockerPages.includes("60:2"),
+      "complete discovery precedes Reservations",
+    );
+    return reserveIssue(...args);
+  };
   fixture.dependencies.tracker.listChildrenPage = async (
     _repo,
     _parent,
@@ -157,11 +166,6 @@ await test("parent reads every child and blocker page before selecting across la
     page,
   ) => {
     blockerPages.push(`${number}:${page}`);
-    assert.equal(
-      fixture.writes.length,
-      0,
-      "complete discovery precedes Reservations",
-    );
     if (number === 51)
       return {
         blockers: [
@@ -185,14 +189,6 @@ await test("parent reads every child and blocker page before selecting across la
         nextPage: page === 1 ? 2 : null,
       };
     return { blockers: [], nextPage: null };
-  };
-  // Revalidation reads may happen after Reservation writes.
-  const discoveryBlockers = fixture.dependencies.tracker.listBlockersPage.bind(
-    fixture.dependencies.tracker,
-  );
-  fixture.dependencies.tracker.listBlockersPage = async (...args) => {
-    if (fixture.writes.length) return { blockers: [], nextPage: null };
-    return discoveryBlockers(...args);
   };
   await fixture.run();
   assert.deepEqual(

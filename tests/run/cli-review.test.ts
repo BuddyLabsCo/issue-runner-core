@@ -89,6 +89,13 @@ await test("verified implementation starts an independent Standards/Spec Review 
 
 await test("with no default cap, every findings round receives a fix and later Reviews resume the original reviewer from the previous reviewed HEAD", async (t) => {
   const fixture = await reviewRun(t);
+  const { tracker } = fixture.dependencies;
+  let eligibilityReads = 0;
+  const listBlockers = tracker.listBlockersPage.bind(tracker);
+  tracker.listBlockersPage = async () => {
+    eligibilityReads++;
+    return listBlockers();
+  };
   const labels: string[] = [];
   const createTab = fixture.dependencies.terminalPlugin.createTab.bind(
     fixture.dependencies.terminalPlugin,
@@ -163,6 +170,7 @@ await test("with no default cap, every findings round receives a fix and later R
   assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
   assert.equal(fixture.reviewState.reviews.length, 4);
   assert.equal(fixture.reviewState.fixes.length, 3);
+  assert.equal(eligibilityReads, 1, "only Issue start reads blockers");
   assert.deepEqual(labels, [
     "issue-50 implement",
     "issue-50 review r1",

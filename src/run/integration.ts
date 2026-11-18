@@ -22,10 +22,11 @@ export async function integrateImplementation(input: {
   tracker: Tracker;
   read: ReadOperation;
   persist: () => Promise<void>;
-  beforeDispatch: () => Promise<boolean>;
+  beforeDispatch?: () => Promise<boolean>;
   deferred: boolean;
+  resuming: boolean;
+  issueClosureReason: Ticket["stateReason"];
   continuePublication: (observedConflict?: boolean) => Promise<string>;
-  inspectTicket: () => Promise<{ ticket: Ticket; reason?: string }>;
 }): Promise<{ outcome: "succeeded" | "incomplete"; reason: string }> {
   const { progress, loaded, context, codeHost, tracker, read, persist } = input;
   const publication = verifiedPublication(progress);
@@ -82,7 +83,15 @@ export async function integrateImplementation(input: {
     await context.clock.sleep(ms);
     context.signal?.throwIfAborted();
   };
+  if (
+    input.resuming &&
+    (publication.phase === "merged" || publication.phase === "delivered") &&
+    !(await observe()).merged
+  )
+    throw new OperationStopped("Recorded merge could not be confirmed");
   if (publication.phase === "conflict_repair") {
+    if (input.issueClosureReason === "not_planned")
+      throw new OperationStopped("Issue is cancelled");
     await input.continuePublication();
     head = publishedHead(publication);
   }
@@ -101,7 +110,9 @@ export async function integrateImplementation(input: {
         await persist();
         break;
       }
-      if (!(await input.beforeDispatch()))
+      if (input.issueClosureReason !== null)
+        throw new OperationStopped("Issue is already terminal");
+      if (input.beforeDispatch && !(await input.beforeDispatch()))
         throw new OperationStopped(
           "Issue eligibility changed before integration",
         );
@@ -175,7 +186,7 @@ export async function integrateImplementation(input: {
             firstObservation = undefined;
             if (state.merged || state.mergeRequested)
               return { outcome: "accepted" as const };
-            if (!(await input.beforeDispatch()))
+            if (input.beforeDispatch && !(await input.beforeDispatch()))
               throw new OperationStopped(
                 "Issue eligibility changed before merge request",
               );
@@ -224,7 +235,7 @@ export async function integrateImplementation(input: {
       for (;;) {
         state = await observe();
         if (state.merged) break;
-        if (!(await input.beforeDispatch()))
+        if (input.beforeDispatch && !(await input.beforeDispatch()))
           throw new OperationStopped(
             "Issue eligibility changed while awaiting integration",
           );
@@ -251,6 +262,23 @@ export async function integrateImplementation(input: {
   }
   if (!publication.merge?.merged || publication.merge.headSha !== head)
     throw new Error("Delivery requires persisted merge confirmation");
+  const completion = async () => {
+    const current = await read("confirm_issue_delivery", target, async () => {
+      const observed = await tracker.readIssueDelivery(
+        repository,
+        ticket,
+        context.signal,
+      );
+      if (observed.number !== ticket || !Array.isArray(observed.labels))
+        throw new Error("Delivery requires the observed Issue and its labels");
+      return observed;
+    });
+    if (current.state === "closed" && current.stateReason !== "completed")
+      throw new OperationStopped(
+        "Issue was cancelled after merge; no delivery credit",
+      );
+    return current;
+  };
   if (publication.phase === "delivered") {
     if (
       publication.closure?.state !== "closed" ||
@@ -260,8 +288,7 @@ export async function integrateImplementation(input: {
       throw new Error(
         "Delivery requires persisted completed tracker state and labels",
       );
-    const current = (await input.inspectTicket()).ticket;
-    if (current.state !== "closed" || current.stateReason !== "completed")
+    if ((await completion()).state !== "closed")
       throw new OperationStopped(
         "Previously delivered Issue is no longer closed/completed; retained delivery evidence",
       );
@@ -270,60 +297,42 @@ export async function integrateImplementation(input: {
       reason: `Issue #${ticket} delivered by confirmed squash integration ${pullRequest.url} and closed/completed tracker state`,
     };
   }
-  const completion = async () => {
-    const selected = await input.inspectTicket();
-    if (selected.ticket.state === "closed") {
-      if (selected.ticket.stateReason !== "completed")
-        throw new OperationStopped(
-          "Issue was cancelled after merge; no delivery credit",
-        );
-      return selected.ticket;
-    }
-    if (selected.reason || !(await input.beforeDispatch()))
-      throw new OperationStopped(
-        selected.reason ?? "Reservation changed after merge",
-      );
-    return selected.ticket;
-  };
-  for (;;) {
-    let current = await completion();
-    if (current.state !== "closed") {
-      await read(
-        "close_ticket",
-        target,
-        async () => {
-          if ((await completion()).state === "closed") return;
-          await tracker.closeTicket(repository, ticket);
-          if ((await completion()).state !== "closed")
-            throw new Error("Issue closure has not been confirmed");
+  let current = await completion();
+  if (current.state === "open") {
+    let beforeClose: typeof current | undefined = current;
+    current = await read(
+      "close_ticket",
+      target,
+      async () => {
+        const observed = beforeClose ?? (await completion());
+        beforeClose = undefined;
+        if (observed.state === "closed") return observed;
+        if (input.beforeDispatch && !(await input.beforeDispatch()))
+          throw new OperationStopped("Maintenance Ticket changed after merge");
+        await tracker.closeTicket(repository, ticket);
+        const closed = await completion();
+        if (closed.state !== "closed")
+          throw new Error("Issue closure has not been confirmed");
+        return closed;
+      },
+      {
+        reconcile: async () => {
+          const observed = await completion();
+          return observed.state === "closed"
+            ? { outcome: "completed", result: observed }
+            : { outcome: "pending" };
         },
-        {
-          reconcile: async () =>
-            (await completion()).state === "closed"
-              ? { outcome: "completed", result: undefined }
-              : { outcome: "pending" },
-        },
-      );
-      current = await completion();
-    }
-    if (current.state === "closed") {
-      publication.closure = { state: "closed", stateReason: "completed" };
-      if (!Array.isArray(current.labels))
-        throw new Error("Delivery requires observed Issue labels");
-      publication.deliveryLabels = [...current.labels];
-      publication.phase = "delivered";
-      await persist();
-      return {
-        outcome: "succeeded",
-        reason: `Issue #${ticket} delivered by confirmed squash integration ${pullRequest.url} and closed/completed tracker state`,
-      };
-    }
-    await pauseForOperator(
-      context.operator,
-      `Merged Issue ${ticket} is not closed as completed.`,
-      context.signal,
+      },
     );
   }
+  publication.closure = { state: "closed", stateReason: "completed" };
+  publication.deliveryLabels = [...current.labels];
+  publication.phase = "delivered";
+  await persist();
+  return {
+    outcome: "succeeded",
+    reason: `Issue #${ticket} delivered by confirmed squash integration ${pullRequest.url} and closed/completed tracker state`,
+  };
 }
 
 export async function integrateBatch(input: {
@@ -378,7 +387,7 @@ export async function closeDocumentationNoChange(input: {
   progress: ImplementationProgress;
   persist: () => Promise<void>;
   verify: () => Promise<void>;
-  beforeDispatch: () => Promise<boolean>;
+  checkDeliveryEligibility: () => Promise<boolean>;
   inspectTicket: () => Promise<{ ticket: Ticket; reason?: string }>;
   tracker: Tracker;
   read: ReadOperation;
@@ -398,7 +407,7 @@ export async function closeDocumentationNoChange(input: {
     async () => {
       let selected = await inspectTicket();
       if (selected.ticket.state !== "closed") {
-        if (selected.reason || !(await input.beforeDispatch()))
+        if (selected.reason || !(await input.checkDeliveryEligibility()))
           throw new OperationStopped(
             selected.reason ?? "Maintenance Ticket changed",
           );

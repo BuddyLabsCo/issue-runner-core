@@ -26,6 +26,7 @@ export async function completeNoChange(
     git: GitWorkspace;
     tracker: Tracker;
     read: ReadOperation;
+    checkDeliveryEligibility: () => Promise<boolean>;
     inspectTicket: () => Promise<{ ticket: Ticket; reason?: string }>;
     summary: RunSummary;
     report: TicketReport;
@@ -181,6 +182,7 @@ async function deliverNoChange(
   input: IssueStageContext & {
     tracker: Tracker;
     read: ReadOperation;
+    checkDeliveryEligibility: () => Promise<boolean>;
     inspectTicket: () => Promise<{ ticket: Ticket; reason?: string }>;
   },
 ): Promise<string[]> {
@@ -206,7 +208,7 @@ async function deliverNoChange(
       "publish_no_change_comment",
       `ticket:${progress.ticket}`,
       async () => {
-        if (!(await input.beforeDispatch()))
+        if (!(await input.checkDeliveryEligibility()))
           throw new OperationStopped(
             "Issue eligibility changed before no-change comment",
           );
@@ -230,7 +232,7 @@ async function deliverNoChange(
     } else if (
       delivery.phase === "delivered" ||
       selected.reason ||
-      !(await input.beforeDispatch())
+      !(await input.checkDeliveryEligibility())
     ) {
       throw new OperationStopped(
         selected.reason ?? "Completed Issue reopened or Reservation changed",

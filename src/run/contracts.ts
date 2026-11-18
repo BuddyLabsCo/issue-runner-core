@@ -93,6 +93,13 @@ export interface Tracker {
     body: string,
   ): Promise<void>;
   getTicket(repository: string, ticket: number): Promise<Ticket>;
+  readIssueDelivery(
+    repository: string,
+    ticket: number,
+    signal?: AbortSignal,
+  ): Promise<
+    Pick<Ticket, "number" | "state" | "stateReason"> & { labels: string[] }
+  >;
   listBlockersPage(
     repository: string,
     ticket: number,

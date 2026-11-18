@@ -247,6 +247,9 @@ export function createCliDependencies(launchDirectory: string) {
       async getTicket(_repository: string, ticket: number) {
         return { number: ticket, state: "open" as const, stateReason: null };
       },
+      async readIssueDelivery(): ReturnType<Tracker["readIssueDelivery"]> {
+        assert.fail("unexpected Issue delivery observation");
+      },
       async listBlockersPage() {
         return { blockers: [], nextPage: null };
       },
