@@ -79,8 +79,16 @@ export interface NoChangeProgress {
   };
 }
 
+export interface ReservationIdentity {
+  issueId: string;
+  repositoryId: string;
+  labelId: string;
+  runnerId: string;
+}
+
 export interface ImplementationProgress extends StageProgress<PRExecutionResult> {
   operations?: Record<string, OperationProgress>;
+  reservation?: ReservationIdentity;
   purpose?: "documentation";
   noChangeClosure?: "pending" | "completed";
   noChange?: NoChangeProgress;

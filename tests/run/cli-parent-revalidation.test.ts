@@ -136,51 +136,44 @@ await test("parent cancellation during native startup prevents implementation di
   assert.deepEqual(fixture.dispatched, []);
 });
 
-for (const operation of ["addLabel", "addAssignee"] as const) {
-  for (const change of ["cancelled", "ownership"] as const) {
-    await test(`${operation} retry stops when eligibility becomes ${change} during backoff`, async (t) => {
-      const ticket = child(51);
-      const fixture = await parentDeliveryRun(t, [ticket]);
-      let changed = false;
-      let attempts = 0;
-      fixture.dependencies.tracker.getParent = async () => ({
-        number: 48,
-        state:
-          changed && change === "cancelled" ? "closed" : fixture.parent.state,
-        stateReason:
-          changed && change === "cancelled"
-            ? "not_planned"
-            : fixture.parent.stateReason,
-      });
-      const write = fixture.dependencies.tracker[operation].bind(
-        fixture.dependencies.tracker,
-      );
-      fixture.dependencies.tracker[operation] = async (...args) => {
-        attempts += 1;
-        if (attempts === 1) throw new Error("request failed before writing");
-        await write(...args);
-      };
-      fixture.dependencies.clock.sleep = async (ms) => {
-        assert.equal(ms, 1000);
-        changed = true;
-        if (change === "ownership") {
-          if (operation === "addLabel") ticket.assignees = ["developer"];
-          else ticket.labels = ["ready-for-agent"];
-        }
-      };
-      const result = await fixture.run();
-      assert.equal(
-        result.summary.outcome,
-        change === "cancelled" ? "cancelled" : "incomplete",
-      );
-      assert.equal(attempts, 1);
-      assert.deepEqual(fixture.dispatched, []);
-      assert.deepEqual(
-        fixture.writes,
-        operation === "addLabel" ? [] : ["label:51"],
-      );
-    });
-  }
+for (const change of ["cancelled", "external", "left_scope"] as const) {
+  await test(`a start retry stops when the Parent or Issue becomes ${change} during backoff`, async (t) => {
+    const ticket = child(51);
+    const fixture = await parentDeliveryRun(t, [ticket]);
+    const { tracker, clock } = fixture.dependencies;
+    let attempts = 0;
+    tracker.reserveIssue = async () => {
+      attempts += 1;
+      throw new Error("request failed before writing");
+    };
+    const list = tracker.listChildrenPage.bind(tracker);
+    clock.sleep = async (ms) => {
+      assert.equal(ms, 1000);
+      if (change === "cancelled") {
+        fixture.parent.state = "closed";
+        fixture.parent.stateReason = "not_planned";
+      } else if (change === "external") {
+        ticket.assignees = ["developer"];
+      } else {
+        tracker.listChildrenPage = async (...args) => ({
+          ...(await list(...args)),
+          children: [],
+        });
+      }
+    };
+    const result = await fixture.run();
+    assert.equal(
+      result.summary.outcome,
+      change === "cancelled"
+        ? "cancelled"
+        : change === "left_scope"
+          ? "succeeded"
+          : "incomplete",
+    );
+    assert.equal(attempts, 1);
+    assert.deepEqual(fixture.dispatched, []);
+    assert.deepEqual(fixture.writes, []);
+  });
 }
 
 await test("parent cancellation after invalid publication prevents the follow-up prompt", async (t) => {

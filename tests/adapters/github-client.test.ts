@@ -12,6 +12,11 @@ import { executeCli } from "../../src/cli.ts";
 import { GitHubClient } from "../../src/adapters/github-client.ts";
 import { createCliDependencies } from "../support/cli-dependencies.ts";
 import { createProject, validConfig } from "../support/cli-project.ts";
+import {
+  child,
+  connection,
+  repository,
+} from "../support/github-parent-discovery.ts";
 
 const executableTest = process.platform === "win32" ? test.skip : test;
 
@@ -159,34 +164,58 @@ await executableTest(
       ...validConfig,
       operationRetry: 0,
     });
+    const label = {
+      id: "reservation-id",
+      name: validConfig.tracker.reservationLabel,
+    };
+    const runner = {
+      id: "runner-id",
+      login: validConfig.tracker.runnerAccount,
+    };
+    const ready = { id: "ready-id", name: "ready-for-agent" };
+    const target = child(48, {
+      title: "Verify credential",
+      body: "",
+      url: "https://github.com/owner/repo/issues/48",
+      labels: connection([ready]),
+    });
+    const start = {
+      data: { repository: { ...repository, label, target }, user: runner },
+    };
+    const confirmed = {
+      data: {
+        addReservation: { labelable: target },
+        addRunner: {
+          assignable: {
+            ...target,
+            labels: connection([ready, label]),
+            assignees: connection([runner]),
+          },
+        },
+      },
+    };
     await writeFile(
       path.join(bin, "gh"),
       "#!/usr/bin/env node\n" +
         [
           'const assert = require("node:assert/strict");',
           'const fs = require("node:fs");',
-          'const path = require("node:path");',
           'assert.equal(process.env.GH_TOKEN, "shared-secret");',
-          "const [, , command, methodFlag, method, endpoint] = process.argv;",
-          'assert.equal(command, "api");',
-          'assert.equal(methodFlag, "--method");',
-          'const reserved = path.join(__dirname, "reserved");',
-          'const assigned = path.join(__dirname, "assigned");',
-          'if (endpoint === "repos/owner/repo" && method === "GET") {',
+          "const args = process.argv.slice(2);",
+          'if (args[3] === "repos/owner/repo") {',
+          '  assert.deepEqual(args, ["api", "--method", "GET", "repos/owner/repo"]);',
           '  console.log(JSON.stringify({ default_branch: "fixture-base" }));',
-          '} else if (endpoint === "repos/owner/repo/issues/48" && method === "GET") {',
-          '  const labels = [{ name: "ready-for-agent" }];',
-          '  if (fs.existsSync(reserved)) labels.push({ name: "sandcastle:reserved" });',
-          '  const assignees = fs.existsSync(assigned) ? [{ login: "runner" }] : [];',
-          '  console.log(JSON.stringify({ number: 48, state: "open", labels, assignees }));',
-          '} else if (endpoint.endsWith("/blocked_by") && method === "GET") {',
-          '  console.log("[]");',
-          '} else if (endpoint.endsWith("/labels") && method === "POST") {',
-          '  fs.writeFileSync(reserved, "");',
           "} else {",
-          '  assert.equal(endpoint, "repos/owner/repo/issues/48/assignees");',
-          '  assert.equal(method, "POST");',
-          '  fs.writeFileSync(assigned, "");',
+          '  assert.deepEqual(args, ["api", "graphql", "--method", "POST", "--input", "-"]);',
+          '  const { query, variables } = JSON.parse(fs.readFileSync(0, "utf8"));',
+          '  if (query.startsWith("query IssueStart")) {',
+          `    assert.deepEqual(variables, { owner: "owner", name: "repo", number: 48, reservation: ${JSON.stringify(label.name)}, runner: ${JSON.stringify(runner.login)} });`,
+          `    console.log(JSON.stringify(${JSON.stringify(start)}));`,
+          "  } else {",
+          '    assert.ok(query.startsWith("mutation ReserveIssue"));',
+          `    assert.deepEqual(variables, { issue: "issue-48", label: ${JSON.stringify(label.id)}, runner: ${JSON.stringify(runner.id)} });`,
+          `    console.log(JSON.stringify(${JSON.stringify(confirmed)}));`,
+          "  }",
           "}",
         ].join("\n"),
       { mode: 0o700 },

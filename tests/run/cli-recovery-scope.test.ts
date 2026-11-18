@@ -58,6 +58,7 @@ await test("an execution checkpoint from another input scope cannot resume or ov
     { run_arguments: ["run", "--project", "demo", "--document"] },
     { project: "another-project" },
     { purpose: "documentation" },
+    { reservation: null },
   ]) {
     const text = JSON.stringify({ ...saved, ...patch });
     await writeFile(file, text);
@@ -75,6 +76,31 @@ await test("an execution checkpoint from another input scope cannot resume or ov
     assert.equal(fixture.state.submissions.length, submissions);
     assert.deepEqual(fixture.state.cleanup, []);
   }
+});
+
+await test("an open Issue with replacement Reservation IDs cannot continue a saved execution", async (t) => {
+  const fixture = await implementationRun(t);
+  assert.equal((await fixture.run()).summary.outcome, "incomplete");
+  const { tracker } = fixture.dependencies;
+  const read = tracker.readIssueStart.bind(tracker);
+  tracker.readIssueStart = async (...args) => {
+    const facts = await read(...args);
+    const replacement = { ...facts.reservation!, id: "replacement-label" };
+    facts.issue.labels = facts.issue.labels.map((label) =>
+      label.name === replacement.name ? replacement : label,
+    );
+    return { ...facts, reservation: replacement };
+  };
+  tracker.reserveIssue = async () =>
+    assert.fail("unexpected Reservation write");
+  const result = await fixture.run();
+  assert.equal(result.summary.outcome, "incomplete");
+  assert.match(
+    result.summary.tickets![0]!.detail,
+    /Recorded Reservation changed/u,
+  );
+  assert.equal(fixture.state.taskCount, 1);
+  assert.deepEqual(fixture.dependencies.pauses, []);
 });
 
 for (const change of [

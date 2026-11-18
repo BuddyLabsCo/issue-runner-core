@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { readFile, readdir } from "node:fs/promises";
-import path from "node:path";
 import test from "node:test";
-import type { AuditEvent } from "../../src/audit.ts";
 import { validConfig } from "../support/cli-project.ts";
 import {
   deferred,
@@ -27,16 +24,15 @@ await test(
     const firstAnswer = deferred<string>();
     const secondAnswer = deferred<string>();
     const siblingMutation = deferred<void>();
-    const getTicket = fixture.dependencies.tracker.getTicket.bind(
-      fixture.dependencies.tracker,
-    );
-    let siblingReads = 0;
-    fixture.dependencies.tracker.getTicket = async (repository, number) => {
-      if (number === 52 && ++siblingReads === 3) {
+    const tracker = fixture.dependencies.tracker;
+    const read = tracker.readIssueStart.bind(tracker);
+    tracker.readIssueStart = async (...args) => {
+      const result = await read(...args);
+      if (args[1] === 52) {
         siblingHeld.resolve();
         await releaseSibling.promise;
       }
-      return getTicket(repository, number);
+      return result;
     };
     fixture.dependencies.gitWorkspace.fetchTargetBranch = async () => {
       await siblingHeld.promise;
@@ -69,32 +65,6 @@ await test(
     try {
       await firstPause.promise;
       releaseSibling.resolve();
-      const [name] = await readdir(path.join(fixture.directory, "logs"));
-      assert.ok(name);
-      const until = Date.now() + 3_000;
-      for (;;) {
-        const events = (
-          await readFile(path.join(fixture.directory, "logs", name), "utf8")
-        )
-          .split("\n")
-          .slice(0, -1)
-          .map((line) => JSON.parse(line) as AuditEvent)
-          .filter(
-            (event) =>
-              event.operation === "read_blockers" &&
-              event.target === "ticket:52:page:1",
-          );
-        if (
-          events.filter((event) => event.result === "started").length >
-          events.filter((event) => event.result === "succeeded").length
-        )
-          break;
-        assert.ok(
-          Date.now() < until,
-          "sibling blocker observation must reach the paused gate",
-        );
-        await new Promise<void>((resolve) => setImmediate(resolve));
-      }
       firstAnswer.resolve("s");
       await secondPause.promise;
       await Promise.race([

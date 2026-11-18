@@ -1,0 +1,146 @@
+import { isDeepStrictEqual } from "node:util";
+import type { LoadedProject } from "../config.ts";
+import type { ReservationIdentity } from "../recovery.ts";
+import type { Ticket, Tracker } from "./contracts.ts";
+import { validateChildRepositories, type ReadOperation } from "./discovery.ts";
+import { OperatorCancelled, OperationStopped } from "./operations.ts";
+
+export function startIssue(input: {
+  number: number;
+  parentTicket?: number;
+  config: LoadedProject["config"];
+  tracker: Tracker;
+  read: ReadOperation;
+  advance?: <T>(action: () => Promise<T>) => Promise<T>;
+  recorded?: ReservationIdentity;
+  restarting: boolean;
+  signal?: AbortSignal;
+}): Promise<{
+  ticket: Ticket;
+  reason?: string;
+  reservation?: ReservationIdentity;
+}> {
+  const { number, parentTicket, config, tracker, read, recorded, signal } =
+    input;
+  const { repository } = config;
+  const { reservationLabel, runnerAccount } = config.tracker;
+  let attempted:
+    { identity: ReservationIdentity; canAddRunner: boolean } | undefined;
+  return read("start_issue", `ticket:${number}`, async () => {
+    const { issue, scope, reservation, runner } = await tracker.readIssueStart(
+      repository,
+      number,
+      config.tracker,
+      parentTicket,
+      signal,
+    );
+    const { labels, assignees, blockers, ...snapshot } = issue;
+    const ticket: Ticket = {
+      ...snapshot,
+      labels: labels.map(({ name }) => name),
+      assignees: assignees.map(({ login }) => login),
+    };
+    if (issue.number !== number || issue.repository !== repository)
+      throw new Error("Unexpected Issue ownership");
+    if (parentTicket !== undefined) {
+      if (
+        scope?.parent.number !== parentTicket ||
+        scope.parent.repository !== repository ||
+        scope.parent.repositoryId !== issue.repositoryId
+      )
+        throw new Error("Unexpected Parent Ticket ownership");
+      if (scope.parent.state === "closed") {
+        if (scope.parent.stateReason === "not_planned")
+          throw new OperatorCancelled("Parent Ticket is cancelled");
+        throw new OperationStopped("Parent Ticket changed to a terminal state");
+      }
+      validateChildRepositories(repository, scope.children, issue.repositoryId);
+      const member = scope.children.find((child) => child.number === number);
+      if (!member)
+        return {
+          ticket: { number, state: "open", stateReason: null },
+          reason: "Issue left Parent scope",
+        };
+      if (member.id !== issue.id)
+        throw new Error("Unexpected Issue identity in Parent scope");
+    }
+    if (
+      recorded &&
+      (recorded.issueId !== issue.id ||
+        recorded.repositoryId !== issue.repositoryId)
+    )
+      throw new OperationStopped(
+        "Recorded Issue identity changed before continuation",
+      );
+    if (issue.state === "closed")
+      return { ticket, reason: "Issue is already terminal" };
+    if (
+      config.issueLabel &&
+      !labels.some(({ name }) => name === config.issueLabel)
+    )
+      return { ticket, reason: `Issue is missing ${config.issueLabel}` };
+    if (assignees.some(({ login }) => login !== runnerAccount))
+      return { ticket, reason: "Issue is externally owned" };
+    if (blockers.some((blocker) => blocker.state === "open"))
+      return { ticket, reason: "Issue is blocked" };
+
+    const hasLabel = labels.some(({ name }) => name === reservationLabel);
+    const hasRunner = assignees.length > 0;
+    const identity = reservation &&
+      runner && {
+        issueId: issue.id,
+        repositoryId: issue.repositoryId,
+        labelId: reservation.id,
+        runnerId: runner.id,
+      };
+    const markersMatch =
+      labels.every(
+        ({ id, name }) =>
+          (name === reservationLabel) === (id === reservation?.id),
+      ) &&
+      (!hasRunner || assignees.every(({ id }) => id === runner?.id));
+    const reserved = hasLabel && hasRunner && markersMatch;
+    if (recorded && (!reserved || !isDeepStrictEqual(identity, recorded)))
+      return {
+        ticket,
+        reason: "Recorded Reservation changed before continuation",
+      };
+    if (hasLabel && !attempted && !recorded && !(input.restarting && reserved))
+      return {
+        ticket,
+        reason: `existing Reservation${hasRunner ? "" : " (partial)"}; no recorded ownership for this Run`,
+      };
+    if (
+      attempted &&
+      (!isDeepStrictEqual(identity, attempted.identity) ||
+        (!hasRunner && !attempted.canAddRunner))
+    )
+      return { ticket, reason: "Reservation changed during Issue start" };
+    if (!identity || !markersMatch)
+      throw new Error(
+        "GitHub did not resolve the configured Reservation label or Runner account",
+      );
+    if (reserved) return { ticket, reservation: identity };
+
+    // Only an attempted write in this operation can explain newly observed markers.
+    const reserve = () => {
+      attempted ??= { identity, canAddRunner: !hasRunner };
+      return tracker.reserveIssue(
+        {
+          issue,
+          reservation,
+          runner,
+          addLabel: !hasLabel,
+          addRunner: !hasRunner,
+        },
+        signal,
+      );
+    };
+    const confirmed = await (input.advance
+      ? input.advance(reserve)
+      : reserve());
+    ticket.labels = confirmed.labels.map(({ name }) => name);
+    ticket.assignees = confirmed.assignees.map(({ login }) => login);
+    return { ticket, reservation: identity };
+  });
+}

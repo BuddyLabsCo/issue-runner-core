@@ -27,17 +27,51 @@ export interface IssueFact extends Pick<
   repositoryId: string;
 }
 
-export interface ParentDiscoveryChild extends IssueFact {
-  labels: { id: string; name: string }[];
-  assignees: { id: string; login: string }[];
+interface IssueLabel {
+  id: string;
+  name: string;
+}
+
+interface IssueAssignee {
+  id: string;
+  login: string;
+}
+
+export interface ReservationMarkers {
+  labels: IssueLabel[];
+  assignees: IssueAssignee[];
+}
+
+export interface ParentDiscoveryChild extends IssueFact, ReservationMarkers {
   blockers: IssueFact[];
 }
 
-export interface ParentDiscovery {
+interface MarkerLookup {
+  reservation: IssueLabel | null;
+  runner: IssueAssignee | null;
+}
+
+interface IssueStartScope {
+  parent: IssueFact;
+  children: IssueFact[];
+}
+
+export interface ParentDiscovery extends MarkerLookup {
   parent: IssueFact;
   children: ParentDiscoveryChild[];
-  reservation: { id: string; name: string } | null;
-  runner: { id: string; login: string } | null;
+}
+
+export interface IssueStartFacts extends MarkerLookup {
+  issue: ParentDiscoveryChild & Pick<Ticket, "title" | "body" | "source">;
+  scope?: IssueStartScope;
+}
+
+export interface ReservationAdditions {
+  issue: IssueFact;
+  reservation: IssueLabel;
+  runner: IssueAssignee;
+  addLabel: boolean;
+  addRunner: boolean;
 }
 
 export interface Tracker {
@@ -64,12 +98,17 @@ export interface Tracker {
     ticket: number,
     page: number,
   ): Promise<{ blockers: Ticket[]; nextPage: number | null }>;
-  addLabel(repository: string, ticket: number, label: string): Promise<void>;
-  addAssignee(
+  readIssueStart(
     repository: string,
     ticket: number,
-    account: string,
-  ): Promise<void>;
+    markers: { reservationLabel: string; runnerAccount: string },
+    parentTicket?: number,
+    signal?: AbortSignal,
+  ): Promise<IssueStartFacts>;
+  reserveIssue(
+    additions: ReservationAdditions,
+    signal?: AbortSignal,
+  ): Promise<ReservationMarkers>;
   getParent(repository: string, parentTicket: number): Promise<Ticket>;
   discoverParent(
     repository: string,
