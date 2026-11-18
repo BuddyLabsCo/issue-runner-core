@@ -12,6 +12,47 @@ import { publicationRun } from "../support/publication-run.ts";
 import { integrationRun } from "../support/integration-run.ts";
 import { validConfig } from "../support/cli-project.ts";
 
+for (const admin of [false, true]) {
+  await test(`a blocked PR ${admin ? "allows an admin attempt" : "does not dispatch without admin"}`, async (t) => {
+    const fixture = await integrationRun(t, {
+      ...validConfig,
+      codeHost: { ...validConfig.codeHost, adminMerge: admin },
+    });
+    fixture.integrationState.pullRequest.mergeStateStatus = "BLOCKED";
+    fixture.integrationState.pullRequest.isMergeQueueEnabled = false;
+    const observe = fixture.dependencies.codeHost.observePullRequest.bind(
+      fixture.dependencies.codeHost,
+    );
+    fixture.dependencies.codeHost.observePullRequest = async (...args) => {
+      const result = await observe(...args);
+      result.merge.mergeStateStatus = "BLOCKED";
+      return result;
+    };
+    fixture.dependencies.operator.pause = async () => "q";
+    assert.equal(
+      (await fixture.run()).summary.outcome,
+      admin ? "succeeded" : "cancelled",
+    );
+    assert.equal(fixture.integrationState.requests.length, admin ? 1 : 0);
+  });
+}
+
+await test("a mismatched PR identity cannot earn delivery credit", async (t) => {
+  const fixture = await integrationRun(t);
+  const observe = fixture.dependencies.codeHost.observeDelivery.bind(
+    fixture.dependencies.codeHost,
+  );
+  fixture.dependencies.codeHost.observeDelivery = async (...args) => {
+    const result = await observe(...args);
+    result.pullRequest.id = "another-pr";
+    return result;
+  };
+  fixture.dependencies.operator.pause = async () => "q";
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  assert.equal(fixture.integrationState.closures, 0);
+  assert.notEqual((await fixture.snapshot()).publication?.phase, "delivered");
+});
+
 await test("delivery requires confirmed squash integration and completed tracker state, capturing exact labels", async (t) => {
   const fixture = await publicationRun(t);
   const effects: string[] = [];
@@ -45,8 +86,10 @@ await test("delivery requires confirmed squash integration and completed tracker
       assert.deepEqual(input, {
         repository: "owner/repo",
         pullRequest: 81,
+        pullRequestId: "pr-81",
         headSha: implementationCommit.sha,
         admin: false,
+        queue: false,
       });
       assert.equal(fixture.state.ticket.state, "open");
       effects.push("merge");
@@ -239,7 +282,7 @@ await test("a changed observed HEAD pauses without merging or closing the Issue"
     return "q";
   };
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  assert.equal(fixture.integrationState.requests.length, 0);
+  assert.equal(fixture.integrationState.requests.length, 1);
   assert.equal(fixture.integrationState.closures, 0);
 });
 

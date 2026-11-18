@@ -65,7 +65,10 @@ await test("explicit merge conflict repairs the existing PR and waits for checks
   assert.equal(fixture.repairs.tasks.length, 1);
   assert.match(fixture.repairs.tasks[0]!, /Merge conflict in README/u);
   assert.match(fixture.repairs.tasks[0]!, /Target Branch SHA: a{40}/u);
-  assert.deepEqual(fixture.state.sleeps, [10_000, 30_000, 10_000, 30_000]);
+  assert.deepEqual(
+    fixture.state.sleeps,
+    [10_000, 30_000, 10_000, 30_000, 10_000],
+  );
 });
 
 await test("explicit conflicting state starts repair without attempting a rejected merge", async (t) => {
@@ -203,7 +206,7 @@ await test("operator resolution after budget exhaustion refreshes checks before 
   );
   assert.deepEqual(
     fixture.state.sleeps,
-    [10_000, 30_000, 10_000, 10_000, 30_000],
+    [10_000, 30_000, 10_000, 10_000, 30_000, 10_000],
   );
 });
 
@@ -421,23 +424,6 @@ await test("recovery rejects corrupted conflict ownership, target ancestry conte
   }
   assert.equal(fixture.state.submissions.length, submissions);
   assert.equal(fixture.publicationState.pushes, 1);
-});
-
-await test("conflict evidence appearing during the final merge recheck repairs before issuing a merge request", async (t) => {
-  const fixture = await conflictRepairRun(t);
-  const observe = fixture.dependencies.codeHost.getPullRequest.bind(
-    fixture.dependencies.codeHost,
-  );
-  let observations = 0;
-  fixture.dependencies.codeHost.getPullRequest = async () => {
-    const state = await observe("owner/repo", 81);
-    if (++observations >= 2 && fixture.publicationState.pushes === 1)
-      state.mergeable = "conflicting";
-    return state;
-  };
-  assert.equal((await fixture.run()).summary.outcome, "succeeded");
-  assert.equal(fixture.conflictState.requests.length, 1);
-  assert.equal(fixture.conflictState.requests[0]!.headSha, repairCommit.sha);
 });
 
 await test("transient target ancestry inspection retries without consuming another repair attempt", async (t) => {

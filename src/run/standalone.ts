@@ -9,7 +9,12 @@ import { executionPrompt } from "../prompts/implement.ts";
 import { reviewImplementation, verifiedImplementation } from "./review.ts";
 import { verifyWorkspace } from "./verification.ts";
 import { parsePRExecution } from "../agent/handoff.ts";
-import type { CodeHost, Ticket, Tracker } from "./contracts.ts";
+import type {
+  CodeHost,
+  PullRequestIdentity,
+  Ticket,
+  Tracker,
+} from "./contracts.ts";
 import { publishImplementation } from "./publication.ts";
 import {
   recoverIssue,
@@ -42,7 +47,10 @@ export async function runStandalone(input: {
   codeHost: CodeHost;
   autoMerge: boolean;
   onDelivery?: (labels: string[]) => void;
-  deferIntegration?: (pr: number, complete: () => Promise<RunSummary>) => void;
+  deferIntegration?: (
+    pr: PullRequestIdentity,
+    complete: () => Promise<RunSummary>,
+  ) => void;
 }): Promise<RunSummary> {
   return reportTicket(input, (issue, report) =>
     recoverIssue(issue, (attempt, restarting) =>
@@ -121,6 +129,7 @@ async function executeStandalone(
     runArguments: context.runArguments,
     restarting,
   });
+  const restoredPublicationPhase = restored?.publication?.phase;
   execution = restored;
   if (restored) context.retained?.set(progressFile, restored);
   const inspect = async (): Promise<{ ticket: Ticket; reason?: string }> => {
@@ -250,18 +259,6 @@ async function executeStandalone(
       autoMerge: input.autoMerge,
       stageInput: stageInput(progress),
     });
-  const inspectDelivery = async () => {
-    const ticket = await read("read_delivery_issue", `ticket:${number}`, () =>
-      tracker.getDeliveryTicket(repository, number),
-    );
-    if (
-      ticket.number !== number ||
-      (ticket.repository !== undefined &&
-        ticket.repository.toLowerCase() !== repository.toLowerCase())
-    )
-      throw new Error("Unexpected Issue ownership");
-    return { ticket };
-  };
   const integrate = async (
     progress: ImplementationProgress,
     publicationReason?: string,
@@ -282,7 +279,7 @@ async function executeStandalone(
           codeHost: input.codeHost,
           tracker,
           read,
-          inspectTicket: input.documentation ? inspect : inspectDelivery,
+          freshObservation: restoredPublicationPhase !== "checks_ready",
           continuePublication: () => publish(progress),
         });
         if (delivery.outcome === "succeeded") {
@@ -307,7 +304,7 @@ async function executeStandalone(
     };
     if (input.deferIntegration) {
       const pullRequest = progress.publication!.pullRequest!;
-      input.deferIntegration(pullRequest.number, complete);
+      input.deferIntegration(pullRequest, complete);
       report.detail = `CI-ready PR ${pullRequest.url} awaits Batch integration`;
       return summary;
     }

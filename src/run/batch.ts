@@ -44,7 +44,10 @@ export async function runBatch(
   let needsDocumentation = false;
   const integrations = new Map<
     number,
-    { pullRequest: number; complete: () => Promise<RunSummary> }
+    {
+      pullRequest: import("./contracts.ts").PullRequestIdentity;
+      complete: () => Promise<RunSummary>;
+    }
   >();
   let delivered: number[] = [];
   let resolved: boolean;
@@ -82,9 +85,6 @@ export async function runBatch(
       batch: selection.batch,
       ready: integrations,
       results: await Promise.all(attempts),
-      repository: loaded.config.repository,
-      codeHost,
-      read,
     });
     resolved = results.every(
       (result) =>

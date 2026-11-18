@@ -122,6 +122,18 @@ export async function fiveIssueRun(t: TestContext) {
     await sleep(ms);
   };
   const host: CodeHost = codeHost;
+  const list = host.listPullRequests.bind(host);
+  const createPR = host.createPullRequest.bind(host);
+  const dated = (pr: Awaited<ReturnType<CodeHost["createPullRequest"]>>) => {
+    const ticket = Number(/ticket-(\d+)$/u.exec(pr.branch)![1]);
+    return {
+      ...pr,
+      createdAt: `2026-10-30T00:${String(ticket % 100).padStart(2, "0")}:00Z`,
+    };
+  };
+  host.listPullRequests = async (repository) =>
+    (await list(repository)).map(dated);
+  host.createPullRequest = async (input) => dated(await createPR(input));
   const request = host.requestSquashMerge.bind(host);
   const integrations: number[] = [];
   host.requestSquashMerge = async (input) => {

@@ -6,49 +6,261 @@ import { GitHubTracker } from "../../src/adapters/github-tracker.ts";
 import { integrationRun } from "../support/integration-run.ts";
 import { implementationCommit } from "../support/implementation-run.ts";
 
-await test("GitHub integration uses squash, observed HEAD, admin policy, queue observation and completed closure", async (t) => {
+await test("delivery observation includes the exact merged PR and completed Issue labels", async () => {
+  const host = new GitHubCodeHost("token", async (_args, options) => {
+    const payload = JSON.parse(options.input!) as {
+      variables: Record<string, unknown>;
+    };
+    assert.equal(payload.variables.issue, 50);
+    return JSON.stringify({
+      data: {
+        repository: {
+          nameWithOwner: "owner/repo",
+          pullRequest: {
+            id: "PR_81",
+            number: 81,
+            url: "https://example.test/pr/81",
+            headRefName: "ticket-50",
+            baseRefName: "main",
+            headRefOid: implementationCommit.sha,
+            createdAt: "2026-10-30T00:00:00Z",
+            state: "MERGED",
+            mergedAt: "2026-10-31T00:00:00Z",
+            mergeable: "MERGEABLE",
+            mergeStateStatus: "CLEAN",
+            isInMergeQueue: false,
+            isMergeQueueEnabled: false,
+            autoMergeRequest: null,
+            mergeQueueEntry: null,
+          },
+          issue: {
+            number: 50,
+            state: "CLOSED",
+            stateReason: "COMPLETED",
+            labels: {
+              nodes: [{ name: "Docs" }],
+              totalCount: 1,
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+        },
+      },
+    });
+  });
+  const result = await host.observeDelivery("owner/repo", 81, 50);
+  assert.equal(result.pullRequest.merged, true);
+  assert.deepEqual(result.ticket.labels, ["Docs"]);
+});
+
+await test("delivery observation accepts a reopened Issue as open", async () => {
+  const host = new GitHubCodeHost("token", async () =>
+    JSON.stringify({
+      data: {
+        repository: {
+          nameWithOwner: "owner/repo",
+          pullRequest: {
+            id: "PR_81",
+            number: 81,
+            url: "https://example.test/pr/81",
+            headRefName: "ticket-50",
+            baseRefName: "main",
+            headRefOid: implementationCommit.sha,
+            createdAt: "2026-10-30T00:00:00Z",
+            state: "MERGED",
+            mergedAt: "2026-10-31T00:00:00Z",
+            mergeable: "MERGEABLE",
+            mergeStateStatus: "CLEAN",
+            isInMergeQueue: false,
+            isMergeQueueEnabled: false,
+            autoMergeRequest: null,
+            mergeQueueEntry: null,
+          },
+          issue: {
+            number: 50,
+            state: "OPEN",
+            stateReason: "REOPENED",
+            labels: {
+              nodes: [],
+              totalCount: 0,
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+        },
+      },
+    }),
+  );
+  const result = await host.observeDelivery("owner/repo", 81, 50);
+  assert.equal(result.ticket.state, "open");
+  assert.equal(result.ticket.stateReason, null);
+});
+
+await test("direct squash mutation protects the accepted head", async () => {
+  const host = new GitHubCodeHost("token", async (args, options) => {
+    assert.deepEqual(args, ["api", "graphql", "--input", "-"]);
+    const payload = JSON.parse(options.input!) as {
+      query: string;
+      variables: unknown;
+    };
+    assert.match(payload.query, /mergePullRequest/u);
+    assert.deepEqual(payload.variables, {
+      input: {
+        pullRequestId: "PR_81",
+        expectedHeadOid: implementationCommit.sha,
+        mergeMethod: "SQUASH",
+      },
+    });
+    return JSON.stringify({
+      data: {
+        mergePullRequest: {
+          pullRequest: {
+            id: "PR_81",
+            number: 81,
+            headRefOid: implementationCommit.sha,
+            state: "MERGED",
+            mergedAt: "2026-10-31T00:00:00Z",
+          },
+        },
+      },
+    });
+  });
+  assert.equal(
+    (
+      await host.requestSquashMerge({
+        repository: "owner/repo",
+        pullRequest: 81,
+        pullRequestId: "PR_81",
+        headSha: implementationCommit.sha,
+        admin: false,
+        queue: false,
+      })
+    ).outcome,
+    "accepted",
+  );
+});
+
+await test("required queue uses expected-head auto-merge and rejects a mismatched response", async () => {
+  const host = new GitHubCodeHost("token", async (_args, options) => {
+    const payload = JSON.parse(options.input!) as {
+      query: string;
+      variables: { input: Record<string, string> };
+    };
+    assert.match(payload.query, /enablePullRequestAutoMerge/u);
+    assert.equal(
+      payload.variables.input.expectedHeadOid,
+      implementationCommit.sha,
+    );
+    return JSON.stringify({
+      data: {
+        enablePullRequestAutoMerge: {
+          pullRequest: {
+            id: "PR_81",
+            number: 81,
+            headRefOid: "c".repeat(40),
+            state: "OPEN",
+          },
+        },
+      },
+    });
+  });
+  const result = await host.requestSquashMerge({
+    repository: "owner/repo",
+    pullRequest: 81,
+    pullRequestId: "PR_81",
+    headSha: implementationCommit.sha,
+    admin: false,
+    queue: true,
+  });
+  assert.equal(result.outcome, "rejected");
+});
+
+await test("GitHub integration waits for a required queue to merge before crediting delivery", async (t) => {
   const fixture = await integrationRun(t);
   let queued = false;
   let merged = false;
   let requests = 0;
+  let queuedObservations = 0;
+  let checkedWhileQueued = false;
+  const observePullRequest =
+    fixture.dependencies.codeHost.observePullRequest.bind(
+      fixture.dependencies.codeHost,
+    );
+  fixture.dependencies.codeHost.observePullRequest = async (...args) => {
+    const observation = await observePullRequest(...args);
+    observation.merge.isMergeQueueEnabled = true;
+    return observation;
+  };
   const host = new GitHubCodeHost("host-secret", async (args, options) => {
     assert.equal(options.token, "host-secret");
-    if (args[0] === "pr") {
-      assert.deepEqual(args, [
-        "pr",
-        "merge",
-        "81",
-        "--repo",
-        "owner/repo",
-        "--squash",
-        "--match-head-commit",
-        implementationCommit.sha,
-      ]);
+    assert.deepEqual(args, ["api", "graphql", "--input", "-"]);
+    const payload = JSON.parse(options.input!) as {
+      query: string;
+      variables: Record<string, unknown>;
+    };
+    if (payload.query.includes("mutation")) {
+      assert.match(payload.query, /enablePullRequestAutoMerge/u);
+      assert.deepEqual(payload.variables.input, {
+        pullRequestId: "pr-81",
+        expectedHeadOid: implementationCommit.sha,
+        mergeMethod: "SQUASH",
+      });
       requests++;
       queued = true;
-      return "";
+      return JSON.stringify({
+        data: {
+          enablePullRequestAutoMerge: {
+            pullRequest: {
+              id: "pr-81",
+              number: 81,
+              headRefOid: implementationCommit.sha,
+              state: "OPEN",
+            },
+          },
+        },
+      });
     }
-    assert.equal(args[0], "api");
-    assert.equal(args[1], "graphql");
-    assert.deepEqual(
-      (JSON.parse(options.input!) as { variables: unknown }).variables,
-      {
-        owner: "owner",
-        name: "repo",
-        number: 81,
-      },
-    );
+    const pr = fixture.publicationState.pullRequests[0]!;
+    const second = payload.variables.after === "next";
+    if (queued && !merged && !second) queuedObservations++;
     return JSON.stringify({
       data: {
         repository: {
+          nameWithOwner: "owner/repo",
           pullRequest: {
-            headRefOid: implementationCommit.sha,
-            createdAt: "2026-10-30T00:00:00Z",
+            id: pr.id,
+            number: pr.number,
+            url: pr.url,
+            headRefName: pr.branch,
+            baseRefName: pr.targetBranch,
+            headRefOid: pr.headSha,
+            createdAt: pr.createdAt,
             state: merged ? "MERGED" : "OPEN",
             mergedAt: merged ? "2026-10-31T00:00:00Z" : null,
             mergeable: "MERGEABLE",
-            autoMergeRequest: null,
+            mergeStateStatus: "CLEAN",
+            isInMergeQueue: queued,
+            isMergeQueueEnabled: true,
+            autoMergeRequest: queued
+              ? { enabledAt: "2026-10-30T00:00:00Z" }
+              : null,
             mergeQueueEntry: queued ? { id: "queue-entry" } : null,
+          },
+          issue: {
+            number: 50,
+            state: fixture.state.ticket.state.toUpperCase(),
+            stateReason:
+              fixture.state.ticket.stateReason?.toUpperCase() ?? null,
+            labels: {
+              nodes: second
+                ? [{ name: "last-label" }]
+                : Array.from({ length: 100 }, (_, i) => ({
+                    name: `label-${i}`,
+                  })),
+              totalCount: 101,
+              pageInfo: {
+                hasNextPage: !second,
+                endCursor: second ? null : "next",
+              },
+            },
           },
         },
       },
@@ -86,8 +298,8 @@ await test("GitHub integration uses squash, observed HEAD, admin policy, queue o
     fixture.state.ticket.stateReason = "completed";
     return "";
   });
-  fixture.dependencies.codeHost.getPullRequest = host.getPullRequest.bind(host);
   Object.assign(fixture.dependencies.codeHost, {
+    observeDelivery: host.observeDelivery.bind(host),
     requestSquashMerge: host.requestSquashMerge.bind(host),
   });
   Object.assign(fixture.dependencies.tracker, {
@@ -95,11 +307,23 @@ await test("GitHub integration uses squash, observed HEAD, admin policy, queue o
     getDeliveryTicket: tracker.getDeliveryTicket.bind(tracker),
   });
   fixture.state.onSleep = async () => {
-    if (queued) merged = true;
+    if (queued && !merged) {
+      assert.ok(queuedObservations > 0);
+      const publication = (await fixture.snapshot()).publication!;
+      assert.equal(publication.phase, "merge_requested");
+      assert.equal(publication.merge, undefined);
+      assert.equal(publication.closure, undefined);
+      assert.equal(publication.deliveryLabels, undefined);
+      assert.equal(fixture.state.ticket.state, "open");
+      checkedWhileQueued = true;
+      queued = false;
+      merged = true;
+    }
   };
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
   assert.equal(requests, 1);
+  assert.equal(checkedWhileQueued, true);
   assert.equal(
     (await fixture.snapshot()).publication?.deliveryLabels?.at(-1),
     "last-label",
@@ -123,14 +347,16 @@ for (const [message, outcome] of [
   await test(`GitHub classifies ${message} and retains the original cause`, async () => {
     const cause = new Error(message);
     const host = new GitHubCodeHost("token", async (args) => {
-      assert.ok(args.includes("--admin"));
+      assert.deepEqual(args, ["api", "graphql", "--input", "-"]);
       throw cause;
     });
     const result = await host.requestSquashMerge({
       repository: "owner/repo",
       pullRequest: 81,
+      pullRequestId: "PR_81",
       headSha: implementationCommit.sha,
       admin: true,
+      queue: false,
     });
     assert.equal(result.outcome, outcome);
     assert.equal(result.error, cause);

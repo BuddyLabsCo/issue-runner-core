@@ -34,7 +34,7 @@ export function recoverIssue(
         ...(attempt.deferIntegration
           ? {
               deferIntegration: (
-                pullRequest: number,
+                pullRequest: import("./contracts.ts").PullRequestIdentity,
                 complete: () => Promise<RunSummary>,
               ) =>
                 attempt.deferIntegration!(pullRequest, () => recover(complete)),
