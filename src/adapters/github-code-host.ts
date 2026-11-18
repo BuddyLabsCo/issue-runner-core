@@ -4,12 +4,23 @@ import type {
   PublicationObservation,
   PublicationQuery,
   PullRequestRecord,
-  RequiredCheck,
+  PullRequestQuery,
+  PullRequestObservation,
   PullRequestState,
   MergeRequestResult,
 } from "../run/contracts.ts";
 import { nonempty, object } from "../agent/handoff.ts";
 import { GitHubClient, type GitHubCommand } from "./github-client.ts";
+import {
+  branchFields,
+  oid,
+  publicationFields,
+  parseCheckContext,
+  parseMergeFacts,
+  parsePullRequestState,
+  pollQuery,
+  requiredChecks,
+} from "./github-pr-checks.ts";
 
 export class GitHubCodeHost implements CodeHost {
   private readonly client: GitHubClient;
@@ -33,7 +44,10 @@ export class GitHubCodeHost implements CodeHost {
           "GitHub returned GraphQL errors for Pull Request state",
         { cause: result },
       );
-    return parsePullRequestState(result.response, pullRequest);
+    return parsePullRequestState(
+      object(result.response.data?.repository).pullRequest,
+      pullRequest,
+    );
   }
 
   async requestSquashMerge(
@@ -82,7 +96,7 @@ export class GitHubCodeHost implements CodeHost {
 
   async observeBranch(repository: string, branch: string) {
     const [owner, name] = repository.split("/");
-    const data = await this.publicationData(
+    const data = await this.graphqlData(
       `query PrePush($owner: String!, $name: String!, $ref: String!) {
         repository(owner: $owner, name: $name) { ${branchFields} }
       }`,
@@ -97,14 +111,14 @@ export class GitHubCodeHost implements CodeHost {
   ): Promise<PublicationObservation> {
     const [owner, name] = repository.split("/");
     const pages = {
-      source: publicationPages(),
-      target: publicationPages(),
+      source: connectionPages(),
+      target: connectionPages(),
     };
     const candidates = new Map<string, PublicationCandidate>();
     let observation: BranchObservation | undefined;
     do {
       signal?.throwIfAborted();
-      const data = await this.publicationData(publicationQuery, {
+      const data = await this.graphqlData(publicationQuery, {
         owner,
         name,
         ref: `refs/heads/${branch}`,
@@ -150,7 +164,7 @@ export class GitHubCodeHost implements CodeHost {
   }
 
   async createPullRequest(input: Parameters<CodeHost["createPullRequest"]>[0]) {
-    const data = await this.publicationData(
+    const data = await this.graphqlData(
       `mutation CreatePublication($input: CreatePullRequestInput!) {
         createPullRequest(input: $input) {
           pullRequest { ${publicationFields} }
@@ -180,10 +194,7 @@ export class GitHubCodeHost implements CodeHost {
     return record;
   }
 
-  private async publicationData(
-    query: string,
-    variables: Record<string, unknown>,
-  ) {
+  private async graphqlData(query: string, variables: Record<string, unknown>) {
     const result = await this.client.graphql(query, variables);
     if (
       result.commandError ||
@@ -198,57 +209,91 @@ export class GitHubCodeHost implements CodeHost {
     return result.response.data;
   }
 
-  async getRequiredChecks(
-    repository: string,
-    pullRequest: number,
-  ): Promise<RequiredCheck[]> {
-    const value = JSON.parse(
-      await this.client.request(
-        [
-          "pr",
-          "checks",
-          String(pullRequest),
-          "--repo",
-          repository,
-          "--required",
-          "--json",
-          "name,state,link,bucket",
-        ],
-        [1, 8],
-      ),
-    ) as unknown;
-    if (!Array.isArray(value))
-      throw new Error("GitHub returned invalid required checks");
-    return value.map((item: unknown) => {
-      if (typeof item !== "object" || item === null || Array.isArray(item))
-        throw new Error("GitHub returned invalid required check");
-      const check = item as Record<string, unknown>;
+  async observePullRequest(
+    { repository, branch, number }: PullRequestQuery,
+    signal?: AbortSignal,
+  ): Promise<PullRequestObservation> {
+    const [owner, name] = repository.split("/");
+    let page = connectionPages();
+    let contexts: ReturnType<typeof parseCheckContext>[] = [];
+    let previous: string | undefined;
+    let restarted = false;
+    for (;;) {
+      signal?.throwIfAborted();
+      const data = await this.graphqlData(pollQuery, {
+        owner,
+        name,
+        number,
+        ref: `refs/heads/${branch}`,
+        after: page.after,
+      });
+      signal?.throwIfAborted();
+      const remote = object(data.repository);
+      const observedBranch = parseBranch(remote, repository, branch);
+      const row = object(remote.pullRequest);
+      const pullRequest = parsePullRequest(
+        row,
+        repository,
+        observedBranch.repositoryId,
+      );
       if (
-        typeof check.name !== "string" ||
-        typeof check.state !== "string" ||
-        typeof check.link !== "string" ||
-        !["pass", "fail", "pending", "skipping", "cancel"].includes(
-          String(check.bucket),
-        )
+        pullRequest.number !== number ||
+        !sameRepository(row.headRepository, repository) ||
+        object(row.headRepository).id !== observedBranch.repositoryId
       )
-        throw new Error("GitHub returned invalid required check");
+        throw new Error(
+          "GitHub returned an unexpected Pull Request or head repository",
+        );
+      const { nodes } = object(row.commits);
+      if (!Array.isArray(nodes) || nodes.length !== 1)
+        throw new Error("GitHub did not return the last Pull Request commit");
+      const { oid: lastCommitSha, statusCheckRollup } = object(
+        object(nodes[0]).commit,
+      );
+      if (typeof lastCommitSha !== "string" || !oid.test(lastCommitSha))
+        throw new Error("GitHub returned an invalid last Pull Request commit");
+
+      const evidence = JSON.stringify([
+        observedBranch,
+        pullRequest,
+        lastCommitSha,
+      ]);
+      if (previous !== undefined && previous !== evidence) {
+        if (restarted)
+          throw new Error(
+            "Pull Request evidence changed again during check pagination",
+          );
+        restarted = true;
+        previous = undefined;
+        page = connectionPages();
+        contexts = [];
+        continue;
+      }
+      previous = evidence;
+      const merge = parseMergeFacts(row, number);
+      if (statusCheckRollup === null) {
+        if (page.after !== null)
+          throw new Error("Check rollup disappeared during pagination");
+      } else {
+        for (const node of readConnectionPage(
+          page,
+          object(statusCheckRollup).contexts,
+          "check context",
+        ))
+          contexts.push(parseCheckContext(node));
+        if (!page.done) continue;
+      }
       return {
-        name: check.name,
-        state: check.state,
-        link: check.link,
-        bucket: check.bucket as RequiredCheck["bucket"],
+        branch: observedBranch,
+        pullRequest,
+        lastCommitSha,
+        merge,
+        checks: requiredChecks(contexts),
       };
-    });
+    }
   }
 }
 
-const branchFields =
-  "id nameWithOwner ref(qualifiedName: $ref) { name target { oid } }";
-const publicationFields = `
-  id number url headRefName baseRefName headRefOid state isDraft createdAt
-  repository { id nameWithOwner }
-  headRepository { id nameWithOwner }
-`;
 const publicationQuery = `
   query Publication(
     $owner: String!, $name: String!, $ref: String!,
@@ -271,8 +316,6 @@ const publicationQuery = `
   }
   fragment PublicationIdentity on PullRequest { ${publicationFields} }
 `;
-
-const oid = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
 
 function sameRepository(value: unknown, expected: string): boolean {
   if (value === null) return false;
@@ -297,13 +340,13 @@ function parseBranch(
   return { repositoryId: remote.id, headSha };
 }
 
-function publicationPages() {
+function connectionPages() {
   return {
     after: null as string | null,
     total: undefined as number | undefined,
     done: false,
-    ids: new Set<string>(),
     cursors: new Set<string>(),
+    ids: new Set<string>(),
   };
 }
 
@@ -313,7 +356,7 @@ interface PublicationCandidate {
 }
 
 function collectPublicationPage(input: {
-  page: ReturnType<typeof publicationPages>;
+  page: ReturnType<typeof connectionPages>;
   value: unknown;
   scope: "source" | "target";
   expectedBranch: string;
@@ -330,14 +373,12 @@ function collectPublicationPage(input: {
     repositoryId,
     candidates,
   } = input;
-  for (const node of readPublicationPage(page, value)) {
-    const row = object(node);
+  for (const row of readConnectionPage(page, value, "Pull Request")) {
     const record = parsePullRequest(row, repository, repositoryId);
     const actualBranch =
       scope === "source" ? record.branch : record.targetBranch;
-    if (page.ids.has(record.id) || actualBranch !== expectedBranch)
+    if (actualBranch !== expectedBranch)
       throw new Error("GitHub returned inconsistent Pull Request pages");
-    page.ids.add(record.id);
     const { headRepository } = row;
     const sameHeadRepository = sameRepository(headRepository, repository);
     if (headRepository !== null) {
@@ -353,9 +394,10 @@ function collectPublicationPage(input: {
   }
 }
 
-function readPublicationPage(
-  page: ReturnType<typeof publicationPages>,
+function readConnectionPage(
+  page: ReturnType<typeof connectionPages>,
   value: unknown,
+  scope: string,
 ) {
   const { nodes, totalCount, pageInfo } = object(value);
   const { hasNextPage, endCursor } = object(pageInfo);
@@ -369,19 +411,27 @@ function readPublicationPage(
     typeof hasNextPage !== "boolean" ||
     (endCursor !== null && !nonempty(endCursor))
   )
-    throw new Error("GitHub returned invalid Pull Request pages");
+    throw new Error(`GitHub returned invalid ${scope} pages`);
   const received = page.ids.size + nodes.length;
   if (hasNextPage ? received >= totalCount : received !== totalCount)
-    throw new Error("GitHub returned incomplete Pull Request pages");
+    throw new Error(`GitHub returned incomplete ${scope} pages`);
   page.total = totalCount;
   page.done = !hasNextPage;
   if (hasNextPage) {
     if (!nodes.length || !nonempty(endCursor) || page.cursors.has(endCursor))
-      throw new Error("GitHub returned an incomplete Pull Request cursor");
+      throw new Error(`GitHub returned an incomplete ${scope} cursor`);
     page.cursors.add(endCursor);
     page.after = endCursor;
   }
-  return nodes as unknown[];
+  return nodes.map((node: unknown) => {
+    const row = object(node);
+    if (!nonempty(row.id) || page.ids.has(row.id))
+      throw new Error(
+        `GitHub returned missing or repeated IDs in ${scope} pages`,
+      );
+    page.ids.add(row.id);
+    return row;
+  });
 }
 
 function parsePullRequest(
@@ -430,51 +480,5 @@ function parsePullRequest(
     headSha: headRefOid,
     draft: isDraft,
     state: state === "OPEN" ? "open" : state === "CLOSED" ? "closed" : "merged",
-  };
-}
-
-function parsePullRequestState(
-  response: {
-    data?: { repository?: { pullRequest?: Record<string, unknown> } } | null;
-  },
-  pullRequest: number,
-): PullRequestState {
-  const value = response?.data?.repository?.pullRequest;
-  if (
-    !value ||
-    typeof value.headRefOid !== "string" ||
-    !oid.test(value.headRefOid) ||
-    typeof value.createdAt !== "string" ||
-    !Number.isFinite(Date.parse(value.createdAt)) ||
-    !["OPEN", "CLOSED", "MERGED"].includes(String(value.state)) ||
-    !["MERGEABLE", "CONFLICTING", "UNKNOWN"].includes(
-      String(value.mergeable),
-    ) ||
-    (value.mergedAt !== null &&
-      (typeof value.mergedAt !== "string" ||
-        !Number.isFinite(Date.parse(value.mergedAt)))) ||
-    ![value.autoMergeRequest, value.mergeQueueEntry].every(
-      (entry) =>
-        entry === null || (typeof entry === "object" && !Array.isArray(entry)),
-    )
-  )
-    throw new Error("GitHub returned invalid Pull Request state");
-  const merged = value.state === "MERGED" || value.mergedAt !== null;
-  return {
-    headSha: value.headRefOid,
-    createdAt: value.createdAt,
-    merged,
-    mergeRequested:
-      value.autoMergeRequest !== null || value.mergeQueueEntry !== null,
-    mergeable:
-      value.mergeable === "MERGEABLE"
-        ? "mergeable"
-        : value.mergeable === "CONFLICTING"
-          ? "conflicting"
-          : "unknown",
-    mergeFailure:
-      value.state === "CLOSED" && !merged
-        ? `Pull Request ${pullRequest} closed without merging`
-        : null,
   };
 }

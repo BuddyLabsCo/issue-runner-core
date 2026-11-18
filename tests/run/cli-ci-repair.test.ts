@@ -76,7 +76,10 @@ await test("a repaired PR integrates its repaired HEAD and recovers queued and d
   assert.equal(saved.publication!.headSha, implementationCommit.sha);
   assert.equal(saved.publication!.title, saved.pr_title);
   assert.equal(saved.publication!.body, saved.pr_body);
-  assert.deepEqual(fixture.publicationState.discoveries, [40_000, 80_000]);
+  assert.deepEqual(
+    fixture.publicationState.discoveries,
+    [40_000, 50_000, 50_000, 80_000],
+  );
   assert.equal((await run()).summary.outcome, "succeeded");
   assert.equal(requests, 1);
   assert.equal(fixture.publicationState.creations, 1);
@@ -166,7 +169,7 @@ await test("a second CI repair starts fresh from the first repaired remote head"
   assert.notEqual(budget.attempts[0]!.sessionid, budget.attempts[1]!.sessionid);
   assert.deepEqual(
     fixture.publicationState.discoveries,
-    [40_000, 80_000, 120_000],
+    [40_000, 50_000, 50_000, 80_000, 90_000, 90_000, 120_000],
   );
   assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/u);
   assert.equal(fixture.publicationState.pushes, 3);

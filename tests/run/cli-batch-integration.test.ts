@@ -3,14 +3,11 @@ import { promptAssignment } from "../support/prompt-assignment.ts";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
-import test, { type TestContext } from "node:test";
+import test from "node:test";
 import { AuditLog, type AuditEvent } from "../../src/audit.ts";
 import type { ImplementationProgress } from "../../src/recovery.ts";
-import type {
-  CodeHost,
-  MergeRequestResult,
-  RequiredCheck,
-} from "../../src/run/contracts.ts";
+import type { RequiredCheck } from "../../src/run/contracts.ts";
+import { batchRun } from "../support/batch-integration-run.ts";
 import { child, parentDeliveryRun } from "../support/parent-run.ts";
 import { validConfig } from "../support/cli-project.ts";
 import {
@@ -18,65 +15,6 @@ import {
   implementationProgress,
   publish,
 } from "../support/implementation-run.ts";
-
-async function batchRun(t: TestContext) {
-  const children = [child(51), child(52), child(53)];
-  const fixture = await parentDeliveryRun(t, children, {
-    ...validConfig,
-    issueList: [51, 52, 53],
-  });
-  const ready = new Set<number>();
-  const merged = new Set<number>();
-  const requests: number[] = [];
-  const state = {
-    onChecks: async (number: number): Promise<RequiredCheck[]> => {
-      assert.ok(number >= 81);
-      return [];
-    },
-    onMerge: async (number: number): Promise<MergeRequestResult> => {
-      merged.add(number);
-      return { outcome: "accepted" };
-    },
-  };
-  Object.assign(fixture.dependencies.codeHost, {
-    async getRequiredChecks(_repository: string, number: number) {
-      const checks = await state.onChecks(number);
-      if (
-        !checks.some(
-          (check) => check.bucket === "fail" || check.bucket === "pending",
-        )
-      )
-        ready.add(number);
-      return checks;
-    },
-    async getPullRequest(_repository: string, number: number) {
-      const pr = (await fixture.dependencies.codeHost.listPullRequests()).find(
-        (pr) => pr.number === number,
-      )!;
-      return {
-        headSha: pr.headSha,
-        createdAt:
-          number === 81 ? "2026-10-31T00:00:00Z" : "2026-10-30T00:00:00Z",
-        merged: merged.has(number),
-        mergeRequested: false,
-        mergeable: "mergeable",
-        mergeFailure: null,
-      };
-    },
-    async requestSquashMerge(
-      input: Parameters<CodeHost["requestSquashMerge"]>[0],
-    ) {
-      assert.equal(
-        ready.size,
-        3,
-        "all Batch PRs must be CI-ready before the first merge",
-      );
-      requests.push(input.pullRequest);
-      return state.onMerge(input.pullRequest);
-    },
-  });
-  return { ...fixture, children, ready, merged, requests, state };
-}
 
 for (const selector of ["parent", "issue"] as const) {
   await test(
@@ -175,20 +113,18 @@ for (const selector of ["parent", "issue"] as const) {
         }
         return { outcome: "accepted" };
       };
-      const getPullRequest = fixture.dependencies.codeHost.getPullRequest.bind(
-        fixture.dependencies.codeHost,
-      );
-      fixture.dependencies.codeHost.getPullRequest = async (
-        repository,
-        number,
-      ) => {
-        if (number === 82 && fixture.requests.includes(82)) {
+      const observePullRequest =
+        fixture.dependencies.codeHost.observePullRequest.bind(
+          fixture.dependencies.codeHost,
+        );
+      fixture.dependencies.codeHost.observePullRequest = async (input) => {
+        if (input.number === 82 && fixture.requests.includes(82)) {
           queued.resolve();
           await confirmMerge.promise;
           fixture.merged.add(82);
           targetHead = "c".repeat(40);
         }
-        return getPullRequest(repository, number);
+        return observePullRequest(input);
       };
       const running = fixture.run([
         `--${selector}`,
@@ -412,7 +348,7 @@ await test("an incomplete PR keeps its ownership diagnostic when a sibling later
       await append.call(this, event);
       if (
         event.target === "ticket:51" &&
-        event.operation === "confirm_publication" &&
+        event.operation === "required_checks" &&
         event.result === "failed"
       ) {
         // Let the recorded stop unwind into the Issue report before failing its sibling.
@@ -421,7 +357,7 @@ await test("an incomplete PR keeps its ownership diagnostic when a sibling later
     },
   );
   Object.assign(fixture.dependencies.codeHost, {
-    async getRequiredChecks(
+    async checksFor(
       _repository: string,
       number: number,
     ): Promise<RequiredCheck[]> {

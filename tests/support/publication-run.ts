@@ -83,7 +83,7 @@ export async function publicationRun(
     await state.onCreate();
     return structuredClone(pullRequest);
   };
-  codeHost.getRequiredChecks = async () => {
+  codeHost.checksFor = async () => {
     state.discoveries.push(now);
     return state.onChecks();
   };

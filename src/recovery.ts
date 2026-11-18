@@ -6,6 +6,7 @@ import type {
   PullRequestIdentity,
   RequiredCheck,
   PullRequestState,
+  PullRequestMergeFacts,
 } from "./run/contracts.ts";
 
 export function hashRunInput(
@@ -155,6 +156,7 @@ export interface PublicationProgress {
   discoveryNotBefore?: number;
   checksDeadline?: number;
   checks?: RequiredCheck[];
+  checksState?: PullRequestMergeFacts;
   mergeDeadline?: number;
   merge?: PullRequestState;
   closure?: { state: "closed"; stateReason: "completed" };

@@ -1,4 +1,8 @@
-import { publishedHead, verifiedPublication } from "./publication.ts";
+import {
+  publishedHead,
+  verifiedPublication,
+  verifyPublicationObservation,
+} from "./publication-evidence.ts";
 import type { LoadedProject } from "../config.ts";
 import type { ImplementationProgress } from "../recovery.ts";
 import type { CodeHost, Ticket, Tracker } from "./contracts.ts";
@@ -19,7 +23,8 @@ export async function integrateImplementation(input: {
   read: ReadOperation;
   persist: () => Promise<void>;
   beforeDispatch: () => Promise<boolean>;
-  continuePublication: () => Promise<string>;
+  deferred: boolean;
+  continuePublication: (observedConflict?: boolean) => Promise<string>;
   inspectTicket: () => Promise<{ ticket: Ticket; reason?: string }>;
 }): Promise<{ outcome: "succeeded" | "incomplete"; reason: string }> {
   const { progress, loaded, context, codeHost, tracker, read, persist } = input;
@@ -42,6 +47,18 @@ export async function integrateImplementation(input: {
   const target = `ticket:${ticket}`;
   const observe = () =>
     read("confirm_merge", target, async () => {
+      if (input.deferred) {
+        const observation = await codeHost.observePullRequest(
+          {
+            repository,
+            branch: publication.branch,
+            number: pullRequest.number,
+          },
+          context.signal,
+        );
+        verifyPublicationObservation(publication, observation, head);
+        return observation.merge;
+      }
       const state = await codeHost.getPullRequest(
         repository,
         pullRequest.number,
@@ -52,12 +69,12 @@ export async function integrateImplementation(input: {
         );
       return state;
     });
-  const repair = async (reason: string) => {
+  const repair = async (reason: string, observedConflict?: boolean) => {
     publication.conflict ??= reason;
     publication.phase = "conflict_repair";
     delete publication.mergeDeadline;
     await persist();
-    await input.continuePublication();
+    await input.continuePublication(observedConflict);
     head = publishedHead(publication);
   };
   const sleep = async (ms: number) => {
@@ -70,8 +87,14 @@ export async function integrateImplementation(input: {
     head = publishedHead(publication);
   }
   if (publication.phase !== "merged" && publication.phase !== "delivered") {
-    for (;;) {
-      let state = await observe();
+    const deferredChecks = input.deferred ? publication.checksState : undefined;
+    while (!publication.merge?.merged) {
+      const checked =
+        publication.phase === "checks_ready" &&
+        publication.checksState !== deferredChecks
+          ? publication.checksState
+          : undefined;
+      let state = checked ?? (await observe());
       if (state.merged) {
         publication.merge = state;
         publication.phase = "merged";
@@ -120,6 +143,7 @@ export async function integrateImplementation(input: {
       if (!state.mergeRequested && state.mergeable === "conflicting") {
         await repair(
           publication.conflict ?? "Pull Request has an explicit merge conflict",
+          checked !== undefined,
         );
         continue;
       }
@@ -132,13 +156,23 @@ export async function integrateImplementation(input: {
         continue;
       }
       if (!state.mergeRequested && publication.phase !== "merge_requested") {
+        const operation = "request_squash_merge";
+        // A resumed dispatch can pause before its first attempt.
+        let firstObservation =
+          input.deferred &&
+          publication.phase === "checks_ready" &&
+          checked === undefined &&
+          !progress.operations?.[JSON.stringify([operation, target])]
+            ? state
+            : undefined;
         publication.phase = "pending_merge";
         await persist();
         const request = await read(
-          "request_squash_merge",
+          operation,
           target,
           async () => {
-            state = await observe();
+            state = firstObservation ?? (await observe());
+            firstObservation = undefined;
             if (state.merged || state.mergeRequested)
               return { outcome: "accepted" as const };
             if (!(await input.beforeDispatch()))

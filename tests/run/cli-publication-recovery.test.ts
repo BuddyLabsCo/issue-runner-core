@@ -178,12 +178,12 @@ await test("restart pauses before retrying an uncertain PR creation with no exac
 
 for (const conflict of [
   "advanced",
+  "lastCommit",
   "absent",
   "id",
   "number",
   "url",
   "createdAt",
-  "duplicate",
   "closed",
   "draft",
   "missing",
@@ -207,19 +207,28 @@ for (const conflict of [
     else if (conflict === "number") record.number = 999;
     else if (conflict === "url")
       record.url = "https://github.com/owner/repo/pull/999";
-    else if (conflict === "duplicate")
-      state.pullRequests.push({ ...record, number: 999 });
     else if (conflict === "closed") record.state = "closed";
     else if (conflict === "draft") record.draft = true;
-    else state.pullRequests.length = 0;
+    else if (conflict === "missing") state.pullRequests.length = 0;
+    if (conflict === "lastCommit") {
+      const observe = fixture.dependencies.codeHost.observePullRequest.bind(
+        fixture.dependencies.codeHost,
+      );
+      fixture.dependencies.codeHost.observePullRequest = async (input) => ({
+        ...(await observe(input)),
+        lastCommitSha: "d".repeat(40),
+      });
+    }
     fixture.dependencies.signal = new AbortController().signal;
     let pauses = 0;
     fixture.dependencies.operator.pause = async (message) => {
       assert.match(
         message,
-        conflict === "advanced" || conflict === "absent"
-          ? /advanced or disappeared/u
-          : conflict === "missing"
+        conflict === "advanced" ||
+          conflict === "absent" ||
+          conflict === "lastCommit"
+          ? /head mismatch/u
+          : conflict === "missing" || conflict === "number"
             ? /Recorded Pull Request is missing/u
             : /identity or head mismatch/u,
       );
@@ -230,7 +239,7 @@ for (const conflict of [
     assert.equal(pauses, 1);
     assert.equal(state.pushes, 1);
     assert.equal(state.creations, 1);
-    assert.equal(state.discoveries.length, 0);
+    assert.equal((await fixture.snapshot()).publication!.phase, "pr_created");
     assert.equal(fixture.state.taskCount, 1);
     assert.equal(fixture.state.probeCount, 1);
     assert.deepEqual(
@@ -296,8 +305,7 @@ for (const conflict of ["unmerged", "head", "advanced", "identity"] as const) {
     const record = state.pullRequests[0]!;
     record.state = conflict === "unmerged" ? "open" : "merged";
     fixture.integrationState.pullRequest.merged = conflict !== "unmerged";
-    if (conflict === "head")
-      fixture.integrationState.pullRequest.headSha = "d".repeat(40);
+    if (conflict === "head") record.headSha = "d".repeat(40);
     if (conflict === "advanced")
       state.branches.set(before.branch, "d".repeat(40));
     if (conflict === "identity") record.targetBranch = "unrelated";
@@ -322,7 +330,6 @@ for (const conflict of ["unmerged", "head", "advanced", "identity"] as const) {
     assert.equal(pauses, conflict === "unmerged" ? 0 : 1);
     assert.equal(state.pushes, 1);
     assert.equal(state.creations, 1);
-    assert.equal(state.discoveries.length, 0);
     assert.equal(fixture.integrationState.requests.length, 0);
     assert.equal(fixture.integrationState.closures, 0);
     assert.equal(fixture.state.cleanup.length, 0);

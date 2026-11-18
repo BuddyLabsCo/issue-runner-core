@@ -62,10 +62,30 @@ await test("no-auto-merge publishes fixed Probe metadata, waits for checks, and 
           pullRequests.push(record);
           return record;
         },
-        async getRequiredChecks() {
+        async observePullRequest(input) {
+          assert.equal(input.number, 81);
           assert.equal(fixture.state.sleeps.at(-1), 30_000);
           effects.push("checks");
-          return [];
+          const record = pullRequests[0]!;
+          return {
+            branch: { repositoryId: "R_repo", headSha: remote },
+            pullRequest: record,
+            lastCommitSha: record.headSha,
+            merge: {
+              headSha: record.headSha,
+              createdAt: record.createdAt,
+              merged: false,
+              mergeRequested: false,
+              mergeable: "unknown",
+              mergeFailure: null,
+              mergeStateStatus: "UNKNOWN",
+              isInMergeQueue: false,
+              isMergeQueueEnabled: false,
+              autoMergeEnabledAt: null,
+              mergeQueueEntryId: null,
+            },
+            checks: [],
+          };
         },
       },
     },

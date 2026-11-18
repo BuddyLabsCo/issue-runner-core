@@ -11,7 +11,7 @@ import {
 
 for (const kind of ["ci", "conflict"] as const) {
   for (const interruption of ["assignment", "push"] as const) {
-    await test(`an exact merged PR stops recovery after an interrupted ${kind} repair ${interruption} without continuation or another push`, async (t) => {
+    await test(`an exact merged PR with a deleted branch stops recovery after an interrupted ${kind} repair ${interruption} without continuation or another push`, async (t) => {
       const fixture = await (kind === "ci" ? ciRepairRun : conflictRepairRun)(
         t,
       );
@@ -53,6 +53,7 @@ for (const kind of ["ci", "conflict"] as const) {
       assert.equal(fixture.repairs.tasks.length, 1);
       state.pullRequests[0]!.state = "merged";
       const mergedHead = state.pullRequests[0]!.headSha;
+      state.branches.delete(before.branch);
       merged = true;
       fixture.repairs.onTask = task;
       fixture.dependencies.signal = new AbortController().signal;
@@ -67,9 +68,15 @@ for (const kind of ["ci", "conflict"] as const) {
       assert.equal(fixture.repairs.probes.length, 1);
       assert.equal(state.pushes, interruption === "assignment" ? 1 : 2);
       assert.equal(state.creations, 1);
-      assert.equal(state.branches.get(before.branch), mergedHead);
+      assert.equal(state.branches.has(before.branch), false);
       const after = await fixture.snapshot();
       assert.equal(after.publication!.merge!.headSha, mergedHead);
+      if (interruption === "push")
+        assert.equal(
+          after.publication![kind === "ci" ? "ciRepair" : "conflictRepair"]!
+            .attempts[0]!.pushed,
+          true,
+        );
       assert.equal(after.publication!.phase, "delivered");
       assert.equal(fixture.state.cleanup.length, 2);
     });

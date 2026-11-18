@@ -4,7 +4,6 @@ import path from "node:path";
 import test from "node:test";
 import type { AuditEvent } from "../../src/audit.ts";
 import type { BatchProgress, MaintenanceProgress } from "../../src/recovery.ts";
-import type { CodeHost } from "../../src/run/contracts.ts";
 import type { TestTerminal } from "../support/cli-dependencies.ts";
 import { fiveIssueRun } from "../support/full-contract-run.ts";
 import { agent } from "../support/cli-project.ts";
@@ -54,9 +53,9 @@ await test(
       }
       await submit(tab, text, chord);
     };
-    const host: CodeHost = fixture.dependencies.codeHost;
+    const host = fixture.dependencies.codeHost;
     const checkCalls = new Map<number, number>();
-    host.getRequiredChecks = async (_repository, prNumber) => {
+    host.checksFor = async (_repository, prNumber) => {
       const pr = (await fixture.dependencies.codeHost.listPullRequests()).find(
         (pr) => pr.number === prNumber,
       )!;
@@ -133,7 +132,6 @@ await test(
       [51, 52, 53, 54, 55].map((number) => `label:${number}`),
     );
     assert.equal(fixture.maxActive, 3);
-    assert.equal(checkCalls.get(51), 2);
     assert.deepEqual(fixture.integrations, [51, 52, 53, 100, 54, 101, 55]);
     assert.deepEqual(
       fixture.events.filter((event) =>
@@ -335,6 +333,15 @@ await test(
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line) as AuditEvent);
+    assert.equal(
+      records.filter(
+        (record) =>
+          record.target === "ticket:51" &&
+          record.operation === "required_checks" &&
+          record.result === "succeeded",
+      ).length,
+      2,
+    );
     assert.equal(
       records.filter(
         (record) =>

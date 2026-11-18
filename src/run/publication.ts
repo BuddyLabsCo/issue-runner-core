@@ -1,39 +1,41 @@
-import type { LoadedProject } from "../config.ts";
-import type {
-  ImplementationProgress,
-  PublicationProgress,
-} from "../recovery.ts";
+import type { PublicationProgress } from "../recovery.ts";
 import type {
   CodeHost,
   PublicationObservation,
   PullRequestRecord,
+  PullRequestObservation,
 } from "./contracts.ts";
 import type { ReadOperation } from "./discovery.ts";
 import type { RunContext } from "./run.ts";
 import { nonempty } from "../agent/handoff.ts";
+import {
+  publishedHead,
+  verifiedPublication,
+  verifyPublicationObservation,
+  verifyPublicationRecord,
+} from "./publication-evidence.ts";
 import { verifiedImplementation } from "./review.ts";
 import { verifyWorkspace } from "./verification.ts";
 import { OperationStopped, pauseForOperator } from "./operations.ts";
 import type { IssueStageContext } from "../agent/stage.ts";
 import {
   repairPullRequest,
+  acceptRepairPush,
   pushedRepairs,
   inspectRepairAncestry,
   verifyRepairAncestry,
 } from "./repair.ts";
 
 // Publication policy follows the source workflow at 0adf499bf69217b56256ca2affb1c0dca0894110.
-export async function publishImplementation(input: {
-  progress: ImplementationProgress;
-  loaded: LoadedProject;
-  context: RunContext;
-  codeHost: CodeHost;
-  read: ReadOperation;
-  persist: () => Promise<void>;
-  beforeDispatch: () => Promise<boolean>;
-  autoMerge: boolean;
-  stageInput: IssueStageContext;
-}): Promise<string> {
+export async function publishImplementation(
+  input: IssueStageContext & {
+    context: RunContext;
+    codeHost: CodeHost;
+    read: ReadOperation;
+    autoMerge: boolean;
+    observedConflict?: boolean;
+  },
+): Promise<string> {
   const { progress, loaded, context, codeHost, read, persist, beforeDispatch } =
     input;
   const repository = progress.repository;
@@ -122,9 +124,13 @@ export async function publishImplementation(input: {
       );
     return observed;
   };
+  const observeRecorded = (number: number) =>
+    codeHost.observePullRequest(
+      { repository, branch: publication.branch, number },
+      context.signal,
+    );
   const completed =
-    input.stageInput.ticket.state === "closed" &&
-    input.stageInput.ticket.stateReason === "completed";
+    input.ticket.state === "closed" && input.ticket.stateReason === "completed";
 
   let pushedObservation: PublicationObservation | undefined;
   if (!completed && publication.phase === "pending_push") {
@@ -153,22 +159,49 @@ export async function publishImplementation(input: {
       async () => {
         await verify(false);
         const expectedHead = publishedHead(publication);
-        const { candidates } = await observe(expectedHead, true);
-        const candidate = matchPublication(
-          publication,
-          candidates,
-          expectedHead,
-        );
-        if (candidate?.state !== "merged") return;
-        const merge = await codeHost.getPullRequest(
-          repository,
-          candidate.number,
-        );
-        if (!merge.merged || merge.headSha !== publishedHead(publication))
-          throw new Error(
-            "Pull Request merge does not match the recorded publication head",
+        const candidate =
+          publication.pullRequest ??
+          matchPublication(
+            publication,
+            (await observe(expectedHead, true)).candidates,
+            expectedHead,
           );
-        return { candidate, merge };
+        if (!candidate) return;
+        const pendingRepair = [
+          publication.ciRepair?.attempts.at(-1),
+          publication.conflictRepair?.attempts.at(-1),
+        ].find((attempt) => attempt?.pendingPush !== undefined);
+        const observation = await observeRecorded(candidate.number);
+        verifyPublicationObservation(
+          publication,
+          observation,
+          expectedHead,
+          pendingRepair?.pendingPush,
+        );
+        if (!observation.merge.merged) return;
+        if (
+          candidate.id !== observation.pullRequest.id ||
+          candidate.url !== observation.pullRequest.url ||
+          candidate.createdAt !== observation.pullRequest.createdAt
+        )
+          throw new Error("Pull Request identity or head mismatch");
+        if (pendingRepair?.pendingPush === observation.pullRequest.headSha) {
+          verifyWorkspace(
+            pendingRepair,
+            await context.git.inspect(pendingRepair),
+            pendingRepair.result!,
+          );
+          verifyRepairAncestry(
+            pendingRepair,
+            await inspectRepairAncestry(context.git, pendingRepair),
+          );
+          acceptRepairPush(
+            publication,
+            pendingRepair,
+            context.clock.now().getTime(),
+          );
+        }
+        return { candidate: observation.pullRequest, merge: observation.merge };
       },
     );
     if (!recovered)
@@ -181,9 +214,8 @@ export async function publishImplementation(input: {
     await persist();
     return `Merged PR ${recovered.candidate.url} awaits completed tracker confirmation`;
   }
-  let adopted: PullRequestRecord | undefined;
   if (!publication.pullRequest) {
-    adopted = await read("publish_pull_request", target, async () => {
+    const adopted = await read("publish_pull_request", target, async () => {
       await verify();
       const { candidates } = pushedObservation ?? (await observe(head));
       pushedObservation = undefined;
@@ -228,72 +260,58 @@ export async function publishImplementation(input: {
   }
   const pullRequest = publication.pullRequest;
   const merged = new OperationStopped("Published Pull Request merged");
+  const observeHead = async (pendingHead?: string) => {
+    await verify();
+    const observation = await observeRecorded(pullRequest.number);
+    verifyPublicationObservation(
+      publication,
+      observation,
+      publishedHead(publication),
+      pendingHead,
+    );
+    return observation;
+  };
+  const stopIfMerged = async ({ merge }: PullRequestObservation) => {
+    if (!merge.merged) return;
+    publication.merge = merge;
+    publication.phase = "merged";
+    await persist();
+    // Unwind nested repairs before dispatching or pushing again.
+    throw merged;
+  };
+  const repairOptions = {
+    ...input,
+    git: context.git,
+    read,
+    observeHead,
+    stopIfMerged,
+  };
   try {
-    const confirm = (expectedHead = publishedHead(publication)) =>
-      read("confirm_publication", target, async () => {
-        await verify();
-        const { candidates } = await observe(expectedHead);
-        const candidate = matchPublication(
-          publication,
-          candidates,
-          expectedHead,
-        );
-        if (!candidate) throw new Error("Published Pull Request is missing");
-        if (
-          candidate.state === "merged" &&
-          expectedHead === publishedHead(publication)
-        ) {
-          const merge = await codeHost.getPullRequest(
-            repository,
-            candidate.number,
-          );
-          if (!merge.merged || merge.headSha !== expectedHead)
-            throw new Error(
-              "Pull Request merge does not match the recorded publication head",
-            );
-          publication.merge = merge;
-          publication.phase = "merged";
-          await persist();
-          // Unwind nested repairs before they can dispatch or push again.
-          throw merged;
-        }
-      });
-    const pendingPush =
-      publication.ciRepair?.attempts.at(-1)?.pendingPush ??
-      publication.conflictRepair?.attempts.at(-1)?.pendingPush;
-    // Let the repair checkpoint a push already confirmed at its recorded head.
-    if (!adopted || adopted.state === "merged")
-      await confirm(
-        pendingPush &&
-          (await read("read_pending_repair_head", target, remoteHead)) ===
-            pendingPush
-          ? pendingPush
-          : undefined,
-      );
+    if (publication.phase === "checks_ready") {
+      publication.phase = "pr_created";
+      delete publication.checksState;
+    }
     if (publication.phase === "conflict_repair") {
+      let alreadyObserved = input.observedConflict === true;
       do {
         await repairPullRequest({
-          ...input.stageInput,
+          ...repairOptions,
           kind: "conflict",
-          git: context.git,
-          read,
-          confirm,
-          remoteHead,
+          alreadyObserved,
         });
+        alreadyObserved = false;
       } while (publication.phase === "conflict_repair");
       if (publication.conflictRepair?.retryAuthorized)
         return "Conflict repair budget exhausted; awaiting refreshed merge evidence";
     }
-    const repair = async () => {
+    const repair = async (alreadyObserved = false) => {
       do {
         await repairPullRequest({
+          ...repairOptions,
           kind: "ci",
-          ...input.stageInput,
-          git: context.git,
-          read,
-          confirm,
-          remoteHead,
+          alreadyObserved,
         });
+        alreadyObserved = false;
       } while (
         publication.phase === "checks_failed" &&
         !publication.ciRepair?.retryAuthorized
@@ -320,9 +338,14 @@ export async function publishImplementation(input: {
         loaded.config.timeouts.requiredChecksMinutes * 60_000;
       await persist();
       for (;;) {
-        await confirm();
-        const checks = await read("required_checks", target, () =>
-          codeHost.getRequiredChecks(repository, pullRequest.number),
+        const { checks, merge } = await read(
+          "required_checks",
+          target,
+          async () => {
+            const observation = await observeHead();
+            await stopIfMerged(observation);
+            return observation;
+          },
         );
         publication.checks = checks;
         if (
@@ -330,11 +353,11 @@ export async function publishImplementation(input: {
         ) {
           publication.phase = "checks_failed";
           await persist();
-          await repair();
+          await repair(true);
           break;
         }
         if (!checks.some(({ bucket }) => bucket === "pending")) {
-          await confirm();
+          publication.checksState = merge;
           publication.phase = "checks_ready";
           await persist();
           break;
@@ -382,22 +405,11 @@ function matchPublication(
     return undefined;
   }
   const candidate = related[0]!;
-  if (
-    related.length !== 1 ||
-    candidate.branch !== publication.branch ||
-    candidate.targetBranch !== publication.targetBranch ||
-    candidate.headSha !== expectedHead ||
-    (candidate.state !== "open" && candidate.state !== "merged") ||
-    candidate.draft !== false ||
-    (publication.pullRequest &&
-      (candidate.id !== publication.pullRequest.id ||
-        candidate.number !== publication.pullRequest.number ||
-        candidate.url !== publication.pullRequest.url ||
-        candidate.createdAt !== publication.pullRequest.createdAt))
-  )
+  if (related.length !== 1 || candidate.headSha !== expectedHead)
     throw new Error(
       "Pull Request identity or head mismatch, or multiple matching Pull Requests",
     );
+  verifyPublicationRecord(publication, candidate);
   return candidate;
 }
 
@@ -408,67 +420,4 @@ function pullRequestIdentity({
   createdAt,
 }: PullRequestRecord) {
   return { id, number, url, createdAt };
-}
-
-export function verifiedPublication(progress: ImplementationProgress) {
-  const publication = progress.publication;
-  const result = verifiedImplementation(progress);
-  const head = result.commits.at(-1)?.sha;
-  if (
-    !publication ||
-    !head ||
-    !nonempty(publication.repositoryId) ||
-    publication.branch !== progress.branch ||
-    publication.targetBranch !== progress.target_branch ||
-    publication.headSha !== head ||
-    publication.title !== progress.pr_title ||
-    publication.body !== progress.pr_body ||
-    JSON.stringify(publication.commits) !== JSON.stringify(result.commits) ||
-    ![
-      "pending_push",
-      "pushed",
-      "pending_pr",
-      "pr_created",
-      "checks_ready",
-      "checks_failed",
-      "conflict_repair",
-      "pending_merge",
-      "merge_requested",
-      "merged",
-      "delivered",
-    ].includes(publication.phase)
-  )
-    throw new Error(
-      "Publication evidence does not match the verified execution",
-    );
-
-  const pullRequest = publication.pullRequest;
-  const recorded = !["pending_push", "pushed", "pending_pr"].includes(
-    publication.phase,
-  );
-  if (
-    (recorded &&
-      (!pullRequest ||
-        !nonempty(pullRequest.id) ||
-        !Number.isSafeInteger(pullRequest.number) ||
-        pullRequest.number <= 0 ||
-        typeof pullRequest.url !== "string" ||
-        pullRequest.url.toLowerCase() !==
-          `https://github.com/${progress.repository}/pull/${pullRequest.number}`.toLowerCase() ||
-        typeof pullRequest.createdAt !== "string" ||
-        !Number.isFinite(Date.parse(pullRequest.createdAt)))) ||
-    (!recorded && pullRequest !== undefined) ||
-    (publication.phase === "pending_pr" &&
-      publication.creationAttempted !== true)
-  )
-    throw new Error("Publication has invalid Pull Request checkpoint evidence");
-
-  return publication;
-}
-
-export function publishedHead(publication: PublicationProgress): string {
-  return (
-    pushedRepairs(publication).at(-1)?.result?.commits.at(-1)?.sha ??
-    publication.headSha
-  );
 }

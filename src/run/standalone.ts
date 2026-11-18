@@ -243,14 +243,14 @@ async function executeStandalone(
     operator: context.operator,
     ...(context.signal ? { signal: context.signal } : {}),
   });
-  const publish = (progress: ImplementationProgress) =>
+  const publish = (progress: ImplementationProgress, conflict = false) =>
     publishImplementation({
       ...stageInput(progress),
       context,
       codeHost: input.codeHost,
       read,
       autoMerge: input.autoMerge,
-      stageInput: stageInput(progress),
+      observedConflict: conflict,
     });
   const integrate = async (
     progress: ImplementationProgress,
@@ -272,8 +272,9 @@ async function executeStandalone(
           codeHost: input.codeHost,
           tracker,
           read,
+          deferred: input.deferIntegration !== undefined,
           inspectTicket: inspect,
-          continuePublication: () => publish(progress),
+          continuePublication: (conflict) => publish(progress, conflict),
         });
         if (delivery.outcome === "succeeded") {
           await tabs?.closeResidual();
@@ -295,13 +296,11 @@ async function executeStandalone(
         return summary;
       }
     };
-    if (input.deferIntegration) {
-      const pullRequest = progress.publication!.pullRequest!;
-      input.deferIntegration(pullRequest.number, complete);
-      report.detail = `CI-ready PR ${pullRequest.url} awaits Batch integration`;
-      return summary;
-    }
-    return complete();
+    if (!input.deferIntegration) return complete();
+    const pullRequest = progress.publication!.pullRequest!;
+    input.deferIntegration(pullRequest.number, complete);
+    report.detail = `CI-ready PR ${pullRequest.url} awaits Batch integration`;
+    return summary;
   };
   if (
     restored?.publication &&

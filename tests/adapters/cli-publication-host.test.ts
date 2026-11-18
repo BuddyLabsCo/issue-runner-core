@@ -5,35 +5,25 @@ import { executeCli } from "../../src/cli.ts";
 import { implementationCommand } from "../support/implementation-run.ts";
 import { publicationRun } from "../support/publication-run.ts";
 
-const nameWithOwner = "Owner/Repo";
-const repository = { id: "R_repo", nameWithOwner };
-const createdAt = "2026-11-18T12:00:00Z";
-
-function connection(
-  nodes: unknown[],
-  totalCount = nodes.length,
-  next: string | null = null,
-) {
-  return {
-    nodes,
-    totalCount,
-    pageInfo: { hasNextPage: next !== null, endCursor: next },
-  };
-}
+import {
+  connection,
+  createdAt,
+  exact,
+  head,
+  publication,
+  remote,
+  repository,
+} from "../support/github-pr-fixture.ts";
 
 await test("publication sends the accepted multiline metadata directly and records the returned identity", async (t) => {
   const fixture = await publicationRun(t);
   const operations: string[] = [];
   let created: object | undefined;
+  const polls: number[] = [];
   const adapter = new GitHubCodeHost("host-secret", async (args, options) => {
     assert.equal(options.token, "host-secret");
     if (args[0] === "api" && args[1] === "--method")
       return JSON.stringify({ default_branch: "default-branch" });
-    if (args[1] === "checks") {
-      assert.ok(args.includes("--required"));
-      assert.deepEqual(options.allowedExitCodes, [1, 8]);
-      return "[]";
-    }
     assert.deepEqual(args, [
       "api",
       "graphql",
@@ -64,17 +54,10 @@ await test("publication sends the accepted multiline metadata directly and recor
         maintainerCanModify: true,
       });
       created = {
-        id: "PR_exact",
-        number: 81,
-        url: "https://github.com/Owner/Repo/pull/81",
+        ...exact,
         headRefName: saved.branch,
         baseRefName: "default-branch",
         headRefOid: sha,
-        repository,
-        headRepository: repository,
-        state: "OPEN",
-        isDraft: false,
-        createdAt,
       };
       return JSON.stringify({
         data: { createPullRequest: { pullRequest: created } },
@@ -83,6 +66,61 @@ await test("publication sends the accepted multiline metadata directly and recor
     assert.equal(variables.owner, "owner");
     assert.equal(variables.name, "repo");
     assert.equal(variables.ref, `refs/heads/${saved.branch}`);
+    if (query.includes("pullRequest(number:")) {
+      operations.push("poll");
+      assert.equal(variables.number, 81);
+      assert.doesNotMatch(query, /pullRequests\(/u);
+      assert.deepEqual(saved.publication?.pullRequest, {
+        id: "PR_exact",
+        number: 81,
+        url: "https://github.com/Owner/Repo/pull/81",
+        createdAt,
+      });
+      polls.push(fixture.dependencies.clock.now().getTime());
+      return JSON.stringify({
+        data: {
+          repository: {
+            ...repository,
+            ref,
+            pullRequest: {
+              ...created,
+              mergedAt: null,
+              mergeable: "UNKNOWN",
+              mergeStateStatus: "BLOCKED",
+              isInMergeQueue: false,
+              isMergeQueueEnabled: true,
+              autoMergeRequest: null,
+              mergeQueueEntry: null,
+              commits: {
+                nodes: [
+                  {
+                    commit: {
+                      oid: sha,
+                      statusCheckRollup:
+                        polls.length === 1
+                          ? {
+                              contexts: connection([
+                                {
+                                  __typename: "StatusContext",
+                                  id: "SC_CI",
+                                  context: "CI",
+                                  state: "PENDING",
+                                  createdAt,
+                                  targetUrl: null,
+                                  isRequired: true,
+                                },
+                              ]),
+                            }
+                          : null,
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+    }
     if (!query.includes("pullRequests(")) {
       operations.push("branch");
       assert.equal(saved.publication, undefined);
@@ -91,23 +129,13 @@ await test("publication sends the accepted multiline metadata directly and recor
     operations.push("publication");
     assert.equal(variables.branch, saved.branch);
     assert.equal(variables.base, "default-branch");
-    if (created) {
-      assert.ok(fixture.state.sleeps.includes(30_000));
-      assert.deepEqual((await fixture.snapshot()).publication?.pullRequest, {
-        id: "PR_exact",
-        number: 81,
-        url: "https://github.com/Owner/Repo/pull/81",
-        createdAt,
-      });
-    }
-    const candidates = created ? [created] : [];
     return JSON.stringify({
       data: {
         repository: {
           ...repository,
           ref,
-          source: connection(candidates),
-          target: connection(candidates),
+          source: connection([]),
+          target: connection([]),
         },
       },
     });
@@ -121,40 +149,24 @@ await test("publication sends the accepted multiline metadata directly and recor
     /CI-ready/u,
     JSON.stringify(result),
   );
-  assert.deepEqual(operations.slice(0, 3), ["branch", "publication", "create"]);
-  assert.equal(
-    operations.filter((operation) => operation === "create").length,
-    1,
-  );
+  assert.deepEqual(operations, [
+    "branch",
+    "publication",
+    "create",
+    "poll",
+    "poll",
+  ]);
+  assert.deepEqual(polls, [40_000, 50_000]);
   assert.equal(
     (await fixture.snapshot()).publication?.repositoryId,
     repository.id,
   );
+  const observedMerge = (await fixture.snapshot()).publication?.checksState;
+  assert.equal(observedMerge?.mergeable, "unknown");
+  assert.equal(observedMerge?.mergeStateStatus, "BLOCKED");
+  assert.equal(observedMerge?.isMergeQueueEnabled, true);
 });
 
-const publication = {
-  repository: "owner/repo",
-  branch: "runner/issue",
-  targetBranch: "main",
-};
-const head = "a".repeat(40);
-const remote = {
-  ...repository,
-  ref: { name: publication.branch, target: { oid: head } },
-};
-const exact = {
-  id: "PR_exact",
-  number: 81,
-  url: "https://github.com/Owner/Repo/pull/81",
-  headRefName: publication.branch,
-  baseRefName: publication.targetBranch,
-  headRefOid: head,
-  repository,
-  headRepository: repository,
-  state: "OPEN",
-  isDraft: false,
-  createdAt,
-};
 const closed = {
   ...exact,
   id: "PR_closed",
@@ -255,7 +267,7 @@ await test("publication cancellation stops candidate pagination before the next 
 
 for (const headRepository of [
   { id: repository.id, nameWithOwner: "Fork/Repo" },
-  { id: "R_fork", nameWithOwner },
+  { id: "R_fork", nameWithOwner: repository.nameWithOwner },
   { nameWithOwner: "Fork/Repo" },
 ]) {
   await test(`publication rejects incomplete or contradictory head repository identity ${JSON.stringify(headRepository)}`, async () => {
