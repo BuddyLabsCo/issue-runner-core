@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import { renderRunReport } from "../../src/run/report.ts";
-import type { CodeHost } from "../../src/run/contracts.ts";
 import { promptAssignment } from "../support/prompt-assignment.ts";
 import assert from "node:assert/strict";
+import type { CodeHost } from "../../src/run/contracts.ts";
 import {
   existsSync,
   mkdirSync,
@@ -331,8 +331,6 @@ await test("five completed Issues print one aligned report with visible PR links
   const host = fixture.dependencies.codeHost;
   const list = host.listPullRequests.bind(host);
   const create = host.createPullRequest.bind(host);
-  const codeHost: CodeHost = host;
-  const requestMerge = codeHost.requestSquashMerge.bind(codeHost);
   const numbers = new Map([
     [81, 1],
     [82, 22],
@@ -354,11 +352,10 @@ await test("five completed Issues print one aligned report with visible PR links
       url: `https://github.com/owner/repo/pull/${numbers.get(pr.number)!}`,
     };
   };
+  const codeHost: CodeHost = host;
   codeHost.requestSquashMerge = (input) => {
-    const original = [...numbers].find(
-      ([, number]) => number === input.pullRequest,
-    )![0];
-    return requestMerge({ ...input, pullRequest: original });
+    fixture.merged.add(input.pullRequest.number);
+    return Promise.resolve({ outcome: "accepted" });
   };
   const result = await fixture.run();
   assert.equal(result.exitCode, 0);

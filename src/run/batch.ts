@@ -41,10 +41,7 @@ export async function runBatch(
     return result;
   }
   let needsDocumentation = false;
-  const integrations = new Map<
-    number,
-    { pullRequest: number; complete: () => Promise<RunSummary> }
-  >();
+  const integrations: Parameters<typeof integrateBatch>[0]["ready"] = new Map();
   let delivered: number[] = [];
   let resolved: boolean;
   const attempts = selection.batch.map(async (number) => {
@@ -81,9 +78,6 @@ export async function runBatch(
       batch: selection.batch,
       ready: integrations,
       results: await Promise.all(attempts),
-      repository: loaded.config.repository,
-      codeHost,
-      read,
     });
     resolved = results.every(
       (result) =>

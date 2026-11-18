@@ -62,13 +62,6 @@ export async function parentRun(
         children.find((ticket) => ticket.number === number)!,
       );
     },
-    async readIssueDelivery(_repository: string, ticket: number) {
-      const { number, state, stateReason, labels } = children.find(
-        (child) => child.number === ticket,
-      )!;
-      assert.ok(labels);
-      return { number, state, stateReason, labels: [...labels] };
-    },
     async addLabel(_repository: string, number: number, label: string) {
       writes.push(`label:${number}`);
       children.find((ticket) => ticket.number === number)!.labels!.push(label);
@@ -141,6 +134,7 @@ export async function parentRun(
     terminal: terminalModule(terminalPlugin),
     terminalPlugin,
   };
+  dependencies.codeHost.readDeliveryIssue = tracker.getTicket.bind(tracker);
   return {
     directory,
     dependencies,
@@ -178,7 +172,7 @@ export async function parentDeliveryRun(
     (await list()).map((pr) =>
       merged.has(pr.number) ? { ...pr, state: "merged" } : pr,
     );
-  fixture.dependencies.codeHost.getPullRequest = async (
+  fixture.dependencies.codeHost.deliveryMergeFacts = async (
     _repository,
     number,
   ) => ({
@@ -195,7 +189,7 @@ export async function parentDeliveryRun(
     async requestSquashMerge(
       input: Parameters<CodeHost["requestSquashMerge"]>[0],
     ) {
-      merged.add(input.pullRequest);
+      merged.add(input.pullRequest.number);
       return { outcome: "accepted" };
     },
   });

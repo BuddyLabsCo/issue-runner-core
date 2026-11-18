@@ -419,8 +419,8 @@ await test("recovery uses persisted delivery labels after a partial Batch was in
   const merge = host.requestSquashMerge.bind(host);
   let first: number | undefined;
   host.requestSquashMerge = async (input) => {
-    first ??= input.pullRequest;
-    return input.pullRequest === first
+    first ??= input.pullRequest.number;
+    return input.pullRequest.number === first
       ? merge(input)
       : { outcome: "rejected", error: new Error("merge forbidden") };
   };

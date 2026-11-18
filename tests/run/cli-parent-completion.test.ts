@@ -52,7 +52,7 @@ for (const recover of [false, true]) {
             outcome: "rejected",
             error: new Error("merge temporarily rejected"),
           };
-        fixture.merged.add(input.pullRequest);
+        fixture.merged.add(input.pullRequest.number);
         return { outcome: "accepted" };
       },
     });
@@ -253,13 +253,13 @@ await test("matching recovery continues a partially integrated Batch without rep
     async requestSquashMerge(
       input: Parameters<CodeHost["requestSquashMerge"]>[0],
     ) {
-      requests.push(input.pullRequest);
+      requests.push(input.pullRequest.number);
       if (rejectSecond && requests.length > 1)
         return {
           outcome: "rejected",
           error: new Error("second merge rejected"),
         };
-      fixture.merged.add(input.pullRequest);
+      fixture.merged.add(input.pullRequest.number);
       return { outcome: "accepted" };
     },
   });

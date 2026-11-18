@@ -22,7 +22,7 @@ await test("a repaired PR integrates its repaired HEAD and recovers queued and d
   const fixture = await ciRepairRun(t);
   let requests = 0;
   let merged = false;
-  fixture.dependencies.codeHost.getPullRequest = async () => ({
+  fixture.dependencies.codeHost.deliveryMergeFacts = async () => ({
     headSha: fixture.publicationState.pullRequests[0]!.headSha,
     createdAt: "2026-10-30T00:00:00Z",
     merged,
@@ -46,7 +46,7 @@ await test("a repaired PR integrates its repaired HEAD and recovers queued and d
       input: Parameters<CodeHost["requestSquashMerge"]>[0],
     ) {
       assert.equal(input.headSha, repairCommit.sha);
-      assert.equal(input.pullRequest, 81);
+      assert.equal(input.pullRequest.number, 81);
       requests++;
       return { outcome: "accepted" };
     },
@@ -96,7 +96,7 @@ await test("a repaired PR integrates its repaired HEAD and recovers queued and d
   assert.equal(saved.publication!.body, saved.pr_body);
   assert.deepEqual(
     fixture.publicationState.discoveries,
-    [40_000, 50_000, 50_000, 80_000, 90_000, 90_000],
+    [40_000, 50_000, 50_000, 80_000],
   );
   assert.equal((await run()).summary.outcome, "succeeded");
   assert.equal(requests, 1);

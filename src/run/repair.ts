@@ -150,6 +150,17 @@ function validateRepairBudget(
     throw invalid();
 }
 
+export function pendingRepair(
+  attempt: RepairProgress | undefined,
+): attempt is RepairProgress {
+  return Boolean(
+    attempt &&
+    !attempt.pushed &&
+    !attempt.verificationError &&
+    attempt.result?.outcome !== "no_change",
+  );
+}
+
 export async function repairPullRequest(
   input: IssueStageContext & {
     kind: "ci" | "conflict";
@@ -180,12 +191,7 @@ export async function repairPullRequest(
       input.stopIfMerged(await input.observeHead()),
     );
   let attempt = budget.attempts.at(-1);
-  if (
-    !attempt ||
-    attempt.pushed ||
-    attempt.verificationError ||
-    attempt.result?.outcome === "no_change"
-  ) {
+  if (!pendingRepair(attempt)) {
     if (!input.alreadyObserved) await confirm();
     if (budget.consumed >= 2) {
       await pauseForOperator(

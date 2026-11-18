@@ -9,7 +9,12 @@ import { executionPrompt } from "../prompts/implement.ts";
 import { reviewImplementation, verifiedImplementation } from "./review.ts";
 import { verifyWorkspace } from "./verification.ts";
 import { parsePRExecution } from "../agent/handoff.ts";
-import type { CodeHost, Ticket, Tracker } from "./contracts.ts";
+import type {
+  CodeHost,
+  PullRequestIdentity,
+  Ticket,
+  Tracker,
+} from "./contracts.ts";
 import { publishImplementation } from "./publication.ts";
 import {
   recoverIssue,
@@ -42,7 +47,10 @@ export async function runStandalone(input: {
   codeHost: CodeHost;
   autoMerge: boolean;
   onDelivery?: (labels: string[]) => void;
-  deferIntegration?: (pr: number, complete: () => Promise<RunSummary>) => void;
+  deferIntegration?: (
+    pr: PullRequestIdentity,
+    complete: () => Promise<RunSummary>,
+  ) => void;
 }): Promise<RunSummary> {
   return reportTicket(input, (issue, report) =>
     recoverIssue(issue, (attempt, restarting) =>
@@ -255,7 +263,6 @@ async function executeStandalone(
   const integrate = async (
     progress: ImplementationProgress,
     publicationReason?: string,
-    resuming = false,
   ): Promise<RunSummary> => {
     if (
       publicationReason !== undefined &&
@@ -273,8 +280,6 @@ async function executeStandalone(
           codeHost: input.codeHost,
           tracker,
           read,
-          deferred: input.deferIntegration !== undefined,
-          resuming,
           issueClosureReason: started.ticket.stateReason,
           continuePublication: (conflict) => publish(progress, conflict),
         });
@@ -300,7 +305,7 @@ async function executeStandalone(
     };
     if (!input.deferIntegration) return complete();
     const pullRequest = progress.publication!.pullRequest!;
-    input.deferIntegration(pullRequest.number, complete);
+    input.deferIntegration(pullRequest, complete);
     report.detail = `CI-ready PR ${pullRequest.url} awaits Batch integration`;
     return summary;
   };
@@ -315,7 +320,7 @@ async function executeStandalone(
       "delivered",
     ].includes(restored.publication.phase)
   )
-    return integrate(restored, undefined, true);
+    return integrate(restored);
   if (
     selected.reason &&
     !completed &&

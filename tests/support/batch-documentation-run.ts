@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import { promptAssignment } from "./prompt-assignment.ts";
-import assert from "node:assert/strict";
 import { rm } from "node:fs/promises";
 import type { TestContext } from "node:test";
 import type { GitWorkspace, Ticket } from "../../src/run/contracts.ts";
@@ -46,7 +45,8 @@ export async function batchDocumentationRun(
   };
   const tracker = fixture.dependencies.tracker;
   const getTicket = tracker.getTicket.bind(tracker);
-  const readIssueDelivery = tracker.readIssueDelivery.bind(tracker);
+  const host = fixture.dependencies.codeHost;
+  const readDeliveryIssue = host.readDeliveryIssue.bind(host);
   const closeTicket = tracker.closeTicket.bind(tracker);
   tracker.listLabelsPage = async () => ({
     labels: ["doc-maintain"],
@@ -71,12 +71,11 @@ export async function batchDocumentationRun(
     const ticket = maintenance.find((ticket) => ticket.number === number);
     return ticket ? structuredClone(ticket) : getTicket(repository, number);
   };
-  tracker.readIssueDelivery = async (repository, number) => {
+  host.readDeliveryIssue = (repository, number) => {
     const ticket = maintenance.find((ticket) => ticket.number === number);
-    if (!ticket) return readIssueDelivery(repository, number);
-    const { state, stateReason, labels } = ticket;
-    assert.ok(labels);
-    return { number, state, stateReason, labels: [...labels] };
+    return ticket
+      ? Promise.resolve(structuredClone(ticket))
+      : readDeliveryIssue(repository, number);
   };
   tracker.closeTicket = async (repository, number) => {
     events.push(`close:${number}`);

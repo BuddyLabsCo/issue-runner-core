@@ -5,11 +5,7 @@ import type {
   Tracker,
 } from "../run/contracts.ts";
 import { GitHubClient, type GitHubCommand } from "./github-client.ts";
-import {
-  discoverParent,
-  readIssueDelivery,
-  readIssueStart,
-} from "./github-issue-facts.ts";
+import { discoverParent, readIssueStart } from "./github-issue-facts.ts";
 import { reserveIssue } from "./github-reservation.ts";
 
 type ClosureReason = Ticket["stateReason"];
@@ -168,10 +164,6 @@ export class GitHubTracker implements Tracker {
 
   getTicket(repository: string, ticket: number): Promise<Ticket> {
     return this.getParent(repository, ticket);
-  }
-
-  readIssueDelivery(repository: string, ticket: number, signal?: AbortSignal) {
-    return readIssueDelivery(this.client, repository, ticket, signal);
   }
 
   async closeTicket(repository: string, ticket: number): Promise<void> {

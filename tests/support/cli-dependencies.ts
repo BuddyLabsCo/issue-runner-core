@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import type { CreateTabOptions, TabHandle } from "../../src/terminal.ts";
 import { LocalGitWorkspace } from "../../src/adapters/git-workspace.ts";
 import { OperationStopped } from "../../src/run/operations.ts";
+import { issueIdentity, observeDelivery } from "./delivery-observation.ts";
 import type {
   CodeHost,
+  PullRequestMergeFacts,
   ParentDiscovery,
   IssueStartFacts,
   ReservationAdditions,
@@ -36,17 +38,6 @@ async function scriptedPages(
     page = result.nextPage;
   }
   return tickets;
-}
-
-function issueIdentity(repository: string, ticket: Ticket) {
-  return {
-    number: ticket.number,
-    state: ticket.state,
-    stateReason: ticket.stateReason,
-    repository: ticket.repository ?? repository,
-    repositoryId: ticket.repository ?? repository,
-    id: `${ticket.repository ?? repository}#${ticket.number}`,
-  };
 }
 
 function issueMarkers(ticket: Ticket) {
@@ -216,7 +207,7 @@ export function createCliDependencies(launchDirectory: string) {
   terminalPlugin.closeTab = async () => {
     effects.push("close_tab");
   };
-  return {
+  const fixture = {
     launchDirectory,
     env: { HOST_TOKEN: "host-secret" },
     messages,
@@ -244,11 +235,8 @@ export function createCliDependencies(launchDirectory: string) {
       async commentTicket(): Promise<void> {
         assert.fail("unexpected Issue comment");
       },
-      async getTicket(_repository: string, ticket: number) {
+      async getTicket(_repository: string, ticket: number): Promise<Ticket> {
         return { number: ticket, state: "open" as const, stateReason: null };
-      },
-      async readIssueDelivery(): ReturnType<Tracker["readIssueDelivery"]> {
-        assert.fail("unexpected Issue delivery observation");
       },
       async listBlockersPage() {
         return { blockers: [], nextPage: null };
@@ -281,20 +269,28 @@ export function createCliDependencies(launchDirectory: string) {
       },
     },
     codeHost: {
-      async getPullRequest(
+      async deliveryMergeFacts(
         _repository: string,
         number: number,
-      ): Promise<PullRequestState> {
+      ): Promise<PullRequestState & Partial<PullRequestMergeFacts>> {
         return {
           headSha:
-            pullRequests.find((pr) => pr.number === number)?.headSha ??
-            "b".repeat(40),
+            (await this.listPullRequests()).find((pr) => pr.number === number)
+              ?.headSha ?? "b".repeat(40),
           createdAt: "2026-10-30T00:00:00Z",
           merged: false,
           mergeRequested: false,
           mergeable: "unknown",
           mergeFailure: null,
         };
+      },
+      observeDelivery,
+      readDeliveryIssue(repository: string, ticket: number): Promise<Ticket> {
+        return fixture.tracker.getTicket(repository, ticket);
+      },
+      createdAtFor(...args: [branch: string, number: number]) {
+        void args;
+        return "2026-10-30T00:00:00Z";
       },
       async requestSquashMerge(): Promise<MergeRequestResult> {
         return {
@@ -339,7 +335,7 @@ export function createCliDependencies(launchDirectory: string) {
           id: `PR_${number}`,
           number,
           url: `https://github.com/${input.repository}/pull/${number}`,
-          createdAt: "2026-10-30T00:00:00Z",
+          createdAt: this.createdAtFor(input.branch, number),
           branch: input.branch,
           targetBranch: input.targetBranch,
           headSha,
@@ -442,6 +438,7 @@ export function createCliDependencies(launchDirectory: string) {
       },
     },
   };
+  return fixture;
 }
 
 export function createTestTerminal() {

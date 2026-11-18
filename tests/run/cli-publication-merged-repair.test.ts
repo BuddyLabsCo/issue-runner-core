@@ -17,7 +17,7 @@ for (const kind of ["ci", "conflict"] as const) {
       );
       const state = fixture.publicationState;
       let merged = false;
-      fixture.dependencies.codeHost.getPullRequest = async () => ({
+      fixture.dependencies.codeHost.deliveryMergeFacts = async () => ({
         headSha: state.pullRequests[0]!.headSha,
         createdAt: "2026-10-30T00:00:00Z",
         merged,
@@ -92,7 +92,7 @@ for (const moment of ["discovery", "repair_push"] as const) {
       merged = true;
       state.pullRequests[0]!.state = "merged";
     };
-    fixture.dependencies.codeHost.getPullRequest = async () => ({
+    fixture.dependencies.codeHost.deliveryMergeFacts = async () => ({
       headSha: implementationCommit.sha,
       createdAt: "2026-10-30T00:00:00Z",
       merged,

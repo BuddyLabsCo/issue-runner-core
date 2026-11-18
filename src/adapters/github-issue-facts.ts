@@ -365,47 +365,6 @@ export async function discoverParent(
   return { parent, children, ...lookup };
 }
 
-export async function readIssueDelivery(
-  client: GitHubClient,
-  repository: string,
-  number: number,
-  signal?: AbortSignal,
-): ReturnType<Tracker["readIssueDelivery"]> {
-  const read: ReadIssueGraphQL = (query, variables) =>
-    readIssueGraphQL(client, query, variables, signal);
-  const [owner, name] = repository.split("/");
-  const data = await read(
-    `query IssueDelivery($owner: String!, $name: String!, $number: Int!) {
-      repository(owner: $owner, name: $name) {
-        id nameWithOwner
-        issue(number: $number) {
-          ${issueFields}
-          ${issueConnectionFields("labels", "id name")}
-        }
-      }
-    }`,
-    { owner, name, number },
-  );
-  const repo = object(data.repository);
-  const raw = object(repo.issue);
-  const { id, state, stateReason } = scopedIssue(
-    raw,
-    repo,
-    repository,
-    number,
-    "Issue",
-  );
-  const labels = await readIssueConnection(
-    read,
-    id,
-    "labels",
-    "id name",
-    parseIssuePage(raw.labels, id, "labels", parseLabel),
-    parseLabel,
-  );
-  return { number, state, stateReason, labels: labels.map(({ name }) => name) };
-}
-
 export async function readIssueStart(
   client: GitHubClient,
   repository: string,

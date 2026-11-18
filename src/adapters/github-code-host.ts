@@ -6,21 +6,29 @@ import type {
   PullRequestRecord,
   PullRequestQuery,
   PullRequestObservation,
-  PullRequestState,
+  DeliveryObservation,
   MergeRequestResult,
 } from "../run/contracts.ts";
 import { nonempty, object } from "../agent/handoff.ts";
 import { GitHubClient, type GitHubCommand } from "./github-client.ts";
 import {
   branchFields,
+  mergeFields,
   oid,
   publicationFields,
   parseCheckContext,
   parseMergeFacts,
-  parsePullRequestState,
   pollQuery,
   requiredChecks,
 } from "./github-pr-checks.ts";
+import { issueFields, parseIssueFact } from "./github-issue-identity.ts";
+import {
+  connectionPages,
+  parseBranch,
+  parsePullRequest,
+  readConnectionPage,
+  sameRepository,
+} from "./github-pr-evidence.ts";
 
 export class GitHubCodeHost implements CodeHost {
   private readonly client: GitHubClient;
@@ -29,49 +37,136 @@ export class GitHubCodeHost implements CodeHost {
     this.client = new GitHubClient(token, command);
   }
 
-  async getPullRequest(
-    repository: string,
-    pullRequest: number,
-  ): Promise<PullRequestState> {
+  async observeDelivery(
+    { repository, number, ticket }: Parameters<CodeHost["observeDelivery"]>[0],
+    signal?: AbortSignal,
+  ): Promise<DeliveryObservation> {
     const [owner, name] = repository.split("/");
-    const result = await this.client.graphql(
-      "query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid createdAt state mergedAt mergeable autoMergeRequest{enabledAt} mergeQueueEntry{id}}}}",
-      { owner, name, number: pullRequest },
-    );
-    if (result.commandError || result.response.errors?.length)
-      throw new Error(
-        result.commandError?.message ??
-          "GitHub returned GraphQL errors for Pull Request state",
-        { cause: result },
+    const page = connectionPages();
+    const labels: string[] = [];
+    let previous: string | undefined;
+    for (;;) {
+      signal?.throwIfAborted();
+      const data = await this.graphqlData(
+        deliveryQuery,
+        { owner, name, number, ticket, after: page.after },
+        "delivery",
       );
-    return parsePullRequestState(
-      object(result.response.data?.repository).pullRequest,
-      pullRequest,
-    );
+      signal?.throwIfAborted();
+      const remote = object(data.repository);
+      const { id: repositoryId } = remote;
+      const { name: defaultBranch } = object(remote.defaultBranchRef);
+      if (
+        !sameRepository(remote, repository) ||
+        !nonempty(repositoryId) ||
+        !nonempty(defaultBranch)
+      )
+        throw new Error("GitHub returned an unexpected delivery repository");
+      const row = object(remote.pullRequest);
+      const pullRequest = parsePullRequest(row, repository, repositoryId);
+      const merge = parseMergeFacts(row, number);
+      const rawIssue = object(remote.issue);
+      const issue = parseIssueFact(rawIssue);
+      if (
+        pullRequest.number !== number ||
+        issue.number !== ticket ||
+        !sameRepository(row.headRepository, repository) ||
+        object(row.headRepository).id !== repositoryId ||
+        issue.repositoryId !== repositoryId ||
+        issue.repository.toLowerCase() !== repository.toLowerCase()
+      )
+        throw new Error(
+          "GitHub returned unexpected Pull Request or Issue delivery identity",
+        );
+      const evidence = JSON.stringify([
+        repositoryId,
+        defaultBranch,
+        pullRequest,
+        merge,
+        issue,
+      ]);
+      if (previous !== undefined && evidence !== previous)
+        throw new Error(
+          "Delivery evidence changed during Issue label pagination",
+        );
+      previous = evidence;
+      for (const { name } of readConnectionPage(
+        page,
+        rawIssue.labels,
+        "Issue label",
+      )) {
+        if (!nonempty(name))
+          throw new Error("GitHub returned an invalid Issue label");
+        labels.push(name);
+      }
+      if (page.done)
+        return {
+          repositoryId,
+          defaultBranch,
+          pullRequest,
+          merge,
+          issue: { ...issue, labels },
+        };
+    }
   }
 
   async requestSquashMerge(
     input: Parameters<CodeHost["requestSquashMerge"]>[0],
   ): Promise<MergeRequestResult> {
+    const mutation = input.autoMerge
+      ? "enablePullRequestAutoMerge"
+      : "mergePullRequest";
+    const type = input.autoMerge
+      ? "EnablePullRequestAutoMergeInput"
+      : "MergePullRequestInput";
     try {
-      await this.client.request([
-        "pr",
-        "merge",
-        String(input.pullRequest),
-        "--repo",
-        input.repository,
-        "--squash",
-        "--match-head-commit",
-        input.headSha,
-        ...(input.admin ? ["--admin"] : []),
-      ]);
+      const data = await this.graphqlData(
+        `mutation RequestSquash($input: ${type}!) {
+          ${mutation}(input: $input) {
+            pullRequest {
+              id number headRefOid state mergedAt
+              ${input.autoMerge ? "autoMergeRequest { enabledAt } mergeQueueEntry { id }" : ""}
+            }
+          }
+        }`,
+        {
+          input: {
+            pullRequestId: input.pullRequest.id,
+            expectedHeadOid: input.headSha,
+            mergeMethod: "SQUASH",
+          },
+        },
+        "merge request",
+      );
+      const pr = object(object(data[mutation]).pullRequest);
+      const merged =
+        pr.state === "MERGED" &&
+        typeof pr.mergedAt === "string" &&
+        Number.isFinite(Date.parse(pr.mergedAt));
+      const queued =
+        input.autoMerge &&
+        pr.state === "OPEN" &&
+        pr.mergedAt === null &&
+        acceptedAutoMerge(pr);
+      if (
+        pr.id !== input.pullRequest.id ||
+        pr.number !== input.pullRequest.number ||
+        pr.headRefOid !== input.headSha ||
+        (!merged && !queued)
+      )
+        throw new Error(
+          "GitHub returned incomplete or mismatched merge request evidence",
+        );
       return { outcome: "accepted" };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return {
-        outcome: /conflict|cannot be cleanly created/iu.test(message)
-          ? "conflict"
-          : "rejected",
+        outcome:
+          /(?:^|gh: |"message":")(?:merge conflicts? (?:in|detected)|pull request cannot be cleanly created)\b/iu.test(
+            message,
+          )
+            ? "conflict"
+            : "rejected",
         error,
       };
     }
@@ -194,7 +289,11 @@ export class GitHubCodeHost implements CodeHost {
     return record;
   }
 
-  private async graphqlData(query: string, variables: Record<string, unknown>) {
+  private async graphqlData(
+    query: string,
+    variables: Record<string, unknown>,
+    operation = "publication",
+  ) {
     const result = await this.client.graphql(query, variables);
     if (
       result.commandError ||
@@ -203,7 +302,9 @@ export class GitHubCodeHost implements CodeHost {
     )
       throw new Error(
         result.commandError?.message ??
-          "GitHub returned incomplete publication data",
+          (operation !== "publication" && result.response.errors?.length
+            ? `GitHub ${operation} failed: ${JSON.stringify(result.response.errors)}`
+            : `GitHub returned incomplete ${operation} data`),
         { cause: result },
       );
     return result.response.data;
@@ -294,6 +395,23 @@ export class GitHubCodeHost implements CodeHost {
   }
 }
 
+const deliveryQuery = `
+  query Delivery($owner: String!, $name: String!, $number: Int!, $ticket: Int!, $after: String) {
+    repository(owner: $owner, name: $name) {
+      id nameWithOwner defaultBranchRef { name }
+      pullRequest(number: $number) { ${publicationFields} ${mergeFields} }
+      issue(number: $ticket) {
+        ${issueFields}
+        labels(first: 100, after: $after) {
+          nodes { id name }
+          pageInfo { hasNextPage endCursor }
+          totalCount
+        }
+      }
+    }
+  }
+`;
+
 const publicationQuery = `
   query Publication(
     $owner: String!, $name: String!, $ref: String!,
@@ -317,37 +435,15 @@ const publicationQuery = `
   fragment PublicationIdentity on PullRequest { ${publicationFields} }
 `;
 
-function sameRepository(value: unknown, expected: string): boolean {
-  if (value === null) return false;
-  const { nameWithOwner } = object(value);
-  if (!nonempty(nameWithOwner))
-    throw new Error("GitHub returned a repository without a name");
-  return nameWithOwner.toLowerCase() === expected.toLowerCase();
-}
-
-function parseBranch(
-  remote: Record<string, unknown>,
-  repository: string,
-  branch: string,
-): BranchObservation {
-  if (!sameRepository(remote, repository) || !nonempty(remote.id))
-    throw new Error("GitHub returned an unexpected publication repository");
-  if (remote.ref === null) return { repositoryId: remote.id, headSha: null };
-  const ref = object(remote.ref);
-  const { oid: headSha } = object(ref.target);
-  if (ref.name !== branch || typeof headSha !== "string" || !oid.test(headSha))
-    throw new Error("GitHub returned invalid remote branch head");
-  return { repositoryId: remote.id, headSha };
-}
-
-function connectionPages() {
-  return {
-    after: null as string | null,
-    total: undefined as number | undefined,
-    done: false,
-    cursors: new Set<string>(),
-    ids: new Set<string>(),
-  };
+function acceptedAutoMerge(pr: Record<string, unknown>): boolean {
+  const queueId =
+    pr.mergeQueueEntry === null ? null : object(pr.mergeQueueEntry).id;
+  const enabledAt =
+    pr.autoMergeRequest === null ? null : object(pr.autoMergeRequest).enabledAt;
+  return (
+    nonempty(queueId) ||
+    (typeof enabledAt === "string" && Number.isFinite(Date.parse(enabledAt)))
+  );
 }
 
 interface PublicationCandidate {
@@ -392,93 +488,4 @@ function collectPublicationPage(input: {
       throw new Error("GitHub returned conflicting Pull Request observations");
     candidates.set(record.id, candidate);
   }
-}
-
-function readConnectionPage(
-  page: ReturnType<typeof connectionPages>,
-  value: unknown,
-  scope: string,
-) {
-  const { nodes, totalCount, pageInfo } = object(value);
-  const { hasNextPage, endCursor } = object(pageInfo);
-  if (
-    !Array.isArray(nodes) ||
-    nodes.length > 100 ||
-    typeof totalCount !== "number" ||
-    !Number.isSafeInteger(totalCount) ||
-    totalCount < 0 ||
-    (page.total !== undefined && page.total !== totalCount) ||
-    typeof hasNextPage !== "boolean" ||
-    (endCursor !== null && !nonempty(endCursor))
-  )
-    throw new Error(`GitHub returned invalid ${scope} pages`);
-  const received = page.ids.size + nodes.length;
-  if (hasNextPage ? received >= totalCount : received !== totalCount)
-    throw new Error(`GitHub returned incomplete ${scope} pages`);
-  page.total = totalCount;
-  page.done = !hasNextPage;
-  if (hasNextPage) {
-    if (!nodes.length || !nonempty(endCursor) || page.cursors.has(endCursor))
-      throw new Error(`GitHub returned an incomplete ${scope} cursor`);
-    page.cursors.add(endCursor);
-    page.after = endCursor;
-  }
-  return nodes.map((node: unknown) => {
-    const row = object(node);
-    if (!nonempty(row.id) || page.ids.has(row.id))
-      throw new Error(
-        `GitHub returned missing or repeated IDs in ${scope} pages`,
-      );
-    page.ids.add(row.id);
-    return row;
-  });
-}
-
-function parsePullRequest(
-  row: Record<string, unknown>,
-  repository: string,
-  repositoryId: string,
-): PullRequestRecord {
-  const {
-    id,
-    number,
-    url,
-    headRefName,
-    baseRefName,
-    headRefOid,
-    state,
-    isDraft,
-    createdAt,
-  } = row;
-  if (
-    !sameRepository(row.repository, repository) ||
-    object(row.repository).id !== repositoryId ||
-    !nonempty(id) ||
-    typeof number !== "number" ||
-    !Number.isSafeInteger(number) ||
-    number <= 0 ||
-    typeof url !== "string" ||
-    url.toLowerCase() !==
-      `https://github.com/${repository}/pull/${number}`.toLowerCase() ||
-    !nonempty(headRefName) ||
-    !nonempty(baseRefName) ||
-    typeof headRefOid !== "string" ||
-    !oid.test(headRefOid) ||
-    (state !== "OPEN" && state !== "CLOSED" && state !== "MERGED") ||
-    typeof isDraft !== "boolean" ||
-    typeof createdAt !== "string" ||
-    !Number.isFinite(Date.parse(createdAt))
-  )
-    throw new Error("GitHub returned invalid Pull Request identity");
-  return {
-    id,
-    number,
-    url,
-    createdAt,
-    branch: headRefName,
-    targetBranch: baseRefName,
-    headSha: headRefOid,
-    draft: isDraft,
-    state: state === "OPEN" ? "open" : state === "CLOSED" ? "closed" : "merged",
-  };
 }

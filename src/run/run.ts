@@ -144,8 +144,7 @@ async function executeProject(
       host.observePullRequest(input, signal),
     createPullRequest: (input) =>
       operator.advance(() => host.createPullRequest(input)),
-    getPullRequest: (repository, pullRequest) =>
-      host.getPullRequest(repository, pullRequest),
+    observeDelivery: (input, signal) => host.observeDelivery(input, signal),
     requestSquashMerge: (input) =>
       operator.advance(() => host.requestSquashMerge(input)),
   };

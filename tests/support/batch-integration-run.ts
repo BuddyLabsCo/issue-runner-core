@@ -39,7 +39,10 @@ export async function batchRun(t: TestContext) {
         ready.add(number);
       return checks;
     },
-    async getPullRequest(_repository: string, number: number) {
+    createdAtFor(_branch: string, number: number) {
+      return number === 81 ? "2026-10-31T00:00:00Z" : "2026-10-30T00:00:00Z";
+    },
+    async deliveryMergeFacts(_repository: string, number: number) {
       const pr = (await fixture.dependencies.codeHost.listPullRequests()).find(
         (pr) => pr.number === number,
       )!;
@@ -61,8 +64,8 @@ export async function batchRun(t: TestContext) {
         3,
         "all Batch PRs must be CI-ready before the first merge",
       );
-      requests.push(input.pullRequest);
-      return state.onMerge(input.pullRequest);
+      requests.push(input.pullRequest.number);
+      return state.onMerge(input.pullRequest.number);
     },
   });
   return { ...fixture, children, ready, merged, requests, state };

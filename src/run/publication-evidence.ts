@@ -67,6 +67,27 @@ export function verifiedPublication(progress: ImplementationProgress) {
   )
     throw new Error("Publication has merge evidence before a confirmed phase");
 
+  if (
+    (publication.mergeDeadline !== undefined &&
+      (!Number.isFinite(publication.mergeDeadline) ||
+        publication.mergeDeadline < 0)) ||
+    (publication.phase === "merge_requested" &&
+      publication.mergeDeadline === undefined) ||
+    (["merged", "delivered"].includes(publication.phase) &&
+      (publication.merge?.merged !== true ||
+        publication.merge.headSha !== publishedHead(publication) ||
+        publication.merge.createdAt !== pullRequest?.createdAt ||
+        publication.merge.mergeFailure !== null)) ||
+    (publication.phase === "delivered"
+      ? publication.closure?.state !== "closed" ||
+        publication.closure.stateReason !== "completed" ||
+        !Array.isArray(publication.deliveryLabels) ||
+        !publication.deliveryLabels.every((label) => nonempty(label))
+      : publication.closure !== undefined ||
+        publication.deliveryLabels !== undefined)
+  )
+    throw new Error("Publication has invalid delivery checkpoint evidence");
+
   validateChecksCheckpoint(publication);
   return publication;
 }
@@ -136,11 +157,14 @@ export function verifyPublicationObservation(
 export function verifyPublicationRecord(
   publication: PublicationProgress,
   candidate: PullRequestRecord,
+  allowClosed = false,
 ) {
   if (
     candidate.branch !== publication.branch ||
     candidate.targetBranch !== publication.targetBranch ||
-    (candidate.state !== "open" && candidate.state !== "merged") ||
+    (candidate.state !== "open" &&
+      candidate.state !== "merged" &&
+      !(allowClosed && candidate.state === "closed")) ||
     candidate.draft !== false ||
     (publication.pullRequest &&
       (candidate.id !== publication.pullRequest.id ||

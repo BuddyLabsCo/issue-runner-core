@@ -111,18 +111,18 @@ for (const selector of ["parent", "issue"] as const) {
         }
         return { outcome: "accepted" };
       };
-      const observePullRequest =
-        fixture.dependencies.codeHost.observePullRequest.bind(
+      const observeDelivery =
+        fixture.dependencies.codeHost.observeDelivery.bind(
           fixture.dependencies.codeHost,
         );
-      fixture.dependencies.codeHost.observePullRequest = async (input) => {
+      fixture.dependencies.codeHost.observeDelivery = async (input) => {
         if (input.number === 82 && fixture.requests.includes(82)) {
           queued.resolve();
           await confirmMerge.promise;
           fixture.merged.add(82);
           targetHead = "c".repeat(40);
         }
-        return observePullRequest(input);
+        return observeDelivery(input);
       };
       const running = fixture.run([
         `--${selector}`,
