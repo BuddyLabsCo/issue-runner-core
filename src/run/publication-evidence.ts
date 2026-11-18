@@ -3,6 +3,7 @@ import type {
   ImplementationProgress,
   PublicationProgress,
 } from "../recovery.ts";
+import type { PullRequestObservation, PullRequestRecord } from "./contracts.ts";
 import { pushedRepairs } from "./repair.ts";
 import { verifiedImplementation } from "./review.ts";
 
@@ -106,4 +107,46 @@ export function publishedHead(publication: PublicationProgress): string {
     pushedRepairs(publication).at(-1)?.result?.commits.at(-1)?.sha ??
     publication.headSha
   );
+}
+
+export function verifyPublicationObservation(
+  publication: PublicationProgress,
+  observation: PullRequestObservation,
+  expectedHead: string,
+  pendingHead?: string,
+): void {
+  const { pullRequest: record, branch, lastCommitSha } = observation;
+  if (branch.repositoryId !== publication.repositoryId)
+    throw new Error("Remote publication repository changed");
+  verifyPublicationRecord(publication, record);
+  if (
+    (record.headSha !== expectedHead && record.headSha !== pendingHead) ||
+    lastCommitSha !== record.headSha ||
+    observation.merge.headSha !== record.headSha ||
+    observation.merge.createdAt !== record.createdAt ||
+    observation.merge.merged !== (record.state === "merged") ||
+    (branch.headSha !== record.headSha &&
+      !(record.state === "merged" && branch.headSha === null))
+  )
+    throw new Error(
+      "Pull Request head mismatch: the PR, remote branch and last commit must agree at an accepted head",
+    );
+}
+
+export function verifyPublicationRecord(
+  publication: PublicationProgress,
+  candidate: PullRequestRecord,
+) {
+  if (
+    candidate.branch !== publication.branch ||
+    candidate.targetBranch !== publication.targetBranch ||
+    (candidate.state !== "open" && candidate.state !== "merged") ||
+    candidate.draft !== false ||
+    (publication.pullRequest &&
+      (candidate.id !== publication.pullRequest.id ||
+        candidate.number !== publication.pullRequest.number ||
+        candidate.url !== publication.pullRequest.url ||
+        candidate.createdAt !== publication.pullRequest.createdAt))
+  )
+    throw new Error("Pull Request identity or head mismatch");
 }

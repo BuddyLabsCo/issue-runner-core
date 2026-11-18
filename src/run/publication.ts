@@ -8,7 +8,12 @@ import type {
 import type { ReadOperation } from "./discovery.ts";
 import type { RunContext } from "./run.ts";
 import { nonempty } from "../agent/handoff.ts";
-import { publishedHead, verifiedPublication } from "./publication-evidence.ts";
+import {
+  publishedHead,
+  verifiedPublication,
+  verifyPublicationObservation,
+  verifyPublicationRecord,
+} from "./publication-evidence.ts";
 import { verifiedImplementation } from "./review.ts";
 import { verifyWorkspace } from "./verification.ts";
 import { OperationStopped, pauseForOperator } from "./operations.ts";
@@ -124,27 +129,6 @@ export async function publishImplementation(
       { repository, branch: publication.branch, number },
       context.signal,
     );
-  const verifyObservation = (
-    observation: PullRequestObservation,
-    expectedHead: string,
-    pendingHead?: string,
-  ) => {
-    const { pullRequest: record, branch, lastCommitSha } = observation;
-    verifyRepository(branch.repositoryId);
-    verifyPublicationRecord(publication, record);
-    if (
-      (record.headSha !== expectedHead && record.headSha !== pendingHead) ||
-      lastCommitSha !== record.headSha ||
-      observation.merge.headSha !== record.headSha ||
-      observation.merge.createdAt !== record.createdAt ||
-      observation.merge.merged !== (record.state === "merged") ||
-      (branch.headSha !== record.headSha &&
-        !(record.state === "merged" && branch.headSha === null))
-    )
-      throw new Error(
-        "Pull Request head mismatch: the PR, remote branch and last commit must agree at an accepted head",
-      );
-  };
   const completed =
     input.ticket.state === "closed" && input.ticket.stateReason === "completed";
 
@@ -188,7 +172,8 @@ export async function publishImplementation(
           publication.conflictRepair?.attempts.at(-1),
         ].find((attempt) => attempt?.pendingPush !== undefined);
         const observation = await observeRecorded(candidate.number);
-        verifyObservation(
+        verifyPublicationObservation(
+          publication,
           observation,
           expectedHead,
           pendingRepair?.pendingPush,
@@ -278,7 +263,12 @@ export async function publishImplementation(
   const observeHead = async (pendingHead?: string) => {
     await verify();
     const observation = await observeRecorded(pullRequest.number);
-    verifyObservation(observation, publishedHead(publication), pendingHead);
+    verifyPublicationObservation(
+      publication,
+      observation,
+      publishedHead(publication),
+      pendingHead,
+    );
     return observation;
   };
   const stopIfMerged = async ({ merge }: PullRequestObservation) => {
@@ -421,24 +411,6 @@ function matchPublication(
     );
   verifyPublicationRecord(publication, candidate);
   return candidate;
-}
-
-function verifyPublicationRecord(
-  publication: PublicationProgress,
-  candidate: PullRequestRecord,
-) {
-  if (
-    candidate.branch !== publication.branch ||
-    candidate.targetBranch !== publication.targetBranch ||
-    (candidate.state !== "open" && candidate.state !== "merged") ||
-    candidate.draft !== false ||
-    (publication.pullRequest &&
-      (candidate.id !== publication.pullRequest.id ||
-        candidate.number !== publication.pullRequest.number ||
-        candidate.url !== publication.pullRequest.url ||
-        candidate.createdAt !== publication.pullRequest.createdAt))
-  )
-    throw new Error("Pull Request identity or head mismatch");
 }
 
 function pullRequestIdentity({

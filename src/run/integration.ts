@@ -1,4 +1,8 @@
-import { publishedHead, verifiedPublication } from "./publication-evidence.ts";
+import {
+  publishedHead,
+  verifiedPublication,
+  verifyPublicationObservation,
+} from "./publication-evidence.ts";
 import type { LoadedProject } from "../config.ts";
 import type { ImplementationProgress } from "../recovery.ts";
 import type { CodeHost, Ticket, Tracker } from "./contracts.ts";
@@ -43,6 +47,18 @@ export async function integrateImplementation(input: {
   const target = `ticket:${ticket}`;
   const observe = () =>
     read("confirm_merge", target, async () => {
+      if (input.deferred) {
+        const observation = await codeHost.observePullRequest(
+          {
+            repository,
+            branch: publication.branch,
+            number: pullRequest.number,
+          },
+          context.signal,
+        );
+        verifyPublicationObservation(publication, observation, head);
+        return observation.merge;
+      }
       const state = await codeHost.getPullRequest(
         repository,
         pullRequest.number,
@@ -140,13 +156,23 @@ export async function integrateImplementation(input: {
         continue;
       }
       if (!state.mergeRequested && publication.phase !== "merge_requested") {
+        const operation = "request_squash_merge";
+        // A resumed dispatch can pause before its first attempt.
+        let firstObservation =
+          input.deferred &&
+          publication.phase === "checks_ready" &&
+          checked === undefined &&
+          !progress.operations?.[JSON.stringify([operation, target])]
+            ? state
+            : undefined;
         publication.phase = "pending_merge";
         await persist();
         const request = await read(
-          "request_squash_merge",
+          operation,
           target,
           async () => {
-            state = await observe();
+            state = firstObservation ?? (await observe());
+            firstObservation = undefined;
             if (state.merged || state.mergeRequested)
               return { outcome: "accepted" as const };
             if (!(await input.beforeDispatch()))

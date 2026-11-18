@@ -163,6 +163,13 @@ export async function parentDeliveryRun(
     ticket.state = "closed";
     ticket.stateReason = "completed";
   };
+  const list = fixture.dependencies.codeHost.listPullRequests.bind(
+    fixture.dependencies.codeHost,
+  );
+  fixture.dependencies.codeHost.listPullRequests = async () =>
+    (await list()).map((pr) =>
+      merged.has(pr.number) ? { ...pr, state: "merged" } : pr,
+    );
   fixture.dependencies.codeHost.getPullRequest = async (
     _repository,
     number,

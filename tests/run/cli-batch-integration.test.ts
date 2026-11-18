@@ -3,14 +3,11 @@ import { promptAssignment } from "../support/prompt-assignment.ts";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
-import test, { type TestContext } from "node:test";
+import test from "node:test";
 import { AuditLog, type AuditEvent } from "../../src/audit.ts";
 import type { ImplementationProgress } from "../../src/recovery.ts";
-import type {
-  CodeHost,
-  MergeRequestResult,
-  RequiredCheck,
-} from "../../src/run/contracts.ts";
+import type { RequiredCheck } from "../../src/run/contracts.ts";
+import { batchRun } from "../support/batch-integration-run.ts";
 import { child, parentDeliveryRun } from "../support/parent-run.ts";
 import { validConfig } from "../support/cli-project.ts";
 import {
@@ -18,123 +15,6 @@ import {
   implementationProgress,
   publish,
 } from "../support/implementation-run.ts";
-
-async function batchRun(t: TestContext) {
-  const children = [child(51), child(52), child(53)];
-  const fixture = await parentDeliveryRun(t, children, {
-    ...validConfig,
-    issueList: [51, 52, 53],
-  });
-  const ready = new Set<number>();
-  const merged = new Set<number>();
-  const requests: number[] = [];
-  const state = {
-    onChecks: async (number: number): Promise<RequiredCheck[]> => {
-      assert.ok(number >= 81);
-      return [];
-    },
-    onMerge: async (number: number): Promise<MergeRequestResult> => {
-      merged.add(number);
-      return { outcome: "accepted" };
-    },
-  };
-  Object.assign(fixture.dependencies.codeHost, {
-    async checksFor(_repository: string, number: number) {
-      const checks = await state.onChecks(number);
-      if (
-        !checks.some(
-          (check) => check.bucket === "fail" || check.bucket === "pending",
-        )
-      )
-        ready.add(number);
-      return checks;
-    },
-    async getPullRequest(_repository: string, number: number) {
-      const pr = (await fixture.dependencies.codeHost.listPullRequests()).find(
-        (pr) => pr.number === number,
-      )!;
-      return {
-        headSha: pr.headSha,
-        createdAt:
-          number === 81 ? "2026-10-31T00:00:00Z" : "2026-10-30T00:00:00Z",
-        merged: merged.has(number),
-        mergeRequested: false,
-        mergeable: "mergeable",
-        mergeFailure: null,
-      };
-    },
-    async requestSquashMerge(
-      input: Parameters<CodeHost["requestSquashMerge"]>[0],
-    ) {
-      assert.equal(
-        ready.size,
-        3,
-        "all Batch PRs must be CI-ready before the first merge",
-      );
-      requests.push(input.pullRequest);
-      return state.onMerge(input.pullRequest);
-    },
-  });
-  return { ...fixture, children, ready, merged, requests, state };
-}
-
-await test("a deferred PR that merges and loses its branch skips conflict repair", async (t) => {
-  const fixture = await batchRun(t);
-  const host = fixture.dependencies.codeHost;
-  const observe = host.observePullRequest.bind(host);
-  const observeBranch = host.observeBranch.bind(host);
-  const get = host.getPullRequest.bind(host);
-  let deletedBranch: string | undefined;
-  host.observePullRequest = async (input) => {
-    const observation = await observe(input);
-    if (input.number === 83) observation.merge.mergeable = "conflicting";
-    return observation;
-  };
-  host.observeBranch = async (repository, branch) =>
-    branch === deletedBranch
-      ? { repositoryId: "R_repo", headSha: null }
-      : observeBranch(repository, branch);
-  let revalidated = false;
-  host.getPullRequest = async (repository, number) => {
-    if (number === 83 && deletedBranch) revalidated = true;
-    return get(repository, number);
-  };
-  fixture.state.onMerge = async (number) => {
-    fixture.merged.add(number);
-    if (number === 82) {
-      const waiting = (await host.listPullRequests()).find(
-        (pr) => pr.number === 83,
-      )!;
-      deletedBranch = waiting.branch;
-      fixture.merged.add(waiting.number);
-      const ticket = Number(waiting.branch.split("/ticket-").at(-1));
-      const saved = await implementationProgress(fixture.directory, ticket);
-      assert.equal(saved.publication?.phase, "checks_ready");
-      assert.equal(saved.publication?.checksState?.mergeable, "conflicting");
-      assert.equal(
-        (await host.observeBranch("owner/repo", waiting.branch)).headSha,
-        null,
-      );
-    }
-    return { outcome: "accepted" };
-  };
-  const fetch = fixture.dependencies.gitWorkspace.fetchTargetBranch.bind(
-    fixture.dependencies.gitWorkspace,
-  );
-  fixture.dependencies.gitWorkspace.fetchTargetBranch = async () => {
-    assert.equal(
-      deletedBranch,
-      undefined,
-      "an already merged PR must not start conflict repair",
-    );
-    return fetch();
-  };
-  const result = await fixture.run();
-  assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
-  assert.deepEqual(fixture.requests, [82, 81]);
-  assert.equal(revalidated, true);
-  assert.ok(fixture.children.every((ticket) => ticket.state === "closed"));
-});
 
 for (const selector of ["parent", "issue"] as const) {
   await test(
@@ -233,20 +113,18 @@ for (const selector of ["parent", "issue"] as const) {
         }
         return { outcome: "accepted" };
       };
-      const getPullRequest = fixture.dependencies.codeHost.getPullRequest.bind(
-        fixture.dependencies.codeHost,
-      );
-      fixture.dependencies.codeHost.getPullRequest = async (
-        repository,
-        number,
-      ) => {
-        if (number === 82 && fixture.requests.includes(82)) {
+      const observePullRequest =
+        fixture.dependencies.codeHost.observePullRequest.bind(
+          fixture.dependencies.codeHost,
+        );
+      fixture.dependencies.codeHost.observePullRequest = async (input) => {
+        if (input.number === 82 && fixture.requests.includes(82)) {
           queued.resolve();
           await confirmMerge.promise;
           fixture.merged.add(82);
           targetHead = "c".repeat(40);
         }
-        return getPullRequest(repository, number);
+        return observePullRequest(input);
       };
       const running = fixture.run([
         `--${selector}`,

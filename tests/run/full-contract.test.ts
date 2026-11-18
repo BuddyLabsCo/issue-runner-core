@@ -132,7 +132,6 @@ await test(
       [51, 52, 53, 54, 55].map((number) => `label:${number}`),
     );
     assert.equal(fixture.maxActive, 3);
-    assert.equal(checkCalls.get(51), 2);
     assert.deepEqual(fixture.integrations, [51, 52, 53, 100, 54, 101, 55]);
     assert.deepEqual(
       fixture.events.filter((event) =>
@@ -334,6 +333,15 @@ await test(
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line) as AuditEvent);
+    assert.equal(
+      records.filter(
+        (record) =>
+          record.target === "ticket:51" &&
+          record.operation === "required_checks" &&
+          record.result === "succeeded",
+      ).length,
+      2,
+    );
     assert.equal(
       records.filter(
         (record) =>
