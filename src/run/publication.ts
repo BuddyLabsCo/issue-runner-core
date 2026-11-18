@@ -104,7 +104,12 @@ export async function publishImplementation(input: {
     input.stageInput.ticket.state === "closed" &&
     input.stageInput.ticket.stateReason === "completed";
 
-  if (!completed && !publication.ciRepair && !publication.conflictRepair)
+  if (
+    !completed &&
+    !publication.pullRequest &&
+    !publication.ciRepair &&
+    !publication.conflictRepair
+  )
     await read("push_verified_branch", target, async () => {
       await verify();
       if (!freshPush) {

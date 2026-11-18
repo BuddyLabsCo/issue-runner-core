@@ -172,11 +172,9 @@ for (const conflict of [
     fixture.dependencies.operator.pause = async (message) => {
       assert.match(
         message,
-        conflict === "advanced" || conflict === "absent"
-          ? /advanced or disappeared/u
-          : conflict === "missing" || conflict === "number"
-            ? /Recorded Pull Request is missing/u
-            : /identity or head mismatch/u,
+        conflict === "missing" || conflict === "number"
+          ? /Recorded Pull Request is missing/u
+          : /identity or head mismatch/u,
       );
       pauses++;
       return "q";
@@ -284,5 +282,41 @@ for (const conflict of ["unmerged", "head", "advanced", "identity"] as const) {
     await access(before.worktree);
     await access(before.probe!.path);
     await access(before.invocation!.path);
+  });
+}
+
+for (const phase of ["pr_created", "checks_ready"] as const) {
+  await test(`a merged recorded PR with a deleted branch resumes from ${phase} without repair`, async (t) => {
+    const fixture = await integrationRun(t);
+    const state = fixture.publicationState;
+    const onSleep = fixture.state.onSleep;
+    const run = () => executeCli(implementationCommand, fixture.dependencies);
+    if (phase === "pr_created") {
+      fixture.state.onSleep = async (ms) => {
+        if (ms === 30_000) fixture.controller.abort();
+      };
+      assert.equal((await run()).summary.outcome, "cancelled");
+    } else assert.equal((await run()).summary.outcome, "incomplete");
+    const before = await fixture.snapshot();
+    assert.equal(before.publication!.phase, phase);
+    assert.equal(before.publication!.ciRepair, undefined);
+    assert.equal(before.publication!.conflictRepair, undefined);
+    state.pullRequests[0]!.state = "merged";
+    fixture.integrationState.pullRequest.merged = true;
+    state.branches.delete(before.branch);
+    fixture.dependencies.signal = new AbortController().signal;
+    fixture.state.onSleep = onSleep;
+    const result = await run();
+    assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
+    const after = await fixture.snapshot();
+    assert.equal(after.publication!.phase, "delivered");
+    assert.equal(
+      after.publication!.merge!.headSha,
+      before.publication!.headSha,
+    );
+    assert.equal(state.pushes, 1);
+    assert.equal(state.creations, 1);
+    assert.equal(fixture.integrationState.requests.length, 0);
+    assert.equal(fixture.integrationState.closures, 1);
   });
 }
