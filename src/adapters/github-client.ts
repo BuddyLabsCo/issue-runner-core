@@ -14,13 +14,14 @@ export type GitHubCommand = (
   options: GitHubCommandOptions,
 ) => Promise<string>;
 
-const runGitHubCommand: GitHubCommand = (
-  args,
-  { token, timeout, allowedExitCodes = [], input },
-) =>
+export const runGitHubCommand = (
+  args: string[],
+  { token, timeout, allowedExitCodes = [], input }: GitHubCommandOptions,
+  executable = "gh",
+): Promise<string> =>
   new Promise((resolve, reject) => {
     const child = execFile(
-      "gh",
+      executable,
       args,
       {
         encoding: "utf8",
@@ -151,7 +152,26 @@ export class GitHubClient {
           cause: failure,
         },
       );
-    if (!("data" in result) && !("errors" in result))
+    const data = result.data;
+    const errors = result.errors;
+    const hasData =
+      typeof data === "object" && data !== null && !Array.isArray(data);
+    const hasErrors =
+      Array.isArray(errors) &&
+      errors.length > 0 &&
+      errors.every(
+        (entry: unknown) =>
+          typeof entry === "object" &&
+          entry !== null &&
+          !Array.isArray(entry) &&
+          typeof (entry as { message?: unknown }).message === "string" &&
+          (entry as { message: string }).message.trim() !== "",
+      );
+    if (
+      (errors !== undefined &&
+        !(Array.isArray(errors) && (errors.length === 0 || hasErrors))) ||
+      (!hasData && !hasErrors)
+    )
       throw new GitHubGraphQLError(
         "GitHub returned no GraphQL data or errors",
         result,

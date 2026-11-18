@@ -1,26 +1,15 @@
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import test from "node:test";
 import {
   GitHubClient,
   GitHubCommandError,
   GitHubGraphQLError,
+  runGitHubCommand,
 } from "../../src/adapters/github-client.ts";
 import { GitHubCodeHost } from "../../src/adapters/github-code-host.ts";
 
-await test("GraphQL retains partial data and error paths from a failed gh command", async (t) => {
-  const directory = await mkdtemp(path.join(tmpdir(), "github-client-"));
-  const oldPath = process.env.PATH;
-  t.after(async () => {
-    process.env.PATH = oldPath;
-    await rm(directory, { recursive: true, force: true });
-  });
-  const executable = path.join(directory, "gh");
-  await writeFile(
-    executable,
-    `#!/usr/bin/env node
+await test("GraphQL retains partial data and error paths from a failed gh command", async () => {
+  const script = `
 let input = '';
 process.stdin.on('data', chunk => input += chunk);
 process.stdin.on('end', () => {
@@ -28,12 +17,11 @@ process.stdin.on('end', () => {
   process.stdout.write(JSON.stringify({data: {first: request.variables.text, second: null}, errors: [{message: 'denied', path: ['second', 'node']}]}));
   process.stderr.write('failed ' + process.env.GH_TOKEN);
   process.exitCode = 1;
-});
-`,
-  );
-  await chmod(executable, 0o755);
-  process.env.PATH = `${directory}${path.delimiter}${oldPath}`;
-  const client = new GitHubClient("secret-token");
+});`;
+  const client = new GitHubClient("secret-token", (args, options) => {
+    assert.deepEqual(args, ["api", "graphql", "--input", "-"]);
+    return runGitHubCommand(["-e", script], options, process.execPath);
+  });
   await assert.rejects(
     client.graphql("query\n{ first second }", { text: "line one\nline two" }),
     (error: unknown) => {
@@ -55,6 +43,10 @@ await test("GraphQL distinguishes empty and malformed payloads from valid empty 
     ["", /no GraphQL payload/],
     ["{", /invalid GraphQL JSON/],
     ["{}", /no GraphQL data or errors/],
+    ['{"errors":[]}', /no GraphQL data or errors/],
+    ['{"errors":null}', /no GraphQL data or errors/],
+    ['{"data":null,"errors":[]}', /no GraphQL data or errors/],
+    ['{"errors":[{}]}', /no GraphQL data or errors/],
   ] as const) {
     const client = new GitHubClient("token", () => Promise.resolve(output));
     await assert.rejects(client.graphql("query {}", {}), message);
