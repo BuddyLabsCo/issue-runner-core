@@ -81,7 +81,7 @@ Project keys name one child using letters, digits, dot, underscore, or hyphen.
 Existing destinations are refused. No credentials or plugin are needed.
 Replace repository, checkout, targetBranch, tracker.runnerAccount, and every
 Agent start/resume command. Edit the three repository-specific prompts.
-Set the credentials named by tracker.tokenEnv and codeHost.tokenEnv.
+Set the credential named by codeHost.tokenEnv.
 Then run ${commandName} run --project <project-key> --parent <number>.`;
 
 function result(
@@ -201,7 +201,7 @@ export async function executeCli(
         project,
       );
       dependencies.operator.write(
-        `Initialized Project at ${directory}. Edit config.yaml and prompts/, set tokenEnv credentials, then run ${commandName} run --project ${project} --parent <number>.`,
+        `Initialized Project at ${directory}. Edit config.yaml and prompts/, set the codeHost.tokenEnv credential, then run ${commandName} run --project ${project} --parent <number>.`,
       );
       return result(0, project);
     } catch (error) {
@@ -273,7 +273,7 @@ export async function executeRun(
       timestamp,
       parentTicket,
       runId,
-      [loaded.trackerToken, loaded.codeHostToken],
+      [loaded.codeHostToken],
     );
     await supervisedAuditWrite(
       () => audit.create(),
@@ -284,7 +284,7 @@ export async function executeRun(
     const runSummary = await runProject(
       options,
       loaded,
-      dependencies.tracker ?? new GitHubTracker(loaded.trackerToken),
+      dependencies.tracker ?? new GitHubTracker(loaded.codeHostToken),
       dependencies.codeHost ?? new GitHubCodeHost(loaded.codeHostToken),
       {
         audit,

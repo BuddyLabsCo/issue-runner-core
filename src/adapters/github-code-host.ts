@@ -8,7 +8,11 @@ import type {
   PullRequestState,
   MergeRequestResult,
 } from "../run/contracts.ts";
-import { GitHubClient, type GitHubCommand } from "./github-client.ts";
+import {
+  GitHubClient,
+  GitHubGraphQLError,
+  type GitHubCommand,
+} from "./github-client.ts";
 
 export class GitHubCodeHost implements CodeHost {
   private readonly client: GitHubClient;
@@ -22,20 +26,15 @@ export class GitHubCodeHost implements CodeHost {
     pullRequest: number,
   ): Promise<PullRequestState> {
     const [owner, name] = repository.split("/");
-    const response = JSON.parse(
-      await this.client.request([
-        "api",
-        "graphql",
-        "-f",
-        "query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid createdAt state mergedAt mergeable autoMergeRequest{enabledAt} mergeQueueEntry{id}}}}",
-        "-f",
-        `owner=${owner}`,
-        "-f",
-        `name=${name}`,
-        "-F",
-        `number=${pullRequest}`,
-      ]),
-    ) as { data?: { repository?: { pullRequest?: Record<string, unknown> } } };
+    const response = await this.client.graphql(
+      "query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid createdAt state mergedAt mergeable autoMergeRequest{enabledAt} mergeQueueEntry{id}}}}",
+      { owner, name, number: pullRequest },
+    );
+    if (
+      response.errors !== undefined &&
+      (!Array.isArray(response.errors) || response.errors.length > 0)
+    )
+      throw new GitHubGraphQLError("GitHub returned GraphQL errors", response);
     return parsePullRequestState(response, pullRequest);
   }
 
@@ -256,12 +255,14 @@ function parsePullRequest(value: unknown): {
 }
 
 function parsePullRequestState(
-  response: {
-    data?: { repository?: { pullRequest?: Record<string, unknown> } };
-  },
+  response: { data?: unknown },
   pullRequest: number,
 ): PullRequestState {
-  const value = response?.data?.repository?.pullRequest;
+  const data = response.data as
+    | { repository?: { pullRequest?: Record<string, unknown> } }
+    | null
+    | undefined;
+  const value = data?.repository?.pullRequest;
   if (
     !value ||
     typeof value.headRefOid !== "string" ||

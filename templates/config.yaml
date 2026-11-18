@@ -22,11 +22,10 @@ workflow:
   maxReviewRounds: 2 # Optional positive cap; final findings still receive a fix.
   docMaintainTriggerLabel: "" # Run documentation after a Batch delivers this label; empty disables.
 tracker:
-  tokenEnv: GH_TOKEN # Environment variable holding the GitHub Issue token; never put tokens here.
   runnerAccount: your-github-account # GitHub account assigned to reserved Issues.
   reservationLabel: sandcastle:reserved # Existing repository label marking reserved Issues.
 codeHost:
-  tokenEnv: GH_TOKEN # Environment variable holding the GitHub PR/checks/merge token.
+  tokenEnv: GH_TOKEN # Environment variable holding the GitHub token for Issues, PRs, checks, merge, and Git.
   adminMerge: false # Use GitHub's administrator merge flag.
 
 terminalPlugins:

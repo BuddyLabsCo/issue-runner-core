@@ -6,6 +6,7 @@ export interface GitHubCommandOptions {
   token: string;
   timeout: number;
   allowedExitCodes?: number[];
+  input?: string;
 }
 
 export type GitHubCommand = (
@@ -13,13 +14,14 @@ export type GitHubCommand = (
   options: GitHubCommandOptions,
 ) => Promise<string>;
 
-const runGitHubCommand: GitHubCommand = (
-  args,
-  { token, timeout, allowedExitCodes = [] },
-) =>
+export const runGitHubCommand = (
+  args: string[],
+  { token, timeout, allowedExitCodes = [], input }: GitHubCommandOptions,
+  executable = "gh",
+): Promise<string> =>
   new Promise((resolve, reject) => {
-    execFile(
-      "gh",
+    const child = execFile(
+      executable,
       args,
       {
         encoding: "utf8",
@@ -52,10 +54,48 @@ const runGitHubCommand: GitHubCommand = (
         const detail = (
           stderr.trim() || formatToolError("gh", error)
         ).replaceAll(token, "[redacted]");
-        reject(new Error(`gh command failed: ${detail}`));
+        reject(
+          new GitHubCommandError(
+            `gh command ${error.killed && error.signal === "SIGTERM" && error.code === null ? "timed out" : "failed"}: ${detail}`,
+            stdout.replaceAll(token, "[redacted]"),
+          ),
+        );
       },
     );
+    if (input !== undefined) {
+      child.stdin?.on("error", () => {
+        // The process callback reports failures when gh closes stdin early.
+      });
+      child.stdin?.end(input);
+    }
   });
+
+export class GitHubCommandError extends Error {
+  readonly stdout: string;
+
+  constructor(message: string, stdout: string) {
+    super(message);
+    this.stdout = stdout;
+  }
+}
+
+export interface GitHubGraphQLResponse {
+  data?: unknown;
+  errors?: unknown;
+}
+
+export class GitHubGraphQLError extends Error {
+  readonly response: GitHubGraphQLResponse | undefined;
+
+  constructor(
+    message: string,
+    response: GitHubGraphQLResponse | undefined,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.response = response;
+  }
+}
 
 export class GitHubClient {
   private readonly token: string;
@@ -64,6 +104,79 @@ export class GitHubClient {
   constructor(token: string, command: GitHubCommand = runGitHubCommand) {
     this.token = token;
     this.command = command;
+  }
+
+  async graphql(
+    query: string,
+    variables: Record<string, unknown>,
+  ): Promise<GitHubGraphQLResponse> {
+    let output: string;
+    let failure: GitHubCommandError | undefined;
+    try {
+      output = await this.command(["api", "graphql", "--input", "-"], {
+        token: this.token,
+        timeout: 60_000,
+        input: JSON.stringify({ query, variables }),
+      });
+    } catch (error) {
+      if (!(error instanceof GitHubCommandError)) throw error;
+      output = error.stdout;
+      failure = error;
+    }
+    let response: unknown;
+    try {
+      response = JSON.parse(output) as unknown;
+    } catch (error) {
+      throw new GitHubGraphQLError(
+        `${output.trim() ? "GitHub returned invalid GraphQL JSON" : "GitHub returned no GraphQL payload"}${failure ? `: ${failure.message}` : ""}`,
+        undefined,
+        { cause: failure ?? error },
+      );
+    }
+    if (
+      typeof response !== "object" ||
+      response === null ||
+      Array.isArray(response)
+    )
+      throw new GitHubGraphQLError(
+        `GitHub returned invalid GraphQL payload${failure ? `: ${failure.message}` : ""}`,
+        undefined,
+        { cause: failure },
+      );
+    const result = response as GitHubGraphQLResponse;
+    if (failure)
+      throw new GitHubGraphQLError(
+        `GitHub GraphQL command failed: ${failure.message}`,
+        result,
+        {
+          cause: failure,
+        },
+      );
+    const data = result.data;
+    const errors = result.errors;
+    const hasData =
+      typeof data === "object" && data !== null && !Array.isArray(data);
+    const hasErrors =
+      Array.isArray(errors) &&
+      errors.length > 0 &&
+      errors.every(
+        (entry: unknown) =>
+          typeof entry === "object" &&
+          entry !== null &&
+          !Array.isArray(entry) &&
+          typeof (entry as { message?: unknown }).message === "string" &&
+          (entry as { message: string }).message.trim() !== "",
+      );
+    if (
+      (errors !== undefined &&
+        !(Array.isArray(errors) && (errors.length === 0 || hasErrors))) ||
+      (!hasData && !hasErrors)
+    )
+      throw new GitHubGraphQLError(
+        "GitHub returned no GraphQL data or errors",
+        result,
+      );
+    return result;
   }
 
   request(args: string[], allowedExitCodes?: number[]): Promise<string> {

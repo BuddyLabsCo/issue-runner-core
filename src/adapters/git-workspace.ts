@@ -34,7 +34,7 @@ export class LocalGitWorkspace implements GitWorkspace {
     try {
       await writeFile(
         file,
-        `[user]\n\tname = Issue Runner\n\temail = issue-runner@users.noreply.github.com\n[http "https://github.com/"]\n\textraHeader = Authorization: Basic ${authorization}\n`,
+        `[user]\n\tname = Issue Runner\n\temail = issue-runner@users.noreply.github.com\n[http "https://github.com/"]\n\textraHeader = Authorization: Basic ${authorization}\n[url "https://github.com/"]\n\tinsteadOf = git@github.com:\n\tinsteadOf = ssh://git@github.com/\n`,
         { mode: 0o600 },
       );
       return await action({ GIT_CONFIG_GLOBAL: file });
@@ -65,9 +65,13 @@ export class LocalGitWorkspace implements GitWorkspace {
             ...process.env,
             ...(remote
               ? {
-                  GIT_CONFIG_COUNT: "1",
+                  GIT_CONFIG_COUNT: "3",
                   GIT_CONFIG_KEY_0: "http.https://github.com/.extraHeader",
                   GIT_CONFIG_VALUE_0: `Authorization: Basic ${authorization}`,
+                  GIT_CONFIG_KEY_1: "url.https://github.com/.insteadOf",
+                  GIT_CONFIG_VALUE_1: "git@github.com:",
+                  GIT_CONFIG_KEY_2: "url.https://github.com/.insteadOf",
+                  GIT_CONFIG_VALUE_2: "ssh://git@github.com/",
                 }
               : {}),
           },

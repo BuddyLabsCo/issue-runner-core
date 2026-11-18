@@ -65,8 +65,8 @@ Prepare these on the machine and in the shell that runs the terminal command:
 
 - Node.js 22.18.0 or later and npm 11 or later, including subsequent major versions
 - Git with Worktree support, configured author identity, and access to push to the repository
-- GitHub CLI (`gh`) on `PATH`, with credentials that can read/write Issues, pull requests, and repository contents and observe required checks
-- An absolute-path repository checkout with working Git/GitHub credentials
+- GitHub CLI (`gh`) on `PATH`, with one credential configured by `codeHost.tokenEnv`. Grant it repository access, read/write Issues and pull requests, read checks and commit statuses, and read/write Contents for Git and merges. `adminMerge` requests an administrator merge; it does not grant bypass permissions.
+- An absolute-path repository checkout accessible with that credential
 - An installed, authenticated Agent CLI for every configured role, with its own skills, native permissions, and required tools
 - A supported terminal multiplexer plugin, e.g. [issue-runner-herdr](https://github.com/BuddyLabsCo/issue-runner-herdr) which use herdr as issue-runner-core environment
 
