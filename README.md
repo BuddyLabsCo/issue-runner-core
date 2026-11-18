@@ -78,16 +78,19 @@ Runner uses it for GitHub API calls and Git operations. In existing configuratio
 `tracker.tokenEnv` and keep `tracker.runnerAccount` and `tracker.reservationLabel`.
 Editing `config.yaml` changes the input hash Runner uses to resume a Run.
 
-Grant the credential access to the configured repository, including metadata visibility.
-For fine-grained credentials, grant these repository permissions:
+Use a GitHub App installation access token scoped to the configured repository.
+Grant the app read access to repository metadata and the permissions below.
 
 - **Issues** read/write to read Issues and manage assignments, labels, comments, and closure.
 - **Pull requests** read/write to read and publish PRs.
 - **Checks** and **Commit statuses** read to observe required checks.
 - **Contents** read/write to read refs, fetch and push through Git, and merge PRs.
 
-GitHub enforces repository rules and merge permissions for the credential's
-account. With `codeHost.adminMerge: true`, the account still needs permission
+GitHub lists Checks API access among the limitations of fine-grained personal
+access tokens. [GitHub token limitations](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#fine-grained-personal-access-tokens-limitations)
+
+GitHub enforces repository rules and merge permissions for the identity behind the
+credential. With `codeHost.adminMerge: true`, that identity still needs permission
 to bypass the applicable rules.
 
 ### macOS and Linux

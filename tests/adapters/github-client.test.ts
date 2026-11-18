@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
+import childProcess, {
+  type ExecFileException,
+  type ExecFileOptionsWithStringEncoding,
+} from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test, { type TestContext } from "node:test";
@@ -9,6 +14,46 @@ import { createCliDependencies } from "../support/cli-dependencies.ts";
 import { createProject, validConfig } from "../support/cli-project.ts";
 
 const executableTest = process.platform === "win32" ? test.skip : test;
+
+await test("GraphQL preserves the response and timeout when the child exits zero after termination", async (t) => {
+  const response = { data: { nodes: [] } };
+  const command = t.mock.method(
+    childProcess,
+    "execFile",
+    (
+      _file: string,
+      args: string[],
+      options: ExecFileOptionsWithStringEncoding,
+      callback: (
+        error: ExecFileException | null,
+        stdout: string,
+        stderr: string,
+      ) => void,
+    ) => {
+      assert.equal(options.timeout, 60_000);
+      const error =
+        args[0] === "api"
+          ? null
+          : Object.assign(new Error("checks failed"), { code: 1 });
+      queueMicrotask(() => callback(error, JSON.stringify(response), ""));
+      return Object.assign(new childProcess.ChildProcess(), { killed: true });
+    },
+  );
+  syncBuiltinESMExports();
+  t.after(() => {
+    command.mock.restore();
+    syncBuiltinESMExports();
+  });
+
+  const client = new GitHubClient("fixture-credential");
+  const result = await client.graphql("query Example { nodes }", {});
+  assert.deepEqual(result.response, response);
+  assert.match(result.commandError?.message ?? "", /timed out after 60000 ms/u);
+  await assert.rejects(
+    client.request(["pr", "checks"], [1]),
+    /timed out after 60000 ms/u,
+  );
+});
 
 async function installFakeExecutables(t: TestContext) {
   const bin = await mkdtemp(path.join(tmpdir(), "runner-bin-"));

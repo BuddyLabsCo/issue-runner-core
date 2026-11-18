@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import assert from "node:assert/strict";
 import test from "node:test";
+import { inspect } from "node:util";
 import { GitHubCodeHost } from "../../src/adapters/github-code-host.ts";
 import { GitHubTracker } from "../../src/adapters/github-tracker.ts";
 import { integrationRun } from "../support/integration-run.ts";
@@ -115,10 +116,16 @@ for (const [message, outcome] of [
 }
 
 await test("GraphQL field errors prevent a Pull Request observation from confirming delivery", async () => {
+  const credential = "fixture-credential";
+  const path = ["repository", "pullRequest", "state"];
   const errors = [
-    { message: "state denied", path: ["repository", "pullRequest", "state"] },
+    {
+      message: "state denied",
+      path,
+      extensions: { metadata: { [credential]: credential } },
+    },
   ];
-  const host = new GitHubCodeHost("token", async () =>
+  const host = new GitHubCodeHost(credential, async () =>
     JSON.stringify({
       data: {
         repository: {
@@ -144,8 +151,12 @@ await test("GraphQL field errors prevent a Pull Request observation from confirm
         error.message,
         "GitHub returned GraphQL errors for Pull Request state",
       );
-      assert.partialDeepStrictEqual(error.cause, {
-        response: { errors },
+      const cause: unknown = error.cause;
+      assert.ok(
+        !inspect(cause, { depth: null, showHidden: true }).includes(credential),
+      );
+      assert.partialDeepStrictEqual(cause, {
+        response: { errors: [{ path }] },
         commandError: null,
       });
       return true;

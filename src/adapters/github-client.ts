@@ -38,30 +38,29 @@ const runGitHubCommand: GitHubCommand = (
         timeout,
       },
       (error, stdout, stderr) => {
-        if (!error) {
+        // execFile can report exit zero after sending its timeout signal.
+        const timedOut = child.killed && typeof error?.code !== "string";
+        if (!timedOut && !error) {
           resolve(stdout);
           return;
         }
         if (
-          typeof error.code === "number" &&
-          allowedExitCodes.includes(error.code) &&
-          stdout.trim() !== ""
+          !timedOut &&
+          typeof error?.code === "number" &&
+          allowedExitCodes.includes(error.code)
         ) {
-          resolve(stdout);
-          return;
+          if (stdout.trim()) {
+            resolve(stdout);
+            return;
+          }
+          if (/no (?:required )?checks reported/u.test(stderr)) {
+            resolve("[]");
+            return;
+          }
         }
-        if (
-          typeof error.code === "number" &&
-          allowedExitCodes.includes(error.code) &&
-          /no (?:required )?checks reported/u.test(stderr)
-        ) {
-          resolve("[]");
-          return;
-        }
-        const detail =
-          error.killed && error.code === null
-            ? `gh command timed out after ${timeout} ms`
-            : `gh command failed: ${stderr.trim() || formatToolError("gh", error)}`;
+        const detail = timedOut
+          ? `gh command timed out after ${timeout} ms`
+          : `gh command failed: ${stderr.trim() || formatToolError("gh", error)}`;
         const failure = new Error(detail.replaceAll(token, "[redacted]"));
         // A failed command can still carry a GraphQL envelope on stdout.
         if (input !== undefined && stdout.trim()) {
@@ -122,11 +121,7 @@ export class GitHubClient {
 
     let response: unknown;
     try {
-      response = JSON.parse(stdout, (_key, value: unknown) =>
-        typeof value === "string"
-          ? value.replaceAll(this.token, "[redacted]")
-          : value,
-      ) as unknown;
+      response = parseRedactedJSON(stdout, this.token);
     } catch {
       throw new Error("GitHub returned invalid GraphQL JSON", {
         cause: commandError,
@@ -138,6 +133,21 @@ export class GitHubClient {
       });
     return { response, commandError };
   }
+}
+
+function parseRedactedJSON(json: string, token: string): unknown {
+  const redact = (text: string) => text.replaceAll(token, "[redacted]");
+  return JSON.parse(json, (_key, value: unknown) => {
+    if (typeof value === "string") return redact(value);
+    if (typeof value !== "object" || value === null || Array.isArray(value))
+      return value;
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]: [string, unknown]) => [
+        redact(key),
+        entry,
+      ]),
+    );
+  }) as unknown;
 }
 
 function isGraphQLResponse(value: unknown): value is GraphQLResponse {
