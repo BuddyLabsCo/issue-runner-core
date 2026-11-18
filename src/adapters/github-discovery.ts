@@ -91,6 +91,7 @@ export async function discoverParent(
   number: number,
   runner: string,
   reservation: string,
+  includeChildren = true,
 ): Promise<{
   parent: Ticket;
   tickets: Ticket[];
@@ -102,7 +103,7 @@ export async function discoverParent(
     throw new Error("Invalid repository identity");
   const query = `query Discovery($owner:String!,$name:String!,$number:Int!,$runner:String!,$reservation:String!) {
     repository(owner:$owner,name:$name) { id nameWithOwner label(name:$reservation) { id name }
-      issue(number:$number) { ${childFacts} subIssues(first:100) { ${connection} { ${childFacts} } } }
+      issue(number:$number) { ${childFacts} ${includeChildren ? `subIssues(first:100) { ${connection} { ${childFacts} } }` : ""} }
     } user(login:$runner) { id login }
   }`;
   const response = await client.graphql(query, {
@@ -225,7 +226,7 @@ export async function discoverParent(
   addPage(parent.id, "labels", rawParent.labels);
   addPage(parent.id, "assignees", rawParent.assignees);
   addPage(parent.id, "blockedBy", rawParent.blockedBy);
-  addPage(parent.id, "subIssues", rawParent.subIssues);
+  if (includeChildren) addPage(parent.id, "subIssues", rawParent.subIssues);
   while (pending.length) {
     const next = pending.shift()!;
     const fields =

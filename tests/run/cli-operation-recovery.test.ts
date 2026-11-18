@@ -282,10 +282,10 @@ for (const effect of [
 }
 
 for (const operation of ["addLabel", "addAssignee"] as const) {
-  await test(`a lost ${operation} response is reconciled immediately even with no automatic retries`, async (t) => {
+  await test(`a lost ${operation} response is reconciled by a fresh start attempt`, async (t) => {
     const fixture = await implementationRun(t, {
       ...validConfig,
-      operationRetry: 0,
+      operationRetry: 1,
     });
     const write = fixture.dependencies.tracker[operation].bind(
       fixture.dependencies.tracker,
@@ -300,7 +300,7 @@ for (const operation of ["addLabel", "addAssignee"] as const) {
     assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
     assert.equal(mutations, 1);
     assert.deepEqual(fixture.dependencies.pauses, []);
-    assert.deepEqual(fixture.state.sleeps, [10_000, 30_000]);
+    assert.deepEqual(fixture.state.sleeps, [1_000, 10_000, 30_000]);
     assert.equal(fixture.state.taskCount, 1);
   });
 }
@@ -435,3 +435,43 @@ await test("Worktree creation requires manual retry without spending the automat
   assert.equal(fixture.dependencies.pauses.length, 1);
   assert.equal(fixture.state.taskCount, 1);
 });
+
+for (const partial of ["both", "runner"] as const) {
+  await test(`uncertain grouped Reservation reconciles ${partial} effects from a fresh read`, async (t) => {
+    const fixture = await implementationRun(t, {
+      ...validConfig,
+      operationRetry: 1,
+    });
+    const tracker = fixture.dependencies.tracker;
+    const readStart = tracker.readStart.bind(tracker);
+    const addReservation = tracker.addReservation.bind(tracker);
+    let reads = 0;
+    const writes: string[] = [];
+    tracker.readStart = async (...args) => {
+      reads++;
+      return readStart(...args);
+    };
+    tracker.addReservation = async (ticket, label, runner) => {
+      writes.push(`${Boolean(label)}:${Boolean(runner)}`);
+      if (writes.length === 1) {
+        if (partial === "both") await addReservation(ticket, label, runner);
+        else
+          await tracker.addAssignee(
+            ticket.repository!,
+            ticket.number,
+            runner!.login,
+          );
+        throw new Error("response lost");
+      }
+      await addReservation(ticket, label, runner);
+    };
+    const result = await fixture.run();
+    assert.equal(result.summary.outcome, "incomplete");
+    assert.equal(fixture.state.taskCount, 1);
+    assert.equal(reads, 2);
+    assert.deepEqual(
+      writes,
+      partial === "both" ? ["true:true"] : ["true:true", "true:false"],
+    );
+  });
+}

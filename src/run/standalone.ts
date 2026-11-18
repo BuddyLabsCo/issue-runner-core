@@ -21,6 +21,7 @@ import type { RunContext, RunSummary } from "./run.ts";
 import { reportTicket, type TicketReport } from "./report.ts";
 import { hasOpenBlocker, readChildren } from "./discovery.ts";
 import { completeNoChange } from "./no-change.ts";
+import { startIssue } from "./start.ts";
 import type { ReadOperation } from "./discovery.ts";
 import {
   OperationStopped,
@@ -182,16 +183,24 @@ async function executeStandalone(
       return { ticket, reason: "Issue is blocked" };
     return { ticket };
   };
-  let selected = await inspect();
+  let selected = await startIssue({
+    number,
+    ...(input.parentTicket === undefined
+      ? {}
+      : { parentTicket: input.parentTicket }),
+    ...(input.documentation ? { documentation: true } : {}),
+    config,
+    tracker,
+    read,
+    advance: context.advance!,
+    restored: restored !== undefined,
+    restarting,
+  });
   const completed =
     (restored?.publication !== undefined ||
       restored?.noChange?.delivery !== undefined) &&
     selected.ticket.state === "closed" &&
     selected.ticket.stateReason === "completed";
-  const hasRunner = selected.ticket.assignees?.includes(runnerAccount) ?? false;
-  const hasLabel = selected.ticket.labels?.includes(reservationLabel) ?? false;
-  const reserved = hasRunner && hasLabel;
-  const ownsReservation = restarting && reserved;
   const beforeDispatch = async () => {
     selected = await inspect();
     if (
@@ -386,73 +395,7 @@ async function executeStandalone(
       "Implementation stage completed; Issue delivery remains incomplete";
     return summary;
   }
-  if (!input.documentation && restored && !completed && !reserved) {
-    report.detail = "Recorded Reservation changed before continuation";
-    return summary;
-  }
   if (restored && restored.phase !== "reserved") return run(restored);
-  if (!input.documentation && !ownsReservation && hasLabel) {
-    report.detail = `existing Reservation${hasRunner !== hasLabel ? " (partial)" : ""}; no recorded ownership for this Run`;
-    return summary;
-  }
-  if (!input.documentation && !ownsReservation) {
-    // Confirm each write from current tracker state before retrying it.
-    await read(
-      "add_reservation_label",
-      `ticket:${number}`,
-      async () => {
-        selected = await inspect();
-        if (selected.reason) return;
-        if (selected.ticket.labels?.includes(reservationLabel)) {
-          selected.reason = "Reservation changed before label";
-          return;
-        }
-        await tracker.addLabel(repository, number, reservationLabel);
-      },
-      {
-        reconcile: async () => {
-          selected = await inspect();
-          return selected.ticket.labels?.includes(reservationLabel)
-            ? { outcome: "completed", result: undefined }
-            : { outcome: "pending" };
-        },
-      },
-    );
-    if (selected.reason) {
-      report.detail = selected.reason;
-      return summary;
-    }
-    await read(
-      "add_runner_assignee",
-      `ticket:${number}`,
-      async () => {
-        selected = await inspect();
-        if (selected.reason) return;
-        if (!selected.ticket.labels?.includes(reservationLabel)) {
-          selected.reason = "Reservation changed before assignment";
-          return;
-        }
-        if (!selected.ticket.assignees?.includes(runnerAccount))
-          await tracker.addAssignee(repository, number, runnerAccount);
-      },
-      {
-        reconcile: async () => {
-          selected = await inspect();
-          return selected.ticket.assignees?.includes(runnerAccount)
-            ? { outcome: "completed", result: undefined }
-            : { outcome: "pending" };
-        },
-      },
-    );
-    if (selected.reason) {
-      report.detail = selected.reason;
-      return summary;
-    }
-  }
-  if (!(await beforeDispatch())) {
-    report.detail = selected.reason ?? "Reservation changed before dispatch";
-    return summary;
-  }
   const executionId = randomUUID();
   const progress: ImplementationProgress = (execution = restored ?? {
     ...(input.documentation ? { purpose: "documentation" } : {}),

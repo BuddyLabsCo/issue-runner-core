@@ -1,6 +1,7 @@
 import type { ChildPage, Ticket, Tracker } from "../run/contracts.ts";
 import { GitHubClient, type GitHubCommand } from "./github-client.ts";
 import { discoverParent } from "./github-discovery.ts";
+import { addReservation } from "./github-reservation.ts";
 type ClosureReason = Ticket["stateReason"];
 function parseTicket(value: unknown, includeRepository: boolean): Ticket {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -235,6 +236,40 @@ export class GitHubTracker implements Tracker {
       "-f",
       `assignees[]=${account}`,
     ]);
+  }
+
+  readStart(
+    repository: string,
+    number: number,
+    runner: string,
+    reservation: string,
+    parent?: number,
+  ) {
+    return discoverParent(
+      this.client,
+      repository,
+      parent ?? number,
+      runner,
+      reservation,
+      parent !== undefined,
+    );
+  }
+
+  addReservation(
+    ticket: Ticket,
+    label: { id: string; name: string } | undefined,
+    runner: { id: string; login: string } | undefined,
+    requiredLabel: string,
+    requiredRunner: string,
+  ) {
+    return addReservation(
+      this.client,
+      ticket,
+      label,
+      runner,
+      requiredLabel,
+      requiredRunner,
+    );
   }
 
   discoverParent(
