@@ -29,30 +29,72 @@ await test("an all-cancelled parent closes only after completed tracker state is
   assert.deepEqual(fixture.writes, []);
 });
 
-await test("the last successful Batch goes straight to the completion scan", async (t) => {
-  const fixture = await parentDeliveryRun(t, [child(51)]);
-  const { tracker } = fixture.dependencies;
-  const discover = tracker.discoverParent.bind(tracker);
-  const scan = tracker.readParentCompletion.bind(tracker);
-  const close = tracker.closeParent.bind(tracker);
-  const observations: string[] = [];
-  tracker.discoverParent = async (...args) => {
-    observations.push("discovery");
-    return discover(...args);
-  };
-  tracker.readParentCompletion = async (...args) => {
-    observations.push("scan");
-    return scan(...args);
-  };
-  tracker.closeParent = async (...args) => {
-    observations.push("close");
-    return close(...args);
-  };
+for (const mode of [
+  "fresh",
+  "recovered",
+  "recovered with work remaining",
+] as const) {
+  await test(`parent completion uses the expected scan sequence after a Batch (${mode})`, async (t) => {
+    const remainingWork = mode === "recovered with work remaining";
+    const children = remainingWork ? [child(51), child(52)] : [child(51)];
+    const fixture = await parentDeliveryRun(t, children, {
+      ...validConfig,
+      maxBatchSize: 1,
+    });
+    const { tracker, codeHost } = fixture.dependencies;
+    const discover = tracker.discoverParent.bind(tracker);
+    const scan = tracker.readParentCompletion.bind(tracker);
+    const close = tracker.closeParent.bind(tracker);
+    const observations: string[] = [];
+    tracker.discoverParent = async (...args) => {
+      observations.push("discovery");
+      return discover(...args);
+    };
+    tracker.readParentCompletion = async (...args) => {
+      observations.push("scan");
+      return scan(...args);
+    };
+    tracker.closeParent = async (...args) => {
+      observations.push("close");
+      return close(...args);
+    };
 
-  assert.equal((await fixture.run()).summary.outcome, "succeeded");
-  assert.deepEqual(observations, ["discovery", "scan", "close"]);
-  assert.deepEqual(fixture.closures, [51, 48]);
-});
+    if (mode !== "fresh") {
+      const merge = codeHost.requestSquashMerge.bind(codeHost);
+      codeHost.requestSquashMerge = async () => ({
+        outcome: "rejected",
+        error: new Error("merge temporarily rejected"),
+      });
+      fixture.dependencies.operator.pause = async (message) => {
+        assert.match(message, /merge temporarily rejected/u);
+        return "q";
+      };
+      assert.equal((await fixture.run()).summary.outcome, "cancelled");
+      assert.equal(
+        (await implementationProgress(fixture.directory, 51)).publication
+          ?.phase,
+        "pending_merge",
+      );
+      codeHost.requestSquashMerge = merge;
+      fixture.dependencies.operator.pause = async (message) => {
+        assert.match(message, /merge temporarily rejected/u);
+        return "";
+      };
+      observations.length = 0;
+    }
+
+    assert.equal((await fixture.run()).summary.outcome, "succeeded");
+    assert.deepEqual(
+      observations,
+      {
+        fresh: ["discovery", "scan", "close"],
+        recovered: ["scan", "close"],
+        "recovered with work remaining": ["scan", "discovery", "scan", "close"],
+      }[mode],
+    );
+    assert.deepEqual(fixture.closures, remainingWork ? [51, 52, 48] : [51, 48]);
+  });
+}
 
 for (const recover of [false, true]) {
   await test(`a cancelled Batch member permits its ready sibling to integrate${recover ? " after matching recovery" : ""}`, async (t) => {

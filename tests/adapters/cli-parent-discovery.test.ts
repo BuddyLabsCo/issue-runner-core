@@ -173,6 +173,18 @@ for (const mode of [
         "open in confirmation": "cancelled",
       }[mode],
     );
+    if (mode === "open in scan") {
+      const audit = await readFile(result.logPath!, "utf8");
+      assert.match(
+        audit,
+        /"operation":"read_parent_completion".*"result":"succeeded"/u,
+      );
+      assert.match(audit, /"operation":"close_parent".*"result":"skipped"/u);
+      assert.doesNotMatch(
+        audit,
+        /"operation":"close_parent".*"result":"succeeded"/u,
+      );
+    }
   });
 }
 

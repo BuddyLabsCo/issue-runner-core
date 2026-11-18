@@ -54,7 +54,7 @@ function validateScope(
   validateChildren(parent, children);
 }
 
-function closeParent(input: ParentScope): Promise<boolean> {
+async function closeParent(input: ParentScope): Promise<boolean> {
   const { repository, parentTicket, tracker, read, signal } = input;
   const target = `parent:${parentTicket}`;
   const phase = "parent_completion";
@@ -73,13 +73,13 @@ function closeParent(input: ParentScope): Promise<boolean> {
       },
       { phase },
     );
-  return read(
+  const outcome = await read<"confirmed" | "already_closed" | "open">(
     "close_parent",
     target,
     async () => {
       const { parent, children } = await inspect();
-      if (parent.state === "closed") return true;
-      if (children.some((ticket) => ticket.state === "open")) return false;
+      if (parent.state === "closed") return "already_closed";
+      if (children.some((ticket) => ticket.state === "open")) return "open";
       const confirmed = await tracker.closeParent(parent, signal);
       if (
         confirmed.parent.state !== "closed" ||
@@ -97,16 +97,19 @@ function closeParent(input: ParentScope): Promise<boolean> {
           },
         );
       }
-      return true;
+      return "confirmed";
     },
     {
       phase,
+      auditResult: (result) =>
+        result === "confirmed" ? "succeeded" : "skipped",
       reconcile: async () =>
         (await inspect()).parent.state === "closed"
-          ? { outcome: "completed", result: true }
+          ? { outcome: "completed", result: "confirmed" }
           : { outcome: "pending" },
     },
   );
+  return outcome !== "open";
 }
 
 function parentBatchTickets(
@@ -122,6 +125,7 @@ function parentBatchTickets(
 
 interface ParentRun extends ParentScope {
   summary: RunSummary;
+  recoveredBatch: boolean;
   markers: Parameters<Tracker["discoverParent"]>[2];
   eligibleIssues: (tickets: BatchTicket[]) => Promise<number[]>;
   runBatch: (
@@ -154,7 +158,13 @@ function discoverBatch(input: ParentRun) {
 }
 
 export async function runParent(input: ParentRun): Promise<RunSummary> {
-  let hadChildren = false;
+  let hadChildren = input.recoveredBatch;
+  if (
+    input.recoveredBatch &&
+    !input.maintenancePending() &&
+    (await closeParent(input))
+  )
+    return { ...input.summary, outcome: "succeeded" };
   while (!input.maintenancePending()) {
     const { parent, tickets, eligible } = await discoverBatch(input);
     if (parent.state === "closed")

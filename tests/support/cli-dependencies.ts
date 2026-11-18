@@ -80,25 +80,10 @@ async function readIssueStart(
   { reservationLabel, runnerAccount }: Parameters<Tracker["readIssueStart"]>[2],
   parentTicket?: number,
 ): Promise<IssueStartFacts> {
-  let scope: IssueStartFacts["scope"];
-  if (parentTicket !== undefined) {
-    const parent = issueIdentity(
-      repository,
-      await this.getParent(repository, parentTicket),
-    );
-    const tickets = await scriptedPages(async (page) => {
-      const result = await this.listChildrenPage(
-        repository,
-        parentTicket,
-        page,
-      );
-      return { tickets: result.children, nextPage: result.nextPage };
-    });
-    scope = {
-      parent,
-      children: tickets.map((ticket) => issueIdentity(repository, ticket)),
-    };
-  }
+  const scope =
+    parentTicket === undefined
+      ? undefined
+      : await readParentCompletion.call(this, repository, parentTicket);
   const ticket = await this.getTicket(repository, number);
   const blockers = await scriptedPages(async (page) => {
     const result = await this.listBlockersPage(repository, number, page);
