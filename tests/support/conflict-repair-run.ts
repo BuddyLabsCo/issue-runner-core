@@ -33,12 +33,21 @@ export async function conflictRepairRun(
     includesTarget: true,
   };
   fixture.publicationState.onChecks = async () => [];
-  const observe = fixture.dependencies.codeHost.observePullRequest.bind(
-    fixture.dependencies.codeHost,
-  );
-  fixture.dependencies.codeHost.observePullRequest = async (input) => {
+  const { codeHost } = fixture.dependencies;
+  const list = codeHost.listPullRequests.bind(codeHost);
+  codeHost.listPullRequests = async () =>
+    (await list()).map((record) =>
+      state.merged ? { ...record, state: "merged" } : record,
+    );
+  const observe = codeHost.observePullRequest.bind(codeHost);
+  codeHost.observePullRequest = async (input) => {
     const observed = await observe(input);
     observed.merge.mergeable = state.mergeable;
+    if (state.mergeRequested && !observed.merge.merged) {
+      observed.merge.mergeRequested = true;
+      observed.merge.isInMergeQueue = true;
+      observed.merge.mergeQueueEntryId = "queue-entry";
+    }
     return observed;
   };
   fixture.dependencies.codeHost.getPullRequest = async () => ({

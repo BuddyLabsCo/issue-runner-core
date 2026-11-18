@@ -10,6 +10,7 @@ import type { CreateTabOptions } from "../../src/terminal.ts";
 import type {
   GitWorkspace,
   Ticket,
+  Tracker,
   WorkspaceEvidence,
 } from "../../src/run/contracts.ts";
 import { createProject, validConfig } from "./cli-project.ts";
@@ -257,4 +258,31 @@ export function committed(ticket = 50) {
 export async function publish(file: string, value: unknown) {
   await writeFile(`${file}.tmp`, JSON.stringify(value));
   await rename(`${file}.tmp`, file);
+}
+
+export function recordPostStartEligibilityReads(tracker: Tracker): string[] {
+  const reads: string[] = [];
+  let reserved = false;
+  const reserve = tracker.reserveIssue.bind(tracker);
+  const start = tracker.readIssueStart.bind(tracker);
+  const ticket = tracker.getTicket.bind(tracker);
+  const blockers = tracker.listBlockersPage.bind(tracker);
+  tracker.reserveIssue = async (...args) => {
+    const markers = await reserve(...args);
+    reserved = true;
+    return markers;
+  };
+  tracker.readIssueStart = (...args) => {
+    if (reserved) reads.push("Issue start");
+    return start(...args);
+  };
+  tracker.getTicket = (...args) => {
+    if (reserved) reads.push("Issue");
+    return ticket(...args);
+  };
+  tracker.listBlockersPage = (...args) => {
+    if (reserved) reads.push("blockers");
+    return blockers(...args);
+  };
+  return reads;
 }

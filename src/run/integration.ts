@@ -48,7 +48,7 @@ export async function integrateImplementation(input: {
   const target = `ticket:${ticket}`;
   const observe = () =>
     read("confirm_merge", target, async () => {
-      if (input.deferred) {
+      if (input.deferred || input.resuming) {
         const observation = await codeHost.observePullRequest(
           {
             repository,
@@ -299,9 +299,13 @@ export async function integrateImplementation(input: {
   }
   let current = await completion();
   if (current.state === "open") {
-    let beforeClose: typeof current | undefined = current;
+    const operation = "close_ticket";
+    // A retained attempt can wait for retry or Operator Pause before dispatch.
+    let beforeClose = progress.operations?.[JSON.stringify([operation, target])]
+      ? undefined
+      : current;
     current = await read(
-      "close_ticket",
+      operation,
       target,
       async () => {
         const observed = beforeClose ?? (await completion());
