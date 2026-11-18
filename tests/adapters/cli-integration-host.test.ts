@@ -6,12 +6,20 @@ import { GitHubCodeHost } from "../../src/adapters/github-code-host.ts";
 import { GitHubTracker } from "../../src/adapters/github-tracker.ts";
 import { integrationRun } from "../support/integration-run.ts";
 import { implementationCommit } from "../support/implementation-run.ts";
+import {
+  connection,
+  issue,
+  repository,
+} from "../support/github-parent-discovery.ts";
 
 await test("GitHub integration uses squash, observed HEAD, admin policy, queue observation and completed closure", async (t) => {
   const fixture = await integrationRun(t);
   let queued = false;
   let merged = false;
   let requests = 0;
+  const deliveryReads: string[] = [];
+  const firstLabel = { id: "docs-upper", name: "Docs" };
+  const secondLabel = { id: "docs-lower", name: "docs" };
   const host = new GitHubCodeHost("host-secret", async (args, options) => {
     assert.equal(options.token, "host-secret");
     if (args[0] === "pr") {
@@ -60,6 +68,44 @@ await test("GitHub integration uses squash, observed HEAD, admin policy, queue o
   const tracker = new GitHubTracker("host-secret", async (args, options) => {
     assert.equal(options.token, "host-secret");
     assert.equal(merged, true);
+    if (args[0] === "api") {
+      assert.equal(args[1], "graphql");
+      const { query, variables } = JSON.parse(options.input!) as {
+        query: string;
+        variables: Record<string, unknown>;
+      };
+      assert.match(query, /\blabels\b/u);
+      assert.doesNotMatch(
+        query,
+        /\b(?:assignees|blockedBy|subIssues|label|user)\b/u,
+      );
+      if (variables.after !== undefined) {
+        assert.deepEqual(variables, { owner: "issue-50", after: "labels" });
+        deliveryReads.push("labels");
+        return JSON.stringify({
+          data: {
+            node: { id: "issue-50", labels: connection([secondLabel], 2) },
+          },
+        });
+      }
+      assert.deepEqual(variables, { owner: "owner", name: "repo", number: 50 });
+      const closed = fixture.state.ticket.state === "closed";
+      deliveryReads.push(closed ? "closed" : "open");
+      return JSON.stringify({
+        data: {
+          repository: {
+            ...repository,
+            issue: issue(50, {
+              state: closed ? "CLOSED" : "OPEN",
+              stateReason: closed ? "COMPLETED" : null,
+              labels: closed
+                ? connection([firstLabel], 2, "labels", true)
+                : connection([]),
+            }),
+          },
+        },
+      });
+    }
     assert.deepEqual(args, [
       "issue",
       "close",
@@ -79,6 +125,7 @@ await test("GitHub integration uses squash, observed HEAD, admin policy, queue o
   });
   Object.assign(fixture.dependencies.tracker, {
     closeTicket: tracker.closeTicket.bind(tracker),
+    readIssueDelivery: tracker.readIssueDelivery.bind(tracker),
   });
   fixture.state.onSleep = async () => {
     if (queued) merged = true;
@@ -86,6 +133,11 @@ await test("GitHub integration uses squash, observed HEAD, admin policy, queue o
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
   assert.equal(requests, 1);
+  assert.deepEqual(deliveryReads, ["open", "closed", "labels"]);
+  assert.deepEqual((await fixture.snapshot()).publication?.deliveryLabels, [
+    "Docs",
+    "docs",
+  ]);
   assert.equal(
     (await fixture.snapshot()).publication?.closure?.stateReason,
     "completed",

@@ -62,6 +62,13 @@ export async function parentRun(
         children.find((ticket) => ticket.number === number)!,
       );
     },
+    async readIssueDelivery(_repository: string, ticket: number) {
+      const { number, state, stateReason, labels } = children.find(
+        (child) => child.number === ticket,
+      )!;
+      assert.ok(labels);
+      return { number, state, stateReason, labels: [...labels] };
+    },
     async addLabel(_repository: string, number: number, label: string) {
       writes.push(`label:${number}`);
       children.find((ticket) => ticket.number === number)!.labels!.push(label);

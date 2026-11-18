@@ -8,46 +8,11 @@ import type {
 } from "../run/contracts.ts";
 import type { GitHubClient } from "./github-client.ts";
 
-export const issueFields =
-  "id number state stateReason repository { id nameWithOwner }";
-
-export function parseIssueFact(issue: Record<string, unknown>): IssueFact {
-  const repository = object(issue.repository);
-  if (
-    !nonempty(issue.id) ||
-    !nonempty(repository.id) ||
-    !nonempty(repository.nameWithOwner)
-  )
-    throw new Error("GitHub issue has an invalid identity");
-  if (
-    typeof issue.number !== "number" ||
-    !Number.isSafeInteger(issue.number) ||
-    issue.number <= 0
-  )
-    throw new Error("GitHub issue has no valid number");
-  const identity = {
-    id: issue.id,
-    number: issue.number,
-    repository: repository.nameWithOwner,
-    repositoryId: repository.id,
-  };
-  if (
-    issue.state === "OPEN" &&
-    (issue.stateReason === null || issue.stateReason === "REOPENED")
-  )
-    return { ...identity, state: "open", stateReason: null };
-  if (
-    issue.state !== "CLOSED" ||
-    (issue.stateReason !== "COMPLETED" && issue.stateReason !== "NOT_PLANNED")
-  )
-    throw new Error(`Issue ${issue.number} has an unsupported terminal state`);
-  return {
-    ...identity,
-    state: "closed",
-    stateReason:
-      issue.stateReason === "COMPLETED" ? "completed" : "not_planned",
-  };
-}
+import {
+  issueFields,
+  parseIssueFact,
+  scopedIssue,
+} from "./github-issue-identity.ts";
 
 function missingRunnerError(error: unknown): boolean {
   return (
@@ -291,25 +256,6 @@ function markerLookup(
   return { reservation, runner };
 }
 
-function scopedIssue(
-  raw: Record<string, unknown>,
-  repo: Record<string, unknown>,
-  repository: string,
-  number: number,
-  description: string,
-) {
-  const parent = parseIssueFact(raw);
-  if (
-    parent.number !== number ||
-    parent.repository.toLowerCase() !== repository.toLowerCase() ||
-    typeof repo.nameWithOwner !== "string" ||
-    repo.nameWithOwner.toLowerCase() !== repository.toLowerCase() ||
-    repo.id !== parent.repositoryId
-  )
-    throw new Error(`Unexpected ${description} ownership`);
-  return parent;
-}
-
 function readScopeChildren<T extends IssueFact>(
   read: ReadIssueGraphQL,
   parent: IssueFact,
@@ -417,6 +363,47 @@ export async function discoverParent(
     });
   }
   return { parent, children, ...lookup };
+}
+
+export async function readIssueDelivery(
+  client: GitHubClient,
+  repository: string,
+  number: number,
+  signal?: AbortSignal,
+): ReturnType<Tracker["readIssueDelivery"]> {
+  const read: ReadIssueGraphQL = (query, variables) =>
+    readIssueGraphQL(client, query, variables, signal);
+  const [owner, name] = repository.split("/");
+  const data = await read(
+    `query IssueDelivery($owner: String!, $name: String!, $number: Int!) {
+      repository(owner: $owner, name: $name) {
+        id nameWithOwner
+        issue(number: $number) {
+          ${issueFields}
+          ${issueConnectionFields("labels", "id name")}
+        }
+      }
+    }`,
+    { owner, name, number },
+  );
+  const repo = object(data.repository);
+  const raw = object(repo.issue);
+  const { id, state, stateReason } = scopedIssue(
+    raw,
+    repo,
+    repository,
+    number,
+    "Issue",
+  );
+  const labels = await readIssueConnection(
+    read,
+    id,
+    "labels",
+    "id name",
+    parseIssuePage(raw.labels, id, "labels", parseLabel),
+    parseLabel,
+  );
+  return { number, state, stateReason, labels: labels.map(({ name }) => name) };
 }
 
 export async function readIssueStart(

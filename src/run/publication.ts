@@ -47,9 +47,9 @@ export async function publishImplementation(
       "Publication requires verified commits and accepted business handoff metadata",
     );
   const verify = async (requireEligibility = true) => {
-    if (requireEligibility && !(await beforeDispatch()))
+    if (requireEligibility && beforeDispatch && !(await beforeDispatch()))
       throw new OperationStopped(
-        "Issue eligibility changed before publication",
+        "Maintenance Ticket eligibility changed before publication",
       );
     verifyWorkspace(progress, await context.git.inspect(progress), result);
     const repairs = progress.publication

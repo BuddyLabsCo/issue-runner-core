@@ -223,7 +223,7 @@ async function executeStandalone(
     progress,
     ticket: selected.ticket,
     persist: () => persist(progress),
-    beforeDispatch,
+    ...(input.documentation ? { beforeDispatch } : {}),
     closeTab: (close) =>
       read(
         `close_${progress.phase.replace("_completed", "")}_tab`,
@@ -255,6 +255,7 @@ async function executeStandalone(
   const integrate = async (
     progress: ImplementationProgress,
     publicationReason?: string,
+    resuming = false,
   ): Promise<RunSummary> => {
     if (
       publicationReason !== undefined &&
@@ -273,7 +274,8 @@ async function executeStandalone(
           tracker,
           read,
           deferred: input.deferIntegration !== undefined,
-          inspectTicket: inspect,
+          resuming,
+          issueClosureReason: started.ticket.stateReason,
           continuePublication: (conflict) => publish(progress, conflict),
         });
         if (delivery.outcome === "succeeded") {
@@ -313,7 +315,7 @@ async function executeStandalone(
       "delivered",
     ].includes(restored.publication.phase)
   )
-    return integrate(restored);
+    return integrate(restored, undefined, true);
   if (
     selected.reason &&
     !completed &&
@@ -365,6 +367,7 @@ async function executeStandalone(
     if (progress.result?.outcome === "no_change") {
       const result = await completeNoChange({
         ...stageInput(progress),
+        checkDeliveryEligibility: beforeDispatch,
         git: context.git,
         tracker,
         read,
