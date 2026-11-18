@@ -253,6 +253,25 @@ await test("legacy code_host configuration still attempts Runner closure", async
   assert.equal(fixture.integrationState.closures, 1);
 });
 
+await test("a closed Issue with lost ownership cannot resume an unmerged pending merge", async (t) => {
+  const fixture = await integrationRun(t);
+  fixture.integrationState.onMerge = async () => {
+    fixture.controller.abort();
+    throw new Error("merge request interrupted");
+  };
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  assert.equal((await fixture.snapshot()).publication?.phase, "pending_merge");
+  fixture.state.ticket.state = "closed";
+  fixture.state.ticket.stateReason = "completed";
+  fixture.state.ticket.assignees = [];
+  fixture.state.ticket.labels = ["ready-for-agent"];
+  fixture.dependencies.signal = new AbortController().signal;
+  assert.equal((await fixture.run()).summary.outcome, "incomplete");
+  assert.equal(fixture.integrationState.requests.length, 1);
+  assert.equal(fixture.integrationState.closures, 0);
+  assert.equal((await fixture.snapshot()).publication?.phase, "pending_merge");
+});
+
 await test("an interrupted queue resumes its existing request and deadline without another Agent or merge request", async (t) => {
   const fixture = await integrationRun(t);
   fixture.integrationState.onMerge = async () => {

@@ -330,6 +330,8 @@ async function executeStandalone(
   }
   if (
     restored?.publication &&
+    (!completed ||
+      ["merged", "delivered"].includes(restored.publication.phase)) &&
     [
       "conflict_repair",
       "pending_merge",

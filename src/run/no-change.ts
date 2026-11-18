@@ -42,7 +42,10 @@ export async function completeNoChange(
     return { ...summary, outcome: "succeeded" };
   }
   if (loaded.config.workflow.review && !progress.noChange?.delivery) {
-    await reviewNoChange(input);
+    await reviewNoChange({
+      ...input,
+      beforeDispatch: () => Promise.resolve(true),
+    });
     if (progress.result?.outcome === "committed") return;
     if (progress.noChange?.review?.result?.outcome !== "passed") {
       report.detail = "No-change Review or implementation remains incomplete";
