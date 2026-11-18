@@ -99,7 +99,8 @@ function closeParent(input: ParentScope): Promise<boolean> {
     },
     {
       reconcile: async () =>
-        (await inspect()).parent.state === "closed"
+        (await read("reconcile_parent", `parent:${parentTicket}`, inspect))
+          .parent.state === "closed"
           ? { outcome: "completed", result: true }
           : { outcome: "pending" },
     },

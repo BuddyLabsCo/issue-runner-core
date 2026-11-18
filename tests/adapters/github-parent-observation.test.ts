@@ -208,6 +208,12 @@ await test("completion and close drain child pages without eligibility fields an
       [2, 3],
     );
     assert.equal(queries.length, 2);
+    assert.match(queries[0]!, mode === "close" ? /^mutation\(/u : /^query\(/u);
+    if (mode === "close")
+      assert.match(
+        queries[0]!,
+        /closeIssue\(input:\{issueId:\$id,stateReason:COMPLETED\}\)/u,
+      );
     assert.ok(
       queries.every((query) => !/blockedBy|labels|assignees/u.test(query)),
     );
