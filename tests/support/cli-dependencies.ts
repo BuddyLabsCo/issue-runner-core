@@ -225,8 +225,28 @@ export function createCliDependencies(launchDirectory: string) {
           );
       },
       discoverParent: discoverParentFixture,
-      async closeParent() {
-        effects.push("close_parent");
+      async readParentCompletion(
+        this: import("../../src/run/contracts.ts").Tracker,
+        repository: string,
+        number: number,
+      ) {
+        const parent = await this.getParent(repository, number);
+        const tickets = [];
+        let page: number | null = 1;
+        while (page !== null) {
+          const result = await this.listChildrenPage(repository, number, page);
+          tickets.push(...result.children);
+          page = result.nextPage;
+        }
+        return { parent, tickets };
+      },
+      async closeParent(
+        this: import("../../src/run/contracts.ts").Tracker,
+        repository: string,
+        parent: import("../../src/run/contracts.ts").Ticket,
+      ) {
+        await this.closeTicket(repository, parent.number);
+        return this.readParentCompletion(repository, parent.number);
       },
       async addLabel() {
         effects.push("reserve");

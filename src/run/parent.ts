@@ -1,9 +1,5 @@
 import type { Ticket, Tracker } from "./contracts.ts";
-import {
-  hasOpenBlocker,
-  readChildren,
-  type ReadOperation,
-} from "./discovery.ts";
+import type { ReadOperation } from "./discovery.ts";
 import { OperationStopped, OperatorCancelled } from "./operations.ts";
 import type { RunSummary } from "./run.ts";
 
@@ -24,7 +20,7 @@ async function readParentScope(
   tickets: Ticket[];
 }> {
   const { repository, parentTicket, tracker, read } = input;
-  const scope = discovery
+  const { parent, tickets } = discovery
     ? await read("discover_parent", `parent:${parentTicket}`, () =>
         tracker.discoverParent(
           repository,
@@ -33,21 +29,23 @@ async function readParentScope(
           input.reservation,
         ),
       )
-    : undefined;
-  const parent =
-    scope?.parent ??
-    (await read("read_parent", `parent:${parentTicket}`, () =>
-      tracker.getParent(repository, parentTicket),
-    ));
+    : await read("read_parent_completion", `parent:${parentTicket}`, () =>
+        tracker.readParentCompletion(repository, parentTicket),
+      );
+  return validateScope(repository, { parent, tickets });
+}
+
+function validateScope(
+  repository: string,
+  scope: { parent: Ticket; tickets: Ticket[] },
+) {
+  const { parent, tickets } = scope;
   if (parent.state === "closed" && parent.stateReason === "not_planned")
     throw new OperatorCancelled("Parent Ticket is cancelled");
   if (parent.state === "closed" && parent.stateReason === null)
     throw new OperationStopped(
       "closed Parent Ticket has no supported closure reason",
     );
-  const tickets =
-    scope?.tickets ??
-    (await readChildren(repository, parentTicket, tracker, read));
   const foreignChild = tickets.find(
     (child) => child.repository?.toLowerCase() !== repository.toLowerCase(),
   );
@@ -70,12 +68,7 @@ async function readParentScope(
 
 function closeParent(input: ParentScope): Promise<boolean> {
   const { repository, parentTicket, tracker, read } = input;
-  const inspect = async () => {
-    const scope = await readParentScope(input);
-    for (const ticket of scope.tickets)
-      await hasOpenBlocker(repository, ticket.number, tracker, read);
-    return scope;
-  };
+  const inspect = () => readParentScope(input);
   return read(
     "close_parent",
     `parent:${parentTicket}`,
@@ -83,8 +76,18 @@ function closeParent(input: ParentScope): Promise<boolean> {
       const scope = await inspect();
       if (scope.parent.state === "closed") return true;
       if (scope.tickets.some((ticket) => ticket.state === "open")) return false;
-      await tracker.closeTicket(repository, parentTicket);
-      if ((await inspect()).parent.state !== "closed")
+      const confirmation = await tracker.closeParent(repository, scope.parent);
+      if (
+        confirmation.tickets.some(
+          (ticket) => ticket.state === "open" || ticket.stateReason === null,
+        )
+      )
+        throw new Error("Parent closure has not been confirmed");
+      validateScope(repository, confirmation);
+      if (
+        confirmation.parent.state !== "closed" ||
+        confirmation.parent.stateReason !== "completed"
+      )
         throw new Error("Parent closure has not been confirmed");
       return true;
     },

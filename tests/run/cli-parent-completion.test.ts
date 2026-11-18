@@ -418,3 +418,61 @@ await test("parent rescans after a Batch and delivers a newly unblocked child be
       "delivered",
     );
 });
+
+await test("completion uses the close response without another scope or blocker read", async (t) => {
+  const fixture = await parentDeliveryRun(t, [
+    child(51, { state: "closed", stateReason: "completed" }),
+  ]);
+  const read = fixture.dependencies.tracker.readParentCompletion.bind(
+    fixture.dependencies.tracker,
+  );
+  let scans = 0;
+  const readBlockers = fixture.dependencies.tracker.listBlockersPage.bind(
+    fixture.dependencies.tracker,
+  );
+  fixture.dependencies.tracker.listBlockersPage = async (...args) => {
+    assert.equal(scans, 0, "completion must not read blockers");
+    return readBlockers(...args);
+  };
+  fixture.dependencies.tracker.readParentCompletion = async (...args) => {
+    scans++;
+    return read(...args);
+  };
+  fixture.dependencies.tracker.closeParent = async (_repository, parent) => {
+    fixture.closures.push(parent.number);
+    return {
+      parent: { ...parent, state: "closed", stateReason: "completed" },
+      tickets: structuredClone(fixture.children),
+    };
+  };
+  assert.equal((await fixture.run()).summary.outcome, "succeeded");
+  assert.equal(scans, 1);
+  assert.deepEqual(fixture.closures, [48]);
+});
+
+await test("inconsistent close evidence is reconciled before reporting completion", async (t) => {
+  const fixture = await parentDeliveryRun(t, [
+    child(51, { state: "closed", stateReason: "completed" }),
+  ]);
+  let closes = 0;
+  let scans = 0;
+  const read = fixture.dependencies.tracker.readParentCompletion.bind(
+    fixture.dependencies.tracker,
+  );
+  fixture.dependencies.tracker.readParentCompletion = async (...args) => {
+    scans++;
+    return read(...args);
+  };
+  fixture.dependencies.tracker.closeParent = async (_repository, parent) => {
+    closes++;
+    fixture.parent.state = "closed";
+    fixture.parent.stateReason = "completed";
+    return {
+      parent: { ...parent, state: "closed", stateReason: "completed" },
+      tickets: [child(51)],
+    };
+  };
+  assert.equal((await fixture.run()).summary.outcome, "succeeded");
+  assert.equal(closes, 1);
+  assert.equal(scans, 2);
+});
