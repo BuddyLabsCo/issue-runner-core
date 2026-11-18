@@ -34,25 +34,33 @@ await test("no-auto-merge publishes fixed Probe metadata, waits for checks, and 
       },
       codeHost: {
         ...fixture.dependencies.codeHost,
-        async getRemoteBranchHead() {
-          return remote;
+        async observeBranch() {
+          return { repositoryId: "R_repo", headSha: remote };
         },
-        async listPullRequests() {
-          return pullRequests;
+        async observePublication() {
+          return {
+            repositoryId: "R_repo",
+            headSha: remote,
+            candidates: pullRequests,
+          };
         },
         async createPullRequest(input) {
           assert.equal(remote, implementationCommit.sha);
           effects.push("create");
           created = input;
-          pullRequests.push({
+          const record: PullRequestRecord = {
+            id: "PR_81",
             number: 81,
             url: "https://github.com/owner/repo/pull/81",
+            createdAt: "2026-10-30T00:00:00Z",
             branch: input.branch,
             targetBranch: input.targetBranch,
             headSha: remote,
             state: "open",
-          });
-          return { number: 81, url: "https://github.com/owner/repo/pull/81" };
+            draft: false,
+          };
+          pullRequests.push(record);
+          return record;
         },
         async getRequiredChecks() {
           assert.equal(fixture.state.sleeps.at(-1), 30_000);
@@ -66,6 +74,7 @@ await test("no-auto-merge publishes fixed Probe metadata, waits for checks, and 
   const saved = await fixture.snapshot();
   assert.deepEqual(created, {
     repository: "owner/repo",
+    repositoryId: "R_repo",
     targetBranch: "default-branch",
     branch: saved.branch,
     title: "feat: [issue-50] implement the Issue",
@@ -313,4 +322,70 @@ await test("an existing remote head cannot be adopted without recorded publicati
   assert.equal(fixture.publicationState.pushes, 0);
   assert.equal(fixture.publicationState.creations, 0);
   assert.equal((await fixture.snapshot()).publication, undefined);
+});
+
+await test("a closed Pull Request on another source with the exact base and head prevents creation", async (t) => {
+  const fixture = await publicationRun(t);
+  const state = fixture.publicationState;
+  state.onPush = async (branch, headSha) => {
+    state.branches.set(branch, headSha);
+    state.pullRequests.push({
+      id: "PR_closed",
+      number: 80,
+      url: "https://github.com/owner/repo/pull/80",
+      createdAt: "2026-10-30T00:00:00Z",
+      branch: "another-source",
+      targetBranch: "default-branch",
+      headSha,
+      state: "closed",
+      draft: false,
+    });
+  };
+  fixture.dependencies.operator.pause = async (message) => {
+    assert.match(message, /identity or head mismatch/u);
+    return "q";
+  };
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  assert.equal(state.pushes, 1);
+  assert.equal(state.creations, 0);
+});
+
+await test("a PR created with an unexpected head is never checkpointed as successful", async (t) => {
+  const fixture = await publicationRun(t);
+  const state = fixture.publicationState;
+  state.onCreate = async () => {
+    state.pullRequests[0]!.headSha = "d".repeat(40);
+  };
+  fixture.dependencies.operator.pause = async (message) => {
+    assert.match(message, /identity or head mismatch/u);
+    return "q";
+  };
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  const saved = (await fixture.snapshot()).publication!;
+  assert.equal(saved.phase, "pending_pr");
+  assert.equal(saved.pullRequest, undefined);
+  assert.equal(state.creations, 1);
+  assert.deepEqual(state.discoveries, []);
+});
+
+await test("a Pull Request that appears during the Operator Pause prevents a second create", async (t) => {
+  const fixture = await publicationRun(t);
+  const state = fixture.publicationState;
+  let delayed: PullRequestRecord | undefined;
+  state.onCreate = async () => {
+    delayed = state.pullRequests.pop();
+    throw new Error("response lost before Pull Request became visible");
+  };
+  fixture.dependencies.operator.pause = async (message) => {
+    assert.match(message, /creation outcome is uncertain/u);
+    state.pullRequests.push(delayed!);
+    return "";
+  };
+  const result = await fixture.run();
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
+  assert.equal(state.creations, 1);
+  assert.equal(
+    (await fixture.snapshot()).publication?.pullRequest?.id,
+    "PR_81",
+  );
 });

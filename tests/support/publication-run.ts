@@ -51,6 +51,7 @@ export async function publicationRun(
     else {
       assert.equal(saved.publication?.phase, "pending_push");
       assert.equal(saved.publication.headSha, head);
+      assert.equal(saved.publication.repositoryId, "R_repo");
     }
     state.pushes++;
     await state.onPush(branch, head);
@@ -68,16 +69,19 @@ export async function publicationRun(
     state.creations++;
     const number = state.creations + 80;
     const pullRequest: PullRequestRecord = {
+      id: `PR_${number}`,
       number,
       url: `https://github.com/owner/repo/pull/${number}`,
+      createdAt: "2026-10-30T00:00:00Z",
       branch: input.branch,
       targetBranch: input.targetBranch,
       headSha: state.branches.get(input.branch)!,
       state: "open",
+      draft: false,
     };
     state.pullRequests.push(pullRequest);
     await state.onCreate();
-    return { number, url: pullRequest.url };
+    return structuredClone(pullRequest);
   };
   codeHost.getRequiredChecks = async () => {
     state.discoveries.push(now);

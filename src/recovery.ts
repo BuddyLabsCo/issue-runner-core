@@ -135,6 +135,7 @@ export interface PublicationProgress {
     | "merge_requested"
     | "merged"
     | "delivered";
+  repositoryId: string;
   branch: string;
   targetBranch: string;
   headSha: string;

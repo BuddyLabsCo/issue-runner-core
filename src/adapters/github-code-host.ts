@@ -1,13 +1,14 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import type {
   CodeHost,
+  BranchObservation,
+  PublicationObservation,
+  PublicationQuery,
   PullRequestRecord,
   RequiredCheck,
   PullRequestState,
   MergeRequestResult,
 } from "../run/contracts.ts";
+import { nonempty, object } from "../agent/handoff.ts";
 import { GitHubClient, type GitHubCommand } from "./github-client.ts";
 
 export class GitHubCodeHost implements CodeHost {
@@ -79,83 +80,122 @@ export class GitHubCodeHost implements CodeHost {
     return value.default_branch;
   }
 
-  async getRemoteBranchHead(
-    repository: string,
-    branch: string,
-  ): Promise<string | null> {
-    try {
-      const value = JSON.parse(
-        await this.client.request([
-          "api",
-          `repos/${repository}/git/ref/heads/${encodeURIComponent(branch)}`,
-        ]),
-      ) as { object?: { sha?: unknown } };
-      if (
-        typeof value.object?.sha !== "string" ||
-        !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(value.object.sha)
-      )
-        throw new Error("GitHub returned invalid remote branch head");
-      return value.object.sha;
-    } catch (error) {
-      if (error instanceof Error && error.message.includes("HTTP 404"))
-        return null;
-      throw error;
-    }
+  async observeBranch(repository: string, branch: string) {
+    const [owner, name] = repository.split("/");
+    const data = await this.publicationData(
+      `query PrePush($owner: String!, $name: String!, $ref: String!) {
+        repository(owner: $owner, name: $name) { ${branchFields} }
+      }`,
+      { owner, name, ref: `refs/heads/${branch}` },
+    );
+    return parseBranch(object(data.repository), repository, branch);
   }
 
-  async listPullRequests(repository: string): Promise<PullRequestRecord[]> {
-    const pages = JSON.parse(
-      await this.client.request([
-        "api",
-        "--paginate",
-        "--slurp",
-        `repos/${repository}/pulls?state=all&per_page=100`,
-      ]),
-    ) as unknown;
-    if (!Array.isArray(pages) || !pages.every(Array.isArray))
-      throw new Error("GitHub returned invalid Pull Request pages");
-    return (pages.flat() as unknown[])
-      .map(parsePullRequest)
-      .filter(
-        ({ headRepository }) =>
-          headRepository.toLowerCase() === repository.toLowerCase(),
+  async observePublication(
+    { repository, branch, targetBranch }: PublicationQuery,
+    signal?: AbortSignal,
+  ): Promise<PublicationObservation> {
+    const [owner, name] = repository.split("/");
+    const pages = {
+      source: publicationPages(),
+      target: publicationPages(),
+    };
+    const candidates = new Map<string, PublicationCandidate>();
+    let observation: BranchObservation | undefined;
+    do {
+      signal?.throwIfAborted();
+      const data = await this.publicationData(publicationQuery, {
+        owner,
+        name,
+        ref: `refs/heads/${branch}`,
+        branch,
+        base: targetBranch,
+        headAfter: pages.source.after,
+        baseAfter: pages.target.after,
+        source: !pages.source.done,
+        target: !pages.target.done,
+      });
+      signal?.throwIfAborted();
+      const remote = object(data.repository);
+      const current = parseBranch(remote, repository, branch);
+      if (
+        observation &&
+        (observation.repositoryId !== current.repositoryId ||
+          observation.headSha !== current.headSha)
       )
-      .map(({ record }) => record);
+        throw new Error(
+          "Remote publication branch or repository changed during pagination",
+        );
+      observation = current;
+      for (const scope of ["source", "target"] as const) {
+        const page = pages[scope];
+        if (page.done) continue;
+        collectPublicationPage({
+          page,
+          value: remote[scope],
+          scope,
+          expectedBranch: scope === "source" ? branch : targetBranch,
+          repository,
+          repositoryId: current.repositoryId,
+          candidates,
+        });
+      }
+    } while (!pages.source.done || !pages.target.done);
+    return {
+      ...observation,
+      candidates: [...candidates.values()]
+        .filter(({ sameHeadRepository }) => sameHeadRepository)
+        .map(({ record }) => record),
+    };
   }
 
   async createPullRequest(input: Parameters<CodeHost["createPullRequest"]>[0]) {
-    const directory = await mkdtemp(path.join(tmpdir(), "issue-runner-pr-"));
-    try {
-      const bodyFile = path.join(directory, "body.md");
-      await writeFile(bodyFile, input.body, { mode: 0o600 });
-      const url = (
-        await this.client.request([
-          "pr",
-          "create",
-          "--repo",
-          input.repository,
-          "--base",
-          input.targetBranch,
-          "--head",
-          input.branch,
-          "--title",
-          input.title,
-          "--body-file",
-          bodyFile,
-        ])
-      ).trim();
-      const prefix = `https://github.com/${input.repository}/pull/`;
-      const number = Number(url.slice(prefix.length));
-      if (
-        !url.toLowerCase().startsWith(prefix.toLowerCase()) ||
-        !Number.isSafeInteger(number) ||
-        number <= 0
-      )
-        throw new Error("GitHub returned invalid Pull Request identity");
-      return { number, url };
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
+    const data = await this.publicationData(
+      `mutation CreatePublication($input: CreatePullRequestInput!) {
+        createPullRequest(input: $input) {
+          pullRequest { ${publicationFields} }
+        }
+      }`,
+      {
+        input: {
+          repositoryId: input.repositoryId,
+          headRefName: input.branch,
+          baseRefName: input.targetBranch,
+          title: input.title,
+          body: input.body,
+          draft: false,
+          maintainerCanModify: true,
+        },
+      },
+    );
+    const row = object(object(data.createPullRequest).pullRequest);
+    const record = parsePullRequest(row, input.repository, input.repositoryId);
+    if (
+      !sameRepository(row.headRepository, input.repository) ||
+      object(row.headRepository).id !== input.repositoryId
+    )
+      throw new Error(
+        "GitHub returned a Pull Request from an unexpected head repository",
+      );
+    return record;
+  }
+
+  private async publicationData(
+    query: string,
+    variables: Record<string, unknown>,
+  ) {
+    const result = await this.client.graphql(query, variables);
+    if (
+      result.commandError ||
+      result.response.errors?.length ||
+      !result.response.data
+    )
+      throw new Error(
+        result.commandError?.message ??
+          "GitHub returned incomplete publication data",
+        { cause: result },
+      );
+    return result.response.data;
   }
 
   async getRequiredChecks(
@@ -202,52 +242,194 @@ export class GitHubCodeHost implements CodeHost {
   }
 }
 
-function parsePullRequest(value: unknown): {
-  headRepository: string;
-  record: PullRequestRecord;
-} {
-  if (typeof value !== "object" || value === null || Array.isArray(value))
-    throw new Error("GitHub returned invalid Pull Request");
-  const row = value as {
-    number?: unknown;
-    html_url?: unknown;
-    state?: unknown;
-    merged_at?: unknown;
-    draft?: unknown;
-    head?: {
-      ref?: unknown;
-      sha?: unknown;
-      repo?: { full_name?: unknown } | null;
-    };
-    base?: { ref?: unknown };
-  };
-  if (
-    !Number.isSafeInteger(row.number) ||
-    (row.number as number) <= 0 ||
-    typeof row.html_url !== "string" ||
-    typeof row.head?.ref !== "string" ||
-    typeof row.head.sha !== "string" ||
-    typeof row.base?.ref !== "string" ||
-    !["open", "closed"].includes(String(row.state)) ||
-    typeof row.draft !== "boolean" ||
-    (row.merged_at !== null && typeof row.merged_at !== "string")
-  )
-    throw new Error("GitHub returned invalid Pull Request");
+const branchFields =
+  "id nameWithOwner ref(qualifiedName: $ref) { name target { oid } }";
+const publicationFields = `
+  id number url headRefName baseRefName headRefOid state isDraft createdAt
+  repository { id nameWithOwner }
+  headRepository { id nameWithOwner }
+`;
+const publicationQuery = `
+  query Publication(
+    $owner: String!, $name: String!, $ref: String!,
+    $branch: String!, $base: String!, $headAfter: String, $baseAfter: String,
+    $source: Boolean!, $target: Boolean!
+  ) {
+    repository(owner: $owner, name: $name) {
+      ${branchFields}
+      source: pullRequests(first: 100, after: $headAfter, headRefName: $branch, states: [OPEN, CLOSED, MERGED]) @include(if: $source) {
+        nodes { ...PublicationIdentity }
+        pageInfo { hasNextPage endCursor }
+        totalCount
+      }
+      target: pullRequests(first: 100, after: $baseAfter, baseRefName: $base, states: [OPEN, CLOSED, MERGED]) @include(if: $target) {
+        nodes { ...PublicationIdentity }
+        pageInfo { hasNextPage endCursor }
+        totalCount
+      }
+    }
+  }
+  fragment PublicationIdentity on PullRequest { ${publicationFields} }
+`;
+
+const oid = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
+
+function sameRepository(value: unknown, expected: string): boolean {
+  if (value === null) return false;
+  const { nameWithOwner } = object(value);
+  if (!nonempty(nameWithOwner))
+    throw new Error("GitHub returned a repository without a name");
+  return nameWithOwner.toLowerCase() === expected.toLowerCase();
+}
+
+function parseBranch(
+  remote: Record<string, unknown>,
+  repository: string,
+  branch: string,
+): BranchObservation {
+  if (!sameRepository(remote, repository) || !nonempty(remote.id))
+    throw new Error("GitHub returned an unexpected publication repository");
+  if (remote.ref === null) return { repositoryId: remote.id, headSha: null };
+  const ref = object(remote.ref);
+  const { oid: headSha } = object(ref.target);
+  if (ref.name !== branch || typeof headSha !== "string" || !oid.test(headSha))
+    throw new Error("GitHub returned invalid remote branch head");
+  return { repositoryId: remote.id, headSha };
+}
+
+function publicationPages() {
   return {
-    headRepository:
-      typeof row.head.repo?.full_name === "string"
-        ? row.head.repo.full_name
-        : "",
-    record: {
-      number: row.number as number,
-      url: row.html_url,
-      branch: row.head.ref,
-      targetBranch: row.base.ref,
-      headSha: row.head.sha,
-      draft: row.draft,
-      state:
-        row.merged_at !== null ? "merged" : (row.state as "open" | "closed"),
-    },
+    after: null as string | null,
+    total: undefined as number | undefined,
+    done: false,
+    ids: new Set<string>(),
+    cursors: new Set<string>(),
+  };
+}
+
+interface PublicationCandidate {
+  record: PullRequestRecord;
+  sameHeadRepository: boolean;
+}
+
+function collectPublicationPage(input: {
+  page: ReturnType<typeof publicationPages>;
+  value: unknown;
+  scope: "source" | "target";
+  expectedBranch: string;
+  repository: string;
+  repositoryId: string;
+  candidates: Map<string, PublicationCandidate>;
+}) {
+  const {
+    page,
+    value,
+    scope,
+    expectedBranch,
+    repository,
+    repositoryId,
+    candidates,
+  } = input;
+  for (const node of readPublicationPage(page, value)) {
+    const row = object(node);
+    const record = parsePullRequest(row, repository, repositoryId);
+    const actualBranch =
+      scope === "source" ? record.branch : record.targetBranch;
+    if (page.ids.has(record.id) || actualBranch !== expectedBranch)
+      throw new Error("GitHub returned inconsistent Pull Request pages");
+    page.ids.add(record.id);
+    const { headRepository } = row;
+    const sameHeadRepository = sameRepository(headRepository, repository);
+    if (headRepository !== null) {
+      const { id } = object(headRepository);
+      if (!nonempty(id) || sameHeadRepository !== (id === repositoryId))
+        throw new Error("GitHub returned an unexpected head repository ID");
+    }
+    const candidate = { record, sameHeadRepository };
+    const previous = candidates.get(record.id);
+    if (previous && JSON.stringify(previous) !== JSON.stringify(candidate))
+      throw new Error("GitHub returned conflicting Pull Request observations");
+    candidates.set(record.id, candidate);
+  }
+}
+
+function readPublicationPage(
+  page: ReturnType<typeof publicationPages>,
+  value: unknown,
+) {
+  const { nodes, totalCount, pageInfo } = object(value);
+  const { hasNextPage, endCursor } = object(pageInfo);
+  if (
+    !Array.isArray(nodes) ||
+    nodes.length > 100 ||
+    typeof totalCount !== "number" ||
+    !Number.isSafeInteger(totalCount) ||
+    totalCount < 0 ||
+    (page.total !== undefined && page.total !== totalCount) ||
+    typeof hasNextPage !== "boolean" ||
+    (endCursor !== null && !nonempty(endCursor))
+  )
+    throw new Error("GitHub returned invalid Pull Request pages");
+  const received = page.ids.size + nodes.length;
+  if (hasNextPage ? received >= totalCount : received !== totalCount)
+    throw new Error("GitHub returned incomplete Pull Request pages");
+  page.total = totalCount;
+  page.done = !hasNextPage;
+  if (hasNextPage) {
+    if (!nodes.length || !nonempty(endCursor) || page.cursors.has(endCursor))
+      throw new Error("GitHub returned an incomplete Pull Request cursor");
+    page.cursors.add(endCursor);
+    page.after = endCursor;
+  }
+  return nodes as unknown[];
+}
+
+function parsePullRequest(
+  row: Record<string, unknown>,
+  repository: string,
+  repositoryId: string,
+): PullRequestRecord {
+  const {
+    id,
+    number,
+    url,
+    headRefName,
+    baseRefName,
+    headRefOid,
+    state,
+    isDraft,
+    createdAt,
+  } = row;
+  if (
+    !sameRepository(row.repository, repository) ||
+    object(row.repository).id !== repositoryId ||
+    !nonempty(id) ||
+    typeof number !== "number" ||
+    !Number.isSafeInteger(number) ||
+    number <= 0 ||
+    typeof url !== "string" ||
+    url.toLowerCase() !==
+      `https://github.com/${repository}/pull/${number}`.toLowerCase() ||
+    !nonempty(headRefName) ||
+    !nonempty(baseRefName) ||
+    typeof headRefOid !== "string" ||
+    !oid.test(headRefOid) ||
+    (state !== "OPEN" && state !== "CLOSED" && state !== "MERGED") ||
+    typeof isDraft !== "boolean" ||
+    typeof createdAt !== "string" ||
+    !Number.isFinite(Date.parse(createdAt))
+  )
+    throw new Error("GitHub returned invalid Pull Request identity");
+  return {
+    id,
+    number,
+    url,
+    createdAt,
+    branch: headRefName,
+    targetBranch: baseRefName,
+    headSha: headRefOid,
+    draft: isDraft,
+    state: state === "OPEN" ? "open" : state === "CLOSED" ? "closed" : "merged",
   };
 }
 
@@ -261,7 +443,7 @@ function parsePullRequestState(
   if (
     !value ||
     typeof value.headRefOid !== "string" ||
-    !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(value.headRefOid) ||
+    !oid.test(value.headRefOid) ||
     typeof value.createdAt !== "string" ||
     !Number.isFinite(Date.parse(value.createdAt)) ||
     !["OPEN", "CLOSED", "MERGED"].includes(String(value.state)) ||
