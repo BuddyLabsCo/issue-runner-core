@@ -2,115 +2,74 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { GitHubCodeHost } from "../../src/adapters/github-code-host.ts";
-import { GitHubTracker } from "../../src/adapters/github-tracker.ts";
 import { integrationRun } from "../support/integration-run.ts";
 import { implementationCommit } from "../support/implementation-run.ts";
 
-await test("GitHub integration uses squash, observed HEAD, admin policy, queue observation and completed closure", async (t) => {
-  const fixture = await integrationRun(t);
-  let queued = false;
-  let merged = false;
-  let requests = 0;
-  const host = new GitHubCodeHost("host-secret", async (args, options) => {
-    assert.equal(options.token, "host-secret");
-    if (args[0] === "pr") {
-      assert.deepEqual(args, [
-        "pr",
-        "merge",
-        "81",
-        "--repo",
-        "owner/repo",
-        "--squash",
-        "--match-head-commit",
-        implementationCommit.sha,
-      ]);
-      requests++;
-      queued = true;
-      return "";
-    }
-    assert.equal(args[0], "api");
-    assert.equal(args[1], "graphql");
-    assert.deepEqual(
-      (JSON.parse(options.input!) as { variables: unknown }).variables,
-      {
-        owner: "owner",
-        name: "repo",
-        number: 81,
-      },
-    );
-    return JSON.stringify({
-      data: {
-        repository: {
-          pullRequest: {
-            headRefOid: implementationCommit.sha,
-            createdAt: "2026-10-30T00:00:00Z",
-            state: merged ? "MERGED" : "OPEN",
-            mergedAt: merged ? "2026-10-31T00:00:00Z" : null,
-            mergeable: "MERGEABLE",
-            autoMergeRequest: null,
-            mergeQueueEntry: queued ? { id: "queue-entry" } : null,
+for (const [queue, admin, mutation] of [
+  [false, false, "mergePullRequest"],
+  [true, false, "enablePullRequestAutoMerge"],
+  [true, true, "mergePullRequest"],
+] as const) {
+  await test(`GitHub dispatches ${mutation} with the accepted head`, async () => {
+    const host = new GitHubCodeHost("host-secret", async (args, options) => {
+      assert.deepEqual(args, ["api", "graphql", "--input", "-"]);
+      assert.equal(options.token, "host-secret");
+      const request = JSON.parse(options.input!) as {
+        query: string;
+        variables: unknown;
+      };
+      assert.match(request.query, new RegExp(mutation, "u"));
+      assert.deepEqual(request.variables, {
+        input: {
+          pullRequestId: "PR_81",
+          expectedHeadOid: implementationCommit.sha,
+          mergeMethod: "SQUASH",
+        },
+      });
+      return JSON.stringify({
+        data: {
+          [mutation]: {
+            pullRequest: {
+              id: "PR_81",
+              number: 81,
+              headRefOid: implementationCommit.sha,
+              state: "OPEN",
+            },
           },
         },
-      },
+      });
     });
-  });
-  const tracker = new GitHubTracker("tracker-secret", async (args, options) => {
-    assert.equal(options.token, "tracker-secret");
-    assert.equal(merged, true);
-    assert.deepEqual(args, [
-      "issue",
-      "close",
-      "50",
-      "--repo",
-      "owner/repo",
-      "--reason",
-      "completed",
-    ]);
-    fixture.state.ticket.state = "closed";
-    fixture.state.ticket.stateReason = "completed";
-    return "";
-  });
-  fixture.dependencies.codeHost.getPullRequest = host.getPullRequest.bind(host);
-  Object.assign(fixture.dependencies.codeHost, {
-    requestSquashMerge: host.requestSquashMerge.bind(host),
-  });
-  Object.assign(fixture.dependencies.tracker, {
-    closeTicket: tracker.closeTicket.bind(tracker),
-  });
-  fixture.state.onSleep = async () => {
-    if (queued) merged = true;
-  };
-  const result = await fixture.run();
-  assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
-  assert.equal(requests, 1);
-  assert.equal(
-    (await fixture.snapshot()).publication?.closure?.stateReason,
-    "completed",
-  );
-});
-
-for (const [message, outcome] of [
-  ["Pull Request cannot be cleanly created", "conflict"],
-  ["Merge conflict in README", "conflict"],
-  ["branch protection rule prevents merging", "rejected"],
-  ["HTTP 503: service unavailable", "rejected"],
-] as const) {
-  await test(`GitHub classifies ${message} and retains the original cause`, async () => {
-    const cause = new Error(message);
-    const host = new GitHubCodeHost("token", async (args) => {
-      assert.ok(args.includes("--admin"));
-      throw cause;
-    });
-    const result = await host.requestSquashMerge({
-      repository: "owner/repo",
-      pullRequest: 81,
-      headSha: implementationCommit.sha,
-      admin: true,
-    });
-    assert.equal(result.outcome, outcome);
-    assert.equal(result.error, cause);
+    assert.deepEqual(
+      await host.requestSquashMerge({
+        repository: "owner/repo",
+        pullRequest: 81,
+        pullRequestId: "PR_81",
+        headSha: implementationCommit.sha,
+        admin,
+        queue,
+      }),
+      { outcome: "accepted" },
+    );
   });
 }
+
+await test("a partial GraphQL merge result cannot establish success", async () => {
+  const host = new GitHubCodeHost("token", async () =>
+    JSON.stringify({
+      data: { mergePullRequest: null },
+      errors: [{ message: "permission denied" }],
+    }),
+  );
+  const result = await host.requestSquashMerge({
+    repository: "owner/repo",
+    pullRequest: 81,
+    pullRequestId: "PR_81",
+    headSha: implementationCommit.sha,
+    admin: false,
+    queue: false,
+  });
+  assert.equal(result.outcome, "rejected");
+});
 
 await test("an invalid GitHub merge observation cannot close the Issue or earn delivery credit", async (t) => {
   const fixture = await integrationRun(t);
@@ -127,4 +86,83 @@ await test("an invalid GitHub merge observation cannot close the Issue or earn d
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   assert.equal(fixture.integrationState.requests.length, 0);
   assert.equal(fixture.integrationState.closures, 0);
+});
+
+await test("combined delivery observation drains labels and retains the exact merged PR head", async () => {
+  const calls: unknown[] = [];
+  const host = new GitHubCodeHost("token", async (_args, options) => {
+    const { variables } = JSON.parse(options.input!) as {
+      variables: { after: string | null };
+    };
+    calls.push(variables.after);
+    const first = variables.after === null;
+    return JSON.stringify({
+      data: {
+        repository: {
+          id: "REPO_1",
+          nameWithOwner: "owner/repo",
+          pullRequest: {
+            id: "PR_81",
+            number: 81,
+            url: "https://github.com/owner/repo/pull/81",
+            headRefName: "work",
+            baseRefName: "main",
+            headRefOid: implementationCommit.sha,
+            state: "MERGED",
+            isDraft: false,
+            createdAt: "2026-10-30T00:00:00Z",
+            mergedAt: "2026-10-31T00:00:00Z",
+            mergeable: "UNKNOWN",
+            mergeStateStatus: "UNKNOWN",
+            isInMergeQueue: false,
+            isMergeQueueEnabled: false,
+            autoMergeRequest: null,
+            mergeQueueEntry: null,
+          },
+          issue: {
+            id: "ISSUE_50",
+            number: 50,
+            state: "CLOSED",
+            stateReason: "COMPLETED",
+            repository: { id: "REPO_1", nameWithOwner: "owner/repo" },
+            labels: {
+              totalCount: 2,
+              nodes: [{ id: first ? "L1" : "L2", name: first ? "one" : "two" }],
+              pageInfo: {
+                hasNextPage: first,
+                endCursor: first ? "cursor" : null,
+              },
+            },
+          },
+        },
+      },
+    });
+  });
+  const result = await host.observeDelivery({
+    repository: "owner/repo",
+    pullRequest: 81,
+    ticket: 50,
+  });
+  assert.deepEqual(calls, [null, "cursor"]);
+  assert.equal(result.pullRequest.headSha, implementationCommit.sha);
+  assert.equal(result.state.merged, true);
+  assert.deepEqual(result.ticket.labels, ["one", "two"]);
+  assert.equal(result.ticket.stateReason, "completed");
+});
+
+await test("incomplete delivery responses cannot confirm a merge", async () => {
+  const host = new GitHubCodeHost("token", async () =>
+    JSON.stringify({
+      data: { repository: null },
+      errors: [{ message: "inaccessible" }],
+    }),
+  );
+  await assert.rejects(
+    host.observeDelivery({
+      repository: "owner/repo",
+      pullRequest: 81,
+      ticket: 50,
+    }),
+    /incomplete delivery/u,
+  );
 });

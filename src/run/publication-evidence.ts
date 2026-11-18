@@ -40,7 +40,20 @@ export function verifiedPublication(progress: ImplementationProgress) {
           publication.ci.mergeable,
         ) ||
         typeof publication.ci.mergeRequested !== "boolean" ||
+        ![
+          "BEHIND",
+          "BLOCKED",
+          "CLEAN",
+          "DIRTY",
+          "DRAFT",
+          "HAS_HOOKS",
+          "UNKNOWN",
+          "UNSTABLE",
+        ].includes(publication.ci.mergeStateStatus ?? "") ||
+        typeof publication.ci.isInMergeQueue !== "boolean" ||
+        typeof publication.ci.isMergeQueueEnabled !== "boolean" ||
         !nonempty(publication.ci.createdAt) ||
+        publication.ci.createdAt !== publication.pullRequest?.createdAt ||
         !Number.isFinite(Date.parse(publication.ci.createdAt)) ||
         (publication.ci.mergeFailure !== null &&
           !nonempty(publication.ci.mergeFailure)))) ||

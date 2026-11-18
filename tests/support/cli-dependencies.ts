@@ -225,6 +225,12 @@ export function createCliDependencies(launchDirectory: string) {
       },
     },
     codeHost: {
+      async observeDelivery(
+        _input: Parameters<CodeHost["observeDelivery"]>[0],
+      ): ReturnType<CodeHost["observeDelivery"]> {
+        void _input;
+        throw new Error("unexpected delivery observation");
+      },
       async getPullRequest(
         _repository: string,
         number: number,
@@ -312,7 +318,12 @@ export function createCliDependencies(launchDirectory: string) {
           ),
           lastCommit: pullRequest.headSha,
           pullRequest: structuredClone(pullRequest),
-          state: await this.getPullRequest(input.repository, input.number),
+          state: {
+            mergeStateStatus: "CLEAN",
+            isInMergeQueue: false,
+            isMergeQueueEnabled: false,
+            ...(await this.getPullRequest(input.repository, input.number)),
+          },
           checks: await this.getRequiredChecks(input.repository, input.number),
         };
       },

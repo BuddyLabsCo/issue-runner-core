@@ -42,7 +42,10 @@ export async function runStandalone(input: {
   codeHost: CodeHost;
   autoMerge: boolean;
   onDelivery?: (labels: string[]) => void;
-  deferIntegration?: (pr: number, complete: () => Promise<RunSummary>) => void;
+  deferIntegration?: (
+    pr: { number: number; createdAt: string },
+    complete: () => Promise<RunSummary>,
+  ) => void;
 }): Promise<RunSummary> {
   return reportTicket(input, (issue, report) =>
     recoverIssue(issue, (attempt, restarting) =>
@@ -251,10 +254,6 @@ async function executeStandalone(
       autoMerge: input.autoMerge,
       stageInput: stageInput(progress),
     });
-  const observeTicket = () =>
-    read("read_delivery_issue", `ticket:${number}`, () =>
-      tracker.observeDelivery(repository, number),
-    );
   const integrate = async (
     progress: ImplementationProgress,
     publicationReason?: string,
@@ -275,7 +274,7 @@ async function executeStandalone(
           codeHost: input.codeHost,
           tracker,
           read,
-          observeTicket,
+          restarting,
           continuePublication: () => publish(progress),
         });
         if (delivery.outcome === "succeeded") {
@@ -300,7 +299,7 @@ async function executeStandalone(
     };
     if (input.deferIntegration) {
       const pullRequest = progress.publication!.pullRequest!;
-      input.deferIntegration(pullRequest.number, complete);
+      input.deferIntegration(pullRequest, complete);
       report.detail = `CI-ready PR ${pullRequest.url} awaits Batch integration`;
       return summary;
     }

@@ -214,6 +214,29 @@ export async function implementationRun(
       },
     },
   };
+  dependencies.codeHost.observeDelivery = async (input) => {
+    const pullRequest = (
+      await dependencies.codeHost.listPullRequests(input.repository)
+    ).find((pr) => pr.number === input.pullRequest)!;
+    const observed = await dependencies.codeHost.getPullRequest(
+      input.repository,
+      input.pullRequest,
+    );
+    return {
+      pullRequest: {
+        ...pullRequest,
+        headSha: observed.headSha,
+        state: observed.merged ? "merged" : pullRequest.state,
+      },
+      state: observed,
+      ticket: {
+        ...structuredClone(state.ticket),
+        id: `issue-${input.ticket}`,
+        repository: input.repository,
+        repositoryId: "REPO_1",
+      },
+    };
+  };
   return {
     state,
     dependencies,

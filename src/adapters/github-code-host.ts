@@ -6,6 +6,7 @@ import type {
   MergeRequestResult,
 } from "../run/contracts.ts";
 import { observeCi } from "./github-ci.ts";
+import { observeDelivery } from "./github-delivery.ts";
 import { GitHubClient, type GitHubCommand } from "./github-client.ts";
 import {
   observePublicationBranch,
@@ -18,6 +19,10 @@ export class GitHubCodeHost implements CodeHost {
 
   constructor(token: string, command?: GitHubCommand) {
     this.client = new GitHubClient(token, command);
+  }
+
+  observeDelivery(input: Parameters<CodeHost["observeDelivery"]>[0]) {
+    return observeDelivery(this.client, input);
   }
 
   async getPullRequest(
@@ -46,26 +51,40 @@ export class GitHubCodeHost implements CodeHost {
     input: Parameters<CodeHost["requestSquashMerge"]>[0],
   ): Promise<MergeRequestResult> {
     try {
-      await this.client.request([
-        "pr",
-        "merge",
-        String(input.pullRequest),
-        "--repo",
-        input.repository,
-        "--squash",
-        "--match-head-commit",
-        input.headSha,
-        ...(input.admin ? ["--admin"] : []),
-      ]);
+      const queue = input.queue && !input.admin;
+      const field = queue ? "enablePullRequestAutoMerge" : "mergePullRequest";
+      const type = queue
+        ? "EnablePullRequestAutoMergeInput"
+        : "MergePullRequestInput";
+      const response = await this.client.graphql(
+        `mutation($input:${type}!){${field}(input:$input){pullRequest{id number headRefOid state}}}`,
+        {
+          input: {
+            pullRequestId: input.pullRequestId,
+            expectedHeadOid: input.headSha,
+            mergeMethod: "SQUASH",
+          },
+        },
+      );
+      if (response.commandError || response.errors !== undefined)
+        throw new Error(
+          response.commandError?.message ??
+            `GitHub rejected merge request: ${JSON.stringify(response.errors)}`,
+          { cause: response },
+        );
+      const data = response.data as
+        Record<string, { pullRequest?: Record<string, unknown> }> | undefined;
+      const pr = data?.[field]?.pullRequest;
+      if (
+        pr?.id !== input.pullRequestId ||
+        pr.number !== input.pullRequest ||
+        pr.headRefOid !== input.headSha ||
+        !["OPEN", "MERGED"].includes(String(pr.state))
+      )
+        throw new Error("GitHub returned incomplete merge response");
       return { outcome: "accepted" };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return {
-        outcome: /conflict|cannot be cleanly created/iu.test(message)
-          ? "conflict"
-          : "rejected",
-        error,
-      };
+      return { outcome: "rejected", error };
     }
   }
 

@@ -37,6 +37,16 @@ async function batchRun(t: TestContext) {
       return { outcome: "accepted" };
     },
   };
+  const createPullRequest =
+    fixture.dependencies.codeHost.createPullRequest.bind(
+      fixture.dependencies.codeHost,
+    );
+  fixture.dependencies.codeHost.createPullRequest = async (input) => {
+    const pr = await createPullRequest(input);
+    pr.createdAt =
+      pr.number === 81 ? "2026-10-31T00:00:00Z" : "2026-10-30T00:00:00Z";
+    return pr;
+  };
   Object.assign(fixture.dependencies.codeHost, {
     async getRequiredChecks(_repository: string, number: number) {
       const checks = await state.onChecks(number);
@@ -237,6 +247,11 @@ for (const selector of ["parent", "issue"] as const) {
           JSON.stringify(result),
         );
         assert.deepEqual(fixture.requests, [82, 83, 81]);
+        assert.ok(result.logPath);
+        assert.doesNotMatch(
+          await fs.promises.readFile(result.logPath, "utf8"),
+          /integration_order/u,
+        );
         assert.equal(
           fetches,
           1,

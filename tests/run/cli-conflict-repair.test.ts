@@ -423,7 +423,7 @@ await test("recovery rejects corrupted conflict ownership, target ancestry conte
   assert.equal(fixture.publicationState.pushes, 1);
 });
 
-await test("conflict evidence appearing during the final merge recheck repairs before issuing a merge request", async (t) => {
+await test("conflict evidence after a rejected merge repairs before retrying", async (t) => {
   const fixture = await conflictRepairRun(t);
   const observe = fixture.dependencies.codeHost.getPullRequest.bind(
     fixture.dependencies.codeHost,
@@ -436,8 +436,8 @@ await test("conflict evidence appearing during the final merge recheck repairs b
     return state;
   };
   assert.equal((await fixture.run()).summary.outcome, "succeeded");
-  assert.equal(fixture.conflictState.requests.length, 1);
-  assert.equal(fixture.conflictState.requests[0]!.headSha, repairCommit.sha);
+  assert.equal(fixture.conflictState.requests.length, 2);
+  assert.equal(fixture.conflictState.requests[1]!.headSha, repairCommit.sha);
 });
 
 await test("transient target ancestry inspection retries without consuming another repair attempt", async (t) => {

@@ -106,7 +106,12 @@ export async function publicationRun(
       ),
       lastCommit: pr.headSha,
       pullRequest: pr,
-      state: await codeHost.getPullRequest(input.repository, input.number),
+      state: {
+        mergeStateStatus: "CLEAN",
+        isInMergeQueue: false,
+        isMergeQueueEnabled: false,
+        ...(await codeHost.getPullRequest(input.repository, input.number)),
+      },
       checks:
         saved.publication?.phase === "pr_created" && pr.state !== "merged"
           ? await codeHost.getRequiredChecks(input.repository, input.number)
