@@ -358,7 +358,7 @@ for (const [scenario, errors, exitCode] of [
         48,
         config,
       ),
-      /GitHub GraphQL Issue read failed/u,
+      /GitHub GraphQL Issue request failed/u,
     );
   });
 }

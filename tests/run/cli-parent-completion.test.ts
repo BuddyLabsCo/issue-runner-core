@@ -29,6 +29,73 @@ await test("an all-cancelled parent closes only after completed tracker state is
   assert.deepEqual(fixture.writes, []);
 });
 
+for (const mode of [
+  "fresh",
+  "recovered",
+  "recovered with work remaining",
+] as const) {
+  await test(`parent completion uses the expected scan sequence after a Batch (${mode})`, async (t) => {
+    const remainingWork = mode === "recovered with work remaining";
+    const children = remainingWork ? [child(51), child(52)] : [child(51)];
+    const fixture = await parentDeliveryRun(t, children, {
+      ...validConfig,
+      maxBatchSize: 1,
+    });
+    const { tracker, codeHost } = fixture.dependencies;
+    const discover = tracker.discoverParent.bind(tracker);
+    const scan = tracker.readParentCompletion.bind(tracker);
+    const close = tracker.closeParent.bind(tracker);
+    const observations: string[] = [];
+    tracker.discoverParent = async (...args) => {
+      observations.push("discovery");
+      return discover(...args);
+    };
+    tracker.readParentCompletion = async (...args) => {
+      observations.push("scan");
+      return scan(...args);
+    };
+    tracker.closeParent = async (...args) => {
+      observations.push("close");
+      return close(...args);
+    };
+
+    if (mode !== "fresh") {
+      const merge = codeHost.requestSquashMerge.bind(codeHost);
+      codeHost.requestSquashMerge = async () => ({
+        outcome: "rejected",
+        error: new Error("merge temporarily rejected"),
+      });
+      fixture.dependencies.operator.pause = async (message) => {
+        assert.match(message, /merge temporarily rejected/u);
+        return "q";
+      };
+      assert.equal((await fixture.run()).summary.outcome, "cancelled");
+      assert.equal(
+        (await implementationProgress(fixture.directory, 51)).publication
+          ?.phase,
+        "pending_merge",
+      );
+      codeHost.requestSquashMerge = merge;
+      fixture.dependencies.operator.pause = async (message) => {
+        assert.match(message, /merge temporarily rejected/u);
+        return "";
+      };
+      observations.length = 0;
+    }
+
+    assert.equal((await fixture.run()).summary.outcome, "succeeded");
+    assert.deepEqual(
+      observations,
+      {
+        fresh: ["discovery", "scan", "close"],
+        recovered: ["scan", "close"],
+        "recovered with work remaining": ["scan", "discovery", "scan", "close"],
+      }[mode],
+    );
+    assert.deepEqual(fixture.closures, remainingWork ? [51, 52, 48] : [51, 48]);
+  });
+}
+
 for (const recover of [false, true]) {
   await test(`a cancelled Batch member permits its ready sibling to integrate${recover ? " after matching recovery" : ""}`, async (t) => {
     const children = [child(51), child(52)];
@@ -214,11 +281,10 @@ await test("a lost parent closure response reconciles without repeating the writ
 
 await test("an unconfirmed parent closure pauses and a matching rerun retains completed child evidence", async (t) => {
   const fixture = await parentDeliveryRun(t, [child(51)]);
-  const close = fixture.dependencies.tracker.closeTicket.bind(
-    fixture.dependencies.tracker,
-  );
+  const { tracker } = fixture.dependencies;
+  const close = tracker.closeTicket.bind(tracker);
   let attempts = 0;
-  fixture.dependencies.tracker.closeTicket = async (...args) => {
+  tracker.closeTicket = async (...args) => {
     if (args[1] !== 48) return close(...args);
     attempts++;
   };
@@ -231,8 +297,25 @@ await test("an unconfirmed parent closure pauses and a matching rerun retains co
   assert.equal(attempts, 2);
   const before = await implementationProgress(fixture.directory, 51);
   assert.equal(before.publication?.phase, "delivered");
-  fixture.dependencies.tracker.closeTicket = close;
+  tracker.closeTicket = close;
+  const calls: string[] = [];
+  const discover = tracker.discoverParent.bind(tracker);
+  tracker.discoverParent = async (...args) => {
+    calls.push("discovery");
+    return discover(...args);
+  };
+  const scan = tracker.readParentCompletion.bind(tracker);
+  tracker.readParentCompletion = async (...args) => {
+    calls.push("scan");
+    return scan(...args);
+  };
+  const closeParent = tracker.closeParent.bind(tracker);
+  tracker.closeParent = async (...args) => {
+    calls.push("close");
+    return closeParent(...args);
+  };
   assert.equal((await fixture.run()).summary.outcome, "succeeded");
+  assert.deepEqual(calls, ["scan", "close"]);
   assert.deepEqual(fixture.dispatched, [51]);
   assert.deepEqual(fixture.closures, [51, 48]);
   assert.deepEqual(await implementationProgress(fixture.directory, 51), before);

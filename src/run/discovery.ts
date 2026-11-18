@@ -11,7 +11,7 @@ export type ReadOperation = <T>(
   operation: string,
   target: string,
   action: () => Promise<T>,
-  options?: OperationOptions<T>,
+  options?: OperationOptions<T> & { phase?: string },
 ) => Promise<T>;
 
 export type BatchTicket = Ticket & { blocked?: boolean };
@@ -190,6 +190,7 @@ export async function selectIssueBatch(
   },
 ): Promise<{
   batch: number[];
+  completedCheckpoint: boolean;
   runId: string;
   documentation?: string;
   scheduleDocumentation: () => Promise<string>;
@@ -232,6 +233,7 @@ export async function selectIssueBatch(
     );
   return {
     batch,
+    completedCheckpoint: recorded?.completed === true,
     runId: recorded?.run_id ?? context.runId,
     ...(progress.documentation
       ? { documentation: progress.documentation }

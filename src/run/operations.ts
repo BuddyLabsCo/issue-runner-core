@@ -40,6 +40,7 @@ export async function cancellableOperation<T>(
 export interface OperationOptions<T> {
   operator?: OperatorIO;
   retry?: "automatic" | "manual" | "never";
+  auditResult?: (result: T) => "succeeded" | "skipped";
   reconcile?: () => Promise<
     { outcome: "pending" } | { outcome: "completed"; result: T }
   >;
@@ -254,7 +255,7 @@ async function attemptOperation<T>(
     result = state.result;
   }
   // Logging recovery must never replay the completed business action.
-  await record("succeeded", null);
+  await record(operation.auditResult?.(result) ?? "succeeded", null);
   signal?.throwIfAborted();
   return { outcome: "succeeded", result };
 }

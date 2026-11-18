@@ -8,6 +8,7 @@ import type {
   CodeHost,
   PullRequestMergeFacts,
   ParentDiscovery,
+  ParentObservation,
   IssueStartFacts,
   ReservationAdditions,
   Ticket,
@@ -50,6 +51,25 @@ function issueMarkers(ticket: Ticket) {
   };
 }
 
+async function readParentCompletion(
+  this: Pick<Tracker, "getParent" | "listChildrenPage">,
+  repository: string,
+  number: number,
+): Promise<ParentObservation> {
+  const parent = issueIdentity(
+    repository,
+    await this.getParent(repository, number),
+  );
+  const tickets = await scriptedPages(async (page) => {
+    const result = await this.listChildrenPage(repository, number, page);
+    return { tickets: result.children, nextPage: result.nextPage };
+  });
+  return {
+    parent,
+    children: tickets.map((ticket) => issueIdentity(repository, ticket)),
+  };
+}
+
 async function readIssueStart(
   this: Pick<
     Tracker,
@@ -60,25 +80,10 @@ async function readIssueStart(
   { reservationLabel, runnerAccount }: Parameters<Tracker["readIssueStart"]>[2],
   parentTicket?: number,
 ): Promise<IssueStartFacts> {
-  let scope: IssueStartFacts["scope"];
-  if (parentTicket !== undefined) {
-    const parent = issueIdentity(
-      repository,
-      await this.getParent(repository, parentTicket),
-    );
-    const tickets = await scriptedPages(async (page) => {
-      const result = await this.listChildrenPage(
-        repository,
-        parentTicket,
-        page,
-      );
-      return { tickets: result.children, nextPage: result.nextPage };
-    });
-    scope = {
-      parent,
-      children: tickets.map((ticket) => issueIdentity(repository, ticket)),
-    };
-  }
+  const scope =
+    parentTicket === undefined
+      ? undefined
+      : await readParentCompletion.call(this, repository, parentTicket);
   const ticket = await this.getTicket(repository, number);
   const blockers = await scriptedPages(async (page) => {
     const result = await this.listBlockersPage(repository, number, page);
@@ -229,8 +234,8 @@ export function createCliDependencies(launchDirectory: string) {
       > {
         assert.fail("unexpected Maintenance Ticket creation");
       },
-      async closeTicket(): Promise<void> {
-        assert.fail("unexpected Issue closure");
+      async closeTicket(repository: string, number: number): Promise<void> {
+        assert.fail(`unexpected Issue closure for ${repository}#${number}`);
       },
       async commentTicket(): Promise<void> {
         assert.fail("unexpected Issue comment");
@@ -260,8 +265,16 @@ export function createCliDependencies(launchDirectory: string) {
         reads.push(`children:${page}`);
         return { children: [], nextPage: null };
       },
-      async closeParent() {
-        effects.push("close_parent");
+      readParentCompletion,
+      async closeParent(
+        parent: ParentObservation["parent"],
+      ): Promise<ParentObservation> {
+        await this.closeTicket(parent.repository, parent.number);
+        return readParentCompletion.call(
+          this,
+          parent.repository,
+          parent.number,
+        );
       },
       async addLabel(...args: [string, number, string]) {
         void args;

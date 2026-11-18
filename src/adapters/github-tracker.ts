@@ -1,11 +1,17 @@
 import type {
   ChildPage,
+  IssueFact,
   ReservationAdditions,
   Ticket,
   Tracker,
 } from "../run/contracts.ts";
 import { GitHubClient, type GitHubCommand } from "./github-client.ts";
-import { discoverParent, readIssueStart } from "./github-issue-facts.ts";
+import {
+  closeParent,
+  discoverParent,
+  readIssueStart,
+  readParentCompletion,
+} from "./github-issue-facts.ts";
 import { reserveIssue } from "./github-reservation.ts";
 
 type ClosureReason = Ticket["stateReason"];
@@ -262,6 +268,18 @@ export class GitHubTracker implements Tracker {
       markers,
       signal,
     );
+  }
+
+  readParentCompletion(
+    repository: string,
+    parentTicket: number,
+    signal?: AbortSignal,
+  ) {
+    return readParentCompletion(this.client, repository, parentTicket, signal);
+  }
+
+  closeParent(parent: IssueFact, signal?: AbortSignal) {
+    return closeParent(this.client, parent, signal);
   }
 
   async listChildrenPage(

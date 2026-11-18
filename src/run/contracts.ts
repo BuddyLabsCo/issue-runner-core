@@ -51,7 +51,7 @@ interface MarkerLookup {
   runner: IssueAssignee | null;
 }
 
-interface IssueStartScope {
+export interface ParentObservation {
   parent: IssueFact;
   children: IssueFact[];
 }
@@ -63,7 +63,7 @@ export interface ParentDiscovery extends MarkerLookup {
 
 export interface IssueStartFacts extends MarkerLookup {
   issue: ParentDiscoveryChild & Pick<Ticket, "title" | "body" | "source">;
-  scope?: IssueStartScope;
+  scope?: ParentObservation;
 }
 
 export interface ReservationAdditions {
@@ -110,6 +110,15 @@ export interface Tracker {
     signal?: AbortSignal,
   ): Promise<ReservationMarkers>;
   getParent(repository: string, parentTicket: number): Promise<Ticket>;
+  readParentCompletion(
+    repository: string,
+    parentTicket: number,
+    signal?: AbortSignal,
+  ): Promise<ParentObservation>;
+  closeParent(
+    parent: IssueFact,
+    signal?: AbortSignal,
+  ): Promise<ParentObservation>;
   discoverParent(
     repository: string,
     parentTicket: number,

@@ -212,7 +212,7 @@ async function executeProject(
         runId: context.runId,
         project: options.project,
         parentTicket: options.parentTicket ?? 0,
-        phase: "discover",
+        phase: settings?.phase ?? "discover",
         operation,
         target,
         attempt,
@@ -342,10 +342,16 @@ async function executeProject(
       markers: loaded.config.tracker,
       signal,
       summary,
+      recoveredBatch: pending.batch.length > 0 || pending.completedCheckpoint,
       eligibleIssues: (tickets) =>
         eligibleIssueNumbers({ tickets, loaded, tracker, context, read }),
-      runBatch: async (tickets, eligible) =>
-        batch(tickets, await selectBatch(tickets, eligible)),
+      runBatch: async (tickets, eligible) => {
+        const selection = await selectBatch(tickets, eligible);
+        return {
+          result: await batch(tickets, selection),
+          selected: selection.batch,
+        };
+      },
       maintenancePending: () => maintenancePending,
     });
   }
