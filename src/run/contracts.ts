@@ -93,6 +93,11 @@ export interface Tracker {
 }
 
 export interface CodeHost {
+  observePullRequest(
+    repository: string,
+    branch: string,
+    pullRequest: number,
+  ): Promise<PullRequestObservation>;
   getPullRequest(
     repository: string,
     pullRequest: number,
@@ -143,6 +148,22 @@ export interface PullRequestState {
   mergeRequested: boolean;
   mergeable: "mergeable" | "conflicting" | "unknown";
   mergeFailure: string | null;
+  mergeStateStatus?: string;
+  isInMergeQueue?: boolean;
+  isMergeQueueEnabled?: boolean;
+}
+
+export interface PullRequestObservation {
+  repositoryId: string;
+  head: string | null;
+  lastCommit: string;
+  pullRequest: PullRequestRecord & { headRepository: string };
+  merge: PullRequestState & {
+    mergeStateStatus: string;
+    isInMergeQueue: boolean;
+    isMergeQueueEnabled: boolean;
+  };
+  checks: RequiredCheck[];
 }
 
 export type MergeRequestResult =

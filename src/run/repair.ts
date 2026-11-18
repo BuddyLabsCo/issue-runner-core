@@ -192,7 +192,6 @@ export async function repairPullRequest(
       await input.persist();
       return;
     }
-    await input.confirm();
     const id = randomUUID();
     attempt = {
       attempt_id: id,

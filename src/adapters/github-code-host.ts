@@ -3,6 +3,7 @@ import {
   observePublication,
   createPublication,
 } from "./github-publication.ts";
+import { observePullRequest } from "./github-ci.ts";
 import type {
   CodeHost,
   PullRequestRecord,
@@ -21,6 +22,10 @@ export class GitHubCodeHost implements CodeHost {
 
   constructor(token: string, command?: GitHubCommand) {
     this.client = new GitHubClient(token, command);
+  }
+
+  observePullRequest(repository: string, branch: string, pullRequest: number) {
+    return observePullRequest(this.client, repository, branch, pullRequest);
   }
 
   async getPullRequest(

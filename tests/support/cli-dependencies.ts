@@ -207,6 +207,36 @@ export function createCliDependencies(launchDirectory: string) {
       },
     },
     codeHost: {
+      async observePullRequest(
+        repository: string,
+        branch: string,
+        number: number,
+      ) {
+        const candidate = (await this.listPullRequests()).find(
+          (pr) => pr.number === number,
+        );
+        if (!candidate) throw new Error("Pull Request missing");
+        const merge = await this.getPullRequest(repository, number);
+        return {
+          repositoryId: "repo-id",
+          head: await this.getRemoteBranchHead(repository, branch),
+          lastCommit: candidate.headSha,
+          pullRequest: {
+            ...candidate,
+            state: merge.merged ? ("merged" as const) : candidate.state,
+            headRepository: repository,
+          },
+          merge: {
+            ...merge,
+            createdAt: candidate.createdAt,
+            headSha: merge.merged ? merge.headSha : candidate.headSha,
+            mergeStateStatus: "CLEAN",
+            isInMergeQueue: false,
+            isMergeQueueEnabled: false,
+          },
+          checks: await this.getRequiredChecks(repository, number),
+        };
+      },
       async getPullRequest(
         _repository: string,
         number: number,
@@ -275,7 +305,10 @@ export function createCliDependencies(launchDirectory: string) {
         pullRequests.push(record);
         return record;
       },
-      async getRequiredChecks(): Promise<RequiredCheck[]> {
+      async getRequiredChecks(
+        ...args: [string, number]
+      ): Promise<RequiredCheck[]> {
+        void args;
         return [];
       },
     },
