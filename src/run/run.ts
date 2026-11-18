@@ -43,6 +43,7 @@ export interface RunContext {
   runArguments: readonly string[];
   clock: Clock;
   operator: OperatorIO;
+  advance?: <T>(action: () => Promise<T>) => Promise<T>;
   confirmations?: TerminalConfirmations;
   git: GitWorkspace;
   terminal: TerminalPlugin;
@@ -153,6 +154,7 @@ async function executeProject(
     ...context,
     signal,
     operator,
+    advance: (action) => operator.advance(action),
     confirmations,
     clock: {
       now: () => clock.now(),
@@ -315,7 +317,8 @@ async function executeProject(
     if (
       ticket.number !== number ||
       (ticket.repository !== undefined &&
-        ticket.repository !== loaded.config.repository)
+        ticket.repository.toLowerCase() !==
+          loaded.config.repository.toLowerCase())
     )
       throw new Error("Unexpected Issue ownership");
     return ticket;

@@ -1,6 +1,12 @@
-import type { ChildPage, Ticket, Tracker } from "../run/contracts.ts";
+import type {
+  ChildPage,
+  ReservationAdditions,
+  Ticket,
+  Tracker,
+} from "../run/contracts.ts";
 import { GitHubClient, type GitHubCommand } from "./github-client.ts";
-import { discoverParent } from "./github-issue-facts.ts";
+import { discoverParent, readIssueStart } from "./github-issue-facts.ts";
+import { reserveIssue } from "./github-reservation.ts";
 
 type ClosureReason = Ticket["stateReason"];
 function parseTicket(value: unknown, includeRepository: boolean): Ticket {
@@ -208,34 +214,25 @@ export class GitHubTracker implements Tracker {
     };
   }
 
-  async addLabel(
+  readIssueStart(
     repository: string,
     ticket: number,
-    label: string,
-  ): Promise<void> {
-    await this.client.request([
-      "api",
-      "--method",
-      "POST",
-      `repos/${repository}/issues/${ticket}/labels`,
-      "-f",
-      `labels[]=${label}`,
-    ]);
+    markers: Parameters<Tracker["readIssueStart"]>[2],
+    parentTicket?: number,
+    signal?: AbortSignal,
+  ) {
+    return readIssueStart(
+      this.client,
+      repository,
+      ticket,
+      markers,
+      parentTicket,
+      signal,
+    );
   }
 
-  async addAssignee(
-    repository: string,
-    ticket: number,
-    account: string,
-  ): Promise<void> {
-    await this.client.request([
-      "api",
-      "--method",
-      "POST",
-      `repos/${repository}/issues/${ticket}/assignees`,
-      "-f",
-      `assignees[]=${account}`,
-    ]);
+  reserveIssue(additions: ReservationAdditions, signal?: AbortSignal) {
+    return reserveIssue(this.client, additions, signal);
   }
 
   async getParent(repository: string, parentTicket: number): Promise<Ticket> {

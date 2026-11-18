@@ -6,6 +6,8 @@ import { OperationStopped } from "../../src/run/operations.ts";
 import type {
   CodeHost,
   ParentDiscovery,
+  IssueStartFacts,
+  ReservationAdditions,
   Ticket,
   Tracker,
   PullRequestRecord,
@@ -34,21 +36,114 @@ async function scriptedPages(
   return tickets;
 }
 
-async function discoverParent(
-  this: Pick<Tracker, "getParent" | "listChildrenPage" | "listBlockersPage">,
-  repository: string,
-  parentTicket: number,
-  { reservationLabel, runnerAccount }: Parameters<Tracker["discoverParent"]>[2],
-): Promise<ParentDiscovery> {
-  const identity = (ticket: Ticket) => ({
+function issueIdentity(repository: string, ticket: Ticket) {
+  return {
     number: ticket.number,
     state: ticket.state,
     stateReason: ticket.stateReason,
     repository: ticket.repository ?? repository,
     repositoryId: ticket.repository ?? repository,
     id: `${ticket.repository ?? repository}#${ticket.number}`,
+  };
+}
+
+function issueMarkers(ticket: Ticket) {
+  return {
+    labels: (ticket.labels ?? []).map((name) => ({ id: name, name })),
+    assignees: (ticket.assignees ?? []).map((login) => ({
+      id: login.toLowerCase(),
+      login,
+    })),
+  };
+}
+
+async function readIssueStart(
+  this: Pick<
+    Tracker,
+    "getParent" | "listChildrenPage" | "getTicket" | "listBlockersPage"
+  >,
+  repository: string,
+  number: number,
+  { reservationLabel, runnerAccount }: Parameters<Tracker["readIssueStart"]>[2],
+  parentTicket?: number,
+): Promise<IssueStartFacts> {
+  let scope: IssueStartFacts["scope"];
+  if (parentTicket !== undefined) {
+    const parent = issueIdentity(
+      repository,
+      await this.getParent(repository, parentTicket),
+    );
+    const tickets = await scriptedPages(async (page) => {
+      const result = await this.listChildrenPage(
+        repository,
+        parentTicket,
+        page,
+      );
+      return { tickets: result.children, nextPage: result.nextPage };
+    });
+    scope = {
+      parent,
+      children: tickets.map((ticket) => issueIdentity(repository, ticket)),
+    };
+  }
+  const ticket = await this.getTicket(repository, number);
+  const blockers = await scriptedPages(async (page) => {
+    const result = await this.listBlockersPage(repository, number, page);
+    return { tickets: result.blockers, nextPage: result.nextPage };
   });
-  const parent = identity(await this.getParent(repository, parentTicket));
+  if (
+    [ticket, ...blockers].some(
+      ({ state, stateReason }) => state === "closed" && stateReason === null,
+    )
+  )
+    throw new OperationStopped(
+      "Issue or blocker has an unsupported terminal state",
+    );
+  return {
+    issue: {
+      ...ticket,
+      ...issueIdentity(repository, ticket),
+      ...issueMarkers(ticket),
+      blockers: blockers.map((blocker) => issueIdentity(repository, blocker)),
+    },
+    reservation: { id: reservationLabel, name: reservationLabel },
+    runner: { id: runnerAccount.toLowerCase(), login: runnerAccount },
+    ...(scope ? { scope } : {}),
+  };
+}
+
+async function reserveIssue(
+  this: {
+    getTicket: Tracker["getTicket"];
+    addLabel(repository: string, number: number, label: string): Promise<void>;
+    addAssignee(
+      repository: string,
+      number: number,
+      account: string,
+    ): Promise<void>;
+  },
+  { issue, reservation, runner, addLabel, addRunner }: ReservationAdditions,
+) {
+  if (addLabel)
+    await this.addLabel(issue.repository, issue.number, reservation.name);
+  if (addRunner)
+    await this.addAssignee(issue.repository, issue.number, runner.login);
+  const ticket = await this.getTicket(issue.repository, issue.number);
+  if (ticket.state !== issue.state || ticket.stateReason !== issue.stateReason)
+    throw new Error("Unexpected Issue state in Reservation response");
+  return issueMarkers(ticket);
+}
+
+async function discoverParent(
+  this: Pick<Tracker, "getParent" | "listChildrenPage" | "listBlockersPage">,
+  repository: string,
+  parentTicket: number,
+  { reservationLabel, runnerAccount }: Parameters<Tracker["discoverParent"]>[2],
+): Promise<ParentDiscovery> {
+  const parent = issueIdentity(
+    repository,
+    await this.getParent(repository, parentTicket),
+  );
   const tickets = await scriptedPages(async (page) => {
     const result = await this.listChildrenPage(repository, parentTicket, page);
     return { tickets: result.children, nextPage: result.nextPage };
@@ -70,13 +165,9 @@ async function discoverParent(
     )
       throw new OperationStopped("blocker has an unsupported terminal state");
     children.push({
-      ...identity(ticket),
-      labels: (ticket.labels ?? []).map((name) => ({ id: name, name })),
-      assignees: (ticket.assignees ?? []).map((login) => ({
-        id: login,
-        login,
-      })),
-      blockers: blockers.map(identity),
+      ...issueIdentity(repository, ticket),
+      ...issueMarkers(ticket),
+      blockers: blockers.map((blocker) => issueIdentity(repository, blocker)),
     });
   }
   return {
@@ -153,7 +244,8 @@ export function createCliDependencies(launchDirectory: string) {
       async listBlockersPage() {
         return { blockers: [], nextPage: null };
       },
-      async addAssignee() {
+      async addAssignee(...args: [string, number, string]) {
+        void args;
         effects.push("assign");
       },
       async getParent(repository: string, ticket: number) {
@@ -161,6 +253,8 @@ export function createCliDependencies(launchDirectory: string) {
         return { number: ticket, state: "open" as const, stateReason: null };
       },
       discoverParent,
+      readIssueStart,
+      reserveIssue,
       async listChildrenPage(
         _repository: string,
         _ticket: number,
@@ -172,7 +266,8 @@ export function createCliDependencies(launchDirectory: string) {
       async closeParent() {
         effects.push("close_parent");
       },
-      async addLabel() {
+      async addLabel(...args: [string, number, string]) {
+        void args;
         effects.push("reserve");
       },
     },

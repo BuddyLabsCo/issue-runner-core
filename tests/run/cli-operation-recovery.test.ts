@@ -278,29 +278,96 @@ for (const effect of [
   });
 }
 
-for (const operation of ["addLabel", "addAssignee"] as const) {
-  await test(`a lost ${operation} response is reconciled immediately even with no automatic retries`, async (t) => {
+for (const applied of ["label", "runner", "both"] as const) {
+  await test(`a grouped response lost after applying ${applied} reconciles with a fresh start read`, async (t) => {
     const fixture = await implementationRun(t, {
       ...validConfig,
-      operationRetry: 0,
+      operationRetry: 1,
+      tracker: { ...validConfig.tracker, runnerAccount: "runnerbot" },
     });
-    const write = fixture.dependencies.tracker[operation].bind(
-      fixture.dependencies.tracker,
-    );
-    let mutations = 0;
-    fixture.dependencies.tracker[operation] = async (repo, number, value) => {
-      ++mutations;
-      await write(repo, number, value);
+    const tracker = fixture.dependencies.tracker;
+    const read = tracker.readIssueStart.bind(tracker);
+    const write = tracker.reserveIssue.bind(tracker);
+    const operations: string[] = [];
+    let firstWrite = true;
+    tracker.readIssueStart = async (...args) => {
+      operations.push("read");
+      return read(...args);
+    };
+    tracker.reserveIssue = async (additions) => {
+      const { issue, reservation, addLabel, addRunner } = additions;
+      operations.push(`write:${addLabel}:${addRunner}`);
+      if (!firstWrite) return write(additions);
+      firstWrite = false;
+      if (applied !== "runner")
+        await tracker.addLabel(
+          issue.repository,
+          issue.number,
+          reservation.name,
+        );
+      if (applied !== "label")
+        await tracker.addAssignee(issue.repository, issue.number, "RunnerBot");
       throw new Error("response lost after mutation");
     };
     const result = await fixture.run();
     assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
-    assert.equal(mutations, 1);
+    assert.deepEqual(operations, [
+      "read",
+      "write:true:true",
+      "read",
+      ...(applied === "both"
+        ? []
+        : [`write:${applied === "runner"}:${applied === "label"}`]),
+    ]);
     assert.deepEqual(fixture.dependencies.pauses, []);
-    assert.deepEqual(fixture.state.sleeps, [10_000, 30_000]);
+    assert.deepEqual(fixture.state.sleeps, [1_000, 10_000, 30_000]);
     assert.equal(fixture.state.taskCount, 1);
+    const audit = await readFile(result.logPath!, "utf8");
+    assert.deepEqual(
+      audit
+        .trim()
+        .split("\n")
+        .map(
+          (line) =>
+            JSON.parse(line) as {
+              operation: string;
+              attempt: number;
+              result: string;
+            },
+        )
+        .filter(({ operation }) => operation === "start_issue")
+        .map(({ attempt, result }) => [attempt, result]),
+      [
+        [1, "started"],
+        [1, "failed"],
+        [2, "started"],
+        [2, "succeeded"],
+      ],
+    );
   });
 }
+
+await test("a failed start read cannot authorize adopting markers seen on the next attempt", async (t) => {
+  const fixture = await implementationRun(t);
+  const { tracker } = fixture.dependencies;
+  const read = tracker.readIssueStart.bind(tracker);
+  let reads = 0;
+  tracker.readIssueStart = async (...args) => {
+    if (++reads === 1) throw new Error("incomplete Issue start read");
+    return read(...args);
+  };
+  fixture.state.onSleep = async () => {
+    fixture.state.ticket.labels!.push(validConfig.tracker.reservationLabel);
+    fixture.state.ticket.assignees!.push(validConfig.tracker.runnerAccount);
+  };
+  tracker.reserveIssue = async () =>
+    assert.fail("unexpected Reservation write");
+  const result = await fixture.run();
+  assert.equal(result.summary.outcome, "incomplete");
+  assert.match(result.summary.tickets![0]!.detail, /no recorded ownership/u);
+  assert.equal(reads, 2);
+  assert.equal(fixture.state.taskCount, 0);
+});
 
 for (const operation of ["createTab", "onInput", "closeTab"] as const) {
   await test(`an unresolved terminal ${operation} has a finite bound and retains partial-operation diagnostics`, async (t) => {

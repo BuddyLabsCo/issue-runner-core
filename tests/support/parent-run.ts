@@ -51,21 +51,22 @@ export async function parentRun(
   const dispatched: number[] = [];
   const tabs = new Map<object, WorkspaceEvidence>();
   const worktrees = new Map<string, WorkspaceEvidence>();
-  const tracker: Tracker = {
+  const tracker: Tracker &
+    Pick<typeof deps.tracker, "addLabel" | "addAssignee"> = {
     ...deps.tracker,
     async listChildrenPage() {
       return { children: structuredClone(children), nextPage: null };
     },
-    async getTicket(_repository, number) {
+    async getTicket(_repository: string, number: number) {
       return structuredClone(
         children.find((ticket) => ticket.number === number)!,
       );
     },
-    async addLabel(_repository, number, label) {
+    async addLabel(_repository: string, number: number, label: string) {
       writes.push(`label:${number}`);
       children.find((ticket) => ticket.number === number)!.labels!.push(label);
     },
-    async addAssignee(_repository, number, account) {
+    async addAssignee(_repository: string, number: number, account: string) {
       writes.push(`assignee:${number}`);
       children
         .find((ticket) => ticket.number === number)!

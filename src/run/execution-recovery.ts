@@ -164,6 +164,7 @@ export async function restoreExecution(input: {
     const previous = await readHandoff(file);
     if (previous !== undefined) {
       const saved = object(JSON.parse(previous.text) as unknown);
+      const reservation = object(saved.reservation ?? {});
       if (
         saved.input_hash !== input.inputHash ||
         JSON.stringify(saved.run_arguments) !==
@@ -173,6 +174,11 @@ export async function restoreExecution(input: {
         saved.repository !== repository ||
         saved.target_branch !== targetBranch ||
         saved.purpose !== (documentation ? "documentation" : undefined) ||
+        (documentation
+          ? saved.reservation !== undefined
+          : !["issueId", "repositoryId", "labelId", "runnerId"].every((key) =>
+              nonempty(reservation[key]),
+            )) ||
         !nonempty(saved.execution_id) ||
         !nonempty(saved.run_id) ||
         !nonempty(saved.worktree) ||

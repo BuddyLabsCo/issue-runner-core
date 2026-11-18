@@ -2,15 +2,16 @@ import { isDeepStrictEqual } from "node:util";
 import { nonempty, object } from "../agent/handoff.ts";
 import type {
   IssueFact,
+  IssueStartFacts,
   ParentDiscoveryChild,
   Tracker,
 } from "../run/contracts.ts";
 import type { GitHubClient } from "./github-client.ts";
 
-const issueFields =
+export const issueFields =
   "id number state stateReason repository { id nameWithOwner }";
 
-function parseIssueFact(issue: Record<string, unknown>): IssueFact {
+export function parseIssueFact(issue: Record<string, unknown>): IssueFact {
   const repository = object(issue.repository);
   if (
     !nonempty(issue.id) ||
@@ -223,6 +224,123 @@ function parseAssignee({ id, login }: Record<string, unknown>) {
   return { id, login };
 }
 
+export const markerFields = [
+  issueConnectionFields("labels", "id name"),
+  issueConnectionFields("assignees", "id login"),
+].join("\n");
+const childFields = `${issueFields} ${markerFields} ${issueConnectionFields("blockedBy", issueFields)}`;
+
+function parseMarkerPages(raw: Record<string, unknown>, id: string) {
+  return {
+    labels: parseIssuePage(raw.labels, id, "labels", parseLabel),
+    assignees: parseIssuePage(raw.assignees, id, "assignees", parseAssignee),
+  };
+}
+
+async function readMarkers(
+  read: ReadIssueGraphQL,
+  id: string,
+  pages: ReturnType<typeof parseMarkerPages>,
+) {
+  return {
+    labels: await readIssueConnection(
+      read,
+      id,
+      "labels",
+      "id name",
+      pages.labels,
+      parseLabel,
+    ),
+    assignees: await readIssueConnection(
+      read,
+      id,
+      "assignees",
+      "id login",
+      pages.assignees,
+      parseAssignee,
+    ),
+  };
+}
+
+export function readIssueMarkers(
+  client: GitHubClient,
+  id: string,
+  raw: Record<string, unknown>,
+  signal?: AbortSignal,
+) {
+  return readMarkers(
+    (query, variables) => readIssueGraphQL(client, query, variables, signal),
+    id,
+    parseMarkerPages(raw, id),
+  );
+}
+
+function markerLookup(
+  repo: Record<string, unknown>,
+  user: unknown,
+  { reservationLabel, runnerAccount }: Parameters<Tracker["discoverParent"]>[2],
+) {
+  const reservation =
+    repo.label === null ? null : parseLabel(object(repo.label));
+  const runner = user === null ? null : parseAssignee(object(user));
+  if (
+    (reservation && reservation.name !== reservationLabel) ||
+    (runner && runner.login.toLowerCase() !== runnerAccount.toLowerCase())
+  )
+    throw new Error("GitHub returned unexpected Reservation marker identities");
+  return { reservation, runner };
+}
+
+function scopedIssue(
+  raw: Record<string, unknown>,
+  repo: Record<string, unknown>,
+  repository: string,
+  number: number,
+  description: string,
+) {
+  const parent = parseIssueFact(raw);
+  if (
+    parent.number !== number ||
+    parent.repository.toLowerCase() !== repository.toLowerCase() ||
+    typeof repo.nameWithOwner !== "string" ||
+    repo.nameWithOwner.toLowerCase() !== repository.toLowerCase() ||
+    repo.id !== parent.repositoryId
+  )
+    throw new Error(`Unexpected ${description} ownership`);
+  return parent;
+}
+
+function readScopeChildren<T extends IssueFact>(
+  read: ReadIssueGraphQL,
+  parent: IssueFact,
+  rawChildren: unknown,
+  fields: string,
+  parseChild: (raw: Record<string, unknown>, child: IssueFact) => T,
+) {
+  const numbers = new Map([
+    [`${parent.repositoryId}#${parent.number}`, parent.id],
+  ]);
+  const parse = (raw: Record<string, unknown>) => {
+    const child = parseIssueFact(raw);
+    const identity = `${child.repositoryId}#${child.number}`;
+    const seen = numbers.get(identity);
+    if (child.id === parent.id || (seen !== undefined && seen !== child.id))
+      throw new Error(
+        `GitHub returned an inconsistent child identity for #${child.number}`,
+      );
+    numbers.set(identity, child.id);
+    return parseChild(raw, child);
+  };
+  return readIssueConnection(
+    read,
+    parent.id,
+    "subIssues",
+    fields,
+    parseIssuePage(rawChildren, parent.id, "subIssues", parse),
+    parse,
+  );
+}
+
 export async function discoverParent(
   client: GitHubClient,
   repository: string,
@@ -233,12 +351,6 @@ export async function discoverParent(
   const read: ReadIssueGraphQL = (query, variables, allowMissingRunner) =>
     readIssueGraphQL(client, query, variables, signal, allowMissingRunner);
   const [owner, name] = repository.split("/");
-  const childFields = `
-    ${issueFields}
-    ${issueConnectionFields("labels", "id name")}
-    ${issueConnectionFields("assignees", "id login")}
-    ${issueConnectionFields("blockedBy", issueFields)}
-  `;
   const data = await read(
     `query ParentDiscovery($owner: String!, $name: String!, $number: Int!, $reservation: String!, $runner: String!) {
       repository(owner: $owner, name: $name) {
@@ -262,80 +374,38 @@ export async function discoverParent(
   );
   const repo = object(data.repository);
   const issue = object(repo.issue);
-  const parent = parseIssueFact(issue);
-  if (
-    parent.number !== parentTicket ||
-    parent.repository !== repository ||
-    repo.nameWithOwner !== repository ||
-    repo.id !== parent.repositoryId
-  )
-    throw new Error("Unexpected Parent Ticket ownership");
-  const reservation =
-    repo.label === null ? null : parseLabel(object(repo.label));
-  const runner = data.user === null ? null : parseAssignee(object(data.user));
-  if (
-    (reservation && reservation.name !== reservationLabel) ||
-    (runner && runner.login.toLowerCase() !== runnerAccount.toLowerCase())
-  )
-    throw new Error("GitHub returned unexpected Reservation marker identities");
-
-  const numbers = new Map([
-    [`${parent.repositoryId}#${parent.number}`, parent.id],
-  ]);
-  const parseChild = (raw: Record<string, unknown>) => {
-    const child = parseIssueFact(raw);
-    const identity = `${child.repositoryId}#${child.number}`;
-    const seen = numbers.get(identity);
-    if (child.id === parent.id || (seen !== undefined && seen !== child.id))
-      throw new Error(
-        `GitHub returned an inconsistent child identity for #${child.number}`,
-      );
-    numbers.set(identity, child.id);
-    return {
+  const parent = scopedIssue(
+    issue,
+    repo,
+    repository,
+    parentTicket,
+    "Parent Ticket",
+  );
+  const lookup = markerLookup(repo, data.user, {
+    reservationLabel,
+    runnerAccount,
+  });
+  const observed = await readScopeChildren(
+    read,
+    parent,
+    issue.subIssues,
+    childFields,
+    (raw, child) => ({
       ...child,
-      labels: parseIssuePage(raw.labels, child.id, "labels", parseLabel),
-      assignees: parseIssuePage(
-        raw.assignees,
-        child.id,
-        "assignees",
-        parseAssignee,
-      ),
+      ...parseMarkerPages(raw, child.id),
       blockers: parseIssuePage(
         raw.blockedBy,
         child.id,
         "blockedBy",
         parseIssueFact,
       ),
-    };
-  };
-  const observed = await readIssueConnection(
-    read,
-    parent.id,
-    "subIssues",
-    childFields,
-    parseIssuePage(issue.subIssues, parent.id, "subIssues", parseChild),
-    parseChild,
+    }),
   );
   const children: ParentDiscoveryChild[] = [];
   for (const child of observed) {
     children.push({
       ...child,
-      labels: await readIssueConnection(
-        read,
-        child.id,
-        "labels",
-        "id name",
-        child.labels,
-        parseLabel,
-      ),
-      assignees: await readIssueConnection(
-        read,
-        child.id,
-        "assignees",
-        "id login",
-        child.assignees,
-        parseAssignee,
-      ),
+      ...(await readMarkers(read, child.id, child)),
       blockers: await readIssueConnection(
         read,
         child.id,
@@ -346,5 +416,92 @@ export async function discoverParent(
       ),
     });
   }
-  return { parent, children, reservation, runner };
+  return { parent, children, ...lookup };
+}
+
+export async function readIssueStart(
+  client: GitHubClient,
+  repository: string,
+  number: number,
+  markers: Parameters<Tracker["readIssueStart"]>[2],
+  parentTicket?: number,
+  signal?: AbortSignal,
+): Promise<IssueStartFacts> {
+  const read: ReadIssueGraphQL = (query, variables, allowMissingRunner) =>
+    readIssueGraphQL(client, query, variables, signal, allowMissingRunner);
+  const [owner, name] = repository.split("/");
+  const parentField =
+    parentTicket === undefined
+      ? ""
+      : `
+    configuredParent: issue(number: $parent) {
+      ${issueFields}
+      ${issueConnectionFields("subIssues", issueFields)}
+    }
+  `;
+  const data = await read(
+    `query IssueStart($owner: String!, $name: String!, $number: Int!, $reservation: String!, $runner: String!${parentField ? ", $parent: Int!" : ""}) {
+      repository(owner: $owner, name: $name) {
+        id nameWithOwner
+        label(name: $reservation) { id name }
+        target: issue(number: $number) { ${childFields} title body url }
+        ${parentField}
+      }
+      user(login: $runner) { id login }
+    }`,
+    {
+      owner,
+      name,
+      number,
+      reservation: markers.reservationLabel,
+      runner: markers.runnerAccount,
+      ...(parentTicket === undefined ? {} : { parent: parentTicket }),
+    },
+    true,
+  );
+  const repo = object(data.repository);
+  const target = object(repo.target);
+  const issue = scopedIssue(target, repo, repository, number, "Issue");
+  const lookup = markerLookup(repo, data.user, markers);
+  const { title, body, url } = target;
+  if (!nonempty(title) || typeof body !== "string" || !nonempty(url))
+    throw new Error("GitHub issue has an invalid review snapshot");
+  let scope: IssueStartFacts["scope"];
+  if (parentTicket !== undefined) {
+    const rawParent = object(repo.configuredParent);
+    const parent = scopedIssue(
+      rawParent,
+      repo,
+      repository,
+      parentTicket,
+      "Parent Ticket",
+    );
+    const children = await readScopeChildren(
+      read,
+      parent,
+      rawParent.subIssues,
+      issueFields,
+      (_raw, child) => child,
+    );
+    scope = { parent, children };
+  }
+  return {
+    issue: {
+      ...issue,
+      title,
+      body,
+      source: url,
+      ...(await readIssueMarkers(client, issue.id, target, signal)),
+      blockers: await readIssueConnection(
+        read,
+        issue.id,
+        "blockedBy",
+        issueFields,
+        parseIssuePage(target.blockedBy, issue.id, "blockedBy", parseIssueFact),
+        parseIssueFact,
+      ),
+    },
+    ...lookup,
+    ...(scope ? { scope } : {}),
+  };
 }

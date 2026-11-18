@@ -43,7 +43,7 @@ await test("omitted issueLabel loads without a label restriction", async (t) => 
   assert.equal(config.issueLabel, "");
 });
 
-await test("a custom issueLabel is revalidated after Reservation", async (t) => {
+await test("a missing issueLabel in the Reservation response prevents Worktree creation", async (t) => {
   const ticket = child(51, { labels: ["queued"] });
   const fixture = await parentRun(t, [ticket], {
     ...validConfig,
@@ -56,8 +56,93 @@ await test("a custom issueLabel is revalidated after Reservation", async (t) => 
     await addAssignee(...args);
     ticket.labels = ticket.labels!.filter((label) => label !== "queued");
   };
+  fixture.dependencies.gitWorkspace.createWorktree = () =>
+    assert.fail("unexpected Worktree creation");
   const result = await fixture.run(["--issue", "51"]);
   assert.equal(result.summary.outcome, "incomplete");
   assert.match(result.summary.tickets![0]!.detail, /Issue is missing queued/u);
   assert.deepEqual(fixture.dispatched, []);
+});
+
+await test("a Reservation response with the wrong Runner ID prevents Worktree creation", async (t) => {
+  const fixture = await parentRun(t, [child(51)]);
+  const { tracker, gitWorkspace } = fixture.dependencies;
+  const reserve = tracker.reserveIssue.bind(tracker);
+  tracker.reserveIssue = async (...args) => {
+    const confirmed = await reserve(...args);
+    return {
+      ...confirmed,
+      assignees: confirmed.assignees.map((runner) => ({
+        ...runner,
+        id: "another-account",
+      })),
+    };
+  };
+  gitWorkspace.createWorktree = () =>
+    assert.fail("unexpected Worktree creation");
+  const result = await fixture.run(["--issue", "51"]);
+  assert.equal(result.summary.outcome, "incomplete");
+  assert.match(
+    result.summary.tickets![0]!.detail,
+    /Issue is externally owned/u,
+  );
+});
+
+await test("a matching Runner ID with a conflicting login in the write response requires a fresh start read", async (t) => {
+  const fixture = await parentRun(t, [child(51)]);
+  const { tracker, gitWorkspace } = fixture.dependencies;
+  const read = tracker.readIssueStart.bind(tracker);
+  const reserve = tracker.reserveIssue.bind(tracker);
+  const create = gitWorkspace.createWorktree.bind(gitWorkspace);
+  let startReads = 0;
+  tracker.readIssueStart = (...args) => {
+    startReads += 1;
+    return read(...args);
+  };
+  tracker.reserveIssue = async (...args) => {
+    const confirmed = await reserve(...args);
+    return {
+      ...confirmed,
+      assignees: confirmed.assignees.map((runner) => ({
+        ...runner,
+        login: "another-login",
+      })),
+    };
+  };
+  gitWorkspace.createWorktree = (input) => {
+    assert.equal(startReads, 2);
+    return create(input);
+  };
+  const { summary } = await fixture.run(["--issue", "51"]);
+  assert.equal(summary.outcome, "incomplete", JSON.stringify(summary));
+  assert.deepEqual(fixture.writes, ["label:51", "assignee:51"]);
+  assert.deepEqual(fixture.dispatched, [51]);
+});
+
+await test("a differently capitalized Runner login needs only the label and can dispatch", async (t) => {
+  const fixture = await parentRun(
+    t,
+    [child(51, { assignees: ["RunnerBot"] })],
+    {
+      ...validConfig,
+      tracker: { ...validConfig.tracker, runnerAccount: "runnerbot" },
+    },
+  );
+  assert.equal((await fixture.run()).summary.outcome, "incomplete");
+  assert.deepEqual(fixture.writes, ["label:51"]);
+  assert.deepEqual(fixture.dispatched, [51]);
+});
+
+await test("standalone Issue starts and dispatches with a differently capitalized repository name", async (t) => {
+  const fixture = await parentRun(t, [child(51)], {
+    ...validConfig,
+    repository: "OWNER/Repo",
+  });
+  const result = await fixture.run(["--issue", "51"]);
+  assert.equal(
+    result.summary.outcome,
+    "incomplete",
+    JSON.stringify(result.summary),
+  );
+  assert.deepEqual(fixture.dispatched, [51]);
 });
