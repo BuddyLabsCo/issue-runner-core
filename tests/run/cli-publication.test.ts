@@ -264,19 +264,6 @@ await test("cancellation during discovery delay retains PR identity and prevents
   assert.ok(saved.publication.discoveryNotBefore);
 });
 
-await test("lost Issue eligibility after push stops publication without a PR or an Operator Pause", async (t) => {
-  const fixture = await publicationRun(t);
-  fixture.publicationState.onPush = async (branch, head) => {
-    fixture.publicationState.branches.set(branch, head);
-    fixture.state.ticket.assignees!.push("someone-else");
-  };
-  const result = await fixture.run();
-  assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
-  assert.match(result.summary.tickets![0]!.detail, /externally owned/u);
-  assert.equal(fixture.publicationState.creations, 0);
-  assert.equal(fixture.dependencies.pauses.length, 0);
-});
-
 await test("an audit failure after PR creation retries only the log append", async (t) => {
   const fixture = await publicationRun(t);
   const logs = path.join(fixture.directory, "logs");

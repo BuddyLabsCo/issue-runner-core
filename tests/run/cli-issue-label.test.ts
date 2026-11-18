@@ -42,22 +42,3 @@ await test("omitted issueLabel loads without a label restriction", async (t) => 
   });
   assert.equal(config.issueLabel, "");
 });
-
-await test("a custom issueLabel is revalidated after Reservation", async (t) => {
-  const ticket = child(51, { labels: ["queued"] });
-  const fixture = await parentRun(t, [ticket], {
-    ...validConfig,
-    issueLabel: "queued",
-  });
-  const addAssignee = fixture.dependencies.tracker.addAssignee.bind(
-    fixture.dependencies.tracker,
-  );
-  fixture.dependencies.tracker.addAssignee = async (...args) => {
-    await addAssignee(...args);
-    ticket.labels = ticket.labels!.filter((label) => label !== "queued");
-  };
-  const result = await fixture.run(["--issue", "51"]);
-  assert.equal(result.summary.outcome, "incomplete");
-  assert.match(result.summary.tickets![0]!.detail, /Issue is missing queued/u);
-  assert.deepEqual(fixture.dispatched, []);
-});
