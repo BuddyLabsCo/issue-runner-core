@@ -15,7 +15,6 @@ const run = ["run", "--project", "demo", "--parent", "48"];
 await test("omitted terminalPlugins supplies Core defaults", async (t) => {
   const { root } = await createProject(t);
   const loaded = await loadProject(root, "demo", {
-    TRACKER_TOKEN: "tracker",
     HOST_TOKEN: "host",
   });
   assert.deepEqual(loaded.config.terminalPlugins, {
@@ -70,7 +69,6 @@ await test("terminalPlugins preserves plugin-owned nested values without install
 `,
   );
   const loaded = await loadProject(root, "demo", {
-    TRACKER_TOKEN: "tracker",
     HOST_TOKEN: "host",
   });
   assert.deepEqual(loaded.config.terminalPlugins, {
@@ -202,6 +200,10 @@ await test("invalid configuration fails before any external reads or delivery re
     ],
     [
       { tracker: { ...validConfig.tracker, tokenEnv: "MISSING" } },
+      /unknown field tokenEnv/,
+    ],
+    [
+      { codeHost: { ...validConfig.codeHost, tokenEnv: "MISSING" } },
       /missing credential MISSING/,
     ],
     [
@@ -483,7 +485,6 @@ for (const ticketClosure of ["runner", "code_host"] as const) {
     const file = path.join(directory, "config.yaml");
     const bytes = await readFile(file);
     const loaded = await loadProject(root, "demo", {
-      TRACKER_TOKEN: "tracker",
       HOST_TOKEN: "host",
     });
     assert.equal("ticketClosure" in loaded.config, false);

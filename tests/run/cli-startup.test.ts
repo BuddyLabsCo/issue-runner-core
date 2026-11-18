@@ -219,7 +219,7 @@ await test("public process entry handles signals after a pending factory and rem
       ],
       {
         cwd: root,
-        env: { ...process.env, TRACKER_TOKEN: "test", HOST_TOKEN: "test" },
+        env: { ...process.env, HOST_TOKEN: "test" },
         encoding: "utf8",
         timeout: 10_000,
       },
@@ -270,7 +270,7 @@ await test("public entry sets exitCode for success and handled failures and clea
     ],
     {
       cwd: root,
-      env: { ...process.env, TRACKER_TOKEN: "test", HOST_TOKEN: "test" },
+      env: { ...process.env, HOST_TOKEN: "test" },
       encoding: "utf8",
       timeout: 10_000,
     },
