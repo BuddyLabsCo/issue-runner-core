@@ -340,18 +340,20 @@ export async function publishImplementation(input: {
       if (publication.conflictRepair?.retryAuthorized)
         return "Conflict repair budget exhausted; awaiting refreshed merge evidence";
     }
-    const repair = async () => {
+    const repair = async (freshObservation = false) => {
       do {
         await repairPullRequest({
           kind: "ci",
           ...input.stageInput,
           git: context.git,
           read,
+          freshObservation,
           confirm: async (head) => {
             await confirm(head);
           },
           remoteHead,
         });
+        freshObservation = false;
       } while (
         publication.phase === "checks_failed" &&
         !publication.ciRepair?.retryAuthorized
@@ -388,7 +390,7 @@ export async function publishImplementation(input: {
         ) {
           publication.phase = "checks_failed";
           await persist();
-          await repair();
+          await repair(true);
           break;
         }
         if (!checks.some(({ bucket }) => bucket === "pending")) {

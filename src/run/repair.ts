@@ -153,6 +153,7 @@ export async function repairPullRequest(
     read: ReadOperation;
     confirm: (head?: string) => Promise<void>;
     remoteHead: () => Promise<string | null>;
+    freshObservation?: boolean;
   },
 ): Promise<void> {
   const { progress, read, git, kind } = input;
@@ -171,6 +172,7 @@ export async function repairPullRequest(
     await input.persist();
   }
   let attempt = budget.attempts.at(-1);
+  let createdAttempt = false;
   if (
     !attempt ||
     attempt.pushed ||
@@ -228,11 +230,12 @@ export async function repairPullRequest(
       ),
     };
     budget.attempts.push(attempt);
+    createdAttempt = true;
     await input.persist();
   }
   const repair: RepairProgress = attempt;
   if (!repair.worktreeCreated) {
-    await input.confirm();
+    if (!createdAttempt || !input.freshObservation) await input.confirm();
     await read(
       `create_${kind}_repair_worktree`,
       `ticket:${progress.ticket}`,

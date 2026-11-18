@@ -133,10 +133,56 @@ await test("CI observation discards pages read across a head change", async () =
       },
     });
   });
+  await assert.rejects(
+    host.observePullRequest("owner/repo", "topic", 7),
+    /head changed during pagination/u,
+  );
   const observed = await host.observePullRequest("owner/repo", "topic", 7);
   assert.equal(calls, 3);
   assert.equal(observed.lastCommit, newHead);
   assert.deepEqual(observed.checks, []);
+});
+
+await test("repeated head changes return control after each incomplete observation", async () => {
+  let calls = 0;
+  const host = new GitHubCodeHost("token", async () => {
+    const head = ++calls % 2 ? sha : "b".repeat(40);
+    return JSON.stringify({
+      data: {
+        repository: {
+          id: "repo",
+          nameWithOwner: "owner/repo",
+          ref: { target: { oid: head } },
+          pullRequest: {
+            ...pr,
+            headRefOid: head,
+            commits: {
+              nodes: [
+                {
+                  commit: {
+                    oid: head,
+                    statusCheckRollup: {
+                      contexts: {
+                        nodes: [],
+                        totalCount: 1,
+                        pageInfo: { hasNextPage: true, endCursor: "next" },
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      },
+    });
+  });
+  for (let attempt = 0; attempt < 2; attempt++)
+    await assert.rejects(
+      host.observePullRequest("owner/repo", "topic", 7),
+      /head changed during pagination/u,
+    );
+  assert.equal(calls, 4);
 });
 
 await test("CI observation rejects GraphQL errors instead of reporting no checks", async () => {

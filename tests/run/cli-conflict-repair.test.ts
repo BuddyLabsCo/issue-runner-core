@@ -169,7 +169,7 @@ await test("CI failure after conflict repair consumes the separate CI budget and
   assert.equal(fixture.publicationState.pushes, 3);
   assert.deepEqual(
     fixture.publicationState.discoveries,
-    [40_000, 40_000, 40_000, 50_000, 80_000, 80_000, 90_000, 120_000],
+    [40_000, 40_000, 40_000, 50_000, 80_000, 90_000, 120_000],
   );
   assert.equal((await fixture.run()).summary.outcome, "succeeded");
   assert.equal(fixture.repairs.tasks.length, 1);

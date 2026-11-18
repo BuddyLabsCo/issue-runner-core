@@ -102,149 +102,143 @@ export async function observePullRequest(
   number: number,
 ): Promise<PullRequestObservation> {
   const [owner, name] = repository.split("/");
-  for (;;) {
-    let after: string | null = null;
-    let initial: PullRequestObservation | undefined;
-    let total: number | undefined;
-    const cursors = new Set<string>();
-    const contexts: ReturnType<typeof project>[] = [];
-    let changed = false;
-    do {
-      const response = await client.graphql(query, {
-        owner,
-        name,
-        number,
-        ref: `refs/heads/${branch}`,
-        after,
-      });
-      if (
-        response.errors !== undefined &&
-        (!Array.isArray(response.errors) || response.errors.length)
+  let after: string | null = null;
+  let initial: PullRequestObservation | undefined;
+  let total: number | undefined;
+  const cursors = new Set<string>();
+  const contexts: ReturnType<typeof project>[] = [];
+  do {
+    const response = await client.graphql(query, {
+      owner,
+      name,
+      number,
+      ref: `refs/heads/${branch}`,
+      after,
+    });
+    if (
+      response.errors !== undefined &&
+      (!Array.isArray(response.errors) || response.errors.length)
+    )
+      throw new Error("GitHub CI observation returned GraphQL errors");
+    const repo = object(object(response.data).repository);
+    if (string(repo.nameWithOwner).toLowerCase() !== repository.toLowerCase())
+      throw new Error("Unexpected CI repository");
+    const pr = object(repo.pullRequest);
+    const commits = object(pr.commits).nodes;
+    if (!Array.isArray(commits) || commits.length !== 1)
+      throw new Error("GitHub returned no last Pull Request commit");
+    const commit = object(object(commits[0]).commit);
+    const state = string(pr.state);
+    const createdAt = string(pr.createdAt);
+    const mergeable = string(pr.mergeable);
+    if (
+      !Number.isFinite(Date.parse(createdAt)) ||
+      !["OPEN", "CLOSED", "MERGED"].includes(state) ||
+      !["MERGEABLE", "CONFLICTING", "UNKNOWN"].includes(mergeable) ||
+      typeof pr.isDraft !== "boolean" ||
+      typeof pr.isInMergeQueue !== "boolean" ||
+      typeof pr.isMergeQueueEnabled !== "boolean" ||
+      !Number.isSafeInteger(pr.number) ||
+      (pr.mergedAt !== null &&
+        (typeof pr.mergedAt !== "string" ||
+          !Number.isFinite(Date.parse(pr.mergedAt)))) ||
+      ![pr.autoMergeRequest, pr.mergeQueueEntry].every(
+        (v) => v === null || (typeof v === "object" && !Array.isArray(v)),
       )
-        throw new Error("GitHub CI observation returned GraphQL errors");
-      const repo = object(object(response.data).repository);
-      if (string(repo.nameWithOwner).toLowerCase() !== repository.toLowerCase())
-        throw new Error("Unexpected CI repository");
-      const pr = object(repo.pullRequest);
-      const commits = object(pr.commits).nodes;
-      if (!Array.isArray(commits) || commits.length !== 1)
-        throw new Error("GitHub returned no last Pull Request commit");
-      const commit = object(object(commits[0]).commit);
-      const state = string(pr.state);
-      const createdAt = string(pr.createdAt);
-      const mergeable = string(pr.mergeable);
-      if (
-        !Number.isFinite(Date.parse(createdAt)) ||
-        !["OPEN", "CLOSED", "MERGED"].includes(state) ||
-        !["MERGEABLE", "CONFLICTING", "UNKNOWN"].includes(mergeable) ||
-        typeof pr.isDraft !== "boolean" ||
-        typeof pr.isInMergeQueue !== "boolean" ||
-        typeof pr.isMergeQueueEnabled !== "boolean" ||
-        !Number.isSafeInteger(pr.number) ||
-        (pr.mergedAt !== null &&
-          (typeof pr.mergedAt !== "string" ||
-            !Number.isFinite(Date.parse(pr.mergedAt)))) ||
-        ![pr.autoMergeRequest, pr.mergeQueueEntry].every(
-          (v) => v === null || (typeof v === "object" && !Array.isArray(v)),
-        )
-      )
-        throw new Error("GitHub returned invalid CI Pull Request");
-      if (
-        (state === "MERGED") !== (pr.mergedAt !== null) ||
-        (pr.autoMergeRequest !== null &&
-          !Number.isFinite(
-            Date.parse(string(object(pr.autoMergeRequest).enabledAt)),
-          ))
-      )
-        throw new Error("GitHub returned invalid CI merge evidence");
-      if (pr.mergeQueueEntry !== null) string(object(pr.mergeQueueEntry).id);
-      const head =
-        repo.ref === null ? null : oid(object(object(repo.ref).target).oid);
-      const observation: PullRequestObservation = {
-        repositoryId: string(repo.id),
-        head,
-        lastCommit: oid(commit.oid),
-        pullRequest: {
-          id: string(pr.id),
-          number: pr.number as number,
-          url: string(pr.url),
-          createdAt,
-          branch: string(pr.headRefName),
-          targetBranch: string(pr.baseRefName),
-          headSha: oid(pr.headRefOid),
-          state: state.toLowerCase() as "open" | "closed" | "merged",
-          draft: pr.isDraft,
-          headRepository: string(object(pr.headRepository).nameWithOwner),
-        },
-        merge: {
-          headSha: oid(pr.headRefOid),
-          createdAt,
-          merged: state === "MERGED" && pr.mergedAt !== null,
-          mergeRequested:
-            pr.autoMergeRequest !== null || pr.mergeQueueEntry !== null,
-          mergeable:
-            mergeable === "MERGEABLE"
-              ? "mergeable"
-              : mergeable === "CONFLICTING"
-                ? "conflicting"
-                : "unknown",
-          mergeFailure:
-            state === "CLOSED"
-              ? `Pull Request ${number} closed without merging`
-              : null,
-          mergeStateStatus: string(pr.mergeStateStatus),
-          isInMergeQueue: pr.isInMergeQueue,
-          isMergeQueueEnabled: pr.isMergeQueueEnabled,
-        },
-        checks: [],
-      };
-      if (
-        initial &&
-        (initial.head !== observation.head ||
-          initial.lastCommit !== observation.lastCommit ||
-          initial.pullRequest.headSha !== observation.pullRequest.headSha)
-      ) {
-        changed = true;
-        break;
-      }
-      if (
-        initial &&
-        JSON.stringify({ ...initial, checks: [] }) !==
-          JSON.stringify(observation)
-      )
-        throw new Error("CI observation changed during pagination");
-      initial = observation;
-      if (commit.statusCheckRollup === null) {
-        if (after !== null)
-          throw new Error("CI rollup disappeared during pagination");
-        break;
-      }
-      const raw = object(object(commit.statusCheckRollup).contexts);
-      const page = parseConnectionPage(raw);
-      if (
-        !Number.isSafeInteger(raw.totalCount) ||
-        (raw.totalCount as number) < 0 ||
-        (total !== undefined && total !== raw.totalCount)
-      )
-        throw new Error("GitHub returned invalid check count");
-      total = raw.totalCount as number;
-      contexts.push(...page.nodes.map(project));
-      after = page.cursor;
-      if (after && cursors.has(after))
-        throw new Error("GitHub returned non-advancing check pagination");
-      if (after) cursors.add(after);
-      else if (contexts.length !== total)
-        throw new Error("GitHub returned incomplete checks");
-    } while (after);
-    if (changed) continue;
-    if (!initial) throw new Error("GitHub returned no CI observation");
-    const latest = new Map<string, ReturnType<typeof project>>();
-    for (const item of contexts)
-      if (!latest.has(item.key) || item.time > latest.get(item.key)!.time)
-        latest.set(item.key, item);
-    initial.checks = [...latest.values()]
-      .filter((item) => item.required)
-      .map((item) => item.check);
-    return initial;
-  }
+    )
+      throw new Error("GitHub returned invalid CI Pull Request");
+    if (
+      (state === "MERGED") !== (pr.mergedAt !== null) ||
+      (pr.autoMergeRequest !== null &&
+        !Number.isFinite(
+          Date.parse(string(object(pr.autoMergeRequest).enabledAt)),
+        ))
+    )
+      throw new Error("GitHub returned invalid CI merge evidence");
+    if (pr.mergeQueueEntry !== null) string(object(pr.mergeQueueEntry).id);
+    const head =
+      repo.ref === null ? null : oid(object(object(repo.ref).target).oid);
+    const observation: PullRequestObservation = {
+      repositoryId: string(repo.id),
+      head,
+      lastCommit: oid(commit.oid),
+      pullRequest: {
+        id: string(pr.id),
+        number: pr.number as number,
+        url: string(pr.url),
+        createdAt,
+        branch: string(pr.headRefName),
+        targetBranch: string(pr.baseRefName),
+        headSha: oid(pr.headRefOid),
+        state: state.toLowerCase() as "open" | "closed" | "merged",
+        draft: pr.isDraft,
+        headRepository: string(object(pr.headRepository).nameWithOwner),
+      },
+      merge: {
+        headSha: oid(pr.headRefOid),
+        createdAt,
+        merged: state === "MERGED" && pr.mergedAt !== null,
+        mergeRequested:
+          pr.autoMergeRequest !== null || pr.mergeQueueEntry !== null,
+        mergeable:
+          mergeable === "MERGEABLE"
+            ? "mergeable"
+            : mergeable === "CONFLICTING"
+              ? "conflicting"
+              : "unknown",
+        mergeFailure:
+          state === "CLOSED"
+            ? `Pull Request ${number} closed without merging`
+            : null,
+        mergeStateStatus: string(pr.mergeStateStatus),
+        isInMergeQueue: pr.isInMergeQueue,
+        isMergeQueueEnabled: pr.isMergeQueueEnabled,
+      },
+      checks: [],
+    };
+    if (
+      initial &&
+      (initial.head !== observation.head ||
+        initial.lastCommit !== observation.lastCommit ||
+        initial.pullRequest.headSha !== observation.pullRequest.headSha)
+    ) {
+      throw new Error("CI observation head changed during pagination");
+    }
+    if (
+      initial &&
+      JSON.stringify({ ...initial, checks: [] }) !== JSON.stringify(observation)
+    )
+      throw new Error("CI observation changed during pagination");
+    initial = observation;
+    if (commit.statusCheckRollup === null) {
+      if (after !== null)
+        throw new Error("CI rollup disappeared during pagination");
+      break;
+    }
+    const raw = object(object(commit.statusCheckRollup).contexts);
+    const page = parseConnectionPage(raw);
+    if (
+      !Number.isSafeInteger(raw.totalCount) ||
+      (raw.totalCount as number) < 0 ||
+      (total !== undefined && total !== raw.totalCount)
+    )
+      throw new Error("GitHub returned invalid check count");
+    total = raw.totalCount as number;
+    contexts.push(...page.nodes.map(project));
+    after = page.cursor;
+    if (after && cursors.has(after))
+      throw new Error("GitHub returned non-advancing check pagination");
+    if (after) cursors.add(after);
+    else if (contexts.length !== total)
+      throw new Error("GitHub returned incomplete checks");
+  } while (after);
+  if (!initial) throw new Error("GitHub returned no CI observation");
+  const latest = new Map<string, ReturnType<typeof project>>();
+  for (const item of contexts)
+    if (!latest.has(item.key) || item.time > latest.get(item.key)!.time)
+      latest.set(item.key, item);
+  initial.checks = [...latest.values()]
+    .filter((item) => item.required)
+    .map((item) => item.check);
+  return initial;
 }

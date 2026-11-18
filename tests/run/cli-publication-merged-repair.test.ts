@@ -120,7 +120,7 @@ for (const moment of ["discovery", "repair_push"] as const) {
     assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
     assert.equal(state.pushes, 1);
     assert.equal(state.creations, 1);
-    assert.equal(state.discoveries.length, moment === "discovery" ? 1 : 3);
+    assert.equal(state.discoveries.length, moment === "discovery" ? 1 : 2);
     assert.equal(fixture.repairs.continuations.length, 0);
     assert.equal(fixture.repairs.tasks.length, moment === "discovery" ? 0 : 1);
     assert.equal(fixture.repairs.probes.length, moment === "discovery" ? 0 : 1);
