@@ -124,16 +124,15 @@ export interface Tracker {
 }
 
 export interface CodeHost {
-  getPullRequest(
-    repository: string,
-    pullRequest: number,
-  ): Promise<PullRequestState>;
   requestSquashMerge(input: {
-    repository: string;
-    pullRequest: number;
+    pullRequest: PullRequestIdentity;
     headSha: string;
-    admin: boolean;
+    autoMerge: boolean;
   }): Promise<MergeRequestResult>;
+  observeDelivery(
+    input: { repository: string; number: number; ticket: number },
+    signal?: AbortSignal,
+  ): Promise<DeliveryObservation>;
   resolveTargetBranch(repository: string): Promise<string>;
   observeBranch(repository: string, branch: string): Promise<BranchObservation>;
   observePublication(
@@ -216,6 +215,14 @@ export interface PullRequestObservation {
   lastCommitSha: string;
   merge: PullRequestMergeFacts;
   checks: RequiredCheck[];
+}
+
+export interface DeliveryObservation {
+  repositoryId: string;
+  defaultBranch: string;
+  pullRequest: PullRequestRecord;
+  merge: PullRequestMergeFacts;
+  issue: IssueFact & { labels: string[] };
 }
 
 export interface RequiredCheck {

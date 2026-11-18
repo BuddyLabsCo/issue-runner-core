@@ -33,10 +33,7 @@ export function recoverIssue(
         ...attempt,
         ...(attempt.deferIntegration
           ? {
-              deferIntegration: (
-                pullRequest: number,
-                complete: () => Promise<RunSummary>,
-              ) =>
+              deferIntegration: (pullRequest, complete) =>
                 attempt.deferIntegration!(pullRequest, () => recover(complete)),
             }
           : {}),

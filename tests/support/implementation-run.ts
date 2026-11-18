@@ -214,6 +214,8 @@ export async function implementationRun(
       },
     },
   };
+  dependencies.codeHost.readDeliveryIssue = () =>
+    dependencies.tracker.getTicket();
   return {
     state,
     dependencies,

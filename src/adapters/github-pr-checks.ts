@@ -12,15 +12,18 @@ export const publicationFields = `
   repository { id nameWithOwner }
   headRepository { id nameWithOwner }
 `;
+export const mergeFields = `
+  mergedAt mergeable mergeStateStatus isInMergeQueue isMergeQueueEnabled
+  autoMergeRequest { enabledAt }
+  mergeQueueEntry { id }
+`;
 export const pollQuery = `
   query Poll($owner: String!, $name: String!, $number: Int!, $ref: String!, $after: String) {
     repository(owner: $owner, name: $name) {
       ${branchFields}
       pullRequest(number: $number) {
         ${publicationFields}
-        mergedAt mergeable mergeStateStatus isInMergeQueue isMergeQueueEnabled
-        autoMergeRequest { enabledAt }
-        mergeQueueEntry { id }
+        ${mergeFields}
         commits(last: 1) {
           nodes { commit { oid statusCheckRollup {
             contexts(first: 100, after: $after) {
@@ -48,7 +51,7 @@ export const pollQuery = `
 
 export const oid = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
 
-export function parsePullRequestState(
+function parsePullRequestState(
   row: unknown,
   pullRequest: number,
 ): PullRequestState {

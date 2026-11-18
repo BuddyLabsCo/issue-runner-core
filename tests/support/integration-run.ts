@@ -40,7 +40,7 @@ export async function integrationRun(t: TestContext, config = validConfig) {
     },
   };
   Object.assign(fixture.dependencies.codeHost, {
-    async getPullRequest() {
+    async deliveryMergeFacts() {
       state.observations++;
       await state.onObserve();
       return structuredClone(state.pullRequest);

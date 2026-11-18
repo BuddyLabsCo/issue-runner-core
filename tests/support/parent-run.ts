@@ -134,6 +134,8 @@ export async function parentRun(
     terminal: terminalModule(terminalPlugin),
     terminalPlugin,
   };
+  dependencies.codeHost.readDeliveryIssue = (repository, number) =>
+    tracker.getTicket(repository, number);
   return {
     directory,
     dependencies,
@@ -171,7 +173,7 @@ export async function parentDeliveryRun(
     (await list()).map((pr) =>
       merged.has(pr.number) ? { ...pr, state: "merged" } : pr,
     );
-  fixture.dependencies.codeHost.getPullRequest = async (
+  fixture.dependencies.codeHost.deliveryMergeFacts = async (
     _repository,
     number,
   ) => ({
@@ -188,7 +190,7 @@ export async function parentDeliveryRun(
     async requestSquashMerge(
       input: Parameters<CodeHost["requestSquashMerge"]>[0],
     ) {
-      merged.add(input.pullRequest);
+      merged.add(input.pullRequest.number);
       return { outcome: "accepted" };
     },
   });

@@ -3,94 +3,94 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { inspect } from "node:util";
 import { GitHubCodeHost } from "../../src/adapters/github-code-host.ts";
-import { GitHubTracker } from "../../src/adapters/github-tracker.ts";
-import { integrationRun } from "../support/integration-run.ts";
-import { implementationCommit } from "../support/implementation-run.ts";
+import {
+  connection,
+  exact,
+  head,
+  publication,
+  repository,
+} from "../support/github-pr-fixture.ts";
 
-await test("GitHub integration uses squash, observed HEAD, admin policy, queue observation and completed closure", async (t) => {
-  const fixture = await integrationRun(t);
-  let queued = false;
-  let merged = false;
-  let requests = 0;
-  const host = new GitHubCodeHost("host-secret", async (args, options) => {
-    assert.equal(options.token, "host-secret");
-    if (args[0] === "pr") {
-      assert.deepEqual(args, [
-        "pr",
-        "merge",
-        "81",
-        "--repo",
-        "owner/repo",
-        "--squash",
-        "--match-head-commit",
-        implementationCommit.sha,
-      ]);
-      requests++;
-      queued = true;
-      return "";
-    }
-    assert.deepEqual(args, [
-      "api",
-      "graphql",
-      "--method",
-      "POST",
-      "--input",
-      "-",
-    ]);
-    assert.ok(options.input);
-    assert.partialDeepStrictEqual(JSON.parse(options.input), {
-      variables: { owner: "owner", name: "repo", number: 81 },
-    });
-    return JSON.stringify({
-      data: {
-        repository: {
-          pullRequest: {
-            headRefOid: implementationCommit.sha,
-            createdAt: "2026-10-30T00:00:00Z",
-            state: merged ? "MERGED" : "OPEN",
-            mergedAt: merged ? "2026-10-31T00:00:00Z" : null,
-            mergeable: "MERGEABLE",
-            autoMergeRequest: null,
-            mergeQueueEntry: queued ? { id: "queue-entry" } : null,
-          },
-        },
-      },
-    });
-  });
-  const tracker = new GitHubTracker("host-secret", async (args, options) => {
-    assert.equal(options.token, "host-secret");
-    assert.equal(merged, true);
-    assert.deepEqual(args, [
-      "issue",
-      "close",
-      "50",
-      "--repo",
-      "owner/repo",
-      "--reason",
-      "completed",
-    ]);
-    fixture.state.ticket.state = "closed";
-    fixture.state.ticket.stateReason = "completed";
-    return "";
-  });
-  fixture.dependencies.codeHost.getPullRequest = host.getPullRequest.bind(host);
-  Object.assign(fixture.dependencies.codeHost, {
-    requestSquashMerge: host.requestSquashMerge.bind(host),
-  });
-  Object.assign(fixture.dependencies.tracker, {
-    closeTicket: tracker.closeTicket.bind(tracker),
-  });
-  fixture.state.onSleep = async () => {
-    if (queued) merged = true;
+const input = { repository: publication.repository, number: 81, ticket: 50 };
+const mergedAt = "2026-11-18T12:10:00Z";
+const merged = {
+  ...exact,
+  state: "MERGED",
+  mergedAt,
+  mergeable: "UNKNOWN",
+  mergeStateStatus: "UNKNOWN",
+  isInMergeQueue: false,
+  isMergeQueueEnabled: false,
+  autoMergeRequest: null,
+  mergeQueueEntry: null,
+  mergeCommit: { oid: "b".repeat(40) },
+};
+const issue = {
+  id: "I_50",
+  number: 50,
+  repository,
+  state: "CLOSED",
+  stateReason: "COMPLETED",
+};
+
+function delivery(pullRequest = merged, observedIssue: unknown = issue) {
+  return {
+    repository: {
+      ...repository,
+      defaultBranchRef: { name: "main" },
+      pullRequest,
+      issue: observedIssue,
+    },
   };
-  const result = await fixture.run();
-  assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
-  assert.equal(requests, 1);
-  assert.equal(
-    (await fixture.snapshot()).publication?.closure?.stateReason,
-    "completed",
-  );
-});
+}
+
+for (const autoMerge of [false, true]) {
+  await test(`GitHub sends the accepted head in the direct ${autoMerge ? "auto-merge" : "squash"} mutation`, async () => {
+    const mutation = autoMerge
+      ? "enablePullRequestAutoMerge"
+      : "mergePullRequest";
+    const host = new GitHubCodeHost("host-secret", async (args, options) => {
+      assert.deepEqual(args, [
+        "api",
+        "graphql",
+        "--method",
+        "POST",
+        "--input",
+        "-",
+      ]);
+      assert.equal(options.token, "host-secret");
+      const request = JSON.parse(options.input!) as {
+        query: string;
+        variables: object;
+      };
+      assert.ok(request.query.includes(`${mutation}(input: $input)`));
+      assert.deepEqual(request.variables, {
+        input: {
+          pullRequestId: exact.id,
+          expectedHeadOid: head,
+          mergeMethod: "SQUASH",
+        },
+      });
+      const pullRequest = autoMerge
+        ? {
+            ...merged,
+            state: "OPEN",
+            mergedAt: null,
+            autoMergeRequest: { enabledAt: mergedAt },
+          }
+        : merged;
+      return JSON.stringify({ data: { [mutation]: { pullRequest } } });
+    });
+    assert.deepEqual(
+      await host.requestSquashMerge({
+        pullRequest: exact,
+        headSha: head,
+        autoMerge,
+      }),
+      { outcome: "accepted" },
+    );
+  });
+}
 
 for (const [message, outcome] of [
   ["Pull Request cannot be cleanly created", "conflict"],
@@ -100,83 +100,95 @@ for (const [message, outcome] of [
 ] as const) {
   await test(`GitHub classifies ${message} and retains the original cause`, async () => {
     const cause = new Error(message);
-    const host = new GitHubCodeHost("token", async (args) => {
-      assert.ok(args.includes("--admin"));
+    const host = new GitHubCodeHost("host-secret", async () => {
       throw cause;
     });
     const result = await host.requestSquashMerge({
-      repository: "owner/repo",
-      pullRequest: 81,
-      headSha: implementationCommit.sha,
-      admin: true,
+      pullRequest: exact,
+      headSha: head,
+      autoMerge: false,
     });
     assert.equal(result.outcome, outcome);
     assert.equal(result.error, cause);
   });
 }
 
-await test("GraphQL field errors prevent a Pull Request observation from confirming delivery", async () => {
-  const credential = "fixture-credential";
-  const path = ["repository", "pullRequest", "state"];
+await test("delivery reads the exact merged PR with the complete Issue labels across pages", async () => {
+  const cursors: (string | null)[] = [];
+  const host = new GitHubCodeHost("host-secret", async (_args, options) => {
+    const request = JSON.parse(options.input!) as {
+      query: string;
+      variables: { after: string | null };
+    };
+    assert.match(request.query, /pullRequest\(number: \$number\)/u);
+    assert.match(request.query, /issue\(number: \$ticket\)/u);
+    assert.partialDeepStrictEqual(request.variables, {
+      owner: "owner",
+      name: "repo",
+      number: 81,
+      ticket: 50,
+    });
+    const { after } = request.variables;
+    cursors.push(after);
+    const labels =
+      after === null
+        ? connection([{ id: "L_1", name: "Docs" }], 2, "next")
+        : connection([{ id: "L_2", name: "runner:reserved" }], 2);
+    return JSON.stringify({ data: delivery(merged, { ...issue, labels }) });
+  });
+  const observed = await host.observeDelivery(input);
+  assert.partialDeepStrictEqual(observed, {
+    pullRequest: { id: exact.id, headSha: head, state: "merged" },
+    issue: {
+      id: issue.id,
+      stateReason: "completed",
+      labels: ["Docs", "runner:reserved"],
+    },
+  });
+  assert.deepEqual(cursors, [null, "next"]);
+});
+
+for (const [observedIssue, message] of [
+  [
+    { ...issue, number: 51 },
+    /unexpected Pull Request or Issue delivery identity/u,
+  ],
+  [{ ...issue, labels: connection([], 1) }, /incomplete Issue label pages/u],
+] as const) {
+  await test(`delivery rejects ${message.source}`, async () => {
+    const host = new GitHubCodeHost("host-secret", async () =>
+      JSON.stringify({ data: delivery(merged, observedIssue) }),
+    );
+    await assert.rejects(host.observeDelivery(input), message);
+  });
+}
+
+await test("GraphQL field errors prevent delivery even with a merged PR and a completed Issue in the response", async () => {
+  const credential = "test-delivery-credential";
+  const path = ["repository", "issue", "labels"];
   const errors = [
     {
-      message: "state denied",
+      message: "labels denied",
       path,
       extensions: { metadata: { [credential]: credential } },
     },
   ];
   const host = new GitHubCodeHost(credential, async () =>
     JSON.stringify({
-      data: {
-        repository: {
-          pullRequest: {
-            headRefOid: implementationCommit.sha,
-            createdAt: "2026-10-30T00:00:00Z",
-            state: "MERGED",
-            mergedAt: "2026-10-31T00:00:00Z",
-            mergeable: "MERGEABLE",
-            autoMergeRequest: null,
-            mergeQueueEntry: null,
-          },
-        },
-      },
+      data: delivery(merged, { ...issue, labels: connection([]) }),
       errors,
     }),
   );
-  await assert.rejects(
-    host.getPullRequest("owner/repo", 81),
-    (error: unknown) => {
-      assert.ok(error instanceof Error);
-      assert.equal(
-        error.message,
-        "GitHub returned GraphQL errors for Pull Request state",
-      );
-      const cause: unknown = error.cause;
-      assert.ok(
-        !inspect(cause, { depth: null, showHidden: true }).includes(credential),
-      );
-      assert.partialDeepStrictEqual(cause, {
-        response: { errors: [{ path }] },
-        commandError: null,
-      });
-      return true;
-    },
-  );
-});
-
-await test("an invalid GitHub merge observation cannot close the Issue or earn delivery credit", async (t) => {
-  const fixture = await integrationRun(t);
-  const host = new GitHubCodeHost("token", async () =>
-    JSON.stringify({
-      data: { repository: { pullRequest: { state: "MERGED" } } },
-    }),
-  );
-  fixture.dependencies.codeHost.getPullRequest = host.getPullRequest.bind(host);
-  fixture.dependencies.operator.pause = async (message) => {
-    assert.match(message, /invalid Pull Request state/u);
-    return "q";
-  };
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  assert.equal(fixture.integrationState.requests.length, 0);
-  assert.equal(fixture.integrationState.closures, 0);
+  await assert.rejects(host.observeDelivery(input), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.match(error.message, /labels denied/u);
+    assert.ok(
+      !inspect(error, { depth: null, showHidden: true }).includes(credential),
+    );
+    assert.partialDeepStrictEqual(error.cause, {
+      response: { errors: [{ path }] },
+      commandError: null,
+    });
+    return true;
+  });
 });

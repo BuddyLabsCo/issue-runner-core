@@ -12,7 +12,7 @@ for (const scenario of ["merged", "retargeted", "queued", "healthy"] as const) {
       const fixture = await batchRun(t);
       const host = fixture.dependencies.codeHost;
       const observe = host.observePullRequest.bind(host);
-      const get = host.getPullRequest.bind(host);
+      const delivery = host.observeDelivery.bind(host);
       const fetch = fixture.dependencies.gitWorkspace.fetchTargetBranch.bind(
         fixture.dependencies.gitWorkspace,
       );
@@ -22,29 +22,19 @@ for (const scenario of ["merged", "retargeted", "queued", "healthy"] as const) {
       host.observePullRequest = async (input) => {
         const observation = await observe(input);
         if (input.number !== 83) return observation;
-        if (waitingTicket !== undefined) events.push("observe recorded PR");
-        if (externalMerge) {
-          if (waitingTicket === undefined)
-            observation.merge.mergeable = "conflicting";
-          else {
-            observation.pullRequest.state = "merged";
-            observation.merge.merged = true;
-            observation.branch.headSha = null;
-            if (scenario === "retargeted")
-              observation.pullRequest.targetBranch = "other-base";
-          }
-        }
-        if (scenario === "queued" && !observation.merge.merged) {
+        if (externalMerge) observation.merge.mergeable = "conflicting";
+        if (scenario === "queued") {
           observation.merge.isInMergeQueue = true;
           observation.merge.mergeRequested = true;
-          if (waitingTicket !== undefined) fixture.merged.add(input.number);
         }
         return observation;
       };
-      host.getPullRequest = async (repository, number) => {
-        if (number === 83 && waitingTicket !== undefined)
-          events.push("read PR state");
-        return get(repository, number);
+      host.observeDelivery = async (input) => {
+        if (input.number === 83) events.push("observe delivery");
+        const observation = await delivery(input);
+        if (input.number === 83 && scenario === "retargeted")
+          observation.pullRequest.targetBranch = "other-base";
+        return observation;
       };
       fixture.state.onMerge = async (number) => {
         fixture.merged.add(number);
@@ -65,8 +55,10 @@ for (const scenario of ["merged", "retargeted", "queued", "healthy"] as const) {
             );
             fixture.merged.add(waiting.number);
           }
-          if (scenario === "queued")
+          if (scenario === "queued") {
             assert.equal(saved.publication?.checksState?.isInMergeQueue, true);
+            fixture.merged.add(waiting.number);
+          }
         }
         if (number === 83) events.push("request merge");
         return { outcome: "accepted" };
@@ -105,12 +97,10 @@ for (const scenario of ["merged", "retargeted", "queued", "healthy"] as const) {
           scenario === "healthy" ? [82, 83, 81] : [82, 81],
         );
       }
-      assert.ok(events.includes("observe recorded PR"));
-      if (scenario === "healthy")
-        assert.deepEqual(events.slice(0, events.indexOf("request merge") + 1), [
-          "observe recorded PR",
-          "request merge",
-        ]);
+      assert.equal(
+        events[0],
+        scenario === "healthy" ? "request merge" : "observe delivery",
+      );
     },
   );
 }

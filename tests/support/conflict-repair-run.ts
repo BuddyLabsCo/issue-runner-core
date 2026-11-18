@@ -41,7 +41,7 @@ export async function conflictRepairRun(
     observed.merge.mergeable = state.mergeable;
     return observed;
   };
-  fixture.dependencies.codeHost.getPullRequest = async () => ({
+  fixture.dependencies.codeHost.deliveryMergeFacts = async () => ({
     headSha: fixture.publicationState.pullRequests[0]!.headSha,
     createdAt: "2026-10-30T00:00:00Z",
     merged: state.merged,
@@ -54,7 +54,7 @@ export async function conflictRepairRun(
       input: Parameters<CodeHost["requestSquashMerge"]>[0],
     ) {
       state.requests.push(input);
-      assert.equal(input.pullRequest, 81);
+      assert.equal(input.pullRequest.number, 81);
       return state.onMerge();
     },
   });

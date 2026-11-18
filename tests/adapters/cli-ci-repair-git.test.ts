@@ -90,7 +90,7 @@ for (const kind of ["ci", "conflict"] as const) {
       fixture.dependencies.codeHost.resolveTargetBranch = async () => "main";
       fixture.publicationState.onChecks = async () =>
         kind === "ci" && pushed.length === 1 ? [failedCheck] : [];
-      fixture.dependencies.codeHost.getPullRequest = async () => ({
+      fixture.dependencies.codeHost.deliveryMergeFacts = async () => ({
         headSha: pushed.at(-1)!.head,
         createdAt: "2026-10-30T00:00:00Z",
         merged,

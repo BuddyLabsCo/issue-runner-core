@@ -126,23 +126,16 @@ export async function fiveIssueRun(t: TestContext) {
   const integrations: number[] = [];
   host.requestSquashMerge = async (input) => {
     const pr = (await codeHost.listPullRequests()).find(
-      (pr) => pr.number === input.pullRequest,
+      (pr) => pr.number === input.pullRequest.number,
     )!;
     const number = Number(/ticket-(\d+)$/u.exec(pr.branch)![1]);
     integrations.push(number);
     fixture.events.push(`merge:${number}`);
     return request(input);
   };
-  const get = codeHost.getPullRequest.bind(codeHost);
-  codeHost.getPullRequest = async (repository, number) => {
-    const pr = (await codeHost.listPullRequests()).find(
-      (pr) => pr.number === number,
-    )!;
-    const ticket = Number(/ticket-(\d+)$/u.exec(pr.branch)![1]);
-    return {
-      ...(await get(repository, number)),
-      createdAt: `2026-10-30T00:${String(ticket % 100).padStart(2, "0")}:00Z`,
-    };
+  codeHost.createdAtFor = (branch) => {
+    const ticket = Number(/ticket-(\d+)$/u.exec(branch)![1]);
+    return `2026-10-30T00:${String(ticket % 100).padStart(2, "0")}:00Z`;
   };
   fixture.state.onDocument = (_file, commit) => commit();
   return {
