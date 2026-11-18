@@ -103,6 +103,49 @@ for (const interruption of [
   });
 }
 
+await test("restart from durable pushed evidence observes and adopts an exact PR without another write", async (t) => {
+  const fixture = await publicationRun(t);
+  const { gitWorkspace } = fixture.dependencies;
+  const inspect = gitWorkspace.inspect.bind(gitWorkspace);
+  gitWorkspace.inspect = async (input) => {
+    if ((await fixture.snapshot()).publication?.phase === "pushed") {
+      fixture.controller.abort();
+      fixture.controller.signal.throwIfAborted();
+    }
+    return inspect(input);
+  };
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  const before = (await fixture.snapshot()).publication!;
+  assert.equal(before.phase, "pushed");
+  assert.equal(before.pullRequest, undefined);
+  assert.equal(fixture.publicationState.pushes, 1);
+  assert.equal(fixture.publicationState.creations, 0);
+
+  const identity = {
+    id: "PR_visible",
+    number: 93,
+    url: "https://github.com/owner/repo/pull/93",
+    createdAt: "2026-10-30T00:00:00Z",
+  };
+  fixture.publicationState.pullRequests.push({
+    ...identity,
+    branch: before.branch,
+    targetBranch: before.targetBranch,
+    headSha: before.headSha,
+    state: "open",
+    draft: false,
+  });
+  gitWorkspace.inspect = inspect;
+  fixture.dependencies.signal = new AbortController().signal;
+  assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/u);
+  assert.deepEqual(
+    (await fixture.snapshot()).publication?.pullRequest,
+    identity,
+  );
+  assert.equal(fixture.publicationState.pushes, 1);
+  assert.equal(fixture.publicationState.creations, 0);
+});
+
 await test("restart pauses before retrying an uncertain PR creation with no exact remote match", async (t) => {
   const fixture = await publicationRun(t);
   const create = fixture.dependencies.codeHost.createPullRequest.bind(

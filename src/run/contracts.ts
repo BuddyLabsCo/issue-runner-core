@@ -69,7 +69,10 @@ export interface CodeHost {
   }): Promise<MergeRequestResult>;
   resolveTargetBranch(repository: string): Promise<string>;
   observeBranch(repository: string, branch: string): Promise<BranchObservation>;
-  observePublication(input: PublicationQuery): Promise<PublicationObservation>;
+  observePublication(
+    input: PublicationQuery,
+    signal?: AbortSignal,
+  ): Promise<PublicationObservation>;
   createPullRequest(
     input: PublicationQuery & {
       repositoryId: string;

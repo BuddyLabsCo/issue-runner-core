@@ -228,6 +228,57 @@ await test("publication completes each candidate connection and counts a shared 
   assert.equal(replies.length, 0);
 });
 
+await test("publication cancellation stops candidate pagination before the next request", async () => {
+  const controller = new AbortController();
+  let requests = 0;
+  const adapter = new GitHubCodeHost("host-secret", () => {
+    if (++requests > 1) assert.fail("unexpected continuation request");
+    controller.abort();
+    return Promise.resolve(
+      JSON.stringify({
+        data: {
+          repository: {
+            ...remote,
+            source: connection([exact], 2, "source-1"),
+            target: connection([exact]),
+          },
+        },
+      }),
+    );
+  });
+  await assert.rejects(
+    adapter.observePublication(publication, controller.signal),
+    { name: "AbortError" },
+  );
+  assert.equal(requests, 1);
+});
+
+for (const headRepository of [
+  { id: repository.id, nameWithOwner: "Fork/Repo" },
+  { id: "R_fork", nameWithOwner },
+  { nameWithOwner: "Fork/Repo" },
+]) {
+  await test(`publication rejects incomplete or contradictory head repository identity ${JSON.stringify(headRepository)}`, async () => {
+    const adapter = new GitHubCodeHost("host-secret", () =>
+      Promise.resolve(
+        JSON.stringify({
+          data: {
+            repository: {
+              ...remote,
+              source: connection([{ ...exact, headRepository }]),
+              target: connection([]),
+            },
+          },
+        }),
+      ),
+    );
+    await assert.rejects(
+      adapter.observePublication(publication),
+      /unexpected head repository ID/u,
+    );
+  });
+}
+
 for (const { name, response, error } of [
   {
     name: "an absent repository",

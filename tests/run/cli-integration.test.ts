@@ -62,6 +62,32 @@ await test("delivery requires confirmed squash integration and completed tracker
   );
 });
 
+await test("a base change during a retried required-checks read prevents delivery", async (t) => {
+  const fixture = await integrationRun(t, {
+    ...validConfig,
+    operationRetry: 1,
+  });
+  const { publicationState, integrationState } = fixture;
+  let checks = 0;
+  publicationState.onChecks = async () => {
+    if (++checks === 1) {
+      publicationState.pullRequests[0]!.targetBranch = "another-base";
+      throw new Error("required-checks lookup failed");
+    }
+    return [];
+  };
+  fixture.dependencies.operator.pause = async (message) => {
+    assert.match(message, /Pull Request identity or head mismatch/u);
+    return "q";
+  };
+  const result = await fixture.run();
+  assert.equal(result.summary.outcome, "cancelled");
+  assert.equal(checks, 2);
+  assert.deepEqual(integrationState.requests, []);
+  assert.equal(integrationState.closures, 0);
+  assert.equal((await fixture.snapshot()).publication?.phase, "pr_created");
+});
+
 await test("queue admission receives no delivery credit before the configured merge confirmation timeout", async (t) => {
   const fixture = await integrationRun(t, {
     ...validConfig,

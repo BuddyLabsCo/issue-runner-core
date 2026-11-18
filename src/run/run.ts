@@ -132,7 +132,8 @@ async function executeProject(
     resolveTargetBranch: (repository) => host.resolveTargetBranch(repository),
     observeBranch: (repository, branch) =>
       host.observeBranch(repository, branch),
-    observePublication: (input) => host.observePublication(input),
+    observePublication: (input, signal) =>
+      host.observePublication(input, signal),
     getRequiredChecks: (repository, pullRequest) =>
       host.getRequiredChecks(repository, pullRequest),
     createPullRequest: (input) =>

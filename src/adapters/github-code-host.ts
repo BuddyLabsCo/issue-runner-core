@@ -91,11 +91,10 @@ export class GitHubCodeHost implements CodeHost {
     return parseBranch(object(data.repository), repository, branch);
   }
 
-  async observePublication({
-    repository,
-    branch,
-    targetBranch,
-  }: PublicationQuery): Promise<PublicationObservation> {
+  async observePublication(
+    { repository, branch, targetBranch }: PublicationQuery,
+    signal?: AbortSignal,
+  ): Promise<PublicationObservation> {
     const [owner, name] = repository.split("/");
     const pages = {
       source: publicationPages(),
@@ -104,6 +103,7 @@ export class GitHubCodeHost implements CodeHost {
     const candidates = new Map<string, PublicationCandidate>();
     let observation: BranchObservation | undefined;
     do {
+      signal?.throwIfAborted();
       const data = await this.publicationData(publicationQuery, {
         owner,
         name,
@@ -115,6 +115,7 @@ export class GitHubCodeHost implements CodeHost {
         source: !pages.source.done,
         target: !pages.target.done,
       });
+      signal?.throwIfAborted();
       const remote = object(data.repository);
       const current = parseBranch(remote, repository, branch);
       if (
@@ -337,10 +338,14 @@ function collectPublicationPage(input: {
     if (page.ids.has(record.id) || actualBranch !== expectedBranch)
       throw new Error("GitHub returned inconsistent Pull Request pages");
     page.ids.add(record.id);
-    const headRepository = sameRepository(row.headRepository, repository);
-    if (headRepository && object(row.headRepository).id !== repositoryId)
-      throw new Error("GitHub returned an unexpected head repository ID");
-    const candidate = { record, sameHeadRepository: headRepository };
+    const { headRepository } = row;
+    const sameHeadRepository = sameRepository(headRepository, repository);
+    if (headRepository !== null) {
+      const { id } = object(headRepository);
+      if (!nonempty(id) || sameHeadRepository !== (id === repositoryId))
+        throw new Error("GitHub returned an unexpected head repository ID");
+    }
+    const candidate = { record, sameHeadRepository };
     const previous = candidates.get(record.id);
     if (previous && JSON.stringify(previous) !== JSON.stringify(candidate))
       throw new Error("GitHub returned conflicting Pull Request observations");

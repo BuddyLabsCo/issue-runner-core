@@ -109,7 +109,7 @@ export async function publishImplementation(input: {
   };
   const observe = async (expectedHead: string, allowMissingBranch = false) => {
     context.signal?.throwIfAborted();
-    const observed = await codeHost.observePublication(query);
+    const observed = await codeHost.observePublication(query, context.signal);
     verifyRepository(observed.repositoryId);
     if (
       observed.headSha !== expectedHead &&
@@ -334,6 +334,7 @@ export async function publishImplementation(input: {
           break;
         }
         if (!checks.some(({ bucket }) => bucket === "pending")) {
+          await confirm();
           publication.phase = "checks_ready";
           await persist();
           break;
