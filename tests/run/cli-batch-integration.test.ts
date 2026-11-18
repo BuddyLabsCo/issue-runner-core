@@ -78,6 +78,64 @@ async function batchRun(t: TestContext) {
   return { ...fixture, children, ready, merged, requests, state };
 }
 
+await test("a deferred PR that merges and loses its branch skips conflict repair", async (t) => {
+  const fixture = await batchRun(t);
+  const host = fixture.dependencies.codeHost;
+  const observe = host.observePullRequest.bind(host);
+  const observeBranch = host.observeBranch.bind(host);
+  const get = host.getPullRequest.bind(host);
+  let deletedBranch: string | undefined;
+  host.observePullRequest = async (input) => {
+    const observation = await observe(input);
+    if (input.number === 83) observation.merge.mergeable = "conflicting";
+    return observation;
+  };
+  host.observeBranch = async (repository, branch) =>
+    branch === deletedBranch
+      ? { repositoryId: "R_repo", headSha: null }
+      : observeBranch(repository, branch);
+  let revalidated = false;
+  host.getPullRequest = async (repository, number) => {
+    if (number === 83 && deletedBranch) revalidated = true;
+    return get(repository, number);
+  };
+  fixture.state.onMerge = async (number) => {
+    fixture.merged.add(number);
+    if (number === 82) {
+      const waiting = (await host.listPullRequests()).find(
+        (pr) => pr.number === 83,
+      )!;
+      deletedBranch = waiting.branch;
+      fixture.merged.add(waiting.number);
+      const ticket = Number(waiting.branch.split("/ticket-").at(-1));
+      const saved = await implementationProgress(fixture.directory, ticket);
+      assert.equal(saved.publication?.phase, "checks_ready");
+      assert.equal(saved.publication?.checksState?.mergeable, "conflicting");
+      assert.equal(
+        (await host.observeBranch("owner/repo", waiting.branch)).headSha,
+        null,
+      );
+    }
+    return { outcome: "accepted" };
+  };
+  const fetch = fixture.dependencies.gitWorkspace.fetchTargetBranch.bind(
+    fixture.dependencies.gitWorkspace,
+  );
+  fixture.dependencies.gitWorkspace.fetchTargetBranch = async () => {
+    assert.equal(
+      deletedBranch,
+      undefined,
+      "an already merged PR must not start conflict repair",
+    );
+    return fetch();
+  };
+  const result = await fixture.run();
+  assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
+  assert.deepEqual(fixture.requests, [82, 81]);
+  assert.equal(revalidated, true);
+  assert.ok(fixture.children.every((ticket) => ticket.state === "closed"));
+});
+
 for (const selector of ["parent", "issue"] as const) {
   await test(
     `${selector} holds the CI barrier across out-of-order implementation completion and confirms each merge before starting the next`,

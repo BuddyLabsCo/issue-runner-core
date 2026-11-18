@@ -5,21 +5,15 @@ import { executeCli } from "../../src/cli.ts";
 import { implementationCommand } from "../support/implementation-run.ts";
 import { publicationRun } from "../support/publication-run.ts";
 
-const nameWithOwner = "Owner/Repo";
-const repository = { id: "R_repo", nameWithOwner };
-const createdAt = "2026-11-18T12:00:00Z";
-
-function connection(
-  nodes: unknown[],
-  totalCount = nodes.length,
-  next: string | null = null,
-) {
-  return {
-    nodes,
-    totalCount,
-    pageInfo: { hasNextPage: next !== null, endCursor: next },
-  };
-}
+import {
+  connection,
+  createdAt,
+  exact,
+  head,
+  publication,
+  remote,
+  repository,
+} from "../support/github-pr-fixture.ts";
 
 await test("publication sends the accepted multiline metadata directly and records the returned identity", async (t) => {
   const fixture = await publicationRun(t);
@@ -60,17 +54,10 @@ await test("publication sends the accepted multiline metadata directly and recor
         maintainerCanModify: true,
       });
       created = {
-        id: "PR_exact",
-        number: 81,
-        url: "https://github.com/Owner/Repo/pull/81",
+        ...exact,
         headRefName: saved.branch,
         baseRefName: "default-branch",
         headRefOid: sha,
-        repository,
-        headRepository: repository,
-        state: "OPEN",
-        isDraft: false,
-        createdAt,
       };
       return JSON.stringify({
         data: { createPullRequest: { pullRequest: created } },
@@ -115,6 +102,7 @@ await test("publication sends the accepted multiline metadata directly and recor
                               contexts: connection([
                                 {
                                   __typename: "StatusContext",
+                                  id: "SC_CI",
                                   context: "CI",
                                   state: "PENDING",
                                   createdAt,
@@ -178,30 +166,6 @@ await test("publication sends the accepted multiline metadata directly and recor
   assert.equal(observedMerge?.mergeStateStatus, "BLOCKED");
   assert.equal(observedMerge?.isMergeQueueEnabled, true);
 });
-
-const publication = {
-  repository: "owner/repo",
-  branch: "runner/issue",
-  targetBranch: "main",
-};
-const head = "a".repeat(40);
-const remote = {
-  ...repository,
-  ref: { name: publication.branch, target: { oid: head } },
-};
-const exact = {
-  id: "PR_exact",
-  number: 81,
-  url: "https://github.com/Owner/Repo/pull/81",
-  headRefName: publication.branch,
-  baseRefName: publication.targetBranch,
-  headRefOid: head,
-  repository,
-  headRepository: repository,
-  state: "OPEN",
-  isDraft: false,
-  createdAt,
-};
 
 const closed = {
   ...exact,
@@ -303,7 +267,7 @@ await test("publication cancellation stops candidate pagination before the next 
 
 for (const headRepository of [
   { id: repository.id, nameWithOwner: "Fork/Repo" },
-  { id: "R_fork", nameWithOwner },
+  { id: "R_fork", nameWithOwner: repository.nameWithOwner },
   { nameWithOwner: "Fork/Repo" },
 ]) {
   await test(`publication rejects incomplete or contradictory head repository identity ${JSON.stringify(headRepository)}`, async () => {

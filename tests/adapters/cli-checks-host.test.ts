@@ -2,44 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { GitHubCodeHost } from "../../src/adapters/github-code-host.ts";
 
-const repository = { id: "R_repo", nameWithOwner: "Owner/Repo" };
-const createdAt = "2026-11-18T12:00:00Z";
-
-function connection(
-  nodes: unknown[],
-  totalCount = nodes.length,
-  next: string | null = null,
-) {
-  return {
-    nodes,
-    totalCount,
-    pageInfo: { hasNextPage: next !== null, endCursor: next },
-  };
-}
-
-const publication = {
-  repository: "owner/repo",
-  branch: "runner/issue",
-  targetBranch: "main",
-};
-const head = "a".repeat(40);
-const remote = {
-  ...repository,
-  ref: { name: publication.branch, target: { oid: head } },
-};
-const exact = {
-  id: "PR_exact",
-  number: 81,
-  url: "https://github.com/Owner/Repo/pull/81",
-  headRefName: publication.branch,
-  baseRefName: publication.targetBranch,
-  headRefOid: head,
-  repository,
-  headRepository: repository,
-  state: "OPEN",
-  isDraft: false,
+import {
+  connection,
   createdAt,
-};
+  exact,
+  head,
+  publication,
+  remote,
+} from "../support/github-pr-fixture.ts";
 
 function pollPage(sha: string, contexts: ReturnType<typeof connection> | null) {
   return {
@@ -70,6 +40,7 @@ function pollPage(sha: string, contexts: ReturnType<typeof connection> | null) {
 }
 
 function checkRun(
+  id: string,
   name: string,
   conclusion: string,
   startedAt: string,
@@ -77,6 +48,7 @@ function checkRun(
 ) {
   return {
     __typename: "CheckRun",
+    id,
     name,
     status: "COMPLETED",
     conclusion,
@@ -95,6 +67,7 @@ function statusContext(
 ) {
   return {
     __typename: "StatusContext",
+    id: `SC_${context}`,
     context,
     state,
     targetUrl,
@@ -108,8 +81,8 @@ await test("CI drains all context pages before deduplicating reruns and filterin
   const pages = [
     connection(
       [
-        checkRun("build", "FAILURE", createdAt),
-        checkRun("optional", "FAILURE", createdAt),
+        checkRun("CR_failed_build", "build", "FAILURE", createdAt),
+        checkRun("CR_old_optional", "optional", "FAILURE", createdAt),
         statusContext("build", "ERROR", "https://statuses.example/build"),
       ],
       10,
@@ -117,22 +90,26 @@ await test("CI drains all context pages before deduplicating reruns and filterin
     ),
     connection(
       [
-        checkRun("build", "SUCCESS", newest, {
+        checkRun("CR_successful_build", "build", "SUCCESS", newest, {
           detailsUrl: "https://checks.example/build",
         }),
-        checkRun("optional", "FAILURE", newest, { isRequired: false }),
-        checkRun("build", "NEUTRAL", later, {
+        checkRun("CR_new_optional", "optional", "FAILURE", newest, {
+          isRequired: false,
+        }),
+        checkRun("CR_pull_request_build", "build", "NEUTRAL", later, {
           checkSuite: {
             workflowRun: { workflow: { name: "Build" }, event: "pull_request" },
           },
         }),
-        checkRun("build", "CANCELLED", later, {
+        checkRun("CR_tests_build", "build", "CANCELLED", later, {
           checkSuite: {
             workflowRun: { workflow: { name: "Tests" }, event: "push" },
           },
         }),
-        checkRun("test", "SUCCESS", later, { status: "IN_PROGRESS" }),
-        checkRun("new conclusion", "FUTURE_STATE", later),
+        checkRun("CR_running_test", "test", "SUCCESS", later, {
+          status: "IN_PROGRESS",
+        }),
+        checkRun("CR_future_state", "new conclusion", "FUTURE_STATE", later),
         statusContext("ready", "SUCCESS", null),
       ],
       10,
@@ -141,9 +118,20 @@ await test("CI drains all context pages before deduplicating reruns and filterin
   const cursors: (string | null)[] = [];
   const adapter = new GitHubCodeHost("host-secret", (args, { input }) => {
     assert.equal(args[1], "graphql");
-    const { variables } = JSON.parse(input!) as {
+    const { query, variables } = JSON.parse(input!) as {
+      query: string;
       variables: { after: string | null; number: number };
     };
+    assert.match(query, /contexts\(\s*first:\s*100,\s*after:\s*\$after\s*\)/u);
+    for (const type of ["CheckRun", "StatusContext"]) {
+      const fields = query.split(`... on ${type} {`)[1]?.split("}")[0];
+      assert.match(fields ?? "", /\bid\b/u, type);
+      assert.match(
+        fields ?? "",
+        /isRequired\(pullRequestNumber:\s*\$number\)/u,
+        type,
+      );
+    }
     assert.equal(variables.number, exact.number);
     cursors.push(variables.after);
     return Promise.resolve(
@@ -201,13 +189,16 @@ await test("CI restarts context pagination from the first page after the Pull Re
   const replies = [
     pollPage(
       head,
-      connection([statusContext("stale failure", "FAILURE", "")], 2, "stale"),
+      connection([statusContext("shared check", "FAILURE", "")], 2, "stale"),
     ),
     pollPage(
       newHead,
       connection([statusContext("unusable cursor", "ERROR", "")], 2),
     ),
-    pollPage(newHead, connection([statusContext("new head", "SUCCESS", null)])),
+    pollPage(
+      newHead,
+      connection([statusContext("shared check", "SUCCESS", null)]),
+    ),
   ];
   const cursors: (string | null)[] = [];
   const adapter = new GitHubCodeHost("host-secret", (_args, { input }) => {
@@ -226,7 +217,7 @@ await test("CI restarts context pagination from the first page after the Pull Re
   assert.deepEqual(cursors, [null, "stale", null]);
   assert.equal(result.lastCommitSha, newHead);
   assert.deepEqual(result.checks, [
-    { name: "new head", state: "SUCCESS", bucket: "pass", link: "" },
+    { name: "shared check", state: "SUCCESS", bucket: "pass", link: "" },
   ]);
 });
 
@@ -269,7 +260,9 @@ await test("CI distinguishes empty required checks from missing or errored GitHu
     pollPage(
       head,
       connection([
-        checkRun("optional", "FAILURE", createdAt, { isRequired: false }),
+        checkRun("CR_optional", "optional", "FAILURE", createdAt, {
+          isRequired: false,
+        }),
       ]),
     ),
   ]) {
@@ -287,3 +280,47 @@ await test("CI distinguishes empty required checks from missing or errored GitHu
     );
   }
 });
+
+await test("CI rejects overlapping check-context pages even when the reported count is complete", async () => {
+  const repeated = checkRun("CR_repeated", "build", "SUCCESS", createdAt);
+  const replies = [
+    pollPage(head, connection([repeated], 2, "next")),
+    pollPage(head, connection([repeated], 2)),
+  ];
+  const adapter = new GitHubCodeHost("host-secret", () =>
+    Promise.resolve(JSON.stringify({ data: { repository: replies.shift() } })),
+  );
+  await assert.rejects(
+    adapter.observePullRequest({ ...publication, number: exact.number }),
+    /check context.*(?:duplicate|repeated|inconsistent)|(?:duplicate|repeated|inconsistent).*check context/u,
+  );
+  assert.equal(replies.length, 0);
+});
+
+for (const malformed of [
+  { mergeQueueEntry: { id: null } },
+  { autoMergeRequest: { enabledAt: null } },
+]) {
+  await test(`CI rejects a present ${Object.keys(malformed)[0]} with incomplete evidence`, async () => {
+    const page = pollPage(
+      head,
+      connection([statusContext("build", "SUCCESS", null)]),
+    );
+    const adapter = new GitHubCodeHost("host-secret", () =>
+      Promise.resolve(
+        JSON.stringify({
+          data: {
+            repository: {
+              ...page,
+              pullRequest: { ...page.pullRequest, ...malformed },
+            },
+          },
+        }),
+      ),
+    );
+    await assert.rejects(
+      adapter.observePullRequest({ ...publication, number: exact.number }),
+      /invalid Pull Request merge facts/u,
+    );
+  });
+}

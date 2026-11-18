@@ -246,6 +246,32 @@ await test("recovery cannot credit delivery when recorded publication differs fr
   assert.match(result.summary.failure!, /Publication evidence does not match/u);
 });
 
+await test("pending merge recovery rejects a saved merge result before closing the Issue", async (t) => {
+  const fixture = await integrationRun(t);
+  fixture.integrationState.onMerge = async () => {
+    fixture.controller.abort();
+    return { outcome: "accepted" };
+  };
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  const saved = await fixture.snapshot();
+  assert.equal(saved.publication!.phase, "pending_merge");
+  saved.publication!.merge = {
+    ...fixture.integrationState.pullRequest,
+    merged: true,
+  };
+  const directory = path.join(fixture.directory, "recovery");
+  const file = (await readdir(directory)).find((file) =>
+    file.endsWith("-50.json"),
+  )!;
+  await writeFile(path.join(directory, file), JSON.stringify(saved));
+  fixture.dependencies.signal = new AbortController().signal;
+  const result = await fixture.run();
+  assert.equal(result.summary.outcome, "failed");
+  assert.match(result.summary.failure!, /merge evidence.*phase/u);
+  assert.equal(fixture.integrationState.closures, 0);
+  assert.equal(fixture.state.ticket.state, "open");
+});
+
 await test("a changed observed HEAD pauses without merging or closing the Issue", async (t) => {
   const fixture = await integrationRun(t);
   fixture.integrationState.onObserve = async () => {

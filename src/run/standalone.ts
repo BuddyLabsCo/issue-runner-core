@@ -257,6 +257,7 @@ async function executeStandalone(
           codeHost: input.codeHost,
           tracker,
           read,
+          deferred: input.deferIntegration !== undefined,
           inspectTicket: inspect,
           continuePublication: (conflict) => publish(progress, conflict),
         });
@@ -280,13 +281,11 @@ async function executeStandalone(
         return summary;
       }
     };
-    if (input.deferIntegration) {
-      const pullRequest = progress.publication!.pullRequest!;
-      input.deferIntegration(pullRequest.number, complete);
-      report.detail = `CI-ready PR ${pullRequest.url} awaits Batch integration`;
-      return summary;
-    }
-    return complete();
+    if (!input.deferIntegration) return complete();
+    const pullRequest = progress.publication!.pullRequest!;
+    input.deferIntegration(pullRequest.number, complete);
+    report.detail = `CI-ready PR ${pullRequest.url} awaits Batch integration`;
+    return summary;
   };
   if (
     restored?.publication &&

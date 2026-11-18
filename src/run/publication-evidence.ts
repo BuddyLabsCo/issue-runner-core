@@ -59,6 +59,13 @@ export function verifiedPublication(progress: ImplementationProgress) {
   )
     throw new Error("Publication has invalid Pull Request checkpoint evidence");
 
+  if (
+    publication.merge !== undefined &&
+    publication.phase !== "merged" &&
+    publication.phase !== "delivered"
+  )
+    throw new Error("Publication has merge evidence before a confirmed phase");
+
   validateChecksCheckpoint(publication);
   return publication;
 }

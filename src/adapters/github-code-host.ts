@@ -111,8 +111,8 @@ export class GitHubCodeHost implements CodeHost {
   ): Promise<PublicationObservation> {
     const [owner, name] = repository.split("/");
     const pages = {
-      source: publicationPages(),
-      target: publicationPages(),
+      source: connectionPages(),
+      target: connectionPages(),
     };
     const candidates = new Map<string, PublicationCandidate>();
     let observation: BranchObservation | undefined;
@@ -278,7 +278,6 @@ export class GitHubCodeHost implements CodeHost {
         for (const node of readConnectionPage(
           page,
           object(statusCheckRollup).contexts,
-          contexts.length,
           "check context",
         ))
           contexts.push(parseCheckContext(node));
@@ -347,11 +346,8 @@ function connectionPages() {
     total: undefined as number | undefined,
     done: false,
     cursors: new Set<string>(),
+    ids: new Set<string>(),
   };
-}
-
-function publicationPages() {
-  return { ...connectionPages(), ids: new Set<string>() };
 }
 
 interface PublicationCandidate {
@@ -360,7 +356,7 @@ interface PublicationCandidate {
 }
 
 function collectPublicationPage(input: {
-  page: ReturnType<typeof publicationPages>;
+  page: ReturnType<typeof connectionPages>;
   value: unknown;
   scope: "source" | "target";
   expectedBranch: string;
@@ -377,19 +373,12 @@ function collectPublicationPage(input: {
     repositoryId,
     candidates,
   } = input;
-  for (const node of readConnectionPage(
-    page,
-    value,
-    page.ids.size,
-    "Pull Request",
-  )) {
-    const row = object(node);
+  for (const row of readConnectionPage(page, value, "Pull Request")) {
     const record = parsePullRequest(row, repository, repositoryId);
     const actualBranch =
       scope === "source" ? record.branch : record.targetBranch;
-    if (page.ids.has(record.id) || actualBranch !== expectedBranch)
+    if (actualBranch !== expectedBranch)
       throw new Error("GitHub returned inconsistent Pull Request pages");
-    page.ids.add(record.id);
     const { headRepository } = row;
     const sameHeadRepository = sameRepository(headRepository, repository);
     if (headRepository !== null) {
@@ -408,7 +397,6 @@ function collectPublicationPage(input: {
 function readConnectionPage(
   page: ReturnType<typeof connectionPages>,
   value: unknown,
-  alreadyReceived: number,
   scope: string,
 ) {
   const { nodes, totalCount, pageInfo } = object(value);
@@ -424,7 +412,7 @@ function readConnectionPage(
     (endCursor !== null && !nonempty(endCursor))
   )
     throw new Error(`GitHub returned invalid ${scope} pages`);
-  const received = alreadyReceived + nodes.length;
+  const received = page.ids.size + nodes.length;
   if (hasNextPage ? received >= totalCount : received !== totalCount)
     throw new Error(`GitHub returned incomplete ${scope} pages`);
   page.total = totalCount;
@@ -435,7 +423,15 @@ function readConnectionPage(
     page.cursors.add(endCursor);
     page.after = endCursor;
   }
-  return nodes as unknown[];
+  return nodes.map((node: unknown) => {
+    const row = object(node);
+    if (!nonempty(row.id) || page.ids.has(row.id))
+      throw new Error(
+        `GitHub returned missing or repeated IDs in ${scope} pages`,
+      );
+    page.ids.add(row.id);
+    return row;
+  });
 }
 
 function parsePullRequest(

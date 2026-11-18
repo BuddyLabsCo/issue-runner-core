@@ -19,6 +19,7 @@ export async function integrateImplementation(input: {
   read: ReadOperation;
   persist: () => Promise<void>;
   beforeDispatch: () => Promise<boolean>;
+  deferred: boolean;
   continuePublication: (observedConflict?: boolean) => Promise<string>;
   inspectTicket: () => Promise<{ ticket: Ticket; reason?: string }>;
 }): Promise<{ outcome: "succeeded" | "incomplete"; reason: string }> {
@@ -70,9 +71,11 @@ export async function integrateImplementation(input: {
     head = publishedHead(publication);
   }
   if (publication.phase !== "merged" && publication.phase !== "delivered") {
+    const deferredChecks = input.deferred ? publication.checksState : undefined;
     while (!publication.merge?.merged) {
       const checked =
-        publication.phase === "checks_ready"
+        publication.phase === "checks_ready" &&
+        publication.checksState !== deferredChecks
           ? publication.checksState
           : undefined;
       let state = checked ?? (await observe());

@@ -29,12 +29,12 @@ export const pollQuery = `
               nodes {
                 __typename
                 ... on CheckRun {
-                  name status conclusion startedAt detailsUrl
+                  id name status conclusion startedAt detailsUrl
                   isRequired(pullRequestNumber: $number)
                   checkSuite { workflowRun { event workflow { name } } }
                 }
                 ... on StatusContext {
-                  context state targetUrl
+                  id context state targetUrl
                   isRequired(pullRequestNumber: $number)
                 }
               }
@@ -107,9 +107,11 @@ export function parseMergeFacts(
     !nonempty(mergeStateStatus) ||
     typeof isInMergeQueue !== "boolean" ||
     typeof isMergeQueueEnabled !== "boolean" ||
+    (row.autoMergeRequest !== null && autoMergeEnabledAt === null) ||
     (autoMergeEnabledAt !== null &&
       (typeof autoMergeEnabledAt !== "string" ||
         !Number.isFinite(Date.parse(autoMergeEnabledAt)))) ||
+    (row.mergeQueueEntry !== null && mergeQueueEntryId === null) ||
     (mergeQueueEntryId !== null && !nonempty(mergeQueueEntryId)) ||
     (row.state === "MERGED") !== (row.mergedAt !== null)
   )
