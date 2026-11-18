@@ -235,17 +235,18 @@ await test(
             );
             return pr;
           },
-          async getRequiredChecks(_repository, pr) {
-            return issueByPr.get(pr) === 51
-              ? [
-                  {
-                    name: "build",
-                    state: "FAILURE",
-                    link: "https://checks/build/51",
-                    bucket: "fail",
-                  },
-                ]
-              : [];
+          async observePullRequest(input) {
+            const observation = await host.observePullRequest(input);
+            if (issueByPr.get(input.number) === 51)
+              observation.checks = [
+                {
+                  name: "build",
+                  state: "FAILURE",
+                  link: "https://checks/build/51",
+                  bucket: "fail",
+                },
+              ];
+            return observation;
           },
         },
       },
@@ -332,7 +333,7 @@ await test("unexpected remote advancement after repair completion never overwrit
     }
   };
   fixture.dependencies.operator.pause = async (message) => {
-    assert.match(message, /advanced/u);
+    assert.match(message, /head mismatch/u);
     return "q";
   };
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
@@ -379,7 +380,11 @@ await test("repair pushes retain the discovery deadline across cancellation and 
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   const before = await fixture.snapshot();
   assert.equal(before.publication!.ciRepair!.attempts[0]!.pushed, true);
-  assert.equal(fixture.publicationState.discoveries.length, 1);
+  assert.deepEqual(fixture.publicationState.discoveries, [
+    before.publication!.discoveryNotBefore! - 40_000,
+    before.publication!.discoveryNotBefore! - 30_000,
+    before.publication!.discoveryNotBefore! - 30_000,
+  ]);
   fixture.dependencies.signal = new AbortController().signal;
   fixture.state.onSleep = async () => {
     /* Cancellation is disabled for recovery. */

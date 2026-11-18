@@ -5,7 +5,7 @@ import type { ImplementationProgress } from "../recovery.ts";
 import type { TabHandle, TerminalPlugin } from "../terminal.ts";
 import type { GitWorkspace } from "./contracts.ts";
 import type { ReadOperation } from "./discovery.ts";
-import { publishedHead, verifiedPublication } from "./publication.ts";
+import { publishedHead, verifiedPublication } from "./publication-evidence.ts";
 import { validateNoChangeContext } from "./no-change-validation.ts";
 import { verifiedImplementation } from "./review.ts";
 

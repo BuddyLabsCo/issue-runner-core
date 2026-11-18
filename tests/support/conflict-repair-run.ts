@@ -33,6 +33,14 @@ export async function conflictRepairRun(
     includesTarget: true,
   };
   fixture.publicationState.onChecks = async () => [];
+  const observe = fixture.dependencies.codeHost.observePullRequest.bind(
+    fixture.dependencies.codeHost,
+  );
+  fixture.dependencies.codeHost.observePullRequest = async (input) => {
+    const observed = await observe(input);
+    observed.merge.mergeable = state.mergeable;
+    return observed;
+  };
   fixture.dependencies.codeHost.getPullRequest = async () => ({
     headSha: fixture.publicationState.pullRequests[0]!.headSha,
     createdAt: "2026-10-30T00:00:00Z",

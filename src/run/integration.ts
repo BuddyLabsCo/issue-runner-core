@@ -1,4 +1,4 @@
-import { publishedHead, verifiedPublication } from "./publication.ts";
+import { publishedHead, verifiedPublication } from "./publication-evidence.ts";
 import type { LoadedProject } from "../config.ts";
 import type { ImplementationProgress } from "../recovery.ts";
 import type { CodeHost, Ticket, Tracker } from "./contracts.ts";
@@ -19,7 +19,7 @@ export async function integrateImplementation(input: {
   read: ReadOperation;
   persist: () => Promise<void>;
   beforeDispatch: () => Promise<boolean>;
-  continuePublication: () => Promise<string>;
+  continuePublication: (observedConflict?: boolean) => Promise<string>;
   inspectTicket: () => Promise<{ ticket: Ticket; reason?: string }>;
 }): Promise<{ outcome: "succeeded" | "incomplete"; reason: string }> {
   const { progress, loaded, context, codeHost, tracker, read, persist } = input;
@@ -52,12 +52,12 @@ export async function integrateImplementation(input: {
         );
       return state;
     });
-  const repair = async (reason: string) => {
+  const repair = async (reason: string, observedConflict?: boolean) => {
     publication.conflict ??= reason;
     publication.phase = "conflict_repair";
     delete publication.mergeDeadline;
     await persist();
-    await input.continuePublication();
+    await input.continuePublication(observedConflict);
     head = publishedHead(publication);
   };
   const sleep = async (ms: number) => {
@@ -70,8 +70,12 @@ export async function integrateImplementation(input: {
     head = publishedHead(publication);
   }
   if (publication.phase !== "merged" && publication.phase !== "delivered") {
-    for (;;) {
-      let state = await observe();
+    while (!publication.merge?.merged) {
+      const checked =
+        publication.phase === "checks_ready"
+          ? publication.checksState
+          : undefined;
+      let state = checked ?? (await observe());
       if (state.merged) {
         publication.merge = state;
         publication.phase = "merged";
@@ -120,6 +124,7 @@ export async function integrateImplementation(input: {
       if (!state.mergeRequested && state.mergeable === "conflicting") {
         await repair(
           publication.conflict ?? "Pull Request has an explicit merge conflict",
+          checked !== undefined,
         );
         continue;
       }

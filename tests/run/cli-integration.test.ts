@@ -249,8 +249,7 @@ await test("recovery cannot credit delivery when recorded publication differs fr
 await test("a changed observed HEAD pauses without merging or closing the Issue", async (t) => {
   const fixture = await integrationRun(t);
   fixture.integrationState.onObserve = async () => {
-    if (fixture.integrationState.observations > 1)
-      fixture.integrationState.pullRequest.headSha = "d".repeat(40);
+    fixture.integrationState.pullRequest.headSha = "d".repeat(40);
   };
   fixture.dependencies.operator.pause = async (message) => {
     assert.match(message, /head changed/u);

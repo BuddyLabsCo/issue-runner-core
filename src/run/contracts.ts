@@ -108,10 +108,10 @@ export interface CodeHost {
       body: string;
     },
   ): Promise<PullRequestRecord>;
-  getRequiredChecks(
-    repository: string,
-    pullRequest: number,
-  ): Promise<RequiredCheck[]>;
+  observePullRequest(
+    input: PullRequestQuery,
+    signal?: AbortSignal,
+  ): Promise<PullRequestObservation>;
 }
 
 export interface PullRequestState {
@@ -121,6 +121,14 @@ export interface PullRequestState {
   mergeRequested: boolean;
   mergeable: "mergeable" | "conflicting" | "unknown";
   mergeFailure: string | null;
+}
+
+export interface PullRequestMergeFacts extends PullRequestState {
+  mergeStateStatus: string;
+  isInMergeQueue: boolean;
+  isMergeQueueEnabled: boolean;
+  autoMergeEnabledAt: string | null;
+  mergeQueueEntryId: string | null;
 }
 
 export type MergeRequestResult =
@@ -155,6 +163,20 @@ export interface PublicationQuery {
 
 export interface PublicationObservation extends BranchObservation {
   candidates: PullRequestRecord[];
+}
+
+export interface PullRequestQuery {
+  repository: string;
+  branch: string;
+  number: number;
+}
+
+export interface PullRequestObservation {
+  branch: BranchObservation;
+  pullRequest: PullRequestRecord;
+  lastCommitSha: string;
+  merge: PullRequestMergeFacts;
+  checks: RequiredCheck[];
 }
 
 export interface RequiredCheck {

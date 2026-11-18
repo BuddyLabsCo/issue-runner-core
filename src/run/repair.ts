@@ -18,7 +18,11 @@ import type { LoadedProject } from "../config.ts";
 import { conflictRepairInstructions } from "../prompts/conflict-repair.ts";
 import { ciRepairInstructions } from "../prompts/ci-repair.ts";
 import { renderPrompt } from "../prompts/load.ts";
-import type { GitWorkspace, WorkspaceEvidence } from "./contracts.ts";
+import type {
+  GitWorkspace,
+  PullRequestObservation,
+  WorkspaceEvidence,
+} from "./contracts.ts";
 import type { ReadOperation } from "./discovery.ts";
 import { verifyWorkspace } from "./verification.ts";
 import { OperationStopped, pauseForOperator } from "./operations.ts";
@@ -151,8 +155,9 @@ export async function repairPullRequest(
     kind: "ci" | "conflict";
     git: GitWorkspace;
     read: ReadOperation;
-    confirm: (head?: string) => Promise<void>;
-    remoteHead: () => Promise<string | null>;
+    alreadyObserved?: boolean;
+    observeHead: (pendingHead?: string) => Promise<PullRequestObservation>;
+    stopIfMerged: (observation: PullRequestObservation) => Promise<void>;
   },
 ): Promise<void> {
   const { progress, read, git, kind } = input;
@@ -170,6 +175,10 @@ export async function repairPullRequest(
     delete budget.retryAuthorized;
     await input.persist();
   }
+  const confirm = () =>
+    read("confirm_publication", `ticket:${progress.ticket}`, async () =>
+      input.stopIfMerged(await input.observeHead()),
+    );
   let attempt = budget.attempts.at(-1);
   if (
     !attempt ||
@@ -177,6 +186,7 @@ export async function repairPullRequest(
     attempt.verificationError ||
     attempt.result?.outcome === "no_change"
   ) {
+    if (!input.alreadyObserved) await confirm();
     if (budget.consumed >= 2) {
       await pauseForOperator(
         input.operator,
@@ -192,7 +202,6 @@ export async function repairPullRequest(
       await input.persist();
       return;
     }
-    await input.confirm();
     const id = randomUUID();
     attempt = {
       attempt_id: id,
@@ -230,10 +239,9 @@ export async function repairPullRequest(
     };
     budget.attempts.push(attempt);
     await input.persist();
-  }
+  } else if (!attempt.result && !input.alreadyObserved) await confirm();
   const repair: RepairProgress = attempt;
   if (!repair.worktreeCreated) {
-    await input.confirm();
     await read(
       `create_${kind}_repair_worktree`,
       `ticket:${progress.ticket}`,
@@ -351,35 +359,69 @@ export async function repairPullRequest(
     );
   await persist();
   if (repair.verificationError || repair.result.outcome === "no_change") return;
-  repair.pendingPush = repair.result.commits.at(-1)!.sha;
+  const resumingPush = repair.pendingPush !== undefined;
+  const head = (repair.pendingPush = repair.result.commits.at(-1)!.sha);
   await input.persist();
-  await read(`push_${kind}_repair`, `ticket:${progress.ticket}`, async () => {
+  const target = `ticket:${progress.ticket}`;
+  const pushOperation = `push_${kind}_repair`;
+  const verifyAndObserve = async () => {
     verifyWorkspace(repair, await git.inspect(repair), repair.result!);
     verifyRepairAncestry(repair, await inspectRepairAncestry(git, repair));
-    const remote = await input.remoteHead();
-    if (remote === repair.pendingPush) {
-      await input.confirm(repair.pendingPush);
-      return;
-    }
-    await input.confirm();
-    if (remote !== repair.base)
-      throw new Error(
-        "Stable repair branch advanced or disappeared; resolve remote state before retrying",
-      );
-    await git.push(repair.worktree, publication.branch, repair.pendingPush!);
-    if ((await input.remoteHead()) !== repair.pendingPush)
-      throw new Error(
-        "Repair push has not been confirmed at the intended head",
-      );
-  });
+    const current = await input.observeHead(head);
+    if (current.pullRequest.headSha !== head) await input.stopIfMerged(current);
+    return current;
+  };
+  const pushKey = JSON.stringify([pushOperation, target]);
+  const pushOperationProgress = progress.operations?.[pushKey];
+  let recovered = resumingPush
+    ? await read("read_pending_repair_head", target, verifyAndObserve)
+    : undefined;
+  let observation: PullRequestObservation;
+  if (recovered?.pullRequest.headSha === head) {
+    observation = recovered;
+    // The confirmed remote write supersedes its interrupted operation record.
+    delete progress.operations?.[pushKey];
+  } else {
+    if (
+      pushOperationProgress?.notBefore !== undefined ||
+      (pushOperationProgress?.consumed ?? 0) >
+        input.loaded.config.operationRetry
+    )
+      recovered = undefined;
+    observation = await read(pushOperation, target, async () => {
+      const current = recovered ?? (await verifyAndObserve());
+      recovered = undefined;
+      if (current.pullRequest.headSha === head) return current;
+      await git.push(repair.worktree, publication.branch, head);
+      const pushed = await input.observeHead(head);
+      if (pushed.pullRequest.headSha !== head) {
+        await input.stopIfMerged(pushed);
+        throw new Error(
+          "Repair push has not been confirmed at the intended head",
+        );
+      }
+      return pushed;
+    });
+  }
+  acceptRepairPush(publication, repair, input.clock.now().getTime());
+  await input.stopIfMerged(observation);
+  await input.persist();
+}
+
+export function acceptRepairPush(
+  publication: PublicationProgress,
+  repair: RepairProgress,
+  now: number,
+): void {
   repair.pushed = true;
   delete repair.pendingPush;
   publication.phase = "pr_created";
   delete publication.conflict;
   delete publication.mergeDeadline;
-  publication.discoveryNotBefore = input.clock.now().getTime() + 30_000;
+  publication.discoveryNotBefore = now + 30_000;
   delete publication.checksDeadline;
-  await input.persist();
+  delete publication.checks;
+  delete publication.checksState;
 }
 
 export function validateRepairContext(

@@ -10,6 +10,8 @@ import type {
   Tracker,
   PullRequestRecord,
   PublicationQuery,
+  PullRequestQuery,
+  PullRequestObservation,
   RequiredCheck,
   PullRequestState,
   MergeRequestResult,
@@ -106,6 +108,10 @@ export function createCliDependencies(launchDirectory: string) {
   const reads: string[] = [];
   const pauses: string[] = [];
   const remoteBranches = new Map<string, string>();
+  const checksFor: (
+    repository: string,
+    number: number,
+  ) => Promise<RequiredCheck[]> = async () => [];
   const pullRequests: PullRequestRecord[] = [];
   const terminalPlugin = createTestTerminal();
   terminalPlugin.onInput = async () => {
@@ -245,9 +251,42 @@ export function createCliDependencies(launchDirectory: string) {
         pullRequests.push(record);
         return structuredClone(record);
       },
-      async getRequiredChecks(): Promise<RequiredCheck[]> {
-        return [];
+      async observePullRequest({
+        repository,
+        branch,
+        number,
+      }: PullRequestQuery): Promise<PullRequestObservation> {
+        const record = (await this.listPullRequests()).find(
+          (pr) => pr.number === number,
+        );
+        if (!record) throw new Error("Recorded Pull Request is missing");
+        const remote = await this.observeBranch(repository, branch);
+        return {
+          branch: remote,
+          pullRequest: record,
+          lastCommitSha: record.headSha,
+          merge: {
+            headSha: record.headSha,
+            createdAt: record.createdAt,
+            merged: record.state === "merged",
+            mergeRequested: false,
+            mergeable: "unknown",
+            mergeFailure: null,
+            mergeStateStatus: "UNKNOWN",
+            isInMergeQueue: false,
+            isMergeQueueEnabled: false,
+            autoMergeEnabledAt: null,
+            mergeQueueEntryId: null,
+          },
+          checks:
+            record.state === "open" &&
+            !record.draft &&
+            remote.headSha === record.headSha
+              ? await this.checksFor(repository, number)
+              : [],
+        };
       },
+      checksFor,
     },
     gitWorkspace: {
       async cleanupWorktree() {

@@ -169,7 +169,7 @@ await test("CI failure after conflict repair consumes the separate CI budget and
   assert.equal(fixture.publicationState.pushes, 3);
   assert.deepEqual(
     fixture.publicationState.discoveries,
-    [40_000, 80_000, 120_000],
+    [40_000, 40_000, 50_000, 50_000, 80_000, 90_000, 90_000, 120_000],
   );
   assert.equal((await fixture.run()).summary.outcome, "succeeded");
   assert.equal(fixture.repairs.tasks.length, 1);
@@ -187,9 +187,13 @@ await test("operator resolution after budget exhaustion refreshes checks before 
     });
   fixture.dependencies.operator.pause = async (message) => {
     assert.match(message, /Conflict repair failed after two attempts/u);
+    const before = fixture.dependencies.clock.now().getTime();
     fixture.conflictState.mergeable = "mergeable";
     fixture.conflictState.onMerge = async () => {
-      assert.equal(fixture.publicationState.discoveries.length, 2);
+      assert.equal(
+        fixture.publicationState.discoveries.at(-1),
+        before + 30_000,
+      );
       fixture.conflictState.merged = true;
       return { outcome: "accepted" };
     };
@@ -428,11 +432,9 @@ await test("conflict evidence appearing during the final merge recheck repairs b
   const observe = fixture.dependencies.codeHost.getPullRequest.bind(
     fixture.dependencies.codeHost,
   );
-  let observations = 0;
   fixture.dependencies.codeHost.getPullRequest = async () => {
     const state = await observe("owner/repo", 81);
-    if (++observations >= 2 && fixture.publicationState.pushes === 1)
-      state.mergeable = "conflicting";
+    if (fixture.publicationState.pushes === 1) state.mergeable = "conflicting";
     return state;
   };
   assert.equal((await fixture.run()).summary.outcome, "succeeded");

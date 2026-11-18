@@ -2,7 +2,6 @@
 import assert from "node:assert/strict";
 import { access, readFile, rm, writeFile } from "node:fs/promises";
 import test from "node:test";
-import type { CodeHost } from "../../src/run/contracts.ts";
 import type { TestTerminal } from "../support/cli-dependencies.ts";
 import { fiveIssueRun } from "../support/full-contract-run.ts";
 import {
@@ -95,8 +94,8 @@ await test(
     };
     const ready = new Set<number>();
     const siblingsReady = deferred<void>();
-    const host: CodeHost = fixture.dependencies.codeHost;
-    host.getRequiredChecks = async (_repository, number) => {
+    const host = fixture.dependencies.codeHost;
+    host.checksFor = async (_repository, number) => {
       ready.add(number);
       if (ready.size === 2) siblingsReady.resolve();
       return [];

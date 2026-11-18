@@ -39,7 +39,7 @@ async function batchRun(t: TestContext) {
     },
   };
   Object.assign(fixture.dependencies.codeHost, {
-    async getRequiredChecks(_repository: string, number: number) {
+    async checksFor(_repository: string, number: number) {
       const checks = await state.onChecks(number);
       if (
         !checks.some(
@@ -412,7 +412,7 @@ await test("an incomplete PR keeps its ownership diagnostic when a sibling later
       await append.call(this, event);
       if (
         event.target === "ticket:51" &&
-        event.operation === "confirm_publication" &&
+        event.operation === "required_checks" &&
         event.result === "failed"
       ) {
         // Let the recorded stop unwind into the Issue report before failing its sibling.
@@ -421,7 +421,7 @@ await test("an incomplete PR keeps its ownership diagnostic when a sibling later
     },
   );
   Object.assign(fixture.dependencies.codeHost, {
-    async getRequiredChecks(
+    async checksFor(
       _repository: string,
       number: number,
     ): Promise<RequiredCheck[]> {

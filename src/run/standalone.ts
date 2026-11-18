@@ -228,14 +228,14 @@ async function executeStandalone(
     operator: context.operator,
     ...(context.signal ? { signal: context.signal } : {}),
   });
-  const publish = (progress: ImplementationProgress) =>
+  const publish = (progress: ImplementationProgress, conflict = false) =>
     publishImplementation({
       ...stageInput(progress),
       context,
       codeHost: input.codeHost,
       read,
       autoMerge: input.autoMerge,
-      stageInput: stageInput(progress),
+      observedConflict: conflict,
     });
   const integrate = async (
     progress: ImplementationProgress,
@@ -258,7 +258,7 @@ async function executeStandalone(
           tracker,
           read,
           inspectTicket: inspect,
-          continuePublication: () => publish(progress),
+          continuePublication: (conflict) => publish(progress, conflict),
         });
         if (delivery.outcome === "succeeded") {
           await tabs?.closeResidual();

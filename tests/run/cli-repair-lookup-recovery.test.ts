@@ -29,12 +29,12 @@ for (const kind of ["ci", "conflict"] as const) {
         before.publication![key]!.attempts[0]!.pendingPush,
         repairCommit.sha,
       );
-      const lookup = fixture.dependencies.codeHost.getRemoteBranchHead.bind(
+      const lookup = fixture.dependencies.codeHost.observePullRequest.bind(
         fixture.dependencies.codeHost,
       );
       let lookups = 0;
       const failure = "temporary publication lookup failure";
-      fixture.dependencies.codeHost.getRemoteBranchHead = async (...args) => {
+      fixture.dependencies.codeHost.observePullRequest = async (...args) => {
         if (++lookups <= (recovery === "transient" ? 1 : 2))
           throw new Error(failure);
         return lookup(...args);

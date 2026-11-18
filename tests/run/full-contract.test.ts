@@ -4,7 +4,6 @@ import path from "node:path";
 import test from "node:test";
 import type { AuditEvent } from "../../src/audit.ts";
 import type { BatchProgress, MaintenanceProgress } from "../../src/recovery.ts";
-import type { CodeHost } from "../../src/run/contracts.ts";
 import type { TestTerminal } from "../support/cli-dependencies.ts";
 import { fiveIssueRun } from "../support/full-contract-run.ts";
 import { agent } from "../support/cli-project.ts";
@@ -54,9 +53,9 @@ await test(
       }
       await submit(tab, text, chord);
     };
-    const host: CodeHost = fixture.dependencies.codeHost;
+    const host = fixture.dependencies.codeHost;
     const checkCalls = new Map<number, number>();
-    host.getRequiredChecks = async (_repository, prNumber) => {
+    host.checksFor = async (_repository, prNumber) => {
       const pr = (await fixture.dependencies.codeHost.listPullRequests()).find(
         (pr) => pr.number === prNumber,
       )!;

@@ -139,8 +139,8 @@ async function executeProject(
       host.observeBranch(repository, branch),
     observePublication: (input, signal) =>
       host.observePublication(input, signal),
-    getRequiredChecks: (repository, pullRequest) =>
-      host.getRequiredChecks(repository, pullRequest),
+    observePullRequest: (input, signal) =>
+      host.observePullRequest(input, signal),
     createPullRequest: (input) =>
       operator.advance(() => host.createPullRequest(input)),
     getPullRequest: (repository, pullRequest) =>
