@@ -319,6 +319,35 @@ export class GitHubTracker implements Tracker {
     );
   }
 
+  readParentCompletion(repository: string, parentTicket: number) {
+    return discoverParent(
+      this.client,
+      repository,
+      parentTicket,
+      "",
+      "",
+      true,
+      {},
+    );
+  }
+
+  async closeParent(repository: string, parent: Ticket) {
+    if (!parent.id || !parent.repositoryId)
+      throw new Error("Missing parent identity");
+    const result = await discoverParent(
+      this.client,
+      repository,
+      parent.number,
+      "",
+      "",
+      true,
+      { parentId: parent.id },
+    );
+    if (result.parent.repositoryId !== parent.repositoryId)
+      throw new Error("Unexpected parent repository identity");
+    return result;
+  }
+
   async getParent(repository: string, parentTicket: number): Promise<Ticket> {
     return parseTicket(
       JSON.parse(

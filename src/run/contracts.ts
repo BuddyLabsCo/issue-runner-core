@@ -36,6 +36,14 @@ export interface Tracker {
     label: string,
   ): Promise<Ticket>;
   closeTicket(repository: string, ticket: number): Promise<void>;
+  readParentCompletion(
+    repository: string,
+    parentTicket: number,
+  ): Promise<{ parent: Ticket; tickets: Ticket[] }>;
+  closeParent(
+    repository: string,
+    parent: Ticket,
+  ): Promise<{ parent: Ticket; tickets: Ticket[] }>;
   commentTicket(
     repository: string,
     ticket: number,

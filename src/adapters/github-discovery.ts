@@ -92,6 +92,7 @@ export async function discoverParent(
   runner: string,
   reservation: string,
   includeChildren = true,
+  completion?: { parentId?: string },
 ): Promise<{
   parent: Ticket;
   tickets: Ticket[];
@@ -101,32 +102,44 @@ export async function discoverParent(
   const parts = repository.split("/");
   if (parts.length !== 2 || parts.some((part) => !part))
     throw new Error("Invalid repository identity");
-  const query = `query Discovery($owner:String!,$name:String!,$number:Int!,$runner:String!,$reservation:String!) {
+  const issueFields = completion ? identity : childFacts;
+  const children = `subIssues(first:100) { ${connection} { ${issueFields} } }`;
+  const query = completion
+    ? completion.parentId
+      ? `mutation CloseParent($id:ID!) { closeIssue(input:{issueId:$id,stateReason:COMPLETED}) { issue { ${identity} ${children} } } }`
+      : `query ParentCompletion($owner:String!,$name:String!,$number:Int!) { repository(owner:$owner,name:$name) { id nameWithOwner issue(number:$number) { ${identity} ${children} } } }`
+    : `query Discovery($owner:String!,$name:String!,$number:Int!,$runner:String!,$reservation:String!) {
     repository(owner:$owner,name:$name) { id nameWithOwner label(name:$reservation) { id name }
-      issue(number:$number) { ${childFacts} ${includeChildren ? `subIssues(first:100) { ${connection} { ${childFacts} } }` : ""} }
+      issue(number:$number) { ${childFacts} ${includeChildren ? children : ""} }
     } user(login:$runner) { id login }
   }`;
-  const response = await client.graphql(query, {
-    owner: parts[0],
-    name: parts[1],
-    number,
-    runner,
-    reservation,
-  });
+  const response = await client.graphql(
+    query,
+    completion?.parentId
+      ? { id: completion.parentId }
+      : completion
+        ? { owner: parts[0], name: parts[1], number }
+        : { owner: parts[0], name: parts[1], number, runner, reservation },
+  );
   if (Array.isArray(response.errors) && response.errors.length)
     throw new Error("GitHub discovery returned GraphQL errors");
   const data = object(response.data);
-  const repo = object(data.repository);
+  const rawParent = completion?.parentId
+    ? object(object(data.closeIssue).issue)
+    : object(object(data.repository).issue);
+  const repo = completion?.parentId
+    ? object(rawParent.repository)
+    : object(data.repository);
   const repositoryId = string(repo.id);
   if (string(repo.nameWithOwner).toLowerCase() !== repository.toLowerCase())
     throw new Error("Unexpected repository identity");
-  const label = repo.label === null ? null : object(repo.label);
+  const label = completion || repo.label === null ? null : object(repo.label);
   if (label) {
     string(label.id);
     if (label.name !== reservation)
       throw new Error("Unexpected reservation label");
   }
-  const user = data.user === null ? null : object(data.user);
+  const user = completion || data.user === null ? null : object(data.user);
   if (user) {
     string(user.id);
     if (
@@ -135,12 +148,12 @@ export async function discoverParent(
     )
       throw new Error("Unexpected runner account");
   }
-  const rawParent = object(repo.issue);
   const parent = parseIssueFact(rawParent);
   if (
     parent.repository.toLowerCase() !== repository.toLowerCase() ||
     parent.repositoryId !== repositoryId ||
-    parent.number !== number
+    parent.number !== number ||
+    (completion?.parentId !== undefined && parent.id !== completion.parentId)
   )
     throw new Error("Unexpected parent identity");
   const tickets = new Map<string, Ticket>();
@@ -187,12 +200,13 @@ export async function discoverParent(
           throw new Error("Conflicting child identity");
         identities.set(key, id);
         if (tickets.has(id)) continue;
+        tickets.set(id, child);
+        if (completion) continue;
         child.labels = [];
         child.assignees = [];
         child.blockers = [];
         child.labelIds = Object.create(null) as Record<string, string>;
         child.assigneeIds = Object.create(null) as Record<string, string>;
-        tickets.set(id, child);
         addPage(id, "labels", node.labels);
         addPage(id, "assignees", node.assignees);
         addPage(id, "blockedBy", node.blockedBy);
@@ -218,20 +232,22 @@ export async function discoverParent(
       }
     }
   };
-  parent.labels = [];
-  parent.assignees = [];
-  parent.blockers = [];
-  parent.labelIds = Object.create(null) as Record<string, string>;
-  parent.assigneeIds = Object.create(null) as Record<string, string>;
-  addPage(parent.id, "labels", rawParent.labels);
-  addPage(parent.id, "assignees", rawParent.assignees);
-  addPage(parent.id, "blockedBy", rawParent.blockedBy);
+  if (!completion) {
+    parent.labels = [];
+    parent.assignees = [];
+    parent.blockers = [];
+    parent.labelIds = Object.create(null) as Record<string, string>;
+    parent.assigneeIds = Object.create(null) as Record<string, string>;
+    addPage(parent.id, "labels", rawParent.labels);
+    addPage(parent.id, "assignees", rawParent.assignees);
+    addPage(parent.id, "blockedBy", rawParent.blockedBy);
+  }
   if (includeChildren) addPage(parent.id, "subIssues", rawParent.subIssues);
   while (pending.length) {
     const next = pending.shift()!;
     const fields =
       next.name === "subIssues"
-        ? childFacts
+        ? issueFields
         : next.name === "blockedBy"
           ? identity
           : next.name === "labels"
