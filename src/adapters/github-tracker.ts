@@ -112,6 +112,21 @@ export class GitHubTracker implements Tracker {
     return observeParent(this.client, repository, parentTicket);
   }
 
+  observeParentCompletion(repository: string, parentTicket: number) {
+    return observeParent(this.client, repository, parentTicket, "completion");
+  }
+
+  closeParent(repository: string, parent: Ticket) {
+    if (!parent.id) throw new Error("Parent identity is missing");
+    return observeParent(
+      this.client,
+      repository,
+      parent.number,
+      "close",
+      parent.id,
+    );
+  }
+
   async listLabelsPage(repository: string, page: number) {
     const value = JSON.parse(
       await this.client.request([

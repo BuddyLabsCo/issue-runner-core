@@ -205,13 +205,46 @@ await test("a lost parent closure response reconciles without repeating the writ
     await close(...args);
     if (args[1] === 48) throw new Error("response lost after closing parent");
   };
+  const observe = fixture.dependencies.tracker.observeParentCompletion.bind(
+    fixture.dependencies.tracker,
+  );
+  let failedReads = 0;
+  fixture.dependencies.tracker.observeParentCompletion = async (...args) => {
+    if (fixture.parent.state === "closed" && failedReads++ === 0)
+      throw new Error("transient reconciliation failure");
+    return observe(...args);
+  };
   assert.equal((await fixture.run()).summary.outcome, "succeeded");
+  assert.equal(failedReads, 2);
   assert.deepEqual(fixture.dispatched, [51]);
   assert.deepEqual(fixture.closures, [51, 48]);
   assert.equal(
     (await implementationProgress(fixture.directory, 51)).publication?.phase,
     "delivered",
   );
+});
+
+await test("parent closure succeeds from mutation evidence without another scope read", async (t) => {
+  const fixture = await parentDeliveryRun(t, [
+    child(51, { state: "closed", stateReason: "completed" }),
+  ]);
+  const observe = fixture.dependencies.tracker.observeParentCompletion.bind(
+    fixture.dependencies.tracker,
+  );
+  let closed = false;
+  fixture.dependencies.tracker.observeParentCompletion = async (...args) => {
+    assert.equal(closed, false, "success must not reread the parent");
+    return observe(...args);
+  };
+  fixture.dependencies.tracker.closeParent = async (_repository, parent) => {
+    closed = true;
+    return {
+      parent: { ...parent, state: "closed", stateReason: "completed" },
+      tickets: structuredClone(fixture.children),
+    };
+  };
+  assert.equal((await fixture.run()).summary.outcome, "succeeded");
+  assert.equal(closed, true);
 });
 
 await test("an unconfirmed parent closure pauses and a matching rerun retains completed child evidence", async (t) => {

@@ -146,3 +146,82 @@ await test("parent observation accepts canonical repository casing for empty and
     assert.equal(result.tickets.length, nodes.length);
   }
 });
+
+await test("completion and close drain child pages without eligibility fields and reject incomplete confirmation", async () => {
+  for (const mode of ["completion", "close"] as const) {
+    const queries: string[] = [];
+    const client = new GitHubClient("token", async (_args, options) => {
+      const { query, variables } = JSON.parse(options.input!) as {
+        query: string;
+        variables: { after?: string };
+      };
+      queries.push(query);
+      const parent = {
+        ...issue("parent", 1),
+        state: mode === "close" ? "CLOSED" : "OPEN",
+        stateReason: mode === "close" ? "COMPLETED" : null,
+      };
+      if (variables.after)
+        return JSON.stringify({
+          data: {
+            node: {
+              id: "parent",
+              subIssues: connection([
+                {
+                  ...issue("child2", 3),
+                  state: "CLOSED",
+                  stateReason: "NOT_PLANNED",
+                },
+              ]),
+            },
+          },
+        });
+      const root = {
+        ...parent,
+        subIssues: connection(
+          [
+            {
+              ...issue("child1", 2),
+              state: "CLOSED",
+              stateReason: "COMPLETED",
+            },
+          ],
+          "next",
+        ),
+      };
+      return JSON.stringify({
+        data:
+          mode === "close"
+            ? { closeIssue: { issue: root } }
+            : { repository: { ...repo, issue: root } },
+      });
+    });
+    const result = await observeParent(
+      client,
+      "owner/repo",
+      1,
+      mode,
+      mode === "close" ? "parent" : undefined,
+    );
+    assert.deepEqual(
+      result.tickets.map((ticket) => ticket.number),
+      [2, 3],
+    );
+    assert.equal(queries.length, 2);
+    assert.match(queries[0]!, mode === "close" ? /^mutation\(/u : /^query\(/u);
+    if (mode === "close")
+      assert.match(
+        queries[0]!,
+        /closeIssue\(input:\{issueId:\$id,stateReason:COMPLETED\}\)/u,
+      );
+    assert.ok(
+      queries.every((query) => !/blockedBy|labels|assignees/u.test(query)),
+    );
+  }
+  const incomplete = new GitHubClient("token", async () =>
+    JSON.stringify({ data: { closeIssue: { issue: null } } }),
+  );
+  await assert.rejects(
+    observeParent(incomplete, "owner/repo", 1, "close", "parent"),
+  );
+});

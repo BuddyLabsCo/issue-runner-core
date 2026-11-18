@@ -48,6 +48,14 @@ export interface Tracker {
     repository: string,
     parentTicket: number,
   ): Promise<{ parent: Ticket; tickets: Ticket[] }>;
+  observeParentCompletion(
+    repository: string,
+    parentTicket: number,
+  ): Promise<{ parent: Ticket; tickets: Ticket[] }>;
+  closeParent(
+    repository: string,
+    parent: Ticket,
+  ): Promise<{ parent: Ticket; tickets: Ticket[] }>;
   createLabel(repository: string, label: string): Promise<void>;
   listLabelsPage(
     repository: string,

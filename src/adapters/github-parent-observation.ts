@@ -17,7 +17,6 @@ const pageInfo = "pageInfo { hasNextPage endCursor }";
 const nested = `labels(first:100) { nodes { id name } ${pageInfo} }
  assignees(first:100) { nodes { id login } ${pageInfo} }
  blockedBy(first:100) { nodes { ${identity} } ${pageInfo} }`;
-const children = `subIssues(first:100) { nodes { ${identity} ${nested} } ${pageInfo} }`;
 
 export function parseIssueFact(value: unknown): Ticket & { id: string } {
   const node = object(value);
@@ -96,6 +95,8 @@ export async function observeParent(
   client: GitHubClient,
   repository: string,
   number: number,
+  mode: "discovery" | "completion" | "close" = "discovery",
+  parentId?: string,
 ) {
   const [owner, name] = repository.split("/");
   const request = async (query: string, variables: RecordValue) => {
@@ -106,19 +107,32 @@ export async function observeParent(
       });
     return object(response.data);
   };
-  const data = await request(
-    `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){id nameWithOwner issue(number:$number){${identity} ${nested} ${children}}}}`,
-    { owner, name, number },
-  );
-  const repo = object(data.repository);
+  const projection = mode === "discovery" ? nested : "";
+  const childSelection = `subIssues(first:100) { nodes { ${identity} ${projection} } ${pageInfo} }`;
+  const data =
+    mode === "close"
+      ? await request(
+          `mutation($id:ID!){closeIssue(input:{issueId:$id,stateReason:COMPLETED}){issue{${identity} ${childSelection}}}}`,
+          { id: parentId },
+        )
+      : await request(
+          `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){id nameWithOwner issue(number:$number){${identity} ${projection} ${childSelection}}}}`,
+          { owner, name, number },
+        );
+  const root =
+    mode === "close"
+      ? object(object(data.closeIssue).issue)
+      : object(object(data.repository).issue);
+  const repo =
+    mode === "close" ? object(root.repository) : object(data.repository);
   const repositoryId = text(repo.id);
   if (text(repo.nameWithOwner).toLowerCase() !== repository.toLowerCase())
     throw new Error("Unexpected repository identity");
-  const root = object(repo.issue);
   if (text(object(root.repository).id) !== repositoryId)
     throw new Error("Unexpected parent repository identity");
   const parent = withConnections(parseIssueFact(root));
   if (
+    (parentId !== undefined && parent.id !== parentId) ||
     parent.number !== number ||
     parent.repository?.toLowerCase() !== repository.toLowerCase()
   )
@@ -152,8 +166,9 @@ export async function observeParent(
     }
     ticket = withConnections(parsed);
     tickets.set(parsed.id, ticket);
-    for (const field of ["labels", "assignees", "blockedBy"])
-      acceptConnection(parsed.id, field, node[field]);
+    if (mode === "discovery")
+      for (const field of ["labels", "assignees", "blockedBy"])
+        acceptConnection(parsed.id, field, node[field]);
   }
   function acceptConnection(id: string, field: string, value: unknown) {
     const ticket = id === parent.id ? parent : tickets.get(id);
@@ -177,14 +192,15 @@ export async function observeParent(
       } else ticket.blockers.push(parseIssueFact(node));
     });
   }
-  for (const field of ["labels", "assignees", "blockedBy"])
-    acceptConnection(parent.id, field, root[field]);
+  if (mode === "discovery")
+    for (const field of ["labels", "assignees", "blockedBy"])
+      acceptConnection(parent.id, field, root[field]);
   drain.add(parent.id, "subIssues", root.subIssues, acceptChild);
   while (drain.pending.length) {
     const next = drain.pending.shift()!;
     const selection =
       next.field === "subIssues"
-        ? `${identity} ${nested}`
+        ? `${identity} ${projection}`
         : next.field === "labels"
           ? "id name"
           : next.field === "assignees"
