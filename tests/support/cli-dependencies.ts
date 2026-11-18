@@ -176,7 +176,8 @@ export function createCliDependencies(launchDirectory: string) {
       > {
         assert.fail("unexpected Maintenance Ticket creation");
       },
-      async closeTicket(): Promise<void> {
+      async closeTicket(_repository?: string, _ticket?: number): Promise<void> {
+        void [_repository, _ticket];
         assert.fail("unexpected Issue closure");
       },
       async commentTicket(): Promise<void> {
@@ -216,8 +217,26 @@ export function createCliDependencies(launchDirectory: string) {
         reads.push(`children:${page}`);
         return { children: [], nextPage: null };
       },
-      async closeParent() {
-        effects.push("close_parent");
+      async observeParentCompletion(repository: string, ticket: number) {
+        const parent = await this.getParent(repository, ticket);
+        const tickets: import("../../src/run/contracts.ts").Ticket[] = [];
+        let page: number | null = 1;
+        const seen = new Set<number>();
+        while (page !== null) {
+          if (seen.has(page)) throw new Error("invalid child pagination");
+          seen.add(page);
+          const result = await this.listChildrenPage(repository, ticket, page);
+          tickets.push(...result.children);
+          page = result.nextPage;
+        }
+        return { parent, tickets };
+      },
+      async closeParent(
+        repository: string,
+        parent: import("../../src/run/contracts.ts").Ticket,
+      ) {
+        await this.closeTicket(repository, parent.number);
+        return this.observeParentCompletion(repository, parent.number);
       },
       async addLabel(_repository?: string, _number?: number, _label?: string) {
         void [_repository, _number, _label];
