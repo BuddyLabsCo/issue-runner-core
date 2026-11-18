@@ -281,11 +281,10 @@ await test("a lost parent closure response reconciles without repeating the writ
 
 await test("an unconfirmed parent closure pauses and a matching rerun retains completed child evidence", async (t) => {
   const fixture = await parentDeliveryRun(t, [child(51)]);
-  const close = fixture.dependencies.tracker.closeTicket.bind(
-    fixture.dependencies.tracker,
-  );
+  const { tracker } = fixture.dependencies;
+  const close = tracker.closeTicket.bind(tracker);
   let attempts = 0;
-  fixture.dependencies.tracker.closeTicket = async (...args) => {
+  tracker.closeTicket = async (...args) => {
     if (args[1] !== 48) return close(...args);
     attempts++;
   };
@@ -298,8 +297,25 @@ await test("an unconfirmed parent closure pauses and a matching rerun retains co
   assert.equal(attempts, 2);
   const before = await implementationProgress(fixture.directory, 51);
   assert.equal(before.publication?.phase, "delivered");
-  fixture.dependencies.tracker.closeTicket = close;
+  tracker.closeTicket = close;
+  const calls: string[] = [];
+  const discover = tracker.discoverParent.bind(tracker);
+  tracker.discoverParent = async (...args) => {
+    calls.push("discovery");
+    return discover(...args);
+  };
+  const scan = tracker.readParentCompletion.bind(tracker);
+  tracker.readParentCompletion = async (...args) => {
+    calls.push("scan");
+    return scan(...args);
+  };
+  const closeParent = tracker.closeParent.bind(tracker);
+  tracker.closeParent = async (...args) => {
+    calls.push("close");
+    return closeParent(...args);
+  };
   assert.equal((await fixture.run()).summary.outcome, "succeeded");
+  assert.deepEqual(calls, ["scan", "close"]);
   assert.deepEqual(fixture.dispatched, [51]);
   assert.deepEqual(fixture.closures, [51, 48]);
   assert.deepEqual(await implementationProgress(fixture.directory, 51), before);

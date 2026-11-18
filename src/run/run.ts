@@ -342,7 +342,7 @@ async function executeProject(
       markers: loaded.config.tracker,
       signal,
       summary,
-      recoveredBatch: pending.batch.length > 0,
+      recoveredBatch: pending.batch.length > 0 || pending.completedCheckpoint,
       eligibleIssues: (tickets) =>
         eligibleIssueNumbers({ tickets, loaded, tracker, context, read }),
       runBatch: async (tickets, eligible) => {
