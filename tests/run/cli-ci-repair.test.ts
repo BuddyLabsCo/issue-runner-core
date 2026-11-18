@@ -13,6 +13,7 @@ import {
   deliveryCommand as implementationCommand,
   implementationCommit,
   publish,
+  recordPostStartEligibilityReads,
 } from "../support/implementation-run.ts";
 import { passed } from "../support/review-run.ts";
 import { assertBusinessAssignment } from "../support/prompt-assignment.ts";
@@ -29,6 +30,17 @@ await test("a repaired PR integrates its repaired HEAD and recovers queued and d
     mergeable: "mergeable",
     mergeFailure: null,
   });
+  const codeHost = fixture.dependencies.codeHost;
+  const observe = codeHost.observePullRequest.bind(codeHost);
+  codeHost.observePullRequest = async (input) => {
+    const observation = await observe(input);
+    if (requests > 0 && !merged) {
+      observation.merge.mergeRequested = true;
+      observation.merge.isInMergeQueue = true;
+      observation.merge.mergeQueueEntryId = "queue-entry";
+    }
+    return observation;
+  };
   Object.assign(fixture.dependencies.codeHost, {
     async requestSquashMerge(
       input: Parameters<CodeHost["requestSquashMerge"]>[0],
@@ -59,8 +71,14 @@ await test("a repaired PR integrates its repaired HEAD and recovers queued and d
   fixture.dependencies.signal = new AbortController().signal;
   fixture.state.onSleep = async () => {
     merged = true;
+    fixture.publicationState.pullRequests[0]!.state = "merged";
   };
-  assert.equal((await run()).summary.outcome, "succeeded");
+  const recovered = await run();
+  assert.equal(
+    recovered.summary.outcome,
+    "succeeded",
+    JSON.stringify(recovered),
+  );
   const saved = await fixture.snapshot();
   const task = fixture.state.submissions.find(({ text }) =>
     text.startsWith("CI repair assignment\n"),
@@ -146,6 +164,9 @@ await test("failed required checks receive a verified fresh repair on the same P
 
 await test("a second CI repair starts fresh from the first repaired remote head", async (t) => {
   const fixture = await ciRepairRun(t);
+  const eligibilityReads = recordPostStartEligibilityReads(
+    fixture.dependencies.tracker,
+  );
   const repair = fixture.repairs.onTask;
   fixture.publicationState.onChecks = async () =>
     fixture.publicationState.pushes < 3 ? [failedCheck] : [];
@@ -164,6 +185,7 @@ await test("a second CI repair starts fresh from the first repaired remote head"
   assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/u);
   const budget = (await fixture.snapshot()).publication!.ciRepair!;
   assert.equal(budget.consumed, 2);
+  assert.deepEqual(eligibilityReads, []);
   assert.equal(budget.generation, 0);
   assert.equal(budget.attempts[1]!.base, repairCommit.sha);
   assert.notEqual(budget.attempts[0]!.sessionid, budget.attempts[1]!.sessionid);

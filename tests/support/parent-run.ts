@@ -134,8 +134,7 @@ export async function parentRun(
     terminal: terminalModule(terminalPlugin),
     terminalPlugin,
   };
-  dependencies.codeHost.readDeliveryIssue = (repository, number) =>
-    tracker.getTicket(repository, number);
+  dependencies.codeHost.readDeliveryIssue = tracker.getTicket.bind(tracker);
   return {
     directory,
     dependencies,

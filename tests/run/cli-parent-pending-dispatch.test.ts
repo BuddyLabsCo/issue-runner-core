@@ -11,9 +11,26 @@ import {
   implementationProgress,
 } from "../support/implementation-run.ts";
 
-await test("a withheld initial assignment is submitted in its original conversation when eligibility returns", async (t) => {
+function cancelAfterAssignment(
+  fixture: Awaited<ReturnType<typeof parentRun>>,
+  occurrence = 1,
+): void {
+  const { operator } = fixture.dependencies;
+  const write = operator.write.bind(operator);
+  operator.write = (message) => {
+    write(message);
+    if (
+      message.startsWith("Issue #51 implement sessionid=") &&
+      --occurrence === 0
+    )
+      fixture.controller.abort();
+  };
+}
+
+await test("a cancelled initial assignment is submitted in its original conversation on restart", async (t) => {
   const ticket = child(51);
   const fixture = await parentRun(t, [ticket]);
+  cancelAfterAssignment(fixture);
   const submitted: string[] = [];
   const submitText = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
@@ -25,15 +42,13 @@ await test("a withheld initial assignment is submitted in its original conversat
       return;
     }
     await submitText(tab, text);
-    if (text.startsWith("Session Probe\n"))
-      ticket.labels = ["sandcastle:reserved"];
   };
-  assert.equal((await fixture.run()).summary.outcome, "incomplete");
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
   assert.deepEqual(fixture.dispatched, []);
   const before = await implementationProgress(fixture.directory, 51);
   assert.match(before.pendingPrompt!, /^Implementation assignment\n/u);
   const resumedAt = submitted.length;
-  ticket.labels!.push("ready-for-agent");
+  fixture.dependencies.signal = new AbortController().signal;
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "incomplete");
   const resumed = submitted.slice(resumedAt);
@@ -54,9 +69,10 @@ await test("a withheld initial assignment is submitted in its original conversat
   assert.equal(after.pendingPrompt, undefined);
 });
 
-await test("a withheld correction retains its prompt, path and native context until eligibility returns", async (t) => {
+await test("a cancelled correction retains its prompt, path and native context for restart", async (t) => {
   const ticket = child(51);
   const fixture = await parentRun(t, [ticket]);
+  cancelAfterAssignment(fixture, 2);
   const submitted: string[] = [];
   const submitText = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
@@ -76,18 +92,17 @@ await test("a withheld correction retains its prompt, path and native context un
     if (text.startsWith("Implementation assignment\n")) {
       const invocation = promptAssignment(text) as { path: string };
       await publish(invocation.path, {});
-      ticket.labels = ["sandcastle:reserved"];
     }
   };
   fixture.dependencies.clock.sleep = async (ms) => {
     assert.equal(ms === 10_000 || ms === 1000 || ms === 30_000, true);
   };
-  assert.equal((await fixture.run()).summary.outcome, "incomplete");
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
   const before = await implementationProgress(fixture.directory, 51);
   assert.equal(before.superseded.length, 1);
   assert.match(before.pendingPrompt!, /^Correct the implementation handoff:/u);
   const resumedAt = submitted.length;
-  ticket.labels!.push("ready-for-agent");
+  fixture.dependencies.signal = new AbortController().signal;
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
   const resumed = submitted.slice(resumedAt);
@@ -108,31 +123,23 @@ await test("a withheld correction retains its prompt, path and native context un
   assert.equal(after.pendingPrompt, undefined);
 });
 
-await test("cancellation inside the dispatch gate retains the known unsent assignment for recovery", async (t) => {
-  const fixture = await parentRun(t, [child(51)]);
-  let cancelAtGate = false;
-  const submitText = fixture.dependencies.terminalPlugin.onInput.bind(
-    fixture.dependencies.terminalPlugin,
-  );
-  fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
-    if (text === "continue") {
-      assert.fail("the withheld assignment has not been submitted");
-    }
-    await submitText(tab, text);
-    if (text.startsWith("Session Probe\n")) cancelAtGate = true;
-  };
-  fixture.dependencies.tracker.getParent = async () => {
-    if (cancelAtGate) {
-      cancelAtGate = false;
-      fixture.controller.abort();
-    }
-    return { number: 48, state: "open", stateReason: null };
-  };
+await test("restart checks current eligibility before dispatching a retained unsent assignment", async (t) => {
+  const ticket = child(51);
+  const fixture = await parentRun(t, [ticket]);
+  cancelAfterAssignment(fixture);
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   const before = await implementationProgress(fixture.directory, 51);
   assert.match(before.pendingPrompt!, /^Implementation assignment\n/u);
   assert.deepEqual(fixture.dispatched, []);
   fixture.dependencies.signal = new AbortController().signal;
+  ticket.labels = ["sandcastle:reserved"];
+  assert.equal((await fixture.run()).summary.outcome, "incomplete");
+  assert.deepEqual(fixture.dispatched, []);
+  assert.equal(
+    (await implementationProgress(fixture.directory, 51)).pendingPrompt,
+    before.pendingPrompt,
+  );
+  ticket.labels.push("ready-for-agent");
   assert.equal((await fixture.run()).summary.outcome, "incomplete");
   assert.deepEqual(fixture.dispatched, [51]);
   assert.deepEqual(
@@ -144,15 +151,9 @@ await test("cancellation inside the dispatch gate retains the known unsent assig
 await test("valid output at a pending assignment completes without reopening its conversation", async (t) => {
   const ticket = child(51);
   const fixture = await parentDeliveryRun(t, [ticket]);
-  const submitText = fixture.dependencies.terminalPlugin.onInput.bind(
-    fixture.dependencies.terminalPlugin,
-  );
-  fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
-    await submitText(tab, text);
-    if (text.startsWith("Session Probe\n"))
-      ticket.labels = ["sandcastle:reserved"];
-  };
-  assert.equal((await fixture.run()).summary.outcome, "incomplete");
+  cancelAfterAssignment(fixture);
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  fixture.dependencies.signal = new AbortController().signal;
   const before = await implementationProgress(fixture.directory, 51);
   await publish(before.invocation!.path, {
     outcome: "no_change",
@@ -165,7 +166,6 @@ await test("valid output at a pending assignment completes without reopening its
   fixture.dependencies.tracker.commentTicket = async () => {
     /* Scripted successful comment. */
   };
-  ticket.labels!.push("ready-for-agent");
   fixture.dependencies.terminalPlugin.createTab = async () => {
     assert.fail("valid retained output does not need another prompt");
   };
@@ -227,15 +227,8 @@ await test("a transport attempt is not replayed as a known unsent assignment aft
 await test("malformed pending prompt evidence fails recovery before another Agent submission", async (t) => {
   const ticket = child(51);
   const fixture = await parentRun(t, [ticket]);
-  const submitText = fixture.dependencies.terminalPlugin.onInput.bind(
-    fixture.dependencies.terminalPlugin,
-  );
-  fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
-    await submitText(tab, text);
-    if (text.startsWith("Session Probe\n"))
-      ticket.labels = ["sandcastle:reserved"];
-  };
-  await fixture.run();
+  cancelAfterAssignment(fixture);
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
   const before = await implementationProgress(fixture.directory, 51);
   const recovery = path.join(fixture.directory, "recovery");
   const [file] = (await readdir(recovery)).filter((file) =>
@@ -245,7 +238,7 @@ await test("malformed pending prompt evidence fails recovery before another Agen
     path.join(recovery, file!),
     JSON.stringify({ ...before, pendingPrompt: 17 }),
   );
-  ticket.labels!.push("ready-for-agent");
+  fixture.dependencies.signal = new AbortController().signal;
   fixture.dependencies.terminalPlugin.createTab = async () => {
     assert.fail("invalid checkpoint cannot authorize a submission");
   };

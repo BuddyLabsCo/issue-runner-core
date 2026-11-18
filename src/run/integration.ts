@@ -30,8 +30,8 @@ export async function integrateImplementation(input: {
   tracker: Tracker;
   read: ReadOperation;
   persist: () => Promise<void>;
-  beforeDispatch: () => Promise<boolean>;
-  beforeClose: () => Promise<"eligible" | "terminal" | "ineligible">;
+  beforeDispatch?: () => Promise<boolean>;
+  issueClosureReason: Ticket["stateReason"];
   continuePublication: (observedConflict?: boolean) => Promise<string>;
 }): Promise<{ outcome: "succeeded"; reason: string }> {
   const { progress, loaded, context, codeHost, tracker, read, persist } = input;
@@ -58,8 +58,8 @@ export async function integrateImplementation(input: {
   const now = () => context.clock.now().getTime();
   const explicitConflict = "Pull Request has an explicit merge conflict";
   const mergeTimeout = loaded.config.timeouts.mergeQueueMinutes * 60_000;
-  const observe = () =>
-    read("confirm_merge", target, async () => {
+  const observe = async () => {
+    const observed = await read("confirm_merge", target, async () => {
       const result = await codeHost.observeDelivery(
         { repository, number: pullRequest.number, ticket },
         context.signal,
@@ -89,13 +89,18 @@ export async function integrateImplementation(input: {
         );
       return result;
     });
+    if (!observed.merge.merged && observed.issue.state === "closed")
+      throw new OperationStopped("Issue is already terminal");
+    return observed;
+  };
   const sleep = async (ms: number) => {
     context.signal?.throwIfAborted();
     await context.clock.sleep(ms);
     context.signal?.throwIfAborted();
   };
   const requireEligibility = async (reason: string) => {
-    if (!(await input.beforeDispatch())) throw new OperationStopped(reason);
+    if (input.beforeDispatch && !(await input.beforeDispatch()))
+      throw new OperationStopped(reason);
   };
   const repair = async (reason: string) => {
     publication.conflict ??= reason;
@@ -130,7 +135,8 @@ export async function integrateImplementation(input: {
       !interruptedRepair.invocation ||
       (interruptedRepair.pendingPrompt !== undefined &&
         interruptedRepair.superseded.length === 0);
-    if (assignmentUnsent) observation = await observe();
+    if (input.issueClosureReason !== null || assignmentUnsent)
+      observation = await observe();
     const state = observation?.merge;
     if (
       !state ||
@@ -156,6 +162,8 @@ export async function integrateImplementation(input: {
       await persist();
       break;
     }
+    if (input.issueClosureReason !== null)
+      throw new OperationStopped("Issue is already terminal");
     if (state.mergeFailure !== null) {
       await pauseForOperator(
         context.operator,
@@ -307,7 +315,7 @@ export async function integrateImplementation(input: {
 
   const completedIssue = (result: DeliveryObservation) => {
     if (!result.merge.merged)
-      throw new OperationStopped("Expected Pull Request is no longer merged");
+      throw new OperationStopped("Recorded merge could not be confirmed");
     if (
       result.issue.state === "closed" &&
       result.issue.stateReason !== "completed"
@@ -344,13 +352,13 @@ export async function integrateImplementation(input: {
           if (!first) current = await confirm();
           first = false;
           if (current.issue.state === "closed") return;
-          const eligibility = await input.beforeClose();
-          if (eligibility === "terminal") {
+          if (input.beforeDispatch && !(await input.beforeDispatch())) {
             current = await confirm();
             if (current.issue.state === "closed") return;
+            throw new OperationStopped(
+              "Maintenance Ticket changed after merge",
+            );
           }
-          if (eligibility !== "eligible")
-            throw new OperationStopped("Reservation changed after merge");
           await tracker.closeTicket(repository, ticket);
           current = await confirm();
           if (current.issue.state !== "closed")
@@ -433,7 +441,7 @@ export async function closeDocumentationNoChange(input: {
   progress: ImplementationProgress;
   persist: () => Promise<void>;
   verify: () => Promise<void>;
-  beforeDispatch: () => Promise<boolean>;
+  checkDeliveryEligibility: () => Promise<boolean>;
   inspectTicket: () => Promise<{ ticket: Ticket; reason?: string }>;
   tracker: Tracker;
   read: ReadOperation;
@@ -453,7 +461,7 @@ export async function closeDocumentationNoChange(input: {
     async () => {
       let selected = await inspectTicket();
       if (selected.ticket.state !== "closed") {
-        if (selected.reason || !(await input.beforeDispatch()))
+        if (selected.reason || !(await input.checkDeliveryEligibility()))
           throw new OperationStopped(
             selected.reason ?? "Maintenance Ticket changed",
           );

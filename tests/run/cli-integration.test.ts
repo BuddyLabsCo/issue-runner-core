@@ -7,6 +7,7 @@ import { executeCli } from "../../src/cli.ts";
 import {
   deliveryCommand as implementationCommand,
   implementationCommit,
+  recordPostStartEligibilityReads,
 } from "../support/implementation-run.ts";
 import { publicationRun } from "../support/publication-run.ts";
 import { integrationRun } from "../support/integration-run.ts";
@@ -35,6 +36,16 @@ await test("CI-ready delivery dispatches the recorded head before any separate m
   assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
   assert.equal(fixture.integrationState.observations, 1);
   assert.equal(fixture.integrationState.closures, 0);
+});
+
+await test("a started Issue reaches squash delivery with only final Issue state and labels", async (t) => {
+  const fixture = await integrationRun(t);
+  const eligibilityReads = recordPostStartEligibilityReads(
+    fixture.dependencies.tracker,
+  );
+  assert.equal((await fixture.run()).summary.outcome, "succeeded");
+  assert.deepEqual(eligibilityReads, []);
+  assert.equal(fixture.integrationState.closures, 1);
 });
 
 await test("delivery requires confirmed squash integration and completed tracker state, capturing exact labels", async (t) => {
@@ -156,29 +167,22 @@ await test("a queued squash is observed as merged before runner closure, includi
   assert.equal((await fixture.snapshot()).publication?.merge?.merged, true);
 });
 
-for (const changed of ["not_planned", "reservation"] as const) {
-  await test(`${changed} after merge earns no delivery credit`, async (t) => {
-    const fixture = await integrationRun(t);
-    fixture.integrationState.onMerge = async () => {
-      fixture.integrationState.pullRequest.merged = true;
-      if (changed === "not_planned") {
-        fixture.state.ticket.state = "closed";
-        fixture.state.ticket.stateReason = "not_planned";
-      } else {
-        fixture.state.ticket.labels = ["ready-for-agent"];
-        fixture.state.ticket.assignees = [];
-      }
-      return { outcome: "accepted" };
-    };
-    assert.equal((await fixture.run()).summary.outcome, "incomplete");
-    assert.equal(fixture.integrationState.closures, 0);
-    assert.equal((await fixture.snapshot()).publication?.phase, "merged");
-    assert.equal(
-      (await fixture.snapshot()).publication?.deliveryLabels,
-      undefined,
-    );
-  });
-}
+await test("a cancelled Issue after merge earns no delivery credit", async (t) => {
+  const fixture = await integrationRun(t);
+  fixture.integrationState.onMerge = async () => {
+    fixture.integrationState.pullRequest.merged = true;
+    fixture.state.ticket.state = "closed";
+    fixture.state.ticket.stateReason = "not_planned";
+    return { outcome: "accepted" };
+  };
+  assert.equal((await fixture.run()).summary.outcome, "incomplete");
+  assert.equal(fixture.integrationState.closures, 0);
+  assert.equal((await fixture.snapshot()).publication?.phase, "merged");
+  assert.equal(
+    (await fixture.snapshot()).publication?.deliveryLabels,
+    undefined,
+  );
+});
 
 for (const lost of ["merge", "closure"] as const) {
   await test(`a lost ${lost} response reconciles observed completion without replaying the write`, async (t) => {

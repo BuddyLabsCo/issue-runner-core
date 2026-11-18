@@ -3,24 +3,19 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { conflictRepairRun } from "../support/conflict-repair-run.ts";
 import { integrationRun } from "../support/integration-run.ts";
+import { implementationCommit } from "../support/implementation-run.ts";
 import { validConfig } from "../support/cli-project.ts";
 
 for (const reason of ["completed", "not_planned"] as const) {
   await test(`a ${reason} Issue observed at the closure gate is reconciled without a close request`, async (t) => {
-    const config = { ...validConfig, targetBranch: "release" };
-    const fixture = await integrationRun(t, config);
-    const { codeHost, tracker } = fixture.dependencies;
+    const fixture = await integrationRun(t);
     const labels = ["ready-for-agent", "Docs"];
-    codeHost.readDeliveryIssue = async () =>
-      structuredClone(fixture.state.ticket);
-    const inspect = tracker.getTicket.bind(tracker);
-    tracker.getTicket = async () => {
+    fixture.state.onSleep = async () => {
       if (fixture.integrationState.pullRequest.merged) {
         fixture.state.ticket.state = "closed";
         fixture.state.ticket.stateReason = reason;
         fixture.state.ticket.labels = labels;
       }
-      return inspect();
     };
 
     const result = await fixture.run();
@@ -151,3 +146,82 @@ for (const outcome of ["conflict", "rejected"] as const) {
     assert.match(pause ?? "", /Pull Request 81 closed without merging/u);
   });
 }
+
+await test("a restored closure attempt rechecks Issue cancellation after the Operator Pause", async (t) => {
+  const fixture = await integrationRun(t, {
+    ...validConfig,
+    operationRetry: 0,
+  });
+  fixture.integrationState.onClose = async () => {
+    throw new Error("Issue close failed");
+  };
+  fixture.dependencies.operator.pause = async (message) => {
+    assert.match(message, /Issue close failed/u);
+    return "q";
+  };
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  assert.equal(fixture.integrationState.closures, 1);
+
+  fixture.dependencies.signal = new AbortController().signal;
+  fixture.integrationState.onClose = async () => {
+    fixture.state.ticket.stateReason = "completed";
+  };
+  fixture.dependencies.operator.pause = async (message) => {
+    assert.match(message, /Issue close failed/u);
+    fixture.state.ticket.state = "closed";
+    fixture.state.ticket.stateReason = "not_planned";
+    return "";
+  };
+  const result = await fixture.run();
+  assert.equal(result.summary.outcome, "incomplete");
+  assert.match(result.summary.tickets![0]!.detail, /cancelled after merge/u);
+  assert.equal(fixture.state.ticket.stateReason, "not_planned");
+  assert.equal(fixture.integrationState.closures, 1);
+  assert.deepEqual(fixture.state.cleanup, []);
+});
+
+await test("restart needs current remote confirmation before crediting a recorded merge", async (t) => {
+  const fixture = await integrationRun(t);
+  fixture.integrationState.onClose = async () => fixture.controller.abort();
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  assert.equal((await fixture.snapshot()).publication?.phase, "merged");
+  fixture.dependencies.signal = new AbortController().signal;
+  fixture.integrationState.pullRequest.merged = false;
+  const result = await fixture.run();
+  assert.equal(result.summary.outcome, "incomplete");
+  assert.match(
+    result.summary.tickets![0]!.detail,
+    /merge could not be confirmed/u,
+  );
+  assert.equal(fixture.state.taskCount, 1);
+  assert.equal(fixture.integrationState.requests.length, 1);
+  assert.equal(fixture.integrationState.closures, 1);
+  assert.equal(fixture.state.ticket.state, "open");
+  assert.deepEqual(fixture.state.cleanup, []);
+});
+
+await test("a recovered standalone merge into a different target cannot close the Issue or clean up", async (t) => {
+  const fixture = await integrationRun(t);
+  const { operator } = fixture.dependencies;
+  fixture.state.onSleep = async () => {
+    if (fixture.integrationState.pullRequest.merged) fixture.controller.abort();
+  };
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  assert.equal((await fixture.snapshot()).publication?.phase, "merged");
+  assert.equal(fixture.integrationState.closures, 0);
+
+  fixture.dependencies.signal = new AbortController().signal;
+  const record = fixture.publicationState.pullRequests[0]!;
+  assert.equal(record.headSha, implementationCommit.sha);
+  record.state = "merged";
+  record.targetBranch = "another-base";
+  operator.pause = async (message) => {
+    assert.match(message, /Pull Request identity or head mismatch/u);
+    return "q";
+  };
+  const result = await fixture.run();
+  assert.equal(result.summary.outcome, "cancelled", JSON.stringify(result));
+  assert.equal(fixture.integrationState.closures, 0);
+  assert.equal(fixture.state.ticket.state, "open");
+  assert.deepEqual(fixture.state.cleanup, []);
+});

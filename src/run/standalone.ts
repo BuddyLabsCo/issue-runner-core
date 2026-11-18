@@ -231,7 +231,7 @@ async function executeStandalone(
     progress,
     ticket: selected.ticket,
     persist: () => persist(progress),
-    beforeDispatch,
+    ...(input.documentation ? { beforeDispatch } : {}),
     closeTab: (close) =>
       read(
         `close_${progress.phase.replace("_completed", "")}_tab`,
@@ -280,12 +280,7 @@ async function executeStandalone(
           codeHost: input.codeHost,
           tracker,
           read,
-          beforeClose: async () => {
-            if (await beforeDispatch()) return "eligible";
-            return selected.ticket.state === "closed"
-              ? "terminal"
-              : "ineligible";
-          },
+          issueClosureReason: started.ticket.stateReason,
           continuePublication: (conflict) => publish(progress, conflict),
         });
         if (delivery.outcome === "succeeded") {
@@ -377,6 +372,7 @@ async function executeStandalone(
     if (progress.result?.outcome === "no_change") {
       const result = await completeNoChange({
         ...stageInput(progress),
+        checkDeliveryEligibility: beforeDispatch,
         git: context.git,
         tracker,
         read,

@@ -128,6 +128,10 @@ await test("delivery reads the exact merged PR with the complete Issue labels ac
       /\bissue\s*\(\s*number\s*:\s*\$ticket\s*\)/u,
     )[1];
     assert.ok(issueSelection);
+    assert.doesNotMatch(
+      issueSelection,
+      /\b(?:assignees|blockedBy|subIssues|label|user)\b/u,
+    );
     const selection =
       /\blabels\s*\(([^)]*)\)\s*\{((?:[^{}]|\{[^{}]*\})*)\}/u.exec(
         issueSelection,

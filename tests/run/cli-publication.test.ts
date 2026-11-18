@@ -293,16 +293,25 @@ await test("cancellation during discovery delay retains PR identity and prevents
   assert.ok(saved.publication.discoveryNotBefore);
 });
 
-await test("lost Issue eligibility after push stops publication without a PR or an Operator Pause", async (t) => {
+await test("publication after push uses branch and PR evidence without reading Issue eligibility", async (t) => {
   const fixture = await publicationRun(t);
+  const { tracker } = fixture.dependencies;
+  const getTicket = tracker.getTicket.bind(tracker);
+  let pushed = false;
+  let eligibilityReads = 0;
+  tracker.getTicket = async () => {
+    if (pushed) eligibilityReads++;
+    return getTicket();
+  };
   fixture.publicationState.onPush = async (branch, head) => {
     fixture.publicationState.branches.set(branch, head);
-    fixture.state.ticket.assignees!.push("someone-else");
+    pushed = true;
   };
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
-  assert.match(result.summary.tickets![0]!.detail, /externally owned/u);
-  assert.equal(fixture.publicationState.creations, 0);
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
+  assert.equal(fixture.publicationState.creations, 1);
+  assert.equal(eligibilityReads, 0);
   assert.equal(fixture.dependencies.pauses.length, 0);
 });
 

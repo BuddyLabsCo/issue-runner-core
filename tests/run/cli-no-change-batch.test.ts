@@ -17,12 +17,27 @@ import {
 } from "../support/batch-documentation-run.ts";
 
 for (const unfinished of [false, true]) {
-  await test(`no-change completes independently with a ${unfinished ? "unfinished" : "CI-ready"} peer and permits later parent scheduling`, async (t) => {
+  await test(`no-change completes independently with ${unfinished ? "an unfinished" : "a CI-ready"} peer and permits later parent scheduling`, async (t) => {
     const tickets = [child(51), child(52), child(53)];
     const fixture = await parentDeliveryRun(t, tickets, {
       ...validConfig,
       maxBatchSize: 2,
+      operationRetry: 0,
     });
+    let checksUnavailable = unfinished;
+    const { codeHost, operator } = fixture.dependencies;
+    codeHost.checksFor = async (_repository, number) => {
+      const pr = (await codeHost.listPullRequests()).find(
+        (pr) => pr.number === number,
+      )!;
+      if (checksUnavailable && pr.branch.endsWith("/ticket-52"))
+        throw new Error("Issue 52 check lookup failed");
+      return [];
+    };
+    operator.pause = async (message) => {
+      assert.match(message, /Issue 52 check lookup failed/u);
+      return checksUnavailable ? "s" : "";
+    };
     const comments: number[] = [];
     fixture.dependencies.tracker.commentTicket = async (
       _repository,
@@ -44,8 +59,6 @@ for (const unfinished of [false, true]) {
           });
           return;
         }
-        if (unfinished && assignment.ticket === 52)
-          tickets[1]!.assignees = ["outside-owner"];
       }
       await submit(tab, text, chord);
     };
@@ -69,7 +82,7 @@ for (const unfinished of [false, true]) {
       assert.equal(tickets[1]!.state, "open");
       assert.equal(tickets[2]!.state, "open");
       assert.equal(fixture.merged.size, 0);
-      tickets[1]!.assignees = ["runner"];
+      checksUnavailable = false;
       fixture.dependencies.signal = new AbortController().signal;
       assert.equal((await fixture.run()).summary.outcome, "succeeded");
       assert.deepEqual(comments, [51]);

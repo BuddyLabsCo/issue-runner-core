@@ -45,6 +45,8 @@ export async function batchDocumentationRun(
   };
   const tracker = fixture.dependencies.tracker;
   const getTicket = tracker.getTicket.bind(tracker);
+  const host = fixture.dependencies.codeHost;
+  const readDeliveryIssue = host.readDeliveryIssue.bind(host);
   const closeTicket = tracker.closeTicket.bind(tracker);
   tracker.listLabelsPage = async () => ({
     labels: ["doc-maintain"],
@@ -68,6 +70,12 @@ export async function batchDocumentationRun(
   tracker.getTicket = async (repository, number) => {
     const ticket = maintenance.find((ticket) => ticket.number === number);
     return ticket ? structuredClone(ticket) : getTicket(repository, number);
+  };
+  host.readDeliveryIssue = (repository, number) => {
+    const ticket = maintenance.find((ticket) => ticket.number === number);
+    return ticket
+      ? Promise.resolve(structuredClone(ticket))
+      : readDeliveryIssue(repository, number);
   };
   tracker.closeTicket = async (repository, number) => {
     events.push(`close:${number}`);

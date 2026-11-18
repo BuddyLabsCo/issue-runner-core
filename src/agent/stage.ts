@@ -33,7 +33,7 @@ export interface IssueStageContext {
   progress: ImplementationProgress;
   ticket: Ticket;
   persist: () => Promise<void>;
-  beforeDispatch: () => Promise<boolean>;
+  beforeDispatch?: () => Promise<boolean>;
   closeTab: (close: () => Promise<void>) => Promise<void>;
   withEnvironment: <T>(
     action: (env: Readonly<Record<string, string>>) => Promise<T>,
@@ -215,7 +215,10 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
             delete stage.pendingPrompt;
             await persist();
           }
-          allowed = await input.beforeDispatch();
+          const permitted =
+            !input.beforeDispatch || (await input.beforeDispatch());
+          signal?.throwIfAborted();
+          allowed = permitted;
         } finally {
           if (!allowed && pending !== undefined) {
             stage.pendingPrompt = pending;

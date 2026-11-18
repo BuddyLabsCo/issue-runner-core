@@ -33,15 +33,14 @@ for (const recover of [false, true]) {
   await test(`a cancelled Batch member permits its ready sibling to integrate${recover ? " after matching recovery" : ""}`, async (t) => {
     const children = [child(51), child(52)];
     const fixture = await parentDeliveryRun(t, children);
-    const getTicket = fixture.dependencies.tracker.getTicket.bind(
-      fixture.dependencies.tracker,
-    );
-    fixture.dependencies.tracker.getTicket = async (...args) => {
+    const { tracker } = fixture.dependencies;
+    const start = tracker.readIssueStart.bind(tracker);
+    tracker.readIssueStart = async (...args) => {
       if (args[1] === 51) {
         children[0]!.state = "closed";
         children[0]!.stateReason = "not_planned";
       }
-      return getTicket(...args);
+      return start(...args);
     };
     let rejectMerge = recover;
     Object.assign(fixture.dependencies.codeHost, {
@@ -90,16 +89,15 @@ for (const recover of [false, true]) {
 await test("a cancelled Batch member does not let an unfinished member bypass the integration barrier", async (t) => {
   const children = [child(51), child(52), child(53)];
   const fixture = await parentDeliveryRun(t, children);
-  const getTicket = fixture.dependencies.tracker.getTicket.bind(
-    fixture.dependencies.tracker,
-  );
-  fixture.dependencies.tracker.getTicket = async (...args) => {
+  const { tracker } = fixture.dependencies;
+  const start = tracker.readIssueStart.bind(tracker);
+  tracker.readIssueStart = async (...args) => {
     if (args[1] === 51) {
       children[0]!.state = "closed";
       children[0]!.stateReason = "not_planned";
     }
     if (args[1] === 52) children[1]!.labels = [];
-    return getTicket(...args);
+    return start(...args);
   };
   assert.equal((await fixture.run()).summary.outcome, "incomplete");
   assert.deepEqual(fixture.dispatched, [53]);

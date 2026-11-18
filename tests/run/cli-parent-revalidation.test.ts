@@ -5,16 +5,10 @@ import test from "node:test";
 import { child, parentDeliveryRun, parentRun } from "../support/parent-run.ts";
 import { publish } from "../support/implementation-run.ts";
 
-await test("parent cancellation during Git setup prevents substantive Agent dispatch", async (t) => {
+await test("run cancellation during Git setup prevents substantive Agent dispatch", async (t) => {
   const fixture = await parentRun(t, [child(51)]);
-  let cancelled = false;
-  fixture.dependencies.tracker.getParent = async () => ({
-    number: 48,
-    state: cancelled ? "closed" : "open",
-    stateReason: cancelled ? "not_planned" : null,
-  });
   fixture.dependencies.gitWorkspace.fetchTargetBranch = async () => {
-    cancelled = true;
+    fixture.controller.abort();
     return "a".repeat(40);
   };
   const result = await fixture.run();
@@ -56,11 +50,9 @@ for (const change of [
   "external",
   "blocked",
   "not_ready",
-  "reservation_label",
-  "runner",
   "closed",
 ] as const) {
-  await test(`eligibility becoming ${change} during the Probe prevents implementation dispatch`, async (t) => {
+  await test(`Issue start checks fresh eligibility when discovery missed ${change}`, async (t) => {
     const ticket = child(51);
     const fixture = await parentDeliveryRun(t, [ticket]);
     let changed = false;
@@ -82,21 +74,17 @@ for (const change of [
       blockers: changed && change === "blocked" ? [child(900)] : [],
       nextPage: null,
     });
-    const submitText = fixture.dependencies.terminalPlugin.onInput.bind(
-      fixture.dependencies.terminalPlugin,
-    );
-    fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
-      await submitText(tab, text);
-      if (!text.startsWith("Session Probe\n")) return;
+    const { tracker } = fixture.dependencies;
+    const start = tracker.readIssueStart.bind(tracker);
+    tracker.readIssueStart = async (...args) => {
       changed = true;
       if (change === "external") ticket.assignees!.push("developer");
       if (change === "not_ready") ticket.labels = ["sandcastle:reserved"];
-      if (change === "reservation_label") ticket.labels = ["ready-for-agent"];
-      if (change === "runner") ticket.assignees = [];
       if (change === "closed") {
         ticket.state = "closed";
         ticket.stateReason = "completed";
       }
+      return start(...args);
     };
     const result = await fixture.run();
     assert.equal(
@@ -108,7 +96,7 @@ for (const change of [
           : "incomplete",
     );
     assert.deepEqual(fixture.dispatched, []);
-    assert.deepEqual(fixture.writes, ["label:51", "assignee:51"]);
+    assert.deepEqual(fixture.writes, []);
     assert.match(
       result.summary.tickets![0]!.detail,
       /cancelled|scope|owned|blocked|ready-for-agent|Reservation|terminal/u,
@@ -116,22 +104,16 @@ for (const change of [
   });
 }
 
-await test("parent cancellation during native startup prevents implementation dispatch", async (t) => {
+await test("run cancellation during native startup prevents implementation dispatch", async (t) => {
   const fixture = await parentRun(t, [child(51)]);
-  let cancelled = false;
   const start = fixture.dependencies.terminalPlugin.execute.bind(
     fixture.dependencies.terminalPlugin,
   );
   fixture.dependencies.terminalPlugin.execute = async (tab, command) => {
     await start(tab, command);
-    cancelled = true;
+    fixture.controller.abort();
     return undefined;
   };
-  fixture.dependencies.tracker.getParent = async () => ({
-    number: 48,
-    state: cancelled ? "closed" : "open",
-    stateReason: cancelled ? "not_planned" : null,
-  });
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   assert.deepEqual(fixture.dispatched, []);
 });
@@ -176,15 +158,9 @@ for (const change of ["cancelled", "external", "left_scope"] as const) {
   });
 }
 
-await test("parent cancellation after invalid publication prevents the follow-up prompt", async (t) => {
+await test("run cancellation after an invalid handoff prevents the follow-up prompt", async (t) => {
   const fixture = await parentRun(t, [child(51)]);
-  let cancelled = false;
   const followups: string[] = [];
-  fixture.dependencies.tracker.getParent = async () => ({
-    number: 48,
-    state: cancelled ? "closed" : "open",
-    stateReason: cancelled ? "not_planned" : null,
-  });
   const submitText = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
@@ -198,7 +174,7 @@ await test("parent cancellation after invalid publication prevents the follow-up
     if (text.startsWith("Implementation assignment\n")) {
       const assignment = promptAssignment(text) as { path: string };
       await publish(assignment.path, { outcome: "invalid" });
-      cancelled = true;
+      fixture.controller.abort();
     }
   };
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
@@ -206,7 +182,7 @@ await test("parent cancellation after invalid publication prevents the follow-up
   assert.deepEqual(followups, []);
 });
 
-await test("parent cancellation during recovery startup prevents continue in the retained conversation", async (t) => {
+await test("run cancellation during recovery startup prevents continue in the retained conversation", async (t) => {
   const fixture = await parentRun(t, [child(51)]);
   let controller = fixture.controller;
   const followups: string[] = [];
@@ -225,19 +201,13 @@ await test("parent cancellation during recovery startup prevents continue in the
   followups.length = 0;
   controller = new AbortController();
   fixture.dependencies.signal = controller.signal;
-  let cancelled = false;
   const resume = fixture.dependencies.terminalPlugin.execute.bind(
     fixture.dependencies.terminalPlugin,
   );
   fixture.dependencies.terminalPlugin.execute = async (tab, command) => {
     await resume(tab, command);
-    cancelled = true;
+    controller.abort();
   };
-  fixture.dependencies.tracker.getParent = async () => ({
-    number: 48,
-    state: cancelled ? "closed" : "open",
-    stateReason: cancelled ? "not_planned" : null,
-  });
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   assert.deepEqual(fixture.dispatched, []);
   assert.deepEqual(followups, []);

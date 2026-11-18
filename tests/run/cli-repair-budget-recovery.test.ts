@@ -3,10 +3,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { conflictRepairRun } from "../support/conflict-repair-run.ts";
 import { failedCheck, repairCommit } from "../support/ci-repair-run.ts";
-import { publish } from "../support/implementation-run.ts";
+import {
+  publish,
+  recordPostStartEligibilityReads,
+} from "../support/implementation-run.ts";
 
 await test("conflict-to-CI recovery preserves separate exhausted budgets until category-specific authorization", async (t) => {
   const fixture = await conflictRepairRun(t);
+  const eligibilityReads = recordPostStartEligibilityReads(
+    fixture.dependencies.tracker,
+  );
   const noChange = {
     outcome: "no_change",
     summary: "No repair",
@@ -30,6 +36,7 @@ await test("conflict-to-CI recovery preserves separate exhausted budgets until c
   assert.equal(conflict.consumed, 2);
   assert.equal(conflict.generation, 0);
   assert.equal(conflict.attempts[1]!.pushed, true);
+  assert.deepEqual(eligibilityReads, []);
   const ci = before.publication!.ciRepair!;
   assert.equal(ci.consumed, 1);
   assert.equal(ci.generation, 0);

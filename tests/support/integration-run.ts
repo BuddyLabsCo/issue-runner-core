@@ -39,6 +39,22 @@ export async function integrationRun(t: TestContext, config = validConfig) {
       fixture.state.ticket.stateReason = "completed";
     },
   };
+  const { codeHost } = fixture.dependencies;
+  const list = codeHost.listPullRequests.bind(codeHost);
+  codeHost.listPullRequests = async () =>
+    (await list()).map((record) =>
+      state.pullRequest.merged ? { ...record, state: "merged" } : record,
+    );
+  const observe = codeHost.observePullRequest.bind(codeHost);
+  codeHost.observePullRequest = async (input) => {
+    const observation = await observe(input);
+    if (state.pullRequest.mergeRequested && !observation.merge.merged) {
+      observation.merge.mergeRequested = true;
+      observation.merge.isInMergeQueue = true;
+      observation.merge.mergeQueueEntryId = "queue-entry";
+    }
+    return observation;
+  };
   Object.assign(fixture.dependencies.codeHost, {
     async deliveryMergeFacts() {
       state.observations++;

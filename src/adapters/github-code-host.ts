@@ -21,7 +21,7 @@ import {
   pollQuery,
   requiredChecks,
 } from "./github-pr-checks.ts";
-import { issueFields, parseIssueFact } from "./github-issue-facts.ts";
+import { issueFields, parseIssueFact } from "./github-issue-identity.ts";
 import {
   connectionPages,
   parseBranch,

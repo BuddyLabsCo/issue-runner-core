@@ -215,21 +215,22 @@ for (const missing of [
   });
 }
 
-await test("a withheld Review assignment retains its invocation and resumes only its reviewer when eligibility returns", async (t) => {
+await test("a cancelled Review assignment retains its invocation and resumes only its reviewer", async (t) => {
   const fixture = await reviewRun(t, 1);
-  const probe = fixture.state.onProbe;
-  fixture.state.onProbe = async (assignment) => {
-    await probe(assignment);
-    if (assignment.role === "review")
-      fixture.state.ticket.labels = ["sandcastle:reserved"];
+  const { operator } = fixture.dependencies;
+  const write = operator.write.bind(operator);
+  operator.write = (message) => {
+    write(message);
+    if (message.startsWith("Issue #50 review round 1 sessionid="))
+      fixture.controller.abort();
   };
-  assert.equal((await fixture.run()).summary.outcome, "incomplete");
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
   const saved = await fixture.snapshot();
   const pending = saved.reviews![0]!.pendingPrompt;
   assert.match(pending!, /^Review assignment\n/u);
   assert.equal(fixture.reviewState.reviews.length, 0);
   const before = fixture.state.submissions.length;
-  fixture.state.ticket.labels!.push("ready-for-agent");
+  fixture.dependencies.signal = new AbortController().signal;
   const result = await fixture.run();
   assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
   assert.deepEqual(
