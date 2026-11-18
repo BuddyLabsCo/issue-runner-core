@@ -76,6 +76,8 @@ async function executeStandalone(
   });
   const { config, directory: root } = loaded;
   const { runnerAccount, reservationLabel } = config.tracker;
+  const isRunner = (account: string) =>
+    account.toLowerCase() === runnerAccount.toLowerCase();
   const repository = config.repository;
   const accept = async (progress: ImplementationProgress, text: string) => {
     const result = parsePRExecution(text);
@@ -152,7 +154,8 @@ async function executeStandalone(
     );
     if (
       ticket.number !== number ||
-      (ticket.repository !== undefined && ticket.repository !== repository)
+      (ticket.repository !== undefined &&
+        ticket.repository.toLowerCase() !== repository.toLowerCase())
     )
       throw new Error("Unexpected Issue ownership");
     if (ticket.state === "closed") {
@@ -176,7 +179,7 @@ async function executeStandalone(
         };
     } else if (config.issueLabel && !ticket.labels?.includes(config.issueLabel))
       return { ticket, reason: `Issue is missing ${config.issueLabel}` };
-    if (ticket.assignees?.some((account) => account !== runnerAccount))
+    if (ticket.assignees?.some((account) => !isRunner(account)))
       return { ticket, reason: "Issue is externally owned" };
     if (await hasOpenBlocker(repository, number, tracker, read))
       return { ticket, reason: "Issue is blocked" };
@@ -208,7 +211,7 @@ async function executeStandalone(
     if (
       !selected.reason &&
       !input.documentation &&
-      (!selected.ticket.assignees?.includes(runnerAccount) ||
+      (!selected.ticket.assignees?.some(isRunner) ||
         !selected.ticket.labels?.includes(reservationLabel))
     )
       selected.reason = "Reservation changed before dispatch";

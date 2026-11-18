@@ -51,7 +51,7 @@ export function validateChildRepositories(
 ): void {
   const foreignChild = children.find(
     (child) =>
-      child.repository !== repository ||
+      child.repository?.toLowerCase() !== repository.toLowerCase() ||
       (repositoryId !== undefined && child.repositoryId !== repositoryId),
   );
   if (foreignChild)
@@ -132,6 +132,7 @@ export async function eligibleIssueNumbers(input: {
 }): Promise<number[]> {
   const { tickets, loaded, tracker, context, read } = input;
   const config = loaded.config;
+  const runnerAccount = config.tracker.runnerAccount.toLowerCase();
   const eligible: number[] = [];
   for (const child of [...(tickets ?? [])].sort(
     (a, b) => a.number - b.number,
@@ -147,11 +148,13 @@ export async function eligibleIssueNumbers(input: {
       continue;
     }
     const hasRunner =
-      child.assignees?.includes(config.tracker.runnerAccount) ?? false;
+      child.assignees?.some(
+        (account) => account.toLowerCase() === runnerAccount,
+      ) ?? false;
     const hasLabel =
       child.labels?.includes(config.tracker.reservationLabel) ?? false;
     const external = child.assignees?.some(
-      (account) => account !== config.tracker.runnerAccount,
+      (account) => account.toLowerCase() !== runnerAccount,
     );
     if (
       external ||

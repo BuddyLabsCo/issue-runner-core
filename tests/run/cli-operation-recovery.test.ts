@@ -283,6 +283,7 @@ for (const applied of ["label", "runner", "both"] as const) {
     const fixture = await implementationRun(t, {
       ...validConfig,
       operationRetry: 1,
+      tracker: { ...validConfig.tracker, runnerAccount: "runnerbot" },
     });
     const tracker = fixture.dependencies.tracker;
     const read = tracker.readIssueStart.bind(tracker);
@@ -294,7 +295,7 @@ for (const applied of ["label", "runner", "both"] as const) {
       return read(...args);
     };
     tracker.reserveIssue = async (additions) => {
-      const { issue, reservation, runner, addLabel, addRunner } = additions;
+      const { issue, reservation, addLabel, addRunner } = additions;
       operations.push(`write:${addLabel}:${addRunner}`);
       if (!firstWrite) return write(additions);
       firstWrite = false;
@@ -305,7 +306,7 @@ for (const applied of ["label", "runner", "both"] as const) {
           reservation.name,
         );
       if (applied !== "label")
-        await tracker.addAssignee(issue.repository, issue.number, runner.login);
+        await tracker.addAssignee(issue.repository, issue.number, "RunnerBot");
       throw new Error("response lost after mutation");
     };
     const result = await fixture.run();

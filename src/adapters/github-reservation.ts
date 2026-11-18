@@ -1,4 +1,3 @@
-import { isDeepStrictEqual } from "node:util";
 import { object } from "../agent/handoff.ts";
 import type { ReservationAdditions } from "../run/contracts.ts";
 import type { GitHubClient } from "./github-client.ts";
@@ -54,9 +53,10 @@ export async function reserveIssue(
       if (
         observed.id !== issue.id ||
         observed.number !== issue.number ||
-        observed.repository !== issue.repository ||
+        observed.repository.toLowerCase() !== issue.repository.toLowerCase() ||
         observed.repositoryId !== issue.repositoryId ||
-        observed.state !== "open"
+        observed.state !== issue.state ||
+        observed.stateReason !== issue.stateReason
       )
         throw new Error(`Unexpected Issue identity or state in ${alias}`);
       return raw;
@@ -65,15 +65,7 @@ export async function reserveIssue(
     const confirmed = addRunner
       ? payload("addRunner", "assignable")
       : payload("addReservation", "labelable");
-    const result = await readIssueMarkers(client, issue.id, confirmed, signal);
-    if (
-      !result.labels.some((label) => isDeepStrictEqual(label, reservation)) ||
-      result.assignees.length !== 1 ||
-      result.assignees[0]!.id !== runner.id ||
-      result.assignees[0]!.login.toLowerCase() !== runner.login.toLowerCase()
-    )
-      throw new Error("Returned markers do not confirm the Reservation");
-    return result;
+    return await readIssueMarkers(client, issue.id, confirmed, signal);
   } catch (error) {
     throw Object.assign(
       new Error(

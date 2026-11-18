@@ -248,6 +248,39 @@ await test("start rejects a foreign sibling that appears on a later page after d
   assert.deepEqual(fixture.dispatched, []);
 });
 
+await test("conflicting child state on a membership page triggers a fresh start before any write", async (t) => {
+  const ticket = child(51);
+  const fixture = await parentRun(t, [ticket]);
+  const { tracker, clock } = fixture.dependencies;
+  let retried = false;
+  const discover = tracker.discoverParent.bind(tracker);
+  tracker.discoverParent = async (...args) => {
+    const facts = await discover(...args);
+    tracker.listChildrenPage = async (_repository, _parent, page) =>
+      page === 1
+        ? { children: [], nextPage: 2 }
+        : {
+            children: [
+              retried
+                ? structuredClone(ticket)
+                : child(51, { state: "closed", stateReason: "not_planned" }),
+            ],
+            nextPage: null,
+          };
+    return facts;
+  };
+  clock.sleep = async (ms) => {
+    if (ms !== 1_000 || retried) return;
+    assert.deepEqual(fixture.writes, []);
+    retried = true;
+  };
+  const { summary } = await fixture.run();
+  assert.equal(summary.outcome, "incomplete", JSON.stringify(summary));
+  assert.equal(retried, true);
+  assert.deepEqual(fixture.writes, ["label:51", "assignee:51"]);
+  assert.deepEqual(fixture.dispatched, [51]);
+});
+
 await test("matching parent progress continues only recorded Reservations among unrelated residual markers", async (t) => {
   const children = [child(55), child(56)];
   const fixture = await parentRun(t, children, {

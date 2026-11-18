@@ -129,13 +129,8 @@ async function reserveIssue(
   if (addRunner)
     await this.addAssignee(issue.repository, issue.number, runner.login);
   const ticket = await this.getTicket(issue.repository, issue.number);
-  if (
-    ticket.state !== "open" ||
-    !ticket.labels?.includes(reservation.name) ||
-    ticket.assignees?.length !== 1 ||
-    ticket.assignees[0]?.toLowerCase() !== runner.login.toLowerCase()
-  )
-    throw new Error("Returned markers do not confirm the Reservation");
+  if (ticket.state !== issue.state || ticket.stateReason !== issue.stateReason)
+    throw new Error("Unexpected Issue state in Reservation response");
   return issueMarkers(ticket);
 }
 

@@ -317,7 +317,8 @@ async function executeProject(
     if (
       ticket.number !== number ||
       (ticket.repository !== undefined &&
-        ticket.repository !== loaded.config.repository)
+        ticket.repository.toLowerCase() !==
+          loaded.config.repository.toLowerCase())
     )
       throw new Error("Unexpected Issue ownership");
     return ticket;

@@ -35,10 +35,20 @@ await test("standalone start reads its own Issue and confirms grouped additive m
             user: runner,
           },
         });
-      case 2:
+      case 2: {
         assert.match(
           query,
           /addLabelsToLabelable[\s\S]+addAssigneesToAssignable/u,
+        );
+        const finalSelection = query.slice(query.indexOf("addRunner:"));
+        assert.match(finalSelection, /assignable\s*\{/u);
+        assert.match(
+          finalSelection,
+          /labels\(first: 100\)\s*\{\s*nodes\s*\{\s*id name\s*\}\s*totalCount\s*pageInfo\s*\{\s*hasNextPage endCursor\s*\}\s*\}/u,
+        );
+        assert.match(
+          finalSelection,
+          /assignees\(first: 100\)\s*\{\s*nodes\s*\{\s*id login\s*\}\s*totalCount\s*pageInfo\s*\{\s*hasNextPage endCursor\s*\}\s*\}/u,
         );
         assert.deepEqual(variables, {
           issue: "issue-51",
@@ -56,6 +66,7 @@ await test("standalone start reads its own Issue and confirms grouped additive m
             },
           },
         });
+      }
       case 3:
         assert.match(query, /labels\(first: 100, after: \$after\)/u);
         assert.deepEqual(variables, { owner: "issue-51", after: "next-label" });
@@ -68,12 +79,9 @@ await test("standalone start reads its own Issue and confirms grouped additive m
         assert.fail("unexpected GitHub request");
     }
   });
-  const facts = await tracker.readIssueStart(
-    repository.nameWithOwner,
-    51,
-    config,
-  );
+  const facts = await tracker.readIssueStart("OWNER/Repo", 51, config);
   assert.equal(facts.issue.title, "Task");
+  assert.equal(facts.issue.repository, repository.nameWithOwner);
   assert.equal(facts.scope, undefined);
   const confirmed = await tracker.reserveIssue({
     issue: facts.issue,
@@ -217,8 +225,9 @@ await test("a valid final payload cannot confirm a grouped write when the first 
   );
 });
 
-await test("label-only confirmation drains assignees before deciding ownership", async () => {
+await test("label-only confirmation returns all paginated assignees to the workflow", async () => {
   let requests = 0;
+  const external = { id: "external", login: "developer" };
   const tracker = new GitHubTracker("secret", async (_args, { input }) => {
     const { query, variables } = JSON.parse(input!) as {
       query: string;
@@ -244,20 +253,20 @@ await test("label-only confirmation drains assignees before deciding ownership",
       data: {
         node: {
           id: "issue-51",
-          assignees: connection([{ id: "external", login: "developer" }], 2),
+          assignees: connection([external], 2),
         },
       },
     });
   });
-  await assert.rejects(
-    tracker.reserveIssue({
+  assert.deepEqual(
+    await tracker.reserveIssue({
       issue: startIssue,
       reservation,
       runner,
       addLabel: true,
       addRunner: false,
     }),
-    /Returned markers do not confirm the Reservation/u,
+    { labels: [reservation], assignees: [runner, external] },
   );
   assert.equal(requests, 2);
 });

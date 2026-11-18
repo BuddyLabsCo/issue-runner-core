@@ -301,8 +301,9 @@ function scopedIssue(
   const parent = parseIssueFact(raw);
   if (
     parent.number !== number ||
-    parent.repository !== repository ||
-    repo.nameWithOwner !== repository ||
+    parent.repository.toLowerCase() !== repository.toLowerCase() ||
+    typeof repo.nameWithOwner !== "string" ||
+    repo.nameWithOwner.toLowerCase() !== repository.toLowerCase() ||
     repo.id !== parent.repositoryId
   )
     throw new Error(`Unexpected ${description} ownership`);
