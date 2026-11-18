@@ -133,6 +133,33 @@ export async function parentRun(
     terminal: terminalModule(terminalPlugin),
     terminalPlugin,
   };
+  dependencies.codeHost.observeDelivery = async (input) => {
+    const pullRequest = (
+      await dependencies.codeHost.listPullRequests(input.repository)
+    ).find((pr) => pr.number === input.pullRequest)!;
+    const observed = await dependencies.codeHost.getPullRequest(
+      input.repository,
+      input.pullRequest,
+    );
+    const ticket = await dependencies.tracker.getTicket(
+      input.repository,
+      input.ticket,
+    );
+    return {
+      pullRequest: {
+        ...pullRequest,
+        headSha: observed.headSha,
+        state: observed.merged ? "merged" : pullRequest.state,
+      },
+      state: observed,
+      ticket: {
+        ...ticket,
+        id: `issue-${input.ticket}`,
+        repository: input.repository,
+        repositoryId: "REPO_1",
+      },
+    };
+  };
   return {
     directory,
     dependencies,

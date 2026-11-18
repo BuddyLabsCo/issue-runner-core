@@ -80,6 +80,16 @@ export async function observeCi(
         typeof pr.isInMergeQueue !== "boolean" ||
         typeof pr.isMergeQueueEnabled !== "boolean" ||
         typeof pr.mergeStateStatus !== "string" ||
+        ![
+          "BEHIND",
+          "BLOCKED",
+          "CLEAN",
+          "DIRTY",
+          "DRAFT",
+          "HAS_HOOKS",
+          "UNKNOWN",
+          "UNSTABLE",
+        ].includes(pr.mergeStateStatus) ||
         (pr.mergedAt !== null && typeof pr.mergedAt !== "string") ||
         ![pr.autoMergeRequest, pr.mergeQueueEntry].every(
           (v) => v === null || (typeof v === "object" && !Array.isArray(v)),
@@ -112,7 +122,9 @@ export async function observeCi(
           createdAt,
           merged: pr.state === "MERGED" || pr.mergedAt !== null,
           mergeRequested:
-            pr.autoMergeRequest !== null || pr.mergeQueueEntry !== null,
+            pr.autoMergeRequest !== null ||
+            pr.mergeQueueEntry !== null ||
+            pr.isInMergeQueue,
           mergeable:
             pr.mergeable === "MERGEABLE"
               ? "mergeable"

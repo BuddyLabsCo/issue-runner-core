@@ -20,7 +20,7 @@ export async function integrateImplementation(input: {
   persist: () => Promise<void>;
   beforeDispatch: () => Promise<boolean>;
   continuePublication: () => Promise<string>;
-  observeTicket: () => Promise<Ticket>;
+  restarting: boolean;
 }): Promise<{ outcome: "succeeded" | "incomplete"; reason: string }> {
   const { progress, loaded, context, codeHost, tracker, read, persist } = input;
   const publication = verifiedPublication(progress);
@@ -40,17 +40,37 @@ export async function integrateImplementation(input: {
   const { repository, ticket } = progress;
   const pullRequest = publication.pullRequest;
   const target = `ticket:${ticket}`;
+  let latest: Awaited<ReturnType<CodeHost["observeDelivery"]>> | undefined;
   const observe = () =>
     read("confirm_merge", target, async () => {
-      const state = await codeHost.getPullRequest(
+      const observed = await codeHost.observeDelivery({
         repository,
-        pullRequest.number,
-      );
-      if (state.headSha !== head)
+        pullRequest: pullRequest.number,
+        ticket,
+      });
+      const candidate = observed.pullRequest;
+      if (
+        candidate.id !== pullRequest.id ||
+        candidate.number !== pullRequest.number ||
+        candidate.url !== pullRequest.url ||
+        candidate.branch !== pullRequest.branch ||
+        candidate.targetBranch !== pullRequest.targetBranch ||
+        candidate.createdAt !== pullRequest.createdAt ||
+        candidate.headSha !== head ||
+        candidate.draft ||
+        observed.state.headSha !== head ||
+        observed.state.merged !== (candidate.state === "merged") ||
+        !observed.ticket.id ||
+        !Array.isArray(observed.ticket.labels) ||
+        observed.ticket.number !== ticket ||
+        observed.ticket.repositoryId !== publication.repositoryId ||
+        observed.ticket.repository?.toLowerCase() !== repository.toLowerCase()
+      )
         throw new Error(
-          "Pull Request head changed before integration confirmation",
+          "Pull Request or Issue identity changed before integration confirmation",
         );
-      return state;
+      latest = observed;
+      return observed;
     });
   const repair = async (reason: string) => {
     publication.conflict ??= reason;
@@ -70,8 +90,13 @@ export async function integrateImplementation(input: {
     head = publishedHead(publication);
   }
   if (publication.phase !== "merged" && publication.phase !== "delivered") {
+    let state =
+      !input.restarting &&
+      publication.phase === "checks_ready" &&
+      publication.ci
+        ? publication.ci
+        : (await observe()).state;
     for (;;) {
-      let state = await observe();
       if (state.merged) {
         publication.merge = state;
         publication.phase = "merged";
@@ -106,6 +131,7 @@ export async function integrateImplementation(input: {
             delete publication.mergeDeadline;
             await persist();
           } else await sleep(Math.min(10_000, remaining));
+          state = (await observe()).state;
           continue;
         }
         if (state.mergeable === "mergeable") {
@@ -117,6 +143,7 @@ export async function integrateImplementation(input: {
           await persist();
           await input.continuePublication();
           head = publishedHead(publication);
+          state = publication.ci ?? (await observe()).state;
           continue;
         }
       }
@@ -124,6 +151,7 @@ export async function integrateImplementation(input: {
         await repair(
           publication.conflict ?? "Pull Request has an explicit merge conflict",
         );
+        state = (await observe()).state;
         continue;
       }
       if (state.mergeFailure !== null) {
@@ -132,16 +160,19 @@ export async function integrateImplementation(input: {
           state.mergeFailure,
           context.signal,
         );
+        state = (await observe()).state;
         continue;
       }
       if (!state.mergeRequested && publication.phase !== "merge_requested") {
         publication.phase = "pending_merge";
         await persist();
+        let attempted = false;
         const request = await read(
           "request_squash_merge",
           target,
           async () => {
-            state = await observe();
+            if (attempted) state = (await observe()).state;
+            attempted = true;
             if (state.merged || state.mergeRequested)
               return { outcome: "accepted" as const };
             if (
@@ -158,33 +189,64 @@ export async function integrateImplementation(input: {
               };
             if (state.mergeFailure !== null)
               throw new Error(state.mergeFailure);
+            if (state.mergeStateStatus === "DIRTY")
+              return {
+                outcome: "conflict" as const,
+                error: new Error("Pull Request has an explicit merge conflict"),
+              };
+            if (
+              !state.isMergeQueueEnabled &&
+              !loaded.config.codeHost.adminMerge &&
+              ["BLOCKED", "BEHIND"].includes(state.mergeStateStatus ?? "")
+            )
+              throw new Error(
+                `Pull Request merge is ${state.mergeStateStatus}`,
+              );
             const result = await codeHost.requestSquashMerge({
               repository,
               pullRequest: pullRequest.number,
-              headSha: state.headSha,
+              pullRequestId: pullRequest.id,
+              headSha: head,
               admin: loaded.config.codeHost.adminMerge,
+              queue: state.isMergeQueueEnabled === true,
             });
             if (result.outcome === "rejected") throw result.error;
             return result;
           },
           {
             reconcile: async () => {
-              state = await observe();
-              return state.merged || state.mergeRequested
-                ? {
-                    outcome: "completed",
-                    result: { outcome: "accepted" as const },
-                  }
-                : { outcome: "pending" };
+              state = (await observe()).state;
+              if (state.merged || state.mergeRequested)
+                return {
+                  outcome: "completed",
+                  result: { outcome: "accepted" as const },
+                };
+              if (
+                state.mergeable === "conflicting" ||
+                state.mergeStateStatus === "DIRTY"
+              )
+                return {
+                  outcome: "completed",
+                  result: {
+                    outcome: "conflict" as const,
+                    error: new Error(
+                      "Pull Request has an explicit merge conflict",
+                    ),
+                  },
+                };
+              return { outcome: "pending" };
             },
           },
         );
         if (request.outcome === "conflict") {
+          state = (await observe()).state;
+          if (state.merged || state.mergeRequested) continue;
           await repair(
             request.error instanceof Error
               ? request.error.message
               : String(request.error),
           );
+          state = (await observe()).state;
           continue;
         }
       }
@@ -194,7 +256,7 @@ export async function integrateImplementation(input: {
         loaded.config.timeouts.mergeQueueMinutes * 60_000;
       await persist();
       for (;;) {
-        state = await observe();
+        state = (await observe()).state;
         if (state.merged) break;
         if (
           progress.purpose === "documentation" &&
@@ -205,6 +267,7 @@ export async function integrateImplementation(input: {
           );
         if (!state.mergeRequested && state.mergeable === "conflicting") {
           await repair("Pull Request has an explicit merge conflict");
+          state = (await observe()).state;
           break;
         }
         const remaining =
@@ -218,6 +281,7 @@ export async function integrateImplementation(input: {
           publication.phase = "pending_merge";
           delete publication.mergeDeadline;
           await persist();
+          state = (await observe()).state;
           break;
         }
         await sleep(Math.min(10_000, remaining));
@@ -235,7 +299,12 @@ export async function integrateImplementation(input: {
       throw new Error(
         "Delivery requires persisted completed tracker state and labels",
       );
-    const current = await input.observeTicket();
+    const observation = await observe();
+    if (!observation.state.merged)
+      throw new OperationStopped(
+        "Previously delivered Pull Request is no longer merged",
+      );
+    const current = observation.ticket;
     if (current.state !== "closed" || current.stateReason !== "completed")
       throw new OperationStopped(
         "Previously delivered Issue is no longer closed/completed; retained delivery evidence",
@@ -246,7 +315,11 @@ export async function integrateImplementation(input: {
     };
   }
   const completion = async () => {
-    const current = await input.observeTicket();
+    const observed = latest ?? (await observe());
+    latest = undefined;
+    if (!observed.state.merged)
+      throw new Error("Delivery requires confirmed merged Pull Request");
+    const current = observed.ticket;
     if (current.state === "closed") {
       if (current.stateReason !== "completed")
         throw new OperationStopped(
@@ -306,14 +379,14 @@ export async function integrateBatch(input: {
   batch: number[];
   ready: Map<
     number,
-    { pullRequest: number; complete: () => Promise<RunSummary> }
+    {
+      pullRequest: { number: number; createdAt: string };
+      complete: () => Promise<RunSummary>;
+    }
   >;
   results: RunSummary[];
-  repository: string;
-  codeHost: CodeHost;
-  read: ReadOperation;
 }): Promise<RunSummary[]> {
-  const { batch, ready, results, repository, codeHost, read } = input;
+  const { batch, ready, results } = input;
   if (
     batch.some(
       (number, index) =>
@@ -323,20 +396,15 @@ export async function integrateBatch(input: {
     )
   )
     return results;
-  const ordered = await Promise.all(
-    [...ready].map(async ([number, integration]) => {
-      const observed = await read("integration_order", `ticket:${number}`, () =>
-        codeHost.getPullRequest(repository, integration.pullRequest),
-      );
-      return {
-        number,
-        ...integration,
-        createdAt: Date.parse(observed.createdAt),
-      };
-    }),
-  );
+  const ordered = [...ready].map(([number, integration]) => ({
+    number,
+    ...integration,
+  }));
   ordered.sort(
-    (a, b) => a.createdAt - b.createdAt || a.pullRequest - b.pullRequest,
+    (a, b) =>
+      Date.parse(a.pullRequest.createdAt) -
+        Date.parse(b.pullRequest.createdAt) ||
+      a.pullRequest.number - b.pullRequest.number,
   );
   for (const integration of ordered) {
     const index = batch.indexOf(integration.number);

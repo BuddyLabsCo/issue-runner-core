@@ -31,8 +31,10 @@ await test("delivery requires confirmed squash integration and completed tracker
       assert.deepEqual(input, {
         repository: "owner/repo",
         pullRequest: 81,
+        pullRequestId: "PR_81",
         headSha: implementationCommit.sha,
         admin: false,
+        queue: false,
       });
       assert.equal(fixture.state.ticket.state, "open");
       effects.push("merge");
@@ -266,18 +268,18 @@ await test("recovery cannot credit delivery when recorded publication differs fr
   assert.match(result.summary.failure!, /Publication evidence does not match/u);
 });
 
-await test("a changed observed HEAD pauses without merging or closing the Issue", async (t) => {
+await test("a changed observed HEAD cannot earn delivery credit", async (t) => {
   const fixture = await integrationRun(t);
-  fixture.integrationState.onObserve = async () => {
-    if (fixture.integrationState.observations > 1)
-      fixture.integrationState.pullRequest.headSha = "d".repeat(40);
+  fixture.integrationState.onMerge = async () => {
+    fixture.integrationState.pullRequest.headSha = "d".repeat(40);
+    return { outcome: "rejected", error: new Error("head mismatch") };
   };
   fixture.dependencies.operator.pause = async (message) => {
-    assert.match(message, /head changed/u);
+    assert.match(message, /identity changed/u);
     return "q";
   };
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  assert.equal(fixture.integrationState.requests.length, 0);
+  assert.equal(fixture.integrationState.requests.length, 1);
   assert.equal(fixture.integrationState.closures, 0);
 });
 
@@ -323,4 +325,61 @@ await test("an interrupted queue resumes its existing request and deadline witho
   assert.equal((await fixture.snapshot()).publication!.mergeDeadline, deadline);
   assert.equal(fixture.integrationState.requests.length, 1);
   assert.equal(fixture.state.taskCount, 1);
+});
+
+for (const status of ["BLOCKED", "BEHIND"] as const) {
+  await test(`non-admin merge respects ${status} policy`, async (t) => {
+    const fixture = await integrationRun(t);
+    fixture.integrationState.pullRequest.mergeStateStatus = status;
+    fixture.dependencies.operator.pause = async (message) => {
+      assert.match(message, new RegExp(status, "u"));
+      return "q";
+    };
+    assert.equal((await fixture.run()).summary.outcome, "cancelled");
+    assert.equal(fixture.integrationState.requests.length, 0);
+    assert.equal(fixture.integrationState.closures, 0);
+  });
+}
+
+await test("queue policy dispatches auto-merge against the accepted head", async (t) => {
+  const fixture = await integrationRun(t);
+  fixture.integrationState.pullRequest.isMergeQueueEnabled = true;
+  assert.equal((await fixture.run()).summary.outcome, "succeeded");
+  assert.equal(fixture.integrationState.requests[0]!.queue, true);
+  assert.equal(
+    fixture.integrationState.requests[0]!.headSha,
+    implementationCommit.sha,
+  );
+});
+
+await test("admin merge attempts bypass of BLOCKED policy", async (t) => {
+  const fixture = await integrationRun(t, {
+    ...validConfig,
+    codeHost: { ...validConfig.codeHost, adminMerge: true },
+  });
+  fixture.integrationState.pullRequest.mergeStateStatus = "BLOCKED";
+  assert.equal((await fixture.run()).summary.outcome, "succeeded");
+  assert.equal(fixture.integrationState.requests[0]!.admin, true);
+});
+
+await test("immediate merge and Issue closure need one combined delivery observation", async (t) => {
+  const fixture = await integrationRun(t);
+  let observations = 0;
+  const observe = fixture.dependencies.codeHost.observeDelivery.bind(
+    fixture.dependencies.codeHost,
+  );
+  fixture.dependencies.codeHost.observeDelivery = async (input) => {
+    observations++;
+    return observe(input);
+  };
+  fixture.integrationState.onMerge = async () => {
+    fixture.integrationState.pullRequest.merged = true;
+    fixture.state.ticket.state = "closed";
+    fixture.state.ticket.stateReason = "completed";
+    return { outcome: "accepted" };
+  };
+  assert.equal((await fixture.run()).summary.outcome, "succeeded");
+  assert.equal(observations, 1);
+  assert.equal(fixture.integrationState.requests.length, 1);
+  assert.equal(fixture.integrationState.closures, 0);
 });

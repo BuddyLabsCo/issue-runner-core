@@ -122,6 +122,13 @@ export async function fiveIssueRun(t: TestContext) {
     await sleep(ms);
   };
   const host: CodeHost = codeHost;
+  const createPullRequest = codeHost.createPullRequest.bind(codeHost);
+  codeHost.createPullRequest = async (input) => {
+    const pr = await createPullRequest(input);
+    const ticket = Number(/ticket-(\d+)$/u.exec(pr.branch)![1]);
+    pr.createdAt = `2026-10-30T00:${String(ticket % 100).padStart(2, "0")}:00Z`;
+    return pr;
+  };
   const request = host.requestSquashMerge.bind(host);
   const integrations: number[] = [];
   host.requestSquashMerge = async (input) => {

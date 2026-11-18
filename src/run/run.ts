@@ -138,6 +138,7 @@ async function executeProject(
       host.observePublicationBranch(repository, branch),
     observePublication: (input) => host.observePublication(input),
     observeCi: (input) => host.observeCi(input),
+    observeDelivery: (input) => host.observeDelivery(input),
     getRequiredChecks: (repository, pullRequest) =>
       host.getRequiredChecks(repository, pullRequest),
     createPullRequest: (input) =>
