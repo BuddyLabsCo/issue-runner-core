@@ -33,15 +33,15 @@ for (const recover of [false, true]) {
   await test(`a cancelled Batch member permits its ready sibling to integrate${recover ? " after matching recovery" : ""}`, async (t) => {
     const children = [child(51), child(52)];
     const fixture = await parentDeliveryRun(t, children);
-    const getTicket = fixture.dependencies.tracker.getTicket.bind(
+    const readStart = fixture.dependencies.tracker.readStart.bind(
       fixture.dependencies.tracker,
     );
-    fixture.dependencies.tracker.getTicket = async (...args) => {
+    fixture.dependencies.tracker.readStart = async (...args) => {
       if (args[1] === 51) {
         children[0]!.state = "closed";
         children[0]!.stateReason = "not_planned";
       }
-      return getTicket(...args);
+      return readStart(...args);
     };
     let rejectMerge = recover;
     Object.assign(fixture.dependencies.codeHost, {

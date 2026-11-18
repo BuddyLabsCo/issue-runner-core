@@ -160,7 +160,7 @@ await test("parent reads every child and blocker page before selecting across la
   ]);
 });
 
-await test("parent cancellation after a partial Reservation prevents assignment and dispatch", async (t) => {
+await test("parent cancellation after a grouped Reservation prevents dispatch", async (t) => {
   const fixture = await parentRun(t, [child(51)]);
   fixture.dependencies.tracker.getParent = async () => ({
     number: 48,
@@ -169,11 +169,11 @@ await test("parent cancellation after a partial Reservation prevents assignment 
   });
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "cancelled");
-  assert.deepEqual(fixture.writes, ["label:51"]);
+  assert.deepEqual(fixture.writes, ["label:51", "assignee:51"]);
   assert.deepEqual(fixture.dispatched, []);
 });
 
-await test("a lost Reservation label prevents creating a partial assignee Reservation", async (t) => {
+await test("a missing Reservation label after a grouped write prevents dispatch", async (t) => {
   const ticket = child(51);
   const fixture = await parentRun(t, [ticket]);
   const addLabel = fixture.dependencies.tracker.addLabel.bind(
@@ -185,7 +185,7 @@ await test("a lost Reservation label prevents creating a partial assignee Reserv
   };
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "incomplete");
-  assert.deepEqual(fixture.writes, ["label:51"]);
+  assert.deepEqual(fixture.writes, ["label:51", "assignee:51"]);
   assert.deepEqual(fixture.dispatched, []);
   assert.match(result.summary.tickets![0]!.detail, /Reservation changed/u);
 });

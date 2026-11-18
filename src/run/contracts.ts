@@ -42,6 +42,25 @@ export interface Tracker {
     body: string,
   ): Promise<void>;
   getTicket(repository: string, ticket: number): Promise<Ticket>;
+  readStart(
+    repository: string,
+    number: number,
+    runner: string,
+    reservation: string,
+    parent?: number,
+  ): Promise<{
+    parent: Ticket;
+    tickets: Ticket[];
+    reservationId: string | null;
+    runnerId: string | null;
+  }>;
+  addReservation(
+    ticket: Ticket,
+    label: { id: string; name: string } | undefined,
+    runner: { id: string; login: string } | undefined,
+    requiredLabel: string,
+    requiredRunner: string,
+  ): Promise<void>;
   listBlockersPage(
     repository: string,
     ticket: number,

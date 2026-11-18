@@ -274,3 +274,187 @@ await test("discovery rejects incomplete parent connections and invalid parent b
     );
   }
 });
+
+await test("standalone start reads complete Issue facts without native parent scope", async () => {
+  const response = initial([]);
+  response.data.repository.issue.labels = page(
+    [{ id: "ready", name: "ready" }],
+    "next",
+  );
+  const script = tracker([
+    response,
+    {
+      data: {
+        node: {
+          id: "parent",
+          labels: page([{ id: "reserved-id", name: "reserved" }]),
+        },
+      },
+    },
+  ]);
+  const result = await script.adapter.readStart(
+    "owner/repo",
+    10,
+    "runner",
+    "reserved",
+  );
+  assert.deepEqual(result.parent.labels, ["ready", "reserved"]);
+  assert.doesNotMatch(script.calls[0]!.query, /subIssues/u);
+});
+
+await test("reservation sends additive mutations together and drains confirmation", async () => {
+  const markerIssue = {
+    ...issue("one", 11),
+    labels: page([], "next"),
+    assignees: page([{ id: "runner-id", login: "runner" }]),
+  };
+  const script = tracker([
+    {
+      data: {
+        label: { labelable: markerIssue },
+        runner: { assignable: markerIssue },
+      },
+    },
+    {
+      data: {
+        node: {
+          id: "one",
+          labels: page([{ id: "label-id", name: "reserved" }]),
+        },
+      },
+    },
+  ]);
+  await script.adapter.addReservation(
+    {
+      ...issue("one", 11),
+      state: "open",
+      repository: "owner/repo",
+      repositoryId: "repo",
+    } as import("../../src/run/contracts.ts").Ticket,
+    { id: "label-id", name: "reserved" },
+    { id: "runner-id", login: "runner" },
+    "reserved",
+    "runner",
+  );
+  assert.match(script.calls[0]!.query, /addLabelsToLabelable/u);
+  assert.match(script.calls[0]!.query, /addAssigneesToAssignable/u);
+  assert.equal(script.calls.length, 2);
+});
+
+await test("reservation rejects partial GraphQL errors, missing payloads and unconfirmed markers", async () => {
+  const current = {
+    ...issue("one", 11),
+    labels: page([{ id: "label-id", name: "reserved" }]),
+    assignees: page([{ id: "runner-id", login: "runner" }]),
+  };
+  const ticket = {
+    number: 11,
+    id: "one",
+    repository: "owner/repo",
+    repositoryId: "repo",
+    state: "open" as const,
+    stateReason: null,
+  };
+  for (const response of [
+    {
+      data: { label: { labelable: current }, runner: null },
+      errors: [{ message: "failed", path: ["runner"] }],
+    },
+    { data: { label: { labelable: current }, runner: null } },
+    {
+      data: {
+        label: { labelable: current },
+        runner: { assignable: { ...current, assignees: page([]) } },
+      },
+    },
+    {
+      data: {
+        label: { labelable: current },
+        runner: {
+          assignable: {
+            ...current,
+            labels: page([{ id: "wrong", name: "reserved" }]),
+          },
+        },
+      },
+    },
+  ]) {
+    const script = tracker([response]);
+    await assert.rejects(
+      script.adapter.addReservation(
+        ticket,
+        { id: "label-id", name: "reserved" },
+        { id: "runner-id", login: "runner" },
+        "reserved",
+        "runner",
+      ),
+    );
+  }
+});
+
+await test("reservation drains all confirmation pages before concluding a marker is missing", async () => {
+  const current = {
+    ...issue("one", 11),
+    labels: page([]),
+    assignees: page([], "next"),
+  };
+  const script = tracker([
+    {
+      data: { label: { labelable: current }, runner: { assignable: current } },
+    },
+    {
+      data: {
+        node: {
+          id: "one",
+          assignees: page([{ id: "runner-id", login: "runner" }]),
+        },
+      },
+    },
+  ]);
+  await assert.rejects(
+    script.adapter.addReservation(
+      {
+        number: 11,
+        id: "one",
+        repository: "owner/repo",
+        repositoryId: "repo",
+        state: "open",
+        stateReason: null,
+      },
+      { id: "label-id", name: "reserved" },
+      { id: "runner-id", login: "runner" },
+      "reserved",
+      "runner",
+    ),
+    /marker not confirmed/u,
+  );
+  assert.equal(script.calls.length, 2);
+});
+
+await test("reservation retains GraphQL partial outcomes for reconciliation diagnostics", async () => {
+  const response = {
+    data: { label: { labelable: null }, runner: null },
+    errors: [{ message: "assignment failed", path: ["runner"] }],
+  };
+  const script = tracker([response]);
+  await assert.rejects(
+    script.adapter.addReservation(
+      {
+        number: 11,
+        id: "one",
+        repository: "owner/repo",
+        repositoryId: "repo",
+        state: "open",
+        stateReason: null,
+      },
+      { id: "label-id", name: "reserved" },
+      { id: "runner-id", login: "runner" },
+      "reserved",
+      "runner",
+    ),
+    (error: unknown) => {
+      assert.deepEqual((error as { response: unknown }).response, response);
+      return true;
+    },
+  );
+});

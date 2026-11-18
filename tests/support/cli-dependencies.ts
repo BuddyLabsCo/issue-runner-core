@@ -154,6 +154,47 @@ export function createCliDependencies(launchDirectory: string) {
         reads.push(`children:${page}`);
         return { children: [], nextPage: null };
       },
+      async readStart(
+        this: import("../../src/run/contracts.ts").Tracker,
+        repository: string,
+        number: number,
+        runner: string,
+        reservation: string,
+        parent?: number,
+      ) {
+        if (parent !== undefined)
+          return this.discoverParent(repository, parent, runner, reservation);
+        const ticket = await this.getTicket(repository, number);
+        ticket.blockers = [];
+        let page: number | null = 1;
+        while (page !== null) {
+          const result = await this.listBlockersPage(repository, number, page);
+          ticket.blockers.push(...result.blockers);
+          page = result.nextPage;
+        }
+        ticket.repository ??= repository;
+        return {
+          parent: ticket,
+          tickets: [],
+          reservationId: "label",
+          runnerId: "runner",
+        };
+      },
+      async addReservation(
+        this: import("../../src/run/contracts.ts").Tracker,
+        ticket: import("../../src/run/contracts.ts").Ticket,
+        label: { id: string; name: string } | undefined,
+        runner: { id: string; login: string } | undefined,
+      ) {
+        if (label)
+          await this.addLabel(ticket.repository!, ticket.number, label.name);
+        if (runner)
+          await this.addAssignee(
+            ticket.repository!,
+            ticket.number,
+            runner.login,
+          );
+      },
       discoverParent: discoverParentFixture,
       async closeParent() {
         effects.push("close_parent");

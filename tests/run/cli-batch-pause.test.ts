@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { readFile, readdir } from "node:fs/promises";
-import path from "node:path";
 import test from "node:test";
-import type { AuditEvent } from "../../src/audit.ts";
 import { validConfig } from "../support/cli-project.ts";
 import {
   deferred,
@@ -13,7 +10,7 @@ import {
 import { child, parentRun } from "../support/parent-run.ts";
 
 await test(
-  "unsupported Run-level skip keeps sibling mutations gated until cancellation",
+  "unsupported Run-level skip keeps subsequent sibling operations gated until cancellation",
   { timeout: 10_000 },
   async (t) => {
     const fixture = await parentRun(t, [child(51), child(52)], {
@@ -26,32 +23,25 @@ await test(
     const secondPause = deferred<void>();
     const firstAnswer = deferred<string>();
     const secondAnswer = deferred<string>();
-    const siblingMutation = deferred<void>();
-    const getTicket = fixture.dependencies.tracker.getTicket.bind(
+    const add = fixture.dependencies.tracker.addReservation.bind(
       fixture.dependencies.tracker,
     );
-    let siblingReads = 0;
-    fixture.dependencies.tracker.getTicket = async (repository, number) => {
-      if (number === 52 && ++siblingReads === 3) {
+    fixture.dependencies.tracker.addReservation = async (
+      ticket,
+      label,
+      runner,
+      requiredLabel,
+      requiredRunner,
+    ) => {
+      if (ticket.number === 52) {
         siblingHeld.resolve();
         await releaseSibling.promise;
       }
-      return getTicket(repository, number);
+      await add(ticket, label, runner, requiredLabel, requiredRunner);
     };
     fixture.dependencies.gitWorkspace.fetchTargetBranch = async () => {
       await siblingHeld.promise;
       throw new Error("shared Target Branch unavailable");
-    };
-    const assign = fixture.dependencies.tracker.addAssignee.bind(
-      fixture.dependencies.tracker,
-    );
-    fixture.dependencies.tracker.addAssignee = async (
-      repository,
-      number,
-      account,
-    ) => {
-      if (number === 52) siblingMutation.resolve();
-      await assign(repository, number, account);
     };
     let pauses = 0;
     fixture.dependencies.operator.pause = (message) => {
@@ -65,51 +55,14 @@ await test(
       return secondAnswer.promise;
     };
     const running = fixture.run();
-    let deadline: ReturnType<typeof setTimeout> | undefined;
     try {
       await firstPause.promise;
       releaseSibling.resolve();
-      const [name] = await readdir(path.join(fixture.directory, "logs"));
-      assert.ok(name);
-      const until = Date.now() + 3_000;
-      for (;;) {
-        const events = (
-          await readFile(path.join(fixture.directory, "logs", name), "utf8")
-        )
-          .split("\n")
-          .slice(0, -1)
-          .map((line) => JSON.parse(line) as AuditEvent)
-          .filter(
-            (event) =>
-              event.operation === "read_blockers" &&
-              event.target === "ticket:52:page:1",
-          );
-        if (
-          events.filter((event) => event.result === "started").length >
-          events.filter((event) => event.result === "succeeded").length
-        )
-          break;
-        assert.ok(
-          Date.now() < until,
-          "sibling blocker observation must reach the paused gate",
-        );
-        await new Promise<void>((resolve) => setImmediate(resolve));
-      }
       firstAnswer.resolve("s");
       await secondPause.promise;
-      await Promise.race([
-        siblingMutation.promise,
-        new Promise<void>((resolve) => {
-          deadline = setTimeout(resolve, 100);
-        }),
-      ]);
-      assert.equal(
-        fixture.writes.includes("assignee:52"),
-        false,
-        "unsupported input must not authorize a sibling mutation while the next pause is open",
-      );
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+      assert.deepEqual(fixture.dispatched, []);
     } finally {
-      clearTimeout(deadline);
       releaseSibling.resolve();
       firstAnswer.resolve("q");
       secondAnswer.resolve("q");
