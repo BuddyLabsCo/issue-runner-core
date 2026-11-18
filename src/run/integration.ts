@@ -120,12 +120,26 @@ export async function integrateImplementation(input: {
     }
   };
 
+  let observation: DeliveryObservation | undefined;
+  const interruptedRepair = publication.conflictRepair?.attempts.at(-1);
   if (
     publication.phase === "conflict_repair" &&
-    pendingRepair(publication.conflictRepair?.attempts.at(-1))
-  )
-    await input.continuePublication();
-  let observation: DeliveryObservation | undefined;
+    pendingRepair(interruptedRepair)
+  ) {
+    const assignmentUnsent =
+      !interruptedRepair.invocation ||
+      (interruptedRepair.pendingPrompt !== undefined &&
+        interruptedRepair.superseded.length === 0);
+    if (assignmentUnsent) observation = await observe();
+    const state = observation?.merge;
+    if (
+      !state ||
+      (!state.merged && !state.mergeRequested && state.mergeFailure === null)
+    ) {
+      await input.continuePublication();
+      observation = undefined;
+    }
+  }
   while (!publication.merge?.merged) {
     const checked =
       publication.phase === "checks_ready"
@@ -153,6 +167,18 @@ export async function integrateImplementation(input: {
         delete publication.mergeDeadline;
         await persist();
       }
+      observation = undefined;
+      continue;
+    }
+    const repairBudget = publication.conflictRepair;
+    if (
+      !state.mergeRequested &&
+      publication.conflict &&
+      repairBudget?.consumed === 2 &&
+      !repairBudget.retryAuthorized &&
+      !pendingRepair(repairBudget.attempts.at(-1))
+    ) {
+      await repair(publication.conflict);
       observation = undefined;
       continue;
     }

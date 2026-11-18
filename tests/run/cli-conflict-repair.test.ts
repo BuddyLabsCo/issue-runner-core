@@ -98,8 +98,15 @@ await test("two unsuccessful conflict attempts remain exhausted across restart u
     return "q";
   };
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  const requests = fixture.conflictState.requests.length;
+  fixture.conflictState.mergeable = "mergeable";
+  fixture.conflictState.onMerge = async () => {
+    fixture.conflictState.merged = true;
+    return { outcome: "accepted" };
+  };
   fixture.dependencies.signal = new AbortController().signal;
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  assert.equal(fixture.conflictState.requests.length, requests);
   assert.equal(fixture.repairs.tasks.length, 2);
   assert.equal(
     (await fixture.snapshot()).publication!.conflictRepair!.consumed,

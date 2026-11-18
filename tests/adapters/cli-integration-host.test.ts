@@ -120,17 +120,29 @@ await test("delivery reads the exact merged PR with the complete Issue labels ac
       query: string;
       variables: { after: string | null };
     };
-    assert.match(request.query, /pullRequest\(number: \$number\)/u);
-    const issueSelection = request.query
-      .replace(/\s+/gu, " ")
-      .split("issue(number: $ticket)")[1];
-    assert.ok(issueSelection);
-    assert.ok(
-      issueSelection.includes(
-        "labels(first: 100, after: $after) { nodes { id name } pageInfo { hasNextPage endCursor } totalCount }",
-      ),
-      "Issue labels must use the cursor and request all pagination fields",
+    assert.match(
+      request.query,
+      /pullRequest\s*\(\s*number\s*:\s*\$number\s*\)/u,
     );
+    const issueSelection = request.query.split(
+      /\bissue\s*\(\s*number\s*:\s*\$ticket\s*\)/u,
+    )[1];
+    assert.ok(issueSelection);
+    const selection =
+      /\blabels\s*\(([^)]*)\)\s*\{((?:[^{}]|\{[^{}]*\})*)\}/u.exec(
+        issueSelection,
+      );
+    assert.ok(selection);
+    assert.match(selection[1]!, /\bafter\s*:\s*\$after\b/u);
+    assert.match(selection[1]!, /\bfirst\s*:\s*100\b/u);
+    const fields = selection[2]!;
+    const nodes = /\bnodes\s*\{([^}]*)\}/u.exec(fields)?.[1] ?? "";
+    const pageInfo = /\bpageInfo\s*\{([^}]*)\}/u.exec(fields)?.[1] ?? "";
+    assert.match(nodes, /\bid\b/u);
+    assert.match(nodes, /\bname\b/u);
+    assert.match(pageInfo, /\bhasNextPage\b/u);
+    assert.match(pageInfo, /\bendCursor\b/u);
+    assert.match(fields.replace(/\{[^}]*\}/gu, ""), /\btotalCount\b/u);
     assert.partialDeepStrictEqual(request.variables, {
       owner: "owner",
       name: "repo",

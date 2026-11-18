@@ -42,58 +42,75 @@ for (const reason of ["completed", "not_planned"] as const) {
   });
 }
 
-await test("resuming an interrupted conflict-target fetch waits for a queued PR without creating a repair", async (t) => {
-  const fixture = await conflictRepairRun(t);
-  const { gitWorkspace, codeHost } = fixture.dependencies;
-  const fetch = gitWorkspace.fetchTargetBranch.bind(gitWorkspace);
-  let fetches = 0;
-  fixture.conflictState.mergeable = "conflicting";
-  gitWorkspace.fetchTargetBranch = async () => {
-    if (++fetches === 2) fixture.controller.abort();
-    return fetch();
-  };
-  const create = gitWorkspace.createWorktree.bind(gitWorkspace);
-  let repairWorktrees = 0;
-  gitWorkspace.createWorktree = (input) => {
-    if (input.branch.includes("conflict-repair")) repairWorktrees++;
-    return create(input);
-  };
+for (const interruptedAt of [
+  "conflict-target fetch",
+  "repair Worktree creation",
+]) {
+  await test(`resuming interrupted ${interruptedAt} waits for a queued PR without dispatching repair`, async (t) => {
+    const fixture = await conflictRepairRun(t);
+    const { gitWorkspace, codeHost } = fixture.dependencies;
+    const fetch = gitWorkspace.fetchTargetBranch.bind(gitWorkspace);
+    let fetches = 0;
+    fixture.conflictState.mergeable = "conflicting";
+    gitWorkspace.fetchTargetBranch = async () => {
+      if (++fetches === 2 && interruptedAt === "conflict-target fetch")
+        fixture.controller.abort();
+      return fetch();
+    };
+    const create = gitWorkspace.createWorktree.bind(gitWorkspace);
+    let repairWorktrees = 0;
+    gitWorkspace.createWorktree = async (input) => {
+      await create(input);
+      if (
+        input.branch.includes("conflict-repair") &&
+        ++repairWorktrees === 1 &&
+        interruptedAt === "repair Worktree creation"
+      )
+        fixture.controller.abort();
+    };
 
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  const interrupted = (await fixture.snapshot()).publication!;
-  assert.equal(interrupted.phase, "conflict_repair");
-  assert.equal(interrupted.conflictRepair?.attempts.length ?? 0, 0);
+    assert.equal((await fixture.run()).summary.outcome, "cancelled");
+    const interrupted = (await fixture.snapshot()).publication!;
+    assert.equal(interrupted.phase, "conflict_repair");
+    const retained = interrupted.conflictRepair?.attempts ?? [];
+    assert.equal(
+      retained.length,
+      interruptedAt === "conflict-target fetch" ? 0 : 1,
+    );
+    assert.equal(retained[0]?.invocation, undefined);
+    const worktreesBeforeResume = repairWorktrees;
 
-  fixture.dependencies.signal = new AbortController().signal;
-  fixture.conflictState.mergeable = "mergeable";
-  fixture.conflictState.mergeRequested = true;
-  const observe = codeHost.observePullRequest.bind(codeHost);
-  codeHost.observePullRequest = async (input) => {
-    const result = await observe(input);
-    if (!result.merge.merged) {
-      result.merge.isInMergeQueue = true;
-      result.merge.mergeRequested = true;
-    }
-    return result;
-  };
-  let waitedForQueue = false;
-  fixture.state.onSleep = async () => {
-    if ((await fixture.snapshot()).publication?.phase !== "merge_requested")
-      return;
-    waitedForQueue = true;
-    fixture.conflictState.merged = true;
-  };
-  const result = await fixture.run();
-  assert.equal(repairWorktrees, 0);
-  assert.equal(fixture.repairs.tasks.length, 0);
-  assert.equal(fixture.conflictState.requests.length, 0);
-  assert.ok(waitedForQueue);
-  assert.equal(result.summary.outcome, "succeeded");
-  assert.equal(
-    (await fixture.snapshot()).publication?.conflictRepair?.consumed ?? 0,
-    0,
-  );
-});
+    fixture.dependencies.signal = new AbortController().signal;
+    fixture.conflictState.mergeable = "mergeable";
+    fixture.conflictState.mergeRequested = true;
+    const observe = codeHost.observePullRequest.bind(codeHost);
+    codeHost.observePullRequest = async (input) => {
+      const result = await observe(input);
+      if (!result.merge.merged) {
+        result.merge.isInMergeQueue = true;
+        result.merge.mergeRequested = true;
+      }
+      return result;
+    };
+    let waitedForQueue = false;
+    fixture.state.onSleep = async () => {
+      if ((await fixture.snapshot()).publication?.phase !== "merge_requested")
+        return;
+      waitedForQueue = true;
+      fixture.conflictState.merged = true;
+    };
+    const result = await fixture.run();
+    assert.equal(repairWorktrees, worktreesBeforeResume);
+    assert.equal(fixture.publicationState.pushes, 1);
+    assert.equal(fixture.repairs.tasks.length, 0);
+    assert.equal(fixture.conflictState.requests.length, 0);
+    assert.ok(waitedForQueue);
+    assert.equal(result.summary.outcome, "succeeded");
+    const final = (await fixture.snapshot()).publication?.conflictRepair;
+    assert.equal(final?.consumed ?? 0, 0);
+    assert.deepEqual(final?.attempts ?? [], retained);
+  });
+}
 
 for (const outcome of ["conflict", "rejected"] as const) {
   await test(`a PR closed during ${outcome} reconciliation never starts conflict repair`, async (t) => {
