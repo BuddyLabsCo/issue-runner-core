@@ -173,11 +173,22 @@ await test("required queue uses expected-head auto-merge and rejects a mismatche
   assert.equal(result.outcome, "rejected");
 });
 
-await test("GitHub integration uses squash, observed HEAD, admin policy, queue observation and completed closure", async (t) => {
+await test("GitHub integration waits for a required queue to merge before crediting delivery", async (t) => {
   const fixture = await integrationRun(t);
   let queued = false;
   let merged = false;
   let requests = 0;
+  let queuedObservations = 0;
+  let checkedWhileQueued = false;
+  const observePullRequest =
+    fixture.dependencies.codeHost.observePullRequest.bind(
+      fixture.dependencies.codeHost,
+    );
+  fixture.dependencies.codeHost.observePullRequest = async (...args) => {
+    const observation = await observePullRequest(...args);
+    observation.merge.isMergeQueueEnabled = true;
+    return observation;
+  };
   const host = new GitHubCodeHost("host-secret", async (args, options) => {
     assert.equal(options.token, "host-secret");
     assert.deepEqual(args, ["api", "graphql", "--input", "-"]);
@@ -186,6 +197,7 @@ await test("GitHub integration uses squash, observed HEAD, admin policy, queue o
       variables: Record<string, unknown>;
     };
     if (payload.query.includes("mutation")) {
+      assert.match(payload.query, /enablePullRequestAutoMerge/u);
       assert.deepEqual(payload.variables.input, {
         pullRequestId: "pr-81",
         expectedHeadOid: implementationCommit.sha,
@@ -195,7 +207,7 @@ await test("GitHub integration uses squash, observed HEAD, admin policy, queue o
       queued = true;
       return JSON.stringify({
         data: {
-          mergePullRequest: {
+          enablePullRequestAutoMerge: {
             pullRequest: {
               id: "pr-81",
               number: 81,
@@ -208,6 +220,7 @@ await test("GitHub integration uses squash, observed HEAD, admin policy, queue o
     }
     const pr = fixture.publicationState.pullRequests[0]!;
     const second = payload.variables.after === "next";
+    if (queued && !merged && !second) queuedObservations++;
     return JSON.stringify({
       data: {
         repository: {
@@ -225,8 +238,10 @@ await test("GitHub integration uses squash, observed HEAD, admin policy, queue o
             mergeable: "MERGEABLE",
             mergeStateStatus: "CLEAN",
             isInMergeQueue: queued,
-            isMergeQueueEnabled: false,
-            autoMergeRequest: null,
+            isMergeQueueEnabled: true,
+            autoMergeRequest: queued
+              ? { enabledAt: "2026-10-30T00:00:00Z" }
+              : null,
             mergeQueueEntry: queued ? { id: "queue-entry" } : null,
           },
           issue: {
@@ -292,11 +307,23 @@ await test("GitHub integration uses squash, observed HEAD, admin policy, queue o
     getDeliveryTicket: tracker.getDeliveryTicket.bind(tracker),
   });
   fixture.state.onSleep = async () => {
-    if (queued) merged = true;
+    if (queued && !merged) {
+      assert.ok(queuedObservations > 0);
+      const publication = (await fixture.snapshot()).publication!;
+      assert.equal(publication.phase, "merge_requested");
+      assert.equal(publication.merge, undefined);
+      assert.equal(publication.closure, undefined);
+      assert.equal(publication.deliveryLabels, undefined);
+      assert.equal(fixture.state.ticket.state, "open");
+      checkedWhileQueued = true;
+      queued = false;
+      merged = true;
+    }
   };
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
   assert.equal(requests, 1);
+  assert.equal(checkedWhileQueued, true);
   assert.equal(
     (await fixture.snapshot()).publication?.deliveryLabels?.at(-1),
     "last-label",
