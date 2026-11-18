@@ -69,6 +69,9 @@ export async function publicationRun(
     const number = state.creations + 80;
     const pullRequest: PullRequestRecord = {
       number,
+      id: `pr-${number}`,
+      createdAt: "2026-01-01T00:00:00Z",
+      draft: false,
       url: `https://github.com/owner/repo/pull/${number}`,
       branch: input.branch,
       targetBranch: input.targetBranch,
@@ -77,7 +80,7 @@ export async function publicationRun(
     };
     state.pullRequests.push(pullRequest);
     await state.onCreate();
-    return { number, url: pullRequest.url };
+    return pullRequest;
   };
   codeHost.getRequiredChecks = async () => {
     state.discoveries.push(now);

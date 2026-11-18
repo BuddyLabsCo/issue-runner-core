@@ -238,6 +238,18 @@ export function createCliDependencies(launchDirectory: string) {
       ): Promise<string | null> {
         return remoteBranches.get(branch) ?? null;
       },
+      async observeBranch(repository: string, branch: string) {
+        return {
+          repositoryId: "repo-id",
+          head: await this.getRemoteBranchHead(repository, branch),
+        };
+      },
+      async observePublication(repository: string, branch: string) {
+        return {
+          ...(await this.observeBranch(repository, branch)),
+          candidates: await this.listPullRequests(),
+        };
+      },
       async listPullRequests(): Promise<PullRequestRecord[]> {
         return structuredClone(pullRequests);
       },
@@ -251,6 +263,9 @@ export function createCliDependencies(launchDirectory: string) {
         const number = 81 + pullRequests.length;
         const record: PullRequestRecord = {
           number,
+          id: `pr-${number}`,
+          createdAt: "2026-01-01T00:00:00Z",
+          draft: false,
           url: `https://github.com/${input.repository}/pull/${number}`,
           branch: input.branch,
           targetBranch: input.targetBranch,
@@ -258,7 +273,7 @@ export function createCliDependencies(launchDirectory: string) {
           state: "open",
         };
         pullRequests.push(record);
-        return { number, url: record.url };
+        return record;
       },
       async getRequiredChecks(): Promise<RequiredCheck[]> {
         return [];

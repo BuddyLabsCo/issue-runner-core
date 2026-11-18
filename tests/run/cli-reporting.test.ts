@@ -325,6 +325,7 @@ await test("five completed Issues print one aligned report with visible PR links
   host.createPullRequest = async (input) => {
     const pr = await create(input);
     return {
+      ...pr,
       number: numbers.get(pr.number)!,
       url: `https://github.com/owner/repo/pull/${numbers.get(pr.number)!}`,
     };

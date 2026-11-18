@@ -1,6 +1,8 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
+import {
+  observeBranch,
+  observePublication,
+  createPublication,
+} from "./github-publication.ts";
 import type {
   CodeHost,
   PullRequestRecord,
@@ -126,39 +128,16 @@ export class GitHubCodeHost implements CodeHost {
       .map(({ record }) => record);
   }
 
-  async createPullRequest(input: Parameters<CodeHost["createPullRequest"]>[0]) {
-    const directory = await mkdtemp(path.join(tmpdir(), "issue-runner-pr-"));
-    try {
-      const bodyFile = path.join(directory, "body.md");
-      await writeFile(bodyFile, input.body, { mode: 0o600 });
-      const url = (
-        await this.client.request([
-          "pr",
-          "create",
-          "--repo",
-          input.repository,
-          "--base",
-          input.targetBranch,
-          "--head",
-          input.branch,
-          "--title",
-          input.title,
-          "--body-file",
-          bodyFile,
-        ])
-      ).trim();
-      const prefix = `https://github.com/${input.repository}/pull/`;
-      const number = Number(url.slice(prefix.length));
-      if (
-        !url.toLowerCase().startsWith(prefix.toLowerCase()) ||
-        !Number.isSafeInteger(number) ||
-        number <= 0
-      )
-        throw new Error("GitHub returned invalid Pull Request identity");
-      return { number, url };
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
+  observeBranch(repository: string, branch: string) {
+    return observeBranch(this.client, repository, branch);
+  }
+
+  observePublication(repository: string, branch: string, targetBranch: string) {
+    return observePublication(this.client, repository, branch, targetBranch);
+  }
+
+  createPullRequest(input: Parameters<CodeHost["createPullRequest"]>[0]) {
+    return createPublication(this.client, input);
   }
 
   async getRequiredChecks(
@@ -213,6 +192,8 @@ function parsePullRequest(value: unknown): {
     throw new Error("GitHub returned invalid Pull Request");
   const row = value as {
     number?: unknown;
+    node_id?: unknown;
+    created_at?: unknown;
     html_url?: unknown;
     state?: unknown;
     merged_at?: unknown;
@@ -225,6 +206,10 @@ function parsePullRequest(value: unknown): {
     base?: { ref?: unknown };
   };
   if (
+    typeof row.node_id !== "string" ||
+    !row.node_id.trim() ||
+    typeof row.created_at !== "string" ||
+    !Number.isFinite(Date.parse(row.created_at)) ||
     !Number.isSafeInteger(row.number) ||
     (row.number as number) <= 0 ||
     typeof row.html_url !== "string" ||
@@ -242,6 +227,8 @@ function parsePullRequest(value: unknown): {
         ? row.head.repo.full_name
         : "",
     record: {
+      id: row.node_id,
+      createdAt: row.created_at,
       number: row.number as number,
       url: row.html_url,
       branch: row.head.ref,
