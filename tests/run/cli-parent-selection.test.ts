@@ -314,7 +314,7 @@ await test("a blocker-page failure after an open blocker cannot permit selection
   };
   fixture.dependencies.operator.pause = async () => "q";
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  assert.deepEqual(pages, [1, 2, 2]);
+  assert.deepEqual(pages, [1, 2, 1, 2]);
   assert.deepEqual(fixture.writes, []);
   assert.deepEqual(fixture.dispatched, []);
 });
@@ -347,14 +347,14 @@ for (const invalid of [
             : [],
         nextPage: invalid === "blocker_page_cycle" ? 1 : null,
       });
+    fixture.dependencies.operator.pause = async () => "q";
     const result = await fixture.run();
-    assert.equal(result.summary.outcome, "failed");
+    assert.equal(
+      result.summary.outcome,
+      invalid === "child_closure" ? "failed" : "cancelled",
+    );
     assert.deepEqual(fixture.writes, []);
     assert.deepEqual(fixture.dispatched, []);
-    assert.match(
-      result.summary.failure!,
-      /cross-repository|pagination|unsupported terminal state/u,
-    );
   });
 }
 

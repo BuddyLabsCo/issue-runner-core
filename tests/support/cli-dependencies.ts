@@ -22,6 +22,61 @@ export function terminalModule(plugin: TestTerminal) {
   };
 }
 
+async function discoverParentFixture(
+  this: import("../../src/run/contracts.ts").Tracker,
+  repository: string,
+  number: number,
+): Promise<{
+  parent: import("../../src/run/contracts.ts").Ticket;
+  tickets: import("../../src/run/contracts.ts").Ticket[];
+  reservationId: string;
+  runnerId: string;
+}> {
+  const parent = await this.getParent(repository, number);
+  const tickets: import("../../src/run/contracts.ts").Ticket[] = [];
+  let page: number | null = 1;
+  const seen = new Set<number>();
+  while (page !== null) {
+    if (seen.has(page) || !Number.isSafeInteger(page) || page < 1)
+      throw new Error("invalid child pagination");
+    seen.add(page);
+    const result = await this.listChildrenPage(repository, number, page);
+    tickets.push(...result.children);
+    page = result.nextPage;
+  }
+  tickets.sort((a, b) => a.number - b.number);
+  for (const ticket of tickets) {
+    if (ticket.repository !== repository)
+      throw new Error(
+        `cross-repository child ${ticket.repository}#${ticket.number} is unsupported`,
+      );
+    ticket.blockers = [];
+    let blockerPage: number | null = 1;
+    const pages = new Set<number>();
+    while (blockerPage !== null) {
+      if (
+        pages.has(blockerPage) ||
+        !Number.isSafeInteger(blockerPage) ||
+        blockerPage < 1
+      )
+        throw new Error("invalid blocker pagination");
+      pages.add(blockerPage);
+      const result = await this.listBlockersPage(
+        repository,
+        ticket.number,
+        blockerPage,
+      );
+      for (const blocker of result.blockers) {
+        if (blocker.state === "closed" && blocker.stateReason === null)
+          throw new Error("unsupported terminal state");
+        ticket.blockers.push(blocker);
+      }
+      blockerPage = result.nextPage;
+    }
+  }
+  return { parent, tickets, reservationId: "label", runnerId: "runner" };
+}
+
 export function createCliDependencies(launchDirectory: string) {
   const git = new LocalGitWorkspace("host-secret");
   const messages: string[] = [];
@@ -73,7 +128,15 @@ export function createCliDependencies(launchDirectory: string) {
       async getTicket(_repository: string, ticket: number) {
         return { number: ticket, state: "open" as const, stateReason: null };
       },
-      async listBlockersPage() {
+      async listBlockersPage(
+        _repository: string,
+        _ticket: number,
+        _page: number,
+      ): Promise<{
+        blockers: import("../../src/run/contracts.ts").Ticket[];
+        nextPage: number | null;
+      }> {
+        void [_repository, _ticket, _page];
         return { blockers: [], nextPage: null };
       },
       async addAssignee() {
@@ -87,10 +150,11 @@ export function createCliDependencies(launchDirectory: string) {
         _repository: string,
         _ticket: number,
         page: number,
-      ) {
+      ): Promise<import("../../src/run/contracts.ts").ChildPage> {
         reads.push(`children:${page}`);
         return { children: [], nextPage: null };
       },
+      discoverParent: discoverParentFixture,
       async closeParent() {
         effects.push("close_parent");
       },
