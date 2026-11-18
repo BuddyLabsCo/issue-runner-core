@@ -121,7 +121,16 @@ await test("delivery reads the exact merged PR with the complete Issue labels ac
       variables: { after: string | null };
     };
     assert.match(request.query, /pullRequest\(number: \$number\)/u);
-    assert.match(request.query, /issue\(number: \$ticket\)/u);
+    const issueSelection = request.query
+      .replace(/\s+/gu, " ")
+      .split("issue(number: $ticket)")[1];
+    assert.ok(issueSelection);
+    assert.ok(
+      issueSelection.includes(
+        "labels(first: 100, after: $after) { nodes { id name } pageInfo { hasNextPage endCursor } totalCount }",
+      ),
+      "Issue labels must use the cursor and request all pagination fields",
+    );
     assert.partialDeepStrictEqual(request.variables, {
       owner: "owner",
       name: "repo",

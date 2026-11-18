@@ -280,6 +280,12 @@ async function executeStandalone(
           codeHost: input.codeHost,
           tracker,
           read,
+          beforeClose: async () => {
+            if (await beforeDispatch()) return "eligible";
+            return selected.ticket.state === "closed"
+              ? "terminal"
+              : "ineligible";
+          },
           continuePublication: (conflict) => publish(progress, conflict),
         });
         if (delivery.outcome === "succeeded") {

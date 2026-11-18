@@ -15,6 +15,7 @@ import type {
 } from "./contracts.ts";
 import type { ReadOperation } from "./discovery.ts";
 import type { RunContext, RunSummary } from "./run.ts";
+import { pendingRepair } from "./repair.ts";
 import {
   OperationStopped,
   pauseForOperator,
@@ -30,6 +31,7 @@ export async function integrateImplementation(input: {
   read: ReadOperation;
   persist: () => Promise<void>;
   beforeDispatch: () => Promise<boolean>;
+  beforeClose: () => Promise<"eligible" | "terminal" | "ineligible">;
   continuePublication: (observedConflict?: boolean) => Promise<string>;
 }): Promise<{ outcome: "succeeded"; reason: string }> {
   const { progress, loaded, context, codeHost, tracker, read, persist } = input;
@@ -118,7 +120,10 @@ export async function integrateImplementation(input: {
     }
   };
 
-  if (publication.phase === "conflict_repair")
+  if (
+    publication.phase === "conflict_repair" &&
+    pendingRepair(publication.conflictRepair?.attempts.at(-1))
+  )
     await input.continuePublication();
   let observation: DeliveryObservation | undefined;
   while (!publication.merge?.merged) {
@@ -136,6 +141,20 @@ export async function integrateImplementation(input: {
       if (progress.operations) delete progress.operations[mergeKey];
       await persist();
       break;
+    }
+    if (state.mergeFailure !== null) {
+      await pauseForOperator(
+        context.operator,
+        state.mergeFailure,
+        context.signal,
+      );
+      if (publication.phase === "merge_requested") {
+        publication.phase = "pending_merge";
+        delete publication.mergeDeadline;
+        await persist();
+      }
+      observation = undefined;
+      continue;
     }
     if (
       publication.conflictRepair?.retryAuthorized &&
@@ -177,10 +196,13 @@ export async function integrateImplementation(input: {
           if (!firstState) observation = await observe();
           const current = firstState ?? observation!.merge;
           firstState = undefined;
-          if (current.merged || current.mergeRequested) return;
+          if (
+            current.mergeFailure !== null ||
+            current.merged ||
+            current.mergeRequested
+          )
+            return;
           if (conflicting(current)) return explicitConflict;
-          if (current.mergeFailure !== null)
-            throw new Error(current.mergeFailure);
           if (blocked(current, admin))
             throw new Error(
               `Pull Request merge is ${current.mergeStateStatus}`,
@@ -196,7 +218,11 @@ export async function integrateImplementation(input: {
           if (result.outcome === "rejected") throw result.error;
           if (result.outcome === "conflict") {
             observation = await observe();
-            if (observation.merge.merged || observation.merge.mergeRequested)
+            if (
+              observation.merge.mergeFailure !== null ||
+              observation.merge.merged ||
+              observation.merge.mergeRequested
+            )
               return;
             return result.error instanceof Error
               ? result.error.message
@@ -208,7 +234,11 @@ export async function integrateImplementation(input: {
           reconcile: async () => {
             observation = await observe();
             const current = observation.merge;
-            if (current.merged || current.mergeRequested)
+            if (
+              current.mergeFailure !== null ||
+              current.merged ||
+              current.mergeRequested
+            )
               return { outcome: "completed", result: undefined };
             if (conflicting(current))
               return { outcome: "completed", result: explicitConflict };
@@ -221,6 +251,7 @@ export async function integrateImplementation(input: {
         observation = undefined;
         continue;
       }
+      if (observation && observation.merge.mergeFailure !== null) continue;
     }
 
     if (publication.phase !== "merge_requested") {
@@ -235,10 +266,10 @@ export async function integrateImplementation(input: {
       "Issue eligibility changed while awaiting integration",
     );
     const remaining = publication.mergeDeadline! - now();
-    if (observation.merge.mergeFailure !== null || remaining <= 0) {
+    if (remaining <= 0) {
       await pauseForOperator(
         context.operator,
-        observation.merge.mergeFailure ?? "Merge confirmation timed out.",
+        "Merge confirmation timed out.",
         context.signal,
       );
       publication.phase = "pending_merge";
@@ -287,7 +318,13 @@ export async function integrateImplementation(input: {
           if (!first) current = await confirm();
           first = false;
           if (current.issue.state === "closed") return;
-          await requireEligibility("Reservation changed after merge");
+          const eligibility = await input.beforeClose();
+          if (eligibility === "terminal") {
+            current = await confirm();
+            if (current.issue.state === "closed") return;
+          }
+          if (eligibility !== "eligible")
+            throw new OperationStopped("Reservation changed after merge");
           await tracker.closeTicket(repository, ticket);
           current = await confirm();
           if (current.issue.state !== "closed")
