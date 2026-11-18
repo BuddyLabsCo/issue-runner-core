@@ -24,6 +24,18 @@ for (const unfinished of [false, true]) {
       maxBatchSize: 2,
     });
     const comments: number[] = [];
+    let denyStart = unfinished;
+    const start = fixture.dependencies.tracker.readStart.bind(
+      fixture.dependencies.tracker,
+    );
+    fixture.dependencies.tracker.readStart = async (...args) => {
+      const facts = await start(...args);
+      if (denyStart && args[1] === 52)
+        facts.tickets.find((ticket) => ticket.number === 52)!.assignees = [
+          "outside-owner",
+        ];
+      return facts;
+    };
     fixture.dependencies.tracker.commentTicket = async (
       _repository,
       number,
@@ -44,8 +56,6 @@ for (const unfinished of [false, true]) {
           });
           return;
         }
-        if (unfinished && assignment.ticket === 52)
-          tickets[1]!.assignees = ["outside-owner"];
       }
       await submit(tab, text, chord);
     };
@@ -69,7 +79,7 @@ for (const unfinished of [false, true]) {
       assert.equal(tickets[1]!.state, "open");
       assert.equal(tickets[2]!.state, "open");
       assert.equal(fixture.merged.size, 0);
-      tickets[1]!.assignees = ["runner"];
+      denyStart = false;
       fixture.dependencies.signal = new AbortController().signal;
       assert.equal((await fixture.run()).summary.outcome, "succeeded");
       assert.deepEqual(comments, [51]);

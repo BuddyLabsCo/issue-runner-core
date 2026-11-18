@@ -42,6 +42,7 @@ export interface Tracker {
     body: string,
   ): Promise<void>;
   getTicket(repository: string, ticket: number): Promise<Ticket>;
+  getDeliveryTicket(repository: string, ticket: number): Promise<Ticket>;
   readStart(
     repository: string,
     number: number,

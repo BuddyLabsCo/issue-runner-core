@@ -90,16 +90,18 @@ for (const recover of [false, true]) {
 await test("a cancelled Batch member does not let an unfinished member bypass the integration barrier", async (t) => {
   const children = [child(51), child(52), child(53)];
   const fixture = await parentDeliveryRun(t, children);
-  const getTicket = fixture.dependencies.tracker.getTicket.bind(
+  const start = fixture.dependencies.tracker.readStart.bind(
     fixture.dependencies.tracker,
   );
-  fixture.dependencies.tracker.getTicket = async (...args) => {
+  fixture.dependencies.tracker.readStart = async (...args) => {
+    const facts = await start(...args);
+    const selected = facts.tickets.find((ticket) => ticket.number === args[1]);
     if (args[1] === 51) {
-      children[0]!.state = "closed";
-      children[0]!.stateReason = "not_planned";
+      selected!.state = "closed";
+      selected!.stateReason = "not_planned";
     }
-    if (args[1] === 52) children[1]!.labels = [];
-    return getTicket(...args);
+    if (args[1] === 52) selected!.labels = [];
+    return facts;
   };
   assert.equal((await fixture.run()).summary.outcome, "incomplete");
   assert.deepEqual(fixture.dispatched, [53]);

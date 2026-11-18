@@ -218,7 +218,10 @@ async function executeStandalone(
     progress,
     ticket: selected.ticket,
     persist: () => persist(progress),
-    beforeDispatch,
+    beforeDispatch: () =>
+      input.documentation || progress.result?.outcome === "no_change"
+        ? beforeDispatch()
+        : Promise.resolve(true),
     closeTab: (close) =>
       read(
         `close_${progress.phase.replace("_completed", "")}_tab`,
@@ -247,6 +250,18 @@ async function executeStandalone(
       autoMerge: input.autoMerge,
       stageInput: stageInput(progress),
     });
+  const inspectDelivery = async () => {
+    const ticket = await read("read_delivery_issue", `ticket:${number}`, () =>
+      tracker.getDeliveryTicket(repository, number),
+    );
+    if (
+      ticket.number !== number ||
+      (ticket.repository !== undefined &&
+        ticket.repository.toLowerCase() !== repository.toLowerCase())
+    )
+      throw new Error("Unexpected Issue ownership");
+    return { ticket };
+  };
   const integrate = async (
     progress: ImplementationProgress,
     publicationReason?: string,
@@ -267,7 +282,7 @@ async function executeStandalone(
           codeHost: input.codeHost,
           tracker,
           read,
-          inspectTicket: inspect,
+          inspectTicket: input.documentation ? inspect : inspectDelivery,
           continuePublication: () => publish(progress),
         });
         if (delivery.outcome === "succeeded") {
@@ -299,17 +314,6 @@ async function executeStandalone(
     return complete();
   };
   if (
-    restored?.publication &&
-    [
-      "conflict_repair",
-      "pending_merge",
-      "merge_requested",
-      "merged",
-      "delivered",
-    ].includes(restored.publication.phase)
-  )
-    return integrate(restored);
-  if (
     selected.reason &&
     !completed &&
     !(
@@ -324,6 +328,19 @@ async function executeStandalone(
       outcome: selected.ticket.state === "closed" ? "no_work" : "incomplete",
     };
   }
+  if (
+    restored?.publication &&
+    (!completed ||
+      ["merged", "delivered"].includes(restored.publication.phase)) &&
+    [
+      "conflict_repair",
+      "pending_merge",
+      "merge_requested",
+      "merged",
+      "delivered",
+    ].includes(restored.publication.phase)
+  )
+    return integrate(restored);
   async function run(progress: ImplementationProgress): Promise<RunSummary> {
     if (progress.result) {
       if (

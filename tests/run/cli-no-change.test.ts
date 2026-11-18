@@ -75,7 +75,27 @@ await test("passed no-change Review uses Session B without consuming an ordinary
 
 await test("no-change findings resume A with fresh PR metadata, then resume B for ordinary round 1", async (t) => {
   const fixture = await noChangeReviewRun(t);
+  let started = false;
+  let eligibilityReads = 0;
+  const tracker = fixture.dependencies.tracker;
+  const start = tracker.readStart.bind(tracker);
+  tracker.readStart = async (...args) => {
+    const facts = await start(...args);
+    started = true;
+    return facts;
+  };
+  const getTicket = tracker.getTicket.bind(tracker);
+  tracker.getTicket = async (...args) => {
+    if (started) eligibilityReads++;
+    return getTicket(...args);
+  };
+  const blockers = tracker.listBlockersPage.bind(tracker);
+  tracker.listBlockersPage = async (...args) => {
+    if (started) eligibilityReads++;
+    return blockers(...args);
+  };
   fixture.noChangeState.onReview = async (review) => {
+    assert.equal(eligibilityReads, 0);
     await writeFile(review.findings, "Implement the missing requirement.\n");
     await publish(review.invocation!.path, {
       outcome: "findings",
@@ -83,6 +103,11 @@ await test("no-change findings resume A with fresh PR metadata, then resume B fo
       commits: [],
       findings_file: review.findings,
     });
+  };
+  const fix = fixture.noChangeState.onFix;
+  fixture.noChangeState.onFix = async (stage) => {
+    assert.equal(eligibilityReads, 0);
+    await fix(stage);
   };
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "incomplete");

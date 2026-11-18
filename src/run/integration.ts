@@ -69,6 +69,11 @@ export async function integrateImplementation(input: {
     await input.continuePublication();
     head = publishedHead(publication);
   }
+  if (publication.phase === "merged" || publication.phase === "delivered") {
+    const current = await observe();
+    if (!current.merged)
+      throw new OperationStopped("Recorded Pull Request is no longer merged");
+  }
   if (publication.phase !== "merged" && publication.phase !== "delivered") {
     for (;;) {
       let state = await observe();

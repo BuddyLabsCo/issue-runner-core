@@ -128,6 +128,9 @@ export function createCliDependencies(launchDirectory: string) {
       async getTicket(_repository: string, ticket: number) {
         return { number: ticket, state: "open" as const, stateReason: null };
       },
+      async getDeliveryTicket(repository: string, ticket: number) {
+        return this.getTicket(repository, ticket);
+      },
       async listBlockersPage(
         _repository: string,
         _ticket: number,

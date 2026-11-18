@@ -215,33 +215,6 @@ for (const missing of [
   });
 }
 
-await test("a withheld Review assignment retains its invocation and resumes only its reviewer when eligibility returns", async (t) => {
-  const fixture = await reviewRun(t, 1);
-  const probe = fixture.state.onProbe;
-  fixture.state.onProbe = async (assignment) => {
-    await probe(assignment);
-    if (assignment.role === "review")
-      fixture.state.ticket.labels = ["sandcastle:reserved"];
-  };
-  assert.equal((await fixture.run()).summary.outcome, "incomplete");
-  const saved = await fixture.snapshot();
-  const pending = saved.reviews![0]!.pendingPrompt;
-  assert.match(pending!, /^Review assignment\n/u);
-  assert.equal(fixture.reviewState.reviews.length, 0);
-  const before = fixture.state.submissions.length;
-  fixture.state.ticket.labels!.push("ready-for-agent");
-  const result = await fixture.run();
-  assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
-  assert.deepEqual(
-    fixture.state.submissions.slice(before).map((item) => item.text),
-    ['review-cli resume "review-native/$&"', pending],
-  );
-  assert.deepEqual(
-    (await fixture.snapshot()).reviews![0]!.invocation,
-    saved.reviews![0]!.invocation,
-  );
-});
-
 for (const stage of ["review", "fix"] as const) {
   await test(`cancellation during ${stage} startup prevents its first prompt and retains context`, async (t) => {
     const fixture = await reviewRun(t, 1);

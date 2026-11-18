@@ -177,20 +177,6 @@ await test("a CI-ready unmerged PR has a structured report without successful de
   assert.equal(fixture.state.ticket.state, "open");
 });
 
-await test("releasing a Reservation after the handoff does not report successful delivery", async (t) => {
-  const fixture = await implementationRun(t);
-  fixture.state.onClose = async () => {
-    fixture.state.ticket.assignees = [];
-    fixture.state.ticket.labels = ["ready-for-agent"];
-  };
-  const result = await fixture.run();
-  assert.equal(result.summary.outcome, "incomplete");
-  assert.equal(result.exitCode, 1);
-  assert.equal(result.summary.tickets?.[0]?.status, "incomplete");
-  assert.equal(result.summary.tickets?.[0]?.pullRequest, null);
-  assert.equal(fixture.state.ticket.state, "open");
-});
-
 await test("a delivered ordinary no_change handoff reports completion without a PR", async (t) => {
   const fixture = await implementationRun(t);
   fixture.state.onTask = async (file) => {

@@ -160,6 +160,38 @@ export class GitHubTracker implements Tracker {
     return this.getParent(repository, ticket);
   }
 
+  async getDeliveryTicket(repository: string, number: number): Promise<Ticket> {
+    const ticket = await this.getTicket(repository, number);
+    const labels: string[] = [];
+    for (let page = 1; ; page++) {
+      const value: unknown = JSON.parse(
+        await this.client.request([
+          "api",
+          "--method",
+          "GET",
+          `repos/${repository}/issues/${number}/labels`,
+          "-f",
+          "per_page=100",
+          "-f",
+          `page=${page}`,
+        ]),
+      );
+      if (
+        !Array.isArray(value) ||
+        value.some(
+          (label: unknown) =>
+            typeof label !== "object" ||
+            label === null ||
+            typeof (label as Record<string, unknown>).name !== "string",
+        )
+      )
+        throw new Error("GitHub returned invalid Issue labels");
+      labels.push(...value.map((label: { name: string }) => label.name));
+      if (value.length < 100) break;
+    }
+    return { ...ticket, labels };
+  }
+
   async closeTicket(repository: string, ticket: number): Promise<void> {
     await this.client.request([
       "issue",

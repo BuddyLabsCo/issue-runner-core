@@ -57,6 +57,22 @@ await test("GitHub integration uses squash, observed HEAD, admin policy, queue o
   const tracker = new GitHubTracker("tracker-secret", async (args, options) => {
     assert.equal(options.token, "tracker-secret");
     assert.equal(merged, true);
+    if (args[0] === "api") {
+      if (args[3] === "repos/owner/repo/issues/50")
+        return JSON.stringify({
+          number: 50,
+          state: fixture.state.ticket.state,
+          state_reason: fixture.state.ticket.stateReason,
+        });
+      assert.equal(args[3], "repos/owner/repo/issues/50/labels");
+      return JSON.stringify(
+        args.includes("page=1")
+          ? Array.from({ length: 100 }, (_, index) => ({
+              name: `label-${index}`,
+            }))
+          : [{ name: "last-label" }],
+      );
+    }
     assert.deepEqual(args, [
       "issue",
       "close",
@@ -76,6 +92,7 @@ await test("GitHub integration uses squash, observed HEAD, admin policy, queue o
   });
   Object.assign(fixture.dependencies.tracker, {
     closeTicket: tracker.closeTicket.bind(tracker),
+    getDeliveryTicket: tracker.getDeliveryTicket.bind(tracker),
   });
   fixture.state.onSleep = async () => {
     if (queued) merged = true;
@@ -83,6 +100,14 @@ await test("GitHub integration uses squash, observed HEAD, admin policy, queue o
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
   assert.equal(requests, 1);
+  assert.equal(
+    (await fixture.snapshot()).publication?.deliveryLabels?.at(-1),
+    "last-label",
+  );
+  assert.equal(
+    (await fixture.snapshot()).publication?.deliveryLabels?.length,
+    101,
+  );
   assert.equal(
     (await fixture.snapshot()).publication?.closure?.stateReason,
     "completed",
