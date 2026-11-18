@@ -4,6 +4,7 @@ import type {
   IssueFact,
   IssueStartFacts,
   ParentDiscoveryChild,
+  ParentObservation,
   Tracker,
 } from "../run/contracts.ts";
 import type { GitHubClient } from "./github-client.ts";
@@ -25,7 +26,7 @@ function missingRunnerError(error: unknown): boolean {
   );
 }
 
-async function readIssueGraphQL(
+async function requestIssueGraphQL(
   client: GitHubClient,
   query: string,
   variables: Record<string, unknown>,
@@ -47,7 +48,7 @@ async function readIssueGraphQL(
     )
       return object(response.data);
     throw new Error(
-      `GitHub GraphQL Issue read failed: ${JSON.stringify(response.errors)}`,
+      `GitHub GraphQL Issue request failed: ${JSON.stringify(response.errors)}`,
       {
         cause: commandError,
       },
@@ -234,7 +235,7 @@ export function readIssueMarkers(
   signal?: AbortSignal,
 ) {
   return readMarkers(
-    (query, variables) => readIssueGraphQL(client, query, variables, signal),
+    (query, variables) => requestIssueGraphQL(client, query, variables, signal),
     id,
     parseMarkerPages(raw, id),
   );
@@ -287,6 +288,82 @@ function readScopeChildren<T extends IssueFact>(
   );
 }
 
+const parentScopeFields = `${issueFields} ${issueConnectionFields("subIssues", issueFields)}`;
+
+async function readParentObservation(
+  read: ReadIssueGraphQL,
+  parent: IssueFact,
+  raw: Record<string, unknown>,
+): Promise<ParentObservation> {
+  const children = await readScopeChildren(
+    read,
+    parent,
+    raw.subIssues,
+    issueFields,
+    (_raw, child) => child,
+  );
+  return { parent, children };
+}
+
+export async function readParentCompletion(
+  client: GitHubClient,
+  repository: string,
+  parentTicket: number,
+  signal?: AbortSignal,
+): Promise<ParentObservation> {
+  const read: ReadIssueGraphQL = (query, variables) =>
+    requestIssueGraphQL(client, query, variables, signal);
+  const [owner, name] = repository.split("/");
+  const data = await read(
+    `query ParentCompletion($owner: String!, $name: String!, $number: Int!) {
+      repository(owner: $owner, name: $name) {
+        id nameWithOwner
+        issue(number: $number) { ${parentScopeFields} }
+      }
+    }`,
+    { owner, name, number: parentTicket },
+  );
+  const repo = object(data.repository);
+  const raw = object(repo.issue);
+  const parent = scopedIssue(
+    raw,
+    repo,
+    repository,
+    parentTicket,
+    "Parent Ticket",
+  );
+  return readParentObservation(read, parent, raw);
+}
+
+export async function closeParent(
+  client: GitHubClient,
+  expected: IssueFact,
+  signal?: AbortSignal,
+): Promise<ParentObservation> {
+  const read: ReadIssueGraphQL = (query, variables) =>
+    requestIssueGraphQL(client, query, variables, signal);
+  const data = await read(
+    `mutation CompleteParent($parent: ID!) {
+      closeIssue(input: { issueId: $parent, stateReason: COMPLETED }) {
+        issue { ${parentScopeFields} }
+      }
+    }`,
+    { parent: expected.id },
+  );
+  const raw = object(object(data.closeIssue).issue);
+  const parent = parseIssueFact(raw);
+  if (
+    parent.id !== expected.id ||
+    parent.number !== expected.number ||
+    parent.repositoryId !== expected.repositoryId ||
+    parent.repository.toLowerCase() !== expected.repository.toLowerCase() ||
+    parent.state !== "closed" ||
+    parent.stateReason !== "completed"
+  )
+    throw new Error("Parent closure has not been confirmed");
+  return readParentObservation(read, parent, raw);
+}
+
 export async function discoverParent(
   client: GitHubClient,
   repository: string,
@@ -295,7 +372,7 @@ export async function discoverParent(
   signal?: AbortSignal,
 ) {
   const read: ReadIssueGraphQL = (query, variables, allowMissingRunner) =>
-    readIssueGraphQL(client, query, variables, signal, allowMissingRunner);
+    requestIssueGraphQL(client, query, variables, signal, allowMissingRunner);
   const [owner, name] = repository.split("/");
   const data = await read(
     `query ParentDiscovery($owner: String!, $name: String!, $number: Int!, $reservation: String!, $runner: String!) {
@@ -374,15 +451,14 @@ export async function readIssueStart(
   signal?: AbortSignal,
 ): Promise<IssueStartFacts> {
   const read: ReadIssueGraphQL = (query, variables, allowMissingRunner) =>
-    readIssueGraphQL(client, query, variables, signal, allowMissingRunner);
+    requestIssueGraphQL(client, query, variables, signal, allowMissingRunner);
   const [owner, name] = repository.split("/");
   const parentField =
     parentTicket === undefined
       ? ""
       : `
     configuredParent: issue(number: $parent) {
-      ${issueFields}
-      ${issueConnectionFields("subIssues", issueFields)}
+      ${parentScopeFields}
     }
   `;
   const data = await read(
@@ -422,14 +498,7 @@ export async function readIssueStart(
       parentTicket,
       "Parent Ticket",
     );
-    const children = await readScopeChildren(
-      read,
-      parent,
-      rawParent.subIssues,
-      issueFields,
-      (_raw, child) => child,
-    );
-    scope = { parent, children };
+    scope = await readParentObservation(read, parent, rawParent);
   }
   return {
     issue: {

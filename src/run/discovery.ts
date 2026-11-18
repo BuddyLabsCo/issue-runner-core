@@ -11,7 +11,7 @@ export type ReadOperation = <T>(
   operation: string,
   target: string,
   action: () => Promise<T>,
-  options?: OperationOptions<T>,
+  options?: OperationOptions<T> & { phase?: string },
 ) => Promise<T>;
 
 export type BatchTicket = Ticket & { blocked?: boolean };

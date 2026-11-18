@@ -29,6 +29,31 @@ await test("an all-cancelled parent closes only after completed tracker state is
   assert.deepEqual(fixture.writes, []);
 });
 
+await test("the last successful Batch goes straight to the completion scan", async (t) => {
+  const fixture = await parentDeliveryRun(t, [child(51)]);
+  const { tracker } = fixture.dependencies;
+  const discover = tracker.discoverParent.bind(tracker);
+  const scan = tracker.readParentCompletion.bind(tracker);
+  const close = tracker.closeParent.bind(tracker);
+  const observations: string[] = [];
+  tracker.discoverParent = async (...args) => {
+    observations.push("discovery");
+    return discover(...args);
+  };
+  tracker.readParentCompletion = async (...args) => {
+    observations.push("scan");
+    return scan(...args);
+  };
+  tracker.closeParent = async (...args) => {
+    observations.push("close");
+    return close(...args);
+  };
+
+  assert.equal((await fixture.run()).summary.outcome, "succeeded");
+  assert.deepEqual(observations, ["discovery", "scan", "close"]);
+  assert.deepEqual(fixture.closures, [51, 48]);
+});
+
 for (const recover of [false, true]) {
   await test(`a cancelled Batch member permits its ready sibling to integrate${recover ? " after matching recovery" : ""}`, async (t) => {
     const children = [child(51), child(52)];

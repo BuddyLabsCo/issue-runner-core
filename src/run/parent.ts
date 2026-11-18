@@ -1,7 +1,10 @@
-import type { ParentDiscovery, Ticket, Tracker } from "./contracts.ts";
+import type {
+  ParentDiscovery,
+  ParentObservation,
+  Ticket,
+  Tracker,
+} from "./contracts.ts";
 import {
-  hasOpenBlocker,
-  readChildren,
   validateChildRepositories,
   type BatchTicket,
   type ReadOperation,
@@ -14,6 +17,7 @@ interface ParentScope {
   parentTicket: number;
   tracker: Tracker;
   read: ReadOperation;
+  signal: AbortSignal;
 }
 
 function validateParent(parent: Ticket): void {
@@ -41,32 +45,62 @@ function validateChildren(
       );
 }
 
+function validateScope(
+  repository: string,
+  { parent, children }: ParentObservation,
+): void {
+  validateParent(parent);
+  validateChildRepositories(repository, children, parent.repositoryId);
+  validateChildren(parent, children);
+}
+
 function closeParent(input: ParentScope): Promise<boolean> {
-  const { repository, parentTicket, tracker, read } = input;
-  const inspect = async () => {
-    const parent = await read("read_parent", `parent:${parentTicket}`, () =>
-      tracker.getParent(repository, parentTicket),
+  const { repository, parentTicket, tracker, read, signal } = input;
+  const target = `parent:${parentTicket}`;
+  const phase = "parent_completion";
+  const inspect = () =>
+    read(
+      "read_parent_completion",
+      target,
+      async () => {
+        const scope = await tracker.readParentCompletion(
+          repository,
+          parentTicket,
+          signal,
+        );
+        validateScope(repository, scope);
+        return scope;
+      },
+      { phase },
     );
-    validateParent(parent);
-    const tickets = await readChildren(repository, parentTicket, tracker, read);
-    validateChildren(parent, tickets);
-    for (const ticket of tickets)
-      await hasOpenBlocker(repository, ticket.number, tracker, read);
-    return { parent, tickets };
-  };
   return read(
     "close_parent",
-    `parent:${parentTicket}`,
+    target,
     async () => {
-      const scope = await inspect();
-      if (scope.parent.state === "closed") return true;
-      if (scope.tickets.some((ticket) => ticket.state === "open")) return false;
-      await tracker.closeTicket(repository, parentTicket);
-      if ((await inspect()).parent.state !== "closed")
+      const { parent, children } = await inspect();
+      if (parent.state === "closed") return true;
+      if (children.some((ticket) => ticket.state === "open")) return false;
+      const confirmed = await tracker.closeParent(parent, signal);
+      if (
+        confirmed.parent.state !== "closed" ||
+        confirmed.parent.stateReason !== "completed"
+      )
         throw new Error("Parent closure has not been confirmed");
+      try {
+        validateScope(repository, confirmed);
+      } catch (error) {
+        // Reconcile uncertain mutation evidence before applying scope policy.
+        throw new Error(
+          `Parent closure has not been confirmed: ${String(error)}`,
+          {
+            cause: error,
+          },
+        );
+      }
       return true;
     },
     {
+      phase,
       reconcile: async () =>
         (await inspect()).parent.state === "closed"
           ? { outcome: "completed", result: true }
@@ -89,13 +123,15 @@ function parentBatchTickets(
 interface ParentRun extends ParentScope {
   summary: RunSummary;
   markers: Parameters<Tracker["discoverParent"]>[2];
-  signal: AbortSignal;
   eligibleIssues: (tickets: BatchTicket[]) => Promise<number[]>;
-  runBatch: (tickets: BatchTicket[], eligible: number[]) => Promise<RunSummary>;
+  runBatch: (
+    tickets: BatchTicket[],
+    eligible: number[],
+  ) => Promise<{ result: RunSummary; selected: number[] }>;
   maintenancePending: () => boolean;
 }
 
-function discoverBatch(input: ParentRun, select: boolean) {
+function discoverBatch(input: ParentRun) {
   const { read, repository, parentTicket, tracker, markers } = input;
   return read("discover_parent", `parent:${parentTicket}`, async () => {
     const { parent, children, reservation, runner } =
@@ -105,14 +141,10 @@ function discoverBatch(input: ParentRun, select: boolean) {
         markers,
         input.signal,
       );
-    validateParent(parent);
-    validateChildRepositories(repository, children, parent.repositoryId);
-    validateChildren(parent, children);
+    validateScope(repository, { parent, children });
     const tickets = parentBatchTickets(children);
     const eligible =
-      select && parent.state === "open"
-        ? await input.eligibleIssues(tickets)
-        : [];
+      parent.state === "open" ? await input.eligibleIssues(tickets) : [];
     if (eligible.length && !(reservation && runner))
       throw new Error(
         "GitHub did not resolve the configured Reservation label or Runner account",
@@ -123,31 +155,25 @@ function discoverBatch(input: ParentRun, select: boolean) {
 
 export async function runParent(input: ParentRun): Promise<RunSummary> {
   let hadChildren = false;
-  let selectBatch = true;
-  for (;;) {
-    if (input.maintenancePending())
-      return { ...input.summary, outcome: "incomplete" };
-    const { parent, tickets, eligible } = await discoverBatch(
-      input,
-      selectBatch,
-    );
-    hadChildren ||= tickets.length > 0;
+  while (!input.maintenancePending()) {
+    const { parent, tickets, eligible } = await discoverBatch(input);
     if (parent.state === "closed")
-      return {
-        ...input.summary,
-        outcome: "succeeded",
-      };
-    if (!hadChildren) return input.runBatch(tickets, eligible);
-    if (tickets.every((ticket) => ticket.state === "closed")) {
-      if (await closeParent(input))
-        return {
-          ...input.summary,
-          outcome: "succeeded",
-        };
+      return { ...input.summary, outcome: "succeeded" };
+    if (!hadChildren && tickets.length === 0)
+      return (await input.runBatch(tickets, eligible)).result;
+    hadChildren = true;
+    const open = tickets.filter((ticket) => ticket.state === "open");
+    const batch =
+      open.length > 0 ? await input.runBatch(tickets, eligible) : undefined;
+    if (input.maintenancePending()) break;
+    if (
+      batch?.result.outcome === "succeeded" &&
+      open.some((ticket) => !batch.selected.includes(ticket.number))
+    )
       continue;
-    }
-    if (!selectBatch) return { ...input.summary, outcome: "incomplete" };
-    selectBatch =
-      (await input.runBatch(tickets, eligible)).outcome === "succeeded";
+    if (await closeParent(input))
+      return { ...input.summary, outcome: "succeeded" };
+    if (batch && batch.result.outcome !== "succeeded") break;
   }
+  return { ...input.summary, outcome: "incomplete" };
 }

@@ -186,8 +186,8 @@ for (const window of [
     const close = fixture.dependencies.tracker.closeTicket.bind(
       fixture.dependencies.tracker,
     );
-    fixture.dependencies.tracker.closeTicket = async () => {
-      await close();
+    fixture.dependencies.tracker.closeTicket = async (...args) => {
+      await close(...args);
       if (window === "Issue closed") fixture.controller.abort();
     };
     const cleanup = fixture.dependencies.gitWorkspace.cleanupWorktree.bind(
