@@ -45,6 +45,9 @@ await test("no-auto-merge publishes fixed Probe metadata, waits for checks, and 
           effects.push("create");
           created = input;
           pullRequests.push({
+            id: "pr-81",
+            createdAt: "2026-01-01T00:00:00Z",
+            draft: false,
             number: 81,
             url: "https://github.com/owner/repo/pull/81",
             branch: input.branch,
@@ -52,7 +55,7 @@ await test("no-auto-merge publishes fixed Probe metadata, waits for checks, and 
             headSha: remote,
             state: "open",
           });
-          return { number: 81, url: "https://github.com/owner/repo/pull/81" };
+          return pullRequests[0]!;
         },
         async getRequiredChecks() {
           assert.equal(fixture.state.sleeps.at(-1), 30_000);
@@ -66,6 +69,7 @@ await test("no-auto-merge publishes fixed Probe metadata, waits for checks, and 
   const saved = await fixture.snapshot();
   assert.deepEqual(created, {
     repository: "owner/repo",
+    repositoryId: "repo-id",
     targetBranch: "default-branch",
     branch: saved.branch,
     title: "feat: [issue-50] implement the Issue",
@@ -300,4 +304,22 @@ await test("an existing remote head cannot be adopted without recorded publicati
   assert.equal(fixture.publicationState.pushes, 0);
   assert.equal(fixture.publicationState.creations, 0);
   assert.equal((await fixture.snapshot()).publication, undefined);
+});
+
+await test("a mismatched creation response is reconciled before any retry", async (t) => {
+  const fixture = await publicationRun(t);
+  const create = fixture.dependencies.codeHost.createPullRequest.bind(
+    fixture.dependencies.codeHost,
+  );
+  fixture.dependencies.codeHost.createPullRequest = async (input) => {
+    const result = await create(input);
+    return { ...result, headSha: "b".repeat(40) };
+  };
+  const result = await fixture.run();
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
+  assert.equal(fixture.publicationState.creations, 1);
+  assert.equal(
+    (await fixture.snapshot()).publication?.pullRequest?.id,
+    "pr-81",
+  );
 });

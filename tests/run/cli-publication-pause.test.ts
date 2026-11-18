@@ -43,7 +43,7 @@ for (const response of ["", "q", null] as const) {
     const host = fixture.dependencies.codeHost;
     const list = host.listPullRequests.bind(host);
     host.listPullRequests = async () => {
-      if (++listings === 2) {
+      if (++listings === 1) {
         releaseInspection.resolve();
         await paused.promise;
       }
@@ -78,7 +78,7 @@ for (const response of ["", "q", null] as const) {
       assert.equal(
         (await implementationProgress(fixture.directory, 52)).publication
           ?.phase,
-        "pushed",
+        "pending_push",
       );
     } finally {
       clearTimeout(timeout);

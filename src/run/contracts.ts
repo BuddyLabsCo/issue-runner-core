@@ -109,13 +109,27 @@ export interface CodeHost {
     branch: string,
   ): Promise<string | null>;
   listPullRequests(repository: string): Promise<PullRequestRecord[]>;
+  observeBranch(
+    repository: string,
+    branch: string,
+  ): Promise<{ repositoryId: string; head: string | null }>;
+  observePublication(
+    repository: string,
+    branch: string,
+    targetBranch: string,
+  ): Promise<{
+    repositoryId: string;
+    head: string | null;
+    candidates: PullRequestRecord[];
+  }>;
   createPullRequest(input: {
     repository: string;
     targetBranch: string;
     branch: string;
     title: string;
     body: string;
-  }): Promise<PullRequestIdentity>;
+    repositoryId: string;
+  }): Promise<PullRequestRecord>;
   getRequiredChecks(
     repository: string,
     pullRequest: number,
@@ -138,6 +152,8 @@ export type MergeRequestResult =
 export interface PullRequestIdentity {
   number: number;
   url: string;
+  id: string;
+  createdAt: string;
 }
 
 export interface PullRequestRecord extends PullRequestIdentity {

@@ -137,6 +137,7 @@ export interface PublicationProgress {
     | "delivered";
   branch: string;
   targetBranch: string;
+  repositoryId: string;
   headSha: string;
   title: string;
   body: string;

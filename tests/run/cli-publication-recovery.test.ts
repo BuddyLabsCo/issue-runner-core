@@ -50,13 +50,13 @@ for (const interruption of [
     const before = await fixture.snapshot();
     assert.equal(
       before.publication!.phase,
-      interruption === "intent" || interruption === "push"
+      interruption === "intent" ||
+        interruption === "push" ||
+        interruption === "pushed"
         ? "pending_push"
-        : interruption === "pushed"
-          ? "pushed"
-          : interruption === "creation"
-            ? "pending_pr"
-            : "pr_created",
+        : interruption === "creation"
+          ? "pending_pr"
+          : "pr_created",
     );
     assert.equal(state.pushes, interruption === "intent" ? 0 : 1);
     assert.equal(
