@@ -43,7 +43,7 @@ await test("an empty parent returns no_work through the application without clos
       (event) => event.operation === "run" && event.result === "no_work",
     ),
   );
-  assert.doesNotMatch(audit, /tracker-secret|host-secret/);
+  assert.doesNotMatch(audit, /host-secret/);
 });
 
 await test("a failed audit append retries logging without replaying a completed tracker read", async (t) => {

@@ -28,11 +28,18 @@ await test("GitHub integration uses squash, observed HEAD, admin policy, queue o
       queued = true;
       return "";
     }
-    assert.equal(args[0], "api");
-    assert.equal(args[1], "graphql");
-    assert.ok(args.includes("number=81"));
-    assert.ok(args.includes("owner=owner"));
-    assert.ok(args.includes("name=repo"));
+    assert.deepEqual(args, [
+      "api",
+      "graphql",
+      "--method",
+      "POST",
+      "--input",
+      "-",
+    ]);
+    assert.ok(options.input);
+    assert.partialDeepStrictEqual(JSON.parse(options.input), {
+      variables: { owner: "owner", name: "repo", number: 81 },
+    });
     return JSON.stringify({
       data: {
         repository: {
@@ -49,8 +56,8 @@ await test("GitHub integration uses squash, observed HEAD, admin policy, queue o
       },
     });
   });
-  const tracker = new GitHubTracker("tracker-secret", async (args, options) => {
-    assert.equal(options.token, "tracker-secret");
+  const tracker = new GitHubTracker("host-secret", async (args, options) => {
+    assert.equal(options.token, "host-secret");
     assert.equal(merged, true);
     assert.deepEqual(args, [
       "issue",
@@ -106,6 +113,45 @@ for (const [message, outcome] of [
     assert.equal(result.error, cause);
   });
 }
+
+await test("GraphQL field errors prevent a Pull Request observation from confirming delivery", async () => {
+  const errors = [
+    { message: "state denied", path: ["repository", "pullRequest", "state"] },
+  ];
+  const host = new GitHubCodeHost("token", async () =>
+    JSON.stringify({
+      data: {
+        repository: {
+          pullRequest: {
+            headRefOid: implementationCommit.sha,
+            createdAt: "2026-10-30T00:00:00Z",
+            state: "MERGED",
+            mergedAt: "2026-10-31T00:00:00Z",
+            mergeable: "MERGEABLE",
+            autoMergeRequest: null,
+            mergeQueueEntry: null,
+          },
+        },
+      },
+      errors,
+    }),
+  );
+  await assert.rejects(
+    host.getPullRequest("owner/repo", 81),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(
+        error.message,
+        "GitHub returned GraphQL errors for Pull Request state",
+      );
+      assert.partialDeepStrictEqual(error.cause, {
+        response: { errors },
+        commandError: null,
+      });
+      return true;
+    },
+  );
+});
 
 await test("an invalid GitHub merge observation cannot close the Issue or earn delivery credit", async (t) => {
   const fixture = await integrationRun(t);

@@ -22,12 +22,11 @@ workflow:
   maxReviewRounds: 2 # Optional positive cap; final findings still receive a fix.
   docMaintainTriggerLabel: "" # Run documentation after a Batch delivers this label; empty disables.
 tracker:
-  tokenEnv: GH_TOKEN # Environment variable holding the GitHub Issue token; never put tokens here.
   runnerAccount: your-github-account # GitHub account assigned to reserved Issues.
   reservationLabel: sandcastle:reserved # Existing repository label marking reserved Issues.
 codeHost:
-  tokenEnv: GH_TOKEN # Environment variable holding the GitHub PR/checks/merge token.
-  adminMerge: false # Use GitHub's administrator merge flag.
+  tokenEnv: GH_TOKEN # Environment variable for the shared GitHub and Git credential.
+  adminMerge: false # Request administrator merge. GitHub still enforces bypass permissions.
 
 terminalPlugins:
   agentStartDelay: 10 # Seconds after command submission for Agents without an enhancement (0..2147483.647).

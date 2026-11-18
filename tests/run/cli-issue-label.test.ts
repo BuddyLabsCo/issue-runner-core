@@ -38,7 +38,6 @@ for (const [name, labelConfig, labels, selected] of [
 await test("omitted issueLabel loads without a label restriction", async (t) => {
   const { root } = await createProject(t, withoutIssueLabel);
   const { config } = await loadProject(root, "demo", {
-    TRACKER_TOKEN: "tracker",
     HOST_TOKEN: "host",
   });
   assert.equal(config.issueLabel, "");

@@ -65,10 +65,30 @@ Prepare these on the machine and in the shell that runs the terminal command:
 
 - Node.js 22.18.0 or later and npm 11 or later, including subsequent major versions
 - Git with Worktree support, configured author identity, and access to push to the repository
-- GitHub CLI (`gh`) on `PATH`, with credentials that can read/write Issues, pull requests, and repository contents and observe required checks
-- An absolute-path repository checkout with working Git/GitHub credentials
+- GitHub CLI (`gh`) on `PATH`
+- An absolute-path repository checkout with a GitHub HTTPS remote for Git operations
 - An installed, authenticated Agent CLI for every configured role, with its own skills, native permissions, and required tools
 - A supported terminal multiplexer plugin, e.g. [issue-runner-herdr](https://github.com/BuddyLabsCo/issue-runner-herdr) which use herdr as issue-runner-core environment
+
+### GitHub credential
+
+Set the environment variable named by `codeHost.tokenEnv` in `config.yaml`.
+The template uses `GH_TOKEN`. Keep the credential value in the environment.
+Runner uses it for GitHub API calls and Git operations. In existing configurations, remove
+`tracker.tokenEnv` and keep `tracker.runnerAccount` and `tracker.reservationLabel`.
+Editing `config.yaml` changes the input hash Runner uses to resume a Run.
+
+Grant the credential access to the configured repository, including metadata visibility.
+For fine-grained credentials, grant these repository permissions:
+
+- **Issues** read/write to read Issues and manage assignments, labels, comments, and closure.
+- **Pull requests** read/write to read and publish PRs.
+- **Checks** and **Commit statuses** read to observe required checks.
+- **Contents** read/write to read refs, fetch and push through Git, and merge PRs.
+
+GitHub enforces repository rules and merge permissions for the credential's
+account. With `codeHost.adminMerge: true`, the account still needs permission
+to bypass the applicable rules.
 
 ### macOS and Linux
 

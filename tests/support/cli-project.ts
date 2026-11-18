@@ -19,7 +19,6 @@ export const validConfig = {
   issueLabel: "ready-for-agent",
   maxBatchSize: 3,
   tracker: {
-    tokenEnv: "TRACKER_TOKEN",
     runnerAccount: "runner",
     reservationLabel: "sandcastle:reserved",
   },
