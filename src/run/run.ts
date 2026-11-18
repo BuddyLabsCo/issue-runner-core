@@ -130,9 +130,9 @@ async function executeProject(
   const host = codeHost;
   codeHost = {
     resolveTargetBranch: (repository) => host.resolveTargetBranch(repository),
-    getRemoteBranchHead: (repository, branch) =>
-      host.getRemoteBranchHead(repository, branch),
-    listPullRequests: (repository) => host.listPullRequests(repository),
+    observeBranch: (repository, branch) =>
+      host.observeBranch(repository, branch),
+    observePublication: (input) => host.observePublication(input),
     getRequiredChecks: (repository, pullRequest) =>
       host.getRequiredChecks(repository, pullRequest),
     createPullRequest: (input) =>

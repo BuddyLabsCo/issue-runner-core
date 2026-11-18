@@ -1,92 +1,301 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { GitHubCodeHost } from "../../src/adapters/github-code-host.ts";
 import { executeCli } from "../../src/cli.ts";
 import { implementationCommand } from "../support/implementation-run.ts";
 import { publicationRun } from "../support/publication-run.ts";
 
-await test("publication reconciles canonical repository casing with lowercase configuration and exact multiline metadata", async (t) => {
-  const canonicalRepository = "Owner/Repo";
+const nameWithOwner = "Owner/Repo";
+const repository = { id: "R_repo", nameWithOwner };
+const createdAt = "2026-11-18T12:00:00Z";
+
+function connection(
+  nodes: unknown[],
+  totalCount = nodes.length,
+  next: string | null = null,
+) {
+  return {
+    nodes,
+    totalCount,
+    pageInfo: { hasNextPage: next !== null, endCursor: next },
+  };
+}
+
+await test("publication sends the accepted multiline metadata directly and records the returned identity", async (t) => {
   const fixture = await publicationRun(t);
-  const commands: string[][] = [];
-  let created = false;
-  let bodyFile = "";
+  const operations: string[] = [];
+  let created: object | undefined;
   const adapter = new GitHubCodeHost("host-secret", async (args, options) => {
-    commands.push(args);
     assert.equal(options.token, "host-secret");
     if (args[0] === "api" && args[1] === "--method")
       return JSON.stringify({ default_branch: "default-branch" });
-    const saved = await fixture.snapshot();
-    if (args[1]?.includes("/git/ref/heads/")) {
-      assert.equal(
-        args[1],
-        `repos/owner/repo/git/ref/heads/${encodeURIComponent(saved.branch)}`,
-      );
-      const sha = fixture.publicationState.branches.get(saved.branch);
-      if (!sha) throw new Error("gh command failed: HTTP 404: Not Found");
-      return JSON.stringify({ object: { sha } });
-    }
-    if (args.includes("--paginate")) {
-      assert.ok(args.includes("--slurp"));
-      const record = {
-        number: 81,
-        html_url: `https://github.com/${canonicalRepository}/pull/81`,
-        state: "open",
-        merged_at: null,
-        draft: false,
-        head: {
-          ref: saved.branch,
-          sha: saved.publication?.headSha,
-          repo: { full_name: canonicalRepository },
-        },
-        base: { ref: "default-branch" },
-      };
-      return JSON.stringify([
-        [
-          {
-            ...record,
-            number: 99,
-            head: { ...record.head, repo: { full_name: "fork/repo" } },
-          },
-        ],
-        created ? [record] : [],
-      ]);
-    }
-    if (args[1] === "create") {
-      assert.equal(args.includes("--draft"), false);
-      assert.equal(args[args.indexOf("--title") + 1], saved.pr_title);
-      bodyFile = args[args.indexOf("--body-file") + 1]!;
-      assert.equal(
-        await readFile(bodyFile, "utf8"),
-        "Implement the Issue.\n\nCloses #50",
-      );
-      created = true;
-      return `https://github.com/${canonicalRepository}/pull/81\n`;
-    }
     if (args[1] === "checks") {
       assert.ok(args.includes("--required"));
       assert.deepEqual(options.allowedExitCodes, [1, 8]);
       return "[]";
     }
-    assert.fail(`unexpected command: ${args.join(" ")}`);
+    assert.deepEqual(args, [
+      "api",
+      "graphql",
+      "--method",
+      "POST",
+      "--input",
+      "-",
+    ]);
+    const { query, variables } = JSON.parse(options.input!) as {
+      query: string;
+      variables: Record<string, unknown>;
+    };
+    const saved = await fixture.snapshot();
+    const sha = fixture.publicationState.branches.get(saved.branch);
+    const ref = sha ? { name: saved.branch, target: { oid: sha } } : null;
+    if (query.startsWith("mutation")) {
+      operations.push("create");
+      assert.equal(saved.publication?.phase, "pending_pr");
+      assert.equal(saved.publication.creationAttempted, true);
+      assert.equal(fixture.publicationState.pushes, 1);
+      assert.deepEqual(variables.input, {
+        repositoryId: repository.id,
+        headRefName: saved.branch,
+        baseRefName: "default-branch",
+        title: saved.pr_title,
+        body: "Implement the Issue.\n\nCloses #50",
+        draft: false,
+        maintainerCanModify: true,
+      });
+      created = {
+        id: "PR_exact",
+        number: 81,
+        url: "https://github.com/Owner/Repo/pull/81",
+        headRefName: saved.branch,
+        baseRefName: "default-branch",
+        headRefOid: sha,
+        repository,
+        headRepository: repository,
+        state: "OPEN",
+        isDraft: false,
+        createdAt,
+      };
+      return JSON.stringify({
+        data: { createPullRequest: { pullRequest: created } },
+      });
+    }
+    assert.equal(variables.owner, "owner");
+    assert.equal(variables.name, "repo");
+    assert.equal(variables.ref, `refs/heads/${saved.branch}`);
+    if (!query.includes("pullRequests(")) {
+      operations.push("branch");
+      assert.equal(saved.publication, undefined);
+      return JSON.stringify({ data: { repository: { ...repository, ref } } });
+    }
+    operations.push("publication");
+    assert.equal(variables.branch, saved.branch);
+    assert.equal(variables.base, "default-branch");
+    if (created) {
+      assert.ok(fixture.state.sleeps.includes(30_000));
+      assert.deepEqual((await fixture.snapshot()).publication?.pullRequest, {
+        id: "PR_exact",
+        number: 81,
+        url: "https://github.com/Owner/Repo/pull/81",
+        createdAt,
+      });
+    }
+    const candidates = created ? [created] : [];
+    return JSON.stringify({
+      data: {
+        repository: {
+          ...repository,
+          ref,
+          source: connection(candidates),
+          target: connection(candidates),
+        },
+      },
+    });
   });
   const result = await executeCli(
     [...implementationCommand, "--no-auto-merge"],
-    {
-      ...fixture.dependencies,
-      codeHost: adapter,
-    },
+    { ...fixture.dependencies, codeHost: adapter },
   );
   assert.match(
     result.summary.tickets![0]!.detail,
     /CI-ready/u,
     JSON.stringify(result),
   );
-  assert.equal(commands.filter((args) => args[1] === "create").length, 1);
+  assert.deepEqual(operations.slice(0, 3), ["branch", "publication", "create"]);
   assert.equal(
-    (await fixture.snapshot()).publication?.pullRequest?.url,
-    `https://github.com/${canonicalRepository}/pull/81`,
+    operations.filter((operation) => operation === "create").length,
+    1,
   );
-  await assert.rejects(readFile(bodyFile), { code: "ENOENT" });
+  assert.equal(
+    (await fixture.snapshot()).publication?.repositoryId,
+    repository.id,
+  );
 });
+
+const publication = {
+  repository: "owner/repo",
+  branch: "runner/issue",
+  targetBranch: "main",
+};
+const head = "a".repeat(40);
+const remote = {
+  ...repository,
+  ref: { name: publication.branch, target: { oid: head } },
+};
+const exact = {
+  id: "PR_exact",
+  number: 81,
+  url: "https://github.com/Owner/Repo/pull/81",
+  headRefName: publication.branch,
+  baseRefName: publication.targetBranch,
+  headRefOid: head,
+  repository,
+  headRepository: repository,
+  state: "OPEN",
+  isDraft: false,
+  createdAt,
+};
+const closed = {
+  ...exact,
+  id: "PR_closed",
+  number: 82,
+  url: "https://github.com/Owner/Repo/pull/82",
+  headRefName: "other-source",
+  state: "CLOSED",
+};
+const fork = {
+  ...exact,
+  id: "PR_fork",
+  number: 83,
+  url: "https://github.com/Owner/Repo/pull/83",
+  headRepository: { id: "R_fork", nameWithOwner: "Fork/Repo" },
+};
+
+await test("publication completes each candidate connection and counts a shared PR only once", async () => {
+  const replies = [
+    {
+      cursors: [null, null, true, true],
+      source: connection([exact], 2, "source-1"),
+      target: connection([fork], 3, "target-1"),
+    },
+    {
+      cursors: ["source-1", "target-1", true, true],
+      source: connection([fork], 2),
+      target: connection([exact], 3, "target-2"),
+    },
+    {
+      cursors: ["source-1", "target-2", false, true],
+      target: connection([closed], 3),
+    },
+  ];
+  const adapter = new GitHubCodeHost("host-secret", (_args, { input }) => {
+    const { query, variables } = JSON.parse(input!) as {
+      query: string;
+      variables: Record<string, unknown>;
+    };
+    const { cursors, ...reply } = replies.shift()!;
+    assert.match(
+      query,
+      /headRefName: \$branch, states: \[OPEN, CLOSED, MERGED\]/u,
+    );
+    assert.match(
+      query,
+      /baseRefName: \$base, states: \[OPEN, CLOSED, MERGED\]/u,
+    );
+    assert.deepEqual(
+      [
+        variables.headAfter,
+        variables.baseAfter,
+        variables.source,
+        variables.target,
+      ],
+      cursors,
+    );
+    return Promise.resolve(
+      JSON.stringify({ data: { repository: { ...remote, ...reply } } }),
+    );
+  });
+  const observed = await adapter.observePublication(publication);
+  assert.equal(observed.repositoryId, repository.id);
+  assert.equal(observed.headSha, head);
+  assert.deepEqual(
+    observed.candidates.map(({ id, state }) => [id, state]),
+    [
+      ["PR_exact", "open"],
+      ["PR_closed", "closed"],
+    ],
+  );
+  assert.equal(replies.length, 0);
+});
+
+for (const { name, response, error } of [
+  {
+    name: "an absent repository",
+    response: { repository: null },
+    error: /Expected a JSON object/u,
+  },
+  {
+    name: "an unexpected repository",
+    response: {
+      repository: { ...repository, nameWithOwner: "Other/Repo", ref: null },
+    },
+    error: /unexpected publication repository/u,
+  },
+  {
+    name: "a missing ref field",
+    response: { repository },
+    error: /Expected a JSON object/u,
+  },
+]) {
+  await test(`pre-push observation rejects ${name}`, async () => {
+    const adapter = new GitHubCodeHost("host-secret", () =>
+      Promise.resolve(JSON.stringify({ data: response })),
+    );
+    await assert.rejects(
+      adapter.observeBranch(publication.repository, publication.branch),
+      error,
+    );
+  });
+}
+
+for (const { name, reply, error } of [
+  {
+    name: "GraphQL errors accompanying data",
+    reply: {
+      data: {
+        repository: {
+          ...remote,
+          source: connection([]),
+          target: connection([]),
+        },
+      },
+      errors: [{ message: "partial result" }],
+    },
+    error: /incomplete publication data/u,
+  },
+  {
+    name: "an omitted connection",
+    reply: { data: { repository: { ...remote, source: connection([]) } } },
+    error: /Expected a JSON object/u,
+  },
+  {
+    name: "a truncated final page",
+    reply: {
+      data: {
+        repository: {
+          ...remote,
+          source: connection([]),
+          target: connection([exact], 2),
+        },
+      },
+    },
+    error: /incomplete Pull Request pages/u,
+  },
+]) {
+  await test(`combined publication observation rejects ${name}`, async () => {
+    const adapter = new GitHubCodeHost("host-secret", () =>
+      Promise.resolve(JSON.stringify(reply)),
+    );
+    await assert.rejects(adapter.observePublication(publication), error);
+  });
+}

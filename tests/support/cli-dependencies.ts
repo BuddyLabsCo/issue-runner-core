@@ -5,6 +5,7 @@ import { LocalGitWorkspace } from "../../src/adapters/git-workspace.ts";
 import type {
   CodeHost,
   PullRequestRecord,
+  PublicationQuery,
   RequiredCheck,
   PullRequestState,
   MergeRequestResult,
@@ -133,6 +134,18 @@ export function createCliDependencies(launchDirectory: string) {
       async listPullRequests(): Promise<PullRequestRecord[]> {
         return structuredClone(pullRequests);
       },
+      async observeBranch(repository: string, branch: string) {
+        return {
+          repositoryId: "R_repo",
+          headSha: await this.getRemoteBranchHead(repository, branch),
+        };
+      },
+      async observePublication(input: PublicationQuery) {
+        return {
+          ...(await this.observeBranch(input.repository, input.branch)),
+          candidates: await this.listPullRequests(),
+        };
+      },
       async createPullRequest(
         input: Parameters<CodeHost["createPullRequest"]>[0],
       ) {
@@ -142,15 +155,18 @@ export function createCliDependencies(launchDirectory: string) {
         ))!;
         const number = 81 + pullRequests.length;
         const record: PullRequestRecord = {
+          id: `PR_${number}`,
           number,
           url: `https://github.com/${input.repository}/pull/${number}`,
+          createdAt: "2026-10-30T00:00:00Z",
           branch: input.branch,
           targetBranch: input.targetBranch,
           headSha,
           state: "open",
+          draft: false,
         };
         pullRequests.push(record);
-        return { number, url: record.url };
+        return structuredClone(record);
       },
       async getRequiredChecks(): Promise<RequiredCheck[]> {
         return [];

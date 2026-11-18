@@ -10,7 +10,7 @@ import { publicationRun } from "../support/publication-run.ts";
 for (const interruption of [
   "intent",
   "push",
-  "pushed",
+  "push-observation",
   "creation",
   "observation",
 ] as const) {
@@ -34,7 +34,7 @@ for (const interruption of [
         await onPush(branch, head);
         fixture.controller.abort();
       };
-    else if (interruption === "pushed")
+    else if (interruption === "push-observation")
       fixture.dependencies.codeHost.listPullRequests = async () => {
         fixture.controller.abort();
         return [];
@@ -50,13 +50,13 @@ for (const interruption of [
     const before = await fixture.snapshot();
     assert.equal(
       before.publication!.phase,
-      interruption === "intent" || interruption === "push"
+      interruption === "intent" ||
+        interruption === "push" ||
+        interruption === "push-observation"
         ? "pending_push"
-        : interruption === "pushed"
-          ? "pushed"
-          : interruption === "creation"
-            ? "pending_pr"
-            : "pr_created",
+        : interruption === "creation"
+          ? "pending_pr"
+          : "pr_created",
     );
     assert.equal(state.pushes, interruption === "intent" ? 0 : 1);
     assert.equal(
@@ -136,8 +136,10 @@ await test("restart pauses before retrying an uncertain PR creation with no exac
 for (const conflict of [
   "advanced",
   "absent",
+  "id",
   "number",
   "url",
+  "createdAt",
   "duplicate",
   "closed",
   "draft",
@@ -156,6 +158,9 @@ for (const conflict of [
     if (conflict === "advanced")
       state.branches.set(before.branch, "d".repeat(40));
     else if (conflict === "absent") state.branches.delete(before.branch);
+    else if (conflict === "id") record.id = "PR_different";
+    else if (conflict === "createdAt")
+      record.createdAt = "2026-11-01T00:00:00Z";
     else if (conflict === "number") record.number = 999;
     else if (conflict === "url")
       record.url = "https://github.com/owner/repo/pull/999";

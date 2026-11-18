@@ -57,7 +57,7 @@ await test(
     const host: CodeHost = fixture.dependencies.codeHost;
     const checkCalls = new Map<number, number>();
     host.getRequiredChecks = async (_repository, prNumber) => {
-      const pr = (await host.listPullRequests("owner/repo")).find(
+      const pr = (await fixture.dependencies.codeHost.listPullRequests()).find(
         (pr) => pr.number === prNumber,
       )!;
       const number = Number(/ticket-(\d+)$/u.exec(pr.branch)![1]);

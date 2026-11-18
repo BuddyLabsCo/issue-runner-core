@@ -3,7 +3,11 @@ import type {
   ImplementationProgress,
   PublicationProgress,
 } from "../recovery.ts";
-import type { CodeHost, PullRequestRecord } from "./contracts.ts";
+import type {
+  CodeHost,
+  PublicationObservation,
+  PullRequestRecord,
+} from "./contracts.ts";
 import type { ReadOperation } from "./discovery.ts";
 import type { RunContext } from "./run.ts";
 import { nonempty } from "../agent/handoff.ts";
@@ -61,20 +65,24 @@ export async function publishImplementation(input: {
       );
     }
   };
-  const remoteHead = () => {
+  const observeBranch = () => {
     context.signal?.throwIfAborted();
-    return codeHost.getRemoteBranchHead(repository, progress.branch);
+    return codeHost.observeBranch(repository, progress.branch);
   };
+  let freshPush = !progress.publication;
   if (!progress.publication) {
-    await read("verify_publication", target, async () => {
+    const repositoryId = await read("verify_publication", target, async () => {
       await verify();
-      if ((await remoteHead()) !== null)
+      const branch = await observeBranch();
+      if (branch.headSha !== null)
         throw new Error(
           "Remote publication branch exists without recorded publication intent",
         );
+      return branch.repositoryId;
     });
     progress.publication = {
       phase: "pending_push",
+      repositoryId,
       branch: progress.branch,
       targetBranch: progress.target_branch,
       headSha: head,
@@ -85,45 +93,72 @@ export async function publishImplementation(input: {
     await persist();
   }
   const publication = verifiedPublication(progress);
+  const query = {
+    repository,
+    branch: publication.branch,
+    targetBranch: publication.targetBranch,
+  };
+  const verifyRepository = (repositoryId: string) => {
+    if (repositoryId !== publication.repositoryId)
+      throw new Error("Remote publication repository changed");
+  };
+  const remoteHead = async () => {
+    const observed = await observeBranch();
+    verifyRepository(observed.repositoryId);
+    return observed.headSha;
+  };
+  const observe = async (expectedHead: string, allowMissingBranch = false) => {
+    context.signal?.throwIfAborted();
+    const observed = await codeHost.observePublication(query);
+    verifyRepository(observed.repositoryId);
+    if (
+      observed.headSha !== expectedHead &&
+      !(allowMissingBranch && observed.headSha === null)
+    )
+      throw new Error(
+        allowMissingBranch
+          ? "Remote publication branch advanced after merge"
+          : "Remote publication branch advanced or disappeared; resolve remote state before retrying",
+      );
+    return observed;
+  };
   const completed =
     input.stageInput.ticket.state === "closed" &&
     input.stageInput.ticket.stateReason === "completed";
 
-  if (!completed && !publication.ciRepair && !publication.conflictRepair)
-    await read("push_verified_branch", target, async () => {
-      await verify();
-      const remote = await remoteHead();
-      if (remote === head) return;
-      if (remote !== null || publication.phase !== "pending_push")
-        throw new Error(
-          "Remote publication branch advanced or disappeared; resolve remote state before retrying",
-        );
-      await context.git.push(progress.worktree, progress.branch, head);
-      if ((await remoteHead()) !== head)
-        throw new Error("Push has not been confirmed at the intended head");
-    });
+  let pushedObservation: PublicationObservation | undefined;
   if (!completed && publication.phase === "pending_push") {
+    const observed = await read("push_verified_branch", target, async () => {
+      await verify();
+      const remote = freshPush ? null : await remoteHead();
+      freshPush = false;
+      if (remote !== head) {
+        if (remote !== null)
+          throw new Error(
+            "Remote publication branch advanced or disappeared; resolve remote state before retrying",
+          );
+        await context.git.push(progress.worktree, progress.branch, head);
+      }
+      return observe(head);
+    });
     publication.phase = "pushed";
     await persist();
+    pushedObservation = observed;
   }
 
-  const matchingPullRequest = async (
-    expectedHead = publishedHead(publication),
-  ): Promise<PullRequestRecord | undefined> => {
-    context.signal?.throwIfAborted();
-    return matchPublication(
-      publication,
-      await codeHost.listPullRequests(repository),
-      expectedHead,
-    );
-  };
   if (completed) {
     const recovered = await read(
       "reconcile_completed_publication",
       target,
       async () => {
         await verify(false);
-        const candidate = await matchingPullRequest();
+        const expectedHead = publishedHead(publication);
+        const { candidates } = await observe(expectedHead, true);
+        const candidate = matchPublication(
+          publication,
+          candidates,
+          expectedHead,
+        );
         if (candidate?.state !== "merged") return;
         const merge = await codeHost.getPullRequest(
           repository,
@@ -133,9 +168,6 @@ export async function publishImplementation(input: {
           throw new Error(
             "Pull Request merge does not match the recorded publication head",
           );
-        const remote = await remoteHead();
-        if (remote !== null && remote !== publishedHead(publication))
-          throw new Error("Remote publication branch advanced after merge");
         return { candidate, merge };
       },
     );
@@ -143,64 +175,69 @@ export async function publishImplementation(input: {
       throw new OperationStopped(
         "Completed Issue has no exact merged Pull Request; retained publication evidence",
       );
-    publication.pullRequest = {
-      number: recovered.candidate.number,
-      url: recovered.candidate.url,
-    };
+    publication.pullRequest = pullRequestIdentity(recovered.candidate);
     publication.merge = recovered.merge;
     publication.phase = "merged";
     await persist();
     return `Merged PR ${recovered.candidate.url} awaits completed tracker confirmation`;
   }
-  const pullRequest =
-    publication.pullRequest ??
-    (await read("publish_pull_request", target, async () => {
+  let adopted: PullRequestRecord | undefined;
+  if (!publication.pullRequest) {
+    adopted = await read("publish_pull_request", target, async () => {
       await verify();
-      if ((await remoteHead()) !== head)
-        throw new Error(
-          "Remote branch changed before Pull Request publication",
-        );
-      const existing = await matchingPullRequest();
-      if (existing) return { number: existing.number, url: existing.url };
-      // A lost response can only be retried after reconciliation and explicit operator input.
-      if (publication.creationAttempted)
+      const { candidates } = pushedObservation ?? (await observe(head));
+      pushedObservation = undefined;
+      const existing = matchPublication(publication, candidates, head);
+      if (existing) return existing;
+      // Reconcile again after the pause in case the previous creation became visible.
+      if (publication.creationAttempted) {
         await pauseForOperator(
           context.operator,
           "Pull Request creation outcome is uncertain and no exact match exists. Confirm remote state before retrying creation.",
           context.signal,
         );
-      await verify();
-      if ((await remoteHead()) !== head)
-        throw new Error("Remote branch changed before Pull Request creation");
-      // Recheck after any operator wait; a delayed creation may now be visible.
-      const delayed = await matchingPullRequest();
-      if (delayed) return { number: delayed.number, url: delayed.url };
+        await verify();
+        const delayed = matchPublication(
+          publication,
+          (await observe(head)).candidates,
+          head,
+        );
+        if (delayed) return delayed;
+      }
       publication.phase = "pending_pr";
       publication.creationAttempted = true;
       await persist();
       context.signal?.throwIfAborted();
-      return codeHost.createPullRequest({
-        repository,
-        targetBranch: publication.targetBranch,
-        branch: publication.branch,
+      const created = await codeHost.createPullRequest({
+        ...query,
+        repositoryId: publication.repositoryId,
         title: publication.title,
         body: publication.body,
       });
-    }));
-  if (!publication.pullRequest) {
-    publication.pullRequest = pullRequest;
+      if (created.state !== "open")
+        throw new Error("Created Pull Request is not open");
+      const candidate = matchPublication(publication, [created], head);
+      if (!candidate)
+        throw new Error("Created Pull Request identity or head mismatch");
+      return candidate;
+    });
+    publication.pullRequest = pullRequestIdentity(adopted);
     publication.phase = "pr_created";
     publication.discoveryNotBefore = context.clock.now().getTime() + 30_000;
     await persist();
   }
+  const pullRequest = publication.pullRequest;
   const merged = new OperationStopped("Published Pull Request merged");
   try {
     const confirm = (expectedHead = publishedHead(publication)) =>
       read("confirm_publication", target, async () => {
         await verify();
-        if ((await remoteHead()) !== expectedHead)
-          throw new Error("Remote branch advanced during required checks");
-        const candidate = await matchingPullRequest(expectedHead);
+        const { candidates } = await observe(expectedHead);
+        const candidate = matchPublication(
+          publication,
+          candidates,
+          expectedHead,
+        );
         if (!candidate) throw new Error("Published Pull Request is missing");
         if (
           candidate.state === "merged" &&
@@ -225,13 +262,14 @@ export async function publishImplementation(input: {
       publication.ciRepair?.attempts.at(-1)?.pendingPush ??
       publication.conflictRepair?.attempts.at(-1)?.pendingPush;
     // Let the repair checkpoint a push already confirmed at its recorded head.
-    await confirm(
-      pendingPush &&
-        (await read("read_pending_repair_head", target, remoteHead)) ===
-          pendingPush
-        ? pendingPush
-        : undefined,
-    );
+    if (!adopted || adopted.state === "merged")
+      await confirm(
+        pendingPush &&
+          (await read("read_pending_repair_head", target, remoteHead)) ===
+            pendingPush
+          ? pendingPush
+          : undefined,
+      );
     if (publication.phase === "conflict_repair") {
       do {
         await repairPullRequest({
@@ -269,9 +307,7 @@ export async function publishImplementation(input: {
       pending.result?.outcome !== "no_change"
     )
       await repair();
-    for (;;) {
-      await confirm();
-      if (publication.phase === "checks_ready") break;
+    while (publication.phase !== "checks_ready") {
       const wait =
         (publication.discoveryNotBefore ?? 0) - context.clock.now().getTime();
       if (wait > 0) {
@@ -351,15 +387,26 @@ function matchPublication(
     candidate.targetBranch !== publication.targetBranch ||
     candidate.headSha !== expectedHead ||
     (candidate.state !== "open" && candidate.state !== "merged") ||
-    candidate.draft === true ||
+    candidate.draft !== false ||
     (publication.pullRequest &&
-      (candidate.number !== publication.pullRequest.number ||
-        candidate.url !== publication.pullRequest.url))
+      (candidate.id !== publication.pullRequest.id ||
+        candidate.number !== publication.pullRequest.number ||
+        candidate.url !== publication.pullRequest.url ||
+        candidate.createdAt !== publication.pullRequest.createdAt))
   )
     throw new Error(
       "Pull Request identity or head mismatch, or multiple matching Pull Requests",
     );
   return candidate;
+}
+
+function pullRequestIdentity({
+  id,
+  number,
+  url,
+  createdAt,
+}: PullRequestRecord) {
+  return { id, number, url, createdAt };
 }
 
 export function verifiedPublication(progress: ImplementationProgress) {
@@ -369,6 +416,7 @@ export function verifiedPublication(progress: ImplementationProgress) {
   if (
     !publication ||
     !head ||
+    !nonempty(publication.repositoryId) ||
     publication.branch !== progress.branch ||
     publication.targetBranch !== progress.target_branch ||
     publication.headSha !== head ||
@@ -392,6 +440,27 @@ export function verifiedPublication(progress: ImplementationProgress) {
     throw new Error(
       "Publication evidence does not match the verified execution",
     );
+
+  const pullRequest = publication.pullRequest;
+  const recorded = !["pending_push", "pushed", "pending_pr"].includes(
+    publication.phase,
+  );
+  if (
+    (recorded &&
+      (!pullRequest ||
+        !nonempty(pullRequest.id) ||
+        !Number.isSafeInteger(pullRequest.number) ||
+        pullRequest.number <= 0 ||
+        typeof pullRequest.url !== "string" ||
+        pullRequest.url.toLowerCase() !==
+          `https://github.com/${progress.repository}/pull/${pullRequest.number}`.toLowerCase() ||
+        typeof pullRequest.createdAt !== "string" ||
+        !Number.isFinite(Date.parse(pullRequest.createdAt)))) ||
+    (!recorded && pullRequest !== undefined) ||
+    (publication.phase === "pending_pr" &&
+      publication.creationAttempted !== true)
+  )
+    throw new Error("Publication has invalid Pull Request checkpoint evidence");
 
   return publication;
 }

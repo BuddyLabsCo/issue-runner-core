@@ -68,18 +68,15 @@ export interface CodeHost {
     admin: boolean;
   }): Promise<MergeRequestResult>;
   resolveTargetBranch(repository: string): Promise<string>;
-  getRemoteBranchHead(
-    repository: string,
-    branch: string,
-  ): Promise<string | null>;
-  listPullRequests(repository: string): Promise<PullRequestRecord[]>;
-  createPullRequest(input: {
-    repository: string;
-    targetBranch: string;
-    branch: string;
-    title: string;
-    body: string;
-  }): Promise<PullRequestIdentity>;
+  observeBranch(repository: string, branch: string): Promise<BranchObservation>;
+  observePublication(input: PublicationQuery): Promise<PublicationObservation>;
+  createPullRequest(
+    input: PublicationQuery & {
+      repositoryId: string;
+      title: string;
+      body: string;
+    },
+  ): Promise<PullRequestRecord>;
   getRequiredChecks(
     repository: string,
     pullRequest: number,
@@ -100,8 +97,10 @@ export type MergeRequestResult =
   | { outcome: "conflict" | "rejected"; error: unknown };
 
 export interface PullRequestIdentity {
+  id: string;
   number: number;
   url: string;
+  createdAt: string;
 }
 
 export interface PullRequestRecord extends PullRequestIdentity {
@@ -109,7 +108,22 @@ export interface PullRequestRecord extends PullRequestIdentity {
   targetBranch: string;
   headSha: string;
   state: "open" | "closed" | "merged";
-  draft?: boolean;
+  draft: boolean;
+}
+
+export interface BranchObservation {
+  repositoryId: string;
+  headSha: string | null;
+}
+
+export interface PublicationQuery {
+  repository: string;
+  branch: string;
+  targetBranch: string;
+}
+
+export interface PublicationObservation extends BranchObservation {
+  candidates: PullRequestRecord[];
 }
 
 export interface RequiredCheck {
