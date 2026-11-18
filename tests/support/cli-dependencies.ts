@@ -46,7 +46,7 @@ async function discoverParentFixture(
   }
   tickets.sort((a, b) => a.number - b.number);
   for (const ticket of tickets) {
-    if (ticket.repository !== repository)
+    if (ticket.repository?.toLowerCase() !== repository.toLowerCase())
       throw new Error(
         `cross-repository child ${ticket.repository}#${ticket.number} is unsupported`,
       );

@@ -48,7 +48,9 @@ async function readParentScope(
   const tickets =
     scope?.tickets ??
     (await readChildren(repository, parentTicket, tracker, read));
-  const foreignChild = tickets.find((child) => child.repository !== repository);
+  const foreignChild = tickets.find(
+    (child) => child.repository?.toLowerCase() !== repository.toLowerCase(),
+  );
   if (foreignChild)
     throw new Error(
       `cross-repository child ${foreignChild.repository}#${foreignChild.number} is unsupported`,

@@ -37,7 +37,7 @@ export async function readChildren(
     page = current.nextPage;
   }
   const foreignChild = children.find(
-    (child) => child.repository !== repository,
+    (child) => child.repository?.toLowerCase() !== repository.toLowerCase(),
   );
   if (foreignChild)
     throw new Error(

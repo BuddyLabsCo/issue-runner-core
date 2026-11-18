@@ -25,7 +25,7 @@ const initial = (children: unknown[], cursor: string | null = null) => ({
     repository: {
       ...repo,
       label: { id: "label-id", name: "reserved" },
-      issue: { ...issue("parent", 10), subIssues: page(children, cursor) },
+      issue: { ...child("parent", 10), subIssues: page(children, cursor) },
     },
     user: { id: "runner-id", login: "runner" },
   },
@@ -86,38 +86,55 @@ await test("discovery drains each owner's connection before returning selection 
 await test("discovery rejects incomplete or unsafe facts", async () => {
   const first = child("one", 11);
   first.labels = page([], "repeat");
-  for (const responses of [
-    [
-      initial([first]),
-      { data: { node: { id: "one", labels: page([], "repeat") } } },
-    ],
-    [
-      initial([
+  const cases: { responses: unknown[]; expected: RegExp }[] = [
+    {
+      responses: [
+        initial([first]),
+        { data: { node: { id: "one", labels: page([], "repeat") } } },
+      ],
+      expected: /non-advancing pagination/u,
+    },
+    {
+      responses: [
+        initial([
+          {
+            ...child("one", 11),
+            blockedBy: page([issue("bad", 30, "CLOSED", null)]),
+          },
+        ]),
+      ],
+      expected: /unsupported terminal state/u,
+    },
+    {
+      responses: [
+        initial([
+          {
+            ...child("one", 11),
+            repository: { id: "foreign", nameWithOwner: "elsewhere/repo" },
+          },
+        ]),
+      ],
+      expected: /cross-repository child elsewhere\/repo#11/u,
+    },
+    {
+      responses: [
         {
-          ...child("one", 11),
-          blockedBy: page([issue("bad", 30, "CLOSED", null)]),
+          ...initial([]),
+          errors: [{ message: "partial data", path: ["repository"] }],
         },
-      ]),
-    ],
-    [
-      initial([
-        {
-          ...child("one", 11),
-          repository: { id: "foreign", nameWithOwner: "elsewhere/repo" },
-        },
-      ]),
-    ],
-    [
-      {
-        ...initial([]),
-        errors: [{ message: "partial data", path: ["repository"] }],
-      },
-    ],
-    [initial([{ ...child("one", 11), labels: null }])],
-  ]) {
+      ],
+      expected: /discovery returned GraphQL errors/u,
+    },
+    {
+      responses: [initial([{ ...child("one", 11), labels: null }])],
+      expected: /invalid discovery fact/u,
+    },
+  ];
+  for (const { responses, expected } of cases) {
     const script = tracker(responses);
     await assert.rejects(
       script.adapter.discoverParent("owner/repo", 10, "runner", "reserved"),
+      expected,
     );
   }
 });
@@ -141,4 +158,119 @@ await test("discovery deduplicates repeated identities and keeps nullable lookup
   assert.equal(result.tickets.length, 1);
   assert.equal(result.reservationId, null);
   assert.equal(result.runnerId, null);
+});
+
+await test("parent connections drain independently and retain complete facts", async () => {
+  const response = initial([child("one", 11)]);
+  response.data.repository.issue.labels = page(
+    [{ id: "l1", name: "first" }],
+    "same",
+  );
+  response.data.repository.issue.assignees = page(
+    [{ id: "a1", login: "first" }],
+    "same",
+  );
+  response.data.repository.issue.blockedBy = page([], "same");
+  const script = tracker([
+    response,
+    {
+      data: {
+        node: { id: "parent", labels: page([{ id: "l2", name: "second" }]) },
+      },
+    },
+    {
+      data: {
+        node: {
+          id: "parent",
+          assignees: page([{ id: "a2", login: "second" }]),
+        },
+      },
+    },
+    { data: { node: { id: "parent", blockedBy: page([issue("b1", 45)]) } } },
+  ]);
+  const result = await script.adapter.discoverParent(
+    "owner/repo",
+    10,
+    "runner",
+    "reserved",
+  );
+  assert.match(
+    script.calls[0]!.query,
+    /issue\(number:\$number\)[\s\S]*?labels\(first:100\)[\s\S]*?assignees\(first:100\)[\s\S]*?blockedBy\(first:100\)[\s\S]*?subIssues/u,
+  );
+  assert.deepEqual(result.parent.labels, ["first", "second"]);
+  assert.deepEqual(result.parent.assignees, ["first", "second"]);
+  assert.equal(result.parent.blockers![0]!.number, 45);
+  assert.equal(result.parent.labelIds!.second, "l2");
+  assert.equal(script.calls.length, 4);
+});
+
+await test("discovery accepts equivalent repository casing and rejects mismatched IDs", async () => {
+  const script = tracker([initial([child("one", 11)])]);
+  const result = await script.adapter.discoverParent(
+    "OWNER/Repo",
+    10,
+    "runner",
+    "reserved",
+  );
+  assert.equal(result.tickets[0]!.number, 11);
+  const wrong = initial([child("one", 11)]);
+  wrong.data.repository.issue.subIssues.nodes[0] = {
+    ...child("one", 11),
+    repository: { id: "different", nameWithOwner: "Owner/Repo" },
+  };
+  await assert.rejects(
+    tracker([wrong]).adapter.discoverParent(
+      "OWNER/Repo",
+      10,
+      "runner",
+      "reserved",
+    ),
+    /cross-repository child/u,
+  );
+});
+
+await test("discovery rejects incomplete parent connections and invalid parent blockers", async () => {
+  const invalidBlocker = initial([]);
+  invalidBlocker.data.repository.issue.blockedBy = page([
+    issue("bad-parent-blocker", 80, "CLOSED", null),
+  ]);
+  const repeatedCursor = initial([]);
+  repeatedCursor.data.repository.issue.assignees = page([], "repeat");
+  const cases = [
+    { responses: [invalidBlocker], expected: /unsupported terminal state/u },
+    {
+      responses: [
+        repeatedCursor,
+        { data: { node: { id: "parent", assignees: page([], "repeat") } } },
+      ],
+      expected: /non-advancing pagination/u,
+    },
+    {
+      responses: [
+        {
+          ...initial([]),
+          data: {
+            ...initial([]).data,
+            repository: {
+              ...initial([]).data.repository,
+              issue: { ...initial([]).data.repository.issue, labels: null },
+            },
+          },
+        },
+      ],
+      expected: /invalid discovery fact/u,
+    },
+  ];
+  for (const { responses, expected } of cases) {
+    await assert.rejects(
+      tracker(responses).adapter.discoverParent(
+        "owner/repo",
+        10,
+        "runner",
+        "reserved",
+      ),
+      expected,
+    );
+  }
 });

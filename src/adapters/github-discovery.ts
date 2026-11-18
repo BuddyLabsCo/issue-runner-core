@@ -102,7 +102,7 @@ export async function discoverParent(
     throw new Error("Invalid repository identity");
   const query = `query Discovery($owner:String!,$name:String!,$number:Int!,$runner:String!,$reservation:String!) {
     repository(owner:$owner,name:$name) { id nameWithOwner label(name:$reservation) { id name }
-      issue(number:$number) { ${identity} subIssues(first:100) { ${connection} { ${childFacts} } } }
+      issue(number:$number) { ${childFacts} subIssues(first:100) { ${connection} { ${childFacts} } } }
     } user(login:$runner) { id login }
   }`;
   const response = await client.graphql(query, {
@@ -117,7 +117,7 @@ export async function discoverParent(
   const data = object(response.data);
   const repo = object(data.repository);
   const repositoryId = string(repo.id);
-  if (repo.nameWithOwner !== repository)
+  if (string(repo.nameWithOwner).toLowerCase() !== repository.toLowerCase())
     throw new Error("Unexpected repository identity");
   const label = repo.label === null ? null : object(repo.label);
   if (label) {
@@ -137,7 +137,7 @@ export async function discoverParent(
   const rawParent = object(repo.issue);
   const parent = parseIssueFact(rawParent);
   if (
-    parent.repository !== repository ||
+    parent.repository.toLowerCase() !== repository.toLowerCase() ||
     parent.repositoryId !== repositoryId ||
     parent.number !== number
   )
@@ -175,13 +175,13 @@ export async function discoverParent(
       if (name === "subIssues") {
         const child = parseIssueFact(node);
         if (
-          child.repository !== repository ||
+          child.repository.toLowerCase() !== repository.toLowerCase() ||
           child.repositoryId !== repositoryId
         )
           throw new Error(
             `cross-repository child ${child.repository}#${child.number} is unsupported`,
           );
-        const key = `${child.repository}#${child.number}`;
+        const key = `${child.repository.toLowerCase()}#${child.number}`;
         if (identities.has(key) && identities.get(key) !== id)
           throw new Error("Conflicting child identity");
         identities.set(key, id);
@@ -196,7 +196,7 @@ export async function discoverParent(
         addPage(id, "assignees", node.assignees);
         addPage(id, "blockedBy", node.blockedBy);
       } else {
-        const child = tickets.get(owner);
+        const child = owner === parent.id ? parent : tickets.get(owner);
         if (!child) throw new Error("Missing connection owner");
         if (name === "blockedBy") {
           const blocker = parseIssueFact(node);
@@ -217,6 +217,14 @@ export async function discoverParent(
       }
     }
   };
+  parent.labels = [];
+  parent.assignees = [];
+  parent.blockers = [];
+  parent.labelIds = Object.create(null) as Record<string, string>;
+  parent.assigneeIds = Object.create(null) as Record<string, string>;
+  addPage(parent.id, "labels", rawParent.labels);
+  addPage(parent.id, "assignees", rawParent.assignees);
+  addPage(parent.id, "blockedBy", rawParent.blockedBy);
   addPage(parent.id, "subIssues", rawParent.subIssues);
   while (pending.length) {
     const next = pending.shift()!;
