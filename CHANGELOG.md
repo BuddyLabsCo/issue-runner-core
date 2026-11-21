@@ -1,8 +1,21 @@
 # Changelog
 
+## 1.0.4
+
+- - fix: [issue-376] confirm parent closure from one final scope scan (#424)
+- - fix: [issue-375] merge the expected head and confirm exact delivery (#423)
+- - fix: [issue-372] remove routine eligibility reads after Issue start (#422)
+- - fix: [issue-374] compose recorded Pull Request CI observations (#421)
+- - fix: [issue-371] reconcile Issue starts in one Reservation operation (#420)
+- - fix: [issue-370] compose parent Batch discovery (#419)
+- - fix: [issue-373] publish exact pull requests with composed observations (#418)
+- - fix: [issue-369] share GitHub credentials and preserve GraphQL evidence (#417)
+- - chore: [issue-361] cap template Review rounds at 2 (#362)
+
 ## 1.0.3
 
 - - fix: [issue-358] complete no-change Issues with resumable delivery (#359)
+
 
 ## 1.0.2
 
@@ -12,10 +25,12 @@
 - - refactor: [issue-349] separate terminal confirmations from intervention (#352)
 
 
+
 ## 1.0.1
 
 - - docs: [issue-336] show complete Herdr and Codex configuration (#337)
 - - fix: [issue-333] allow pickup of runner-assigned issues (#334)
+
 
 
 
@@ -27,9 +42,11 @@
 
 
 
+
 ## 0.1.3
 
 - - fix: [issue-325] unblock conflict repairs and document agent startup (#326)
+
 
 
 
@@ -44,9 +61,11 @@
 
 
 
+
 ## 0.1.1
 
 - - docs: [issue-313] consolidate Core documentation (#320)
+
 
 
 
