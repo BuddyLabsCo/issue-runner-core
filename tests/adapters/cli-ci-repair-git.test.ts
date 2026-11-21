@@ -83,7 +83,14 @@ for (const kind of ["ci", "conflict"] as const) {
             "target branch change\n",
           );
           await git(origin, "add", ".");
-          await git(origin, "commit", "-m", "Advance target");
+          await git(
+            origin,
+            "commit",
+            "-m",
+            "Advance target",
+            "-m",
+            "This commit has a body.",
+          );
           targetBase = await git(origin, "rev-parse", "HEAD");
         }
       };
@@ -175,20 +182,28 @@ for (const kind of ["ci", "conflict"] as const) {
               summary: "Completed",
               commits:
                 kind === "conflict" && repair && !empty
-                  ? (
-                      await git(
-                        options.cwd,
-                        "log",
-                        "--reverse",
-                        "--format=%H%x00%s",
-                        `${(await fixture.snapshot()).publication!.conflictRepair!.attempts.at(-1)!.base}..HEAD`,
+                  ? await Promise.all(
+                      (
+                        await git(
+                          options.cwd,
+                          "log",
+                          "--reverse",
+                          "--format=%H",
+                          `${(await fixture.snapshot()).publication!.conflictRepair!.attempts.at(-1)!.base}..HEAD`,
+                        )
                       )
+                        .split("\n")
+                        .map(async (sha) => ({
+                          sha,
+                          message: await git(
+                            options.cwd,
+                            "show",
+                            "-s",
+                            "--format=%B",
+                            sha,
+                          ),
+                        })),
                     )
-                      .split("\n")
-                      .map((line) => {
-                        const [sha, message] = line.split("\0");
-                        return { sha, message };
-                      })
                   : [
                       {
                         sha: await git(options.cwd, "rev-parse", "HEAD"),
