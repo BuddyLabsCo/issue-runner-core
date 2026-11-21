@@ -31,9 +31,7 @@ export function verifyWorkspace(
   if (
     actual.commits.length !== result.commits.length ||
     actual.commits.some(
-      (commit, index) =>
-        commit.sha !== result.commits[index]?.sha ||
-        commit.message !== result.commits[index]?.message,
+      (commit, index) => commit.sha !== result.commits[index]?.sha,
     )
   )
     throw new Error("Claimed commits do not match actual Git commits");

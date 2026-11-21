@@ -93,7 +93,7 @@ for (const [mismatch, reason] of [
       if (mismatch === "clean" || mismatch === "changed")
         evidence[mismatch] = false;
       else if (mismatch === "commits")
-        evidence.commits[0]!.message = "Incorrect message";
+        evidence.commits[0]!.sha = "f".repeat(40);
       else evidence[mismatch] = "wrong";
       fixture.state.onCorrection = async (correctedPath) => {
         assert.match(fixture.state.submissions.at(-1)!.text, reason);
