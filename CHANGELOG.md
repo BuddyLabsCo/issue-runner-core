@@ -1,8 +1,13 @@
 # Changelog
 
+## 1.0.6
+
+- - fix: [issue-428] verify handoff commits by SHA (#429)
+
 ## 1.0.5
 
 - - fix: [issue-425] allow tracker issue comments (#426)
+
 
 ## 1.0.4
 
@@ -17,9 +22,11 @@
 - - chore: [issue-361] cap template Review rounds at 2 (#362)
 
 
+
 ## 1.0.3
 
 - - fix: [issue-358] complete no-change Issues with resumable delivery (#359)
+
 
 
 
@@ -33,10 +40,12 @@
 
 
 
+
 ## 1.0.1
 
 - - docs: [issue-336] show complete Herdr and Codex configuration (#337)
 - - fix: [issue-333] allow pickup of runner-assigned issues (#334)
+
 
 
 
@@ -52,9 +61,11 @@
 
 
 
+
 ## 0.1.3
 
 - - fix: [issue-325] unblock conflict repairs and document agent startup (#326)
+
 
 
 
@@ -73,9 +84,11 @@
 
 
 
+
 ## 0.1.1
 
 - - docs: [issue-313] consolidate Core documentation (#320)
+
 
 
 
