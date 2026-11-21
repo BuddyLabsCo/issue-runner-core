@@ -11,7 +11,9 @@ For no_change, explain in summary why the requirements are already satisfied, th
 
 Work only in the current worktree on the current branch.
 
-Do not fetch or pull code, switch branches, push, create or modify a pull request, operate CI, merge, or mutate the tracker.
+Do not fetch or pull code, switch branches, push, create or modify a pull request, operate CI, or merge.
+
+You may add comments to the tracker issue, including test evidence. Do not change its body, title, state, labels, or any other fields.
 
 Run relevant checks, commit the complete change locally, and leave the working tree clean.
 

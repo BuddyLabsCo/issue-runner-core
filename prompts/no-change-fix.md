@@ -9,7 +9,9 @@ Return committed with fresh, nonempty pr_title and pr_body following repository 
 
 If a finding cannot be resolved, discuss it with the operator in this conversation.
 
-Do not fetch or pull code, switch branches, push, create or modify a pull request, operate CI, merge, or mutate the tracker.
+Do not fetch or pull code, switch branches, push, create or modify a pull request, operate CI, or merge.
+
+You may add comments to the tracker issue, including test evidence. Do not change its body, title, state, labels, or any other fields.
 
 - Findings report: {{findings}}
 - Base SHA: {{base}}

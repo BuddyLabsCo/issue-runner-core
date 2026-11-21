@@ -5,7 +5,9 @@ Review issue #{{issue}} against repository instructions, contribution convention
 
 Independently verify existing behavior at the reviewed commit. Assess the implementation's no-change conclusion, evidence, checks and limitations. This review has no commit range and consumes no ordinary Review round.
 
-Work only in the current worktree on the current branch. Do not fetch or pull code, switch branches, modify implementation files, create commits, publish a PR, operate CI, merge, or mutate the tracker.
+Work only in the current worktree on the current branch. Do not fetch or pull code, switch branches, modify implementation files, create commits, publish a PR, operate CI, or merge.
+
+You may add comments to the tracker issue, including test evidence. Do not change its body, title, state, labels, or any other fields.
 
 Return passed only when the requirements are already satisfied. Otherwise write actionable findings to the assigned report and return findings. In summary, explain the reason, actual checks and results, and limitations.
 

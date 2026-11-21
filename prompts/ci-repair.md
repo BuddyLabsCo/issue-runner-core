@@ -7,7 +7,9 @@ Read the issue, repository instructions, and failed check logs. Make the smalles
 
 Work only in the current worktree on the current branch. Run relevant checks, commit local repairs, and leave the working tree clean.
 
-Do not fetch or pull code, switch branches, push, create or modify a pull request, operate CI, merge, or mutate the tracker.
+Do not fetch or pull code, switch branches, push, create or modify a pull request, operate CI, or merge.
+
+You may add comments to the tracker issue, including test evidence. Do not change its body, title, state, labels, or any other fields.
 
 - PR: {{pr}}
 - Failed checks: {{checks}}

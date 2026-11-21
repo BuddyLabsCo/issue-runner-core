@@ -13,7 +13,9 @@ Work only in the current worktree on the current branch. Run relevant checks, co
 
 Report all commits after the supplied Base SHA, including commits introduced by the merge.
 
-Do not switch branches, rebase, push, create or modify a pull request, operate CI, merge remotely, or mutate the tracker.
+Do not switch branches, rebase, push, create or modify a pull request, operate CI, or merge remotely.
+
+You may add comments to the tracker issue, including test evidence. Do not change its body, title, state, labels, or any other fields.
 
 - PR: {{pr}}
 - Base SHA: {{base}}
