@@ -159,6 +159,19 @@ export interface CodeHost {
     input: PullRequestQuery,
     signal?: AbortSignal,
   ): Promise<PullRequestObservation>;
+  observeActionsRun(input: ActionsRunQuery): Promise<ActionsRunObservation>;
+  rerunFailedJobs(input: ActionsRunQuery): Promise<void>;
+}
+
+export interface ActionsRunQuery {
+  repository: string;
+  runId: string;
+}
+
+export interface ActionsRunObservation {
+  attempt: number;
+  status: string;
+  conclusion: string | null;
 }
 
 export interface PullRequestState {
@@ -238,6 +251,7 @@ export interface RequiredCheck {
   name: string;
   state: string;
   link: string;
+  actionsRunId?: string;
   bucket: "pass" | "fail" | "pending" | "skipping" | "cancel";
 }
 

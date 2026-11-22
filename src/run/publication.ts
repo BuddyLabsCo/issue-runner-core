@@ -23,8 +23,10 @@ import {
   acceptRepairPush,
   pushedRepairs,
   inspectRepairAncestry,
+  pendingRepair,
   verifyRepairAncestry,
 } from "./repair.ts";
+import { recheckNoChangeCI } from "./ci-rerun.ts";
 
 // Publication policy follows the source workflow at 0adf499bf69217b56256ca2affb1c0dca0894110.
 export async function publishImplementation(
@@ -304,28 +306,12 @@ export async function publishImplementation(
       if (publication.conflictRepair?.retryAuthorized)
         return "Conflict repair budget exhausted; awaiting refreshed merge evidence";
     }
-    const repair = async (alreadyObserved = false) => {
-      do {
-        await repairPullRequest({
-          ...repairOptions,
-          kind: "ci",
-          alreadyObserved,
-        });
-        alreadyObserved = false;
-      } while (
-        publication.phase === "checks_failed" &&
-        !publication.ciRepair?.retryAuthorized
-      );
-    };
-    const pending = publication.ciRepair?.attempts.at(-1);
-    if (
-      pending &&
-      !pending.pushed &&
-      !pending.verificationError &&
-      pending.result?.outcome !== "no_change"
-    )
-      await repair();
-    while (publication.phase !== "checks_ready") {
+    if (pendingRepair(publication.ciRepair?.attempts.at(-1)))
+      await repairPullRequest({ ...repairOptions, kind: "ci" });
+    const checksDeadline = () =>
+      context.clock.now().getTime() +
+      loaded.config.timeouts.requiredChecksMinutes * 60_000;
+    for (;;) {
       const wait =
         (publication.discoveryNotBefore ?? 0) - context.clock.now().getTime();
       if (wait > 0) {
@@ -333,54 +319,76 @@ export async function publishImplementation(
         await context.clock.sleep(wait);
         context.signal?.throwIfAborted();
       }
-      publication.checksDeadline ??=
-        context.clock.now().getTime() +
-        loaded.config.timeouts.requiredChecksMinutes * 60_000;
-      await persist();
-      for (;;) {
-        const { checks, merge } = await read(
-          "required_checks",
-          target,
-          async () => {
-            const observation = await observeHead();
-            await stopIfMerged(observation);
-            return observation;
-          },
-        );
-        publication.checks = checks;
-        if (
-          checks.some(({ bucket }) => bucket === "fail" || bucket === "cancel")
-        ) {
-          publication.phase = "checks_failed";
-          await persist();
-          await repair(true);
-          break;
-        }
-        if (!checks.some(({ bucket }) => bucket === "pending")) {
-          publication.checksState = merge;
-          publication.phase = "checks_ready";
-          await persist();
-          break;
-        }
+      publication.checksDeadline ??= checksDeadline();
+      const { checks, merge } = await read(
+        "required_checks",
+        target,
+        async () => {
+          const observation = await observeHead();
+          await stopIfMerged(observation);
+          return observation;
+        },
+      );
+      publication.checks = checks;
+      const failed = checks.filter(
+        ({ bucket }) => bucket === "fail" || bucket === "cancel",
+      );
+      const pending = checks.some(({ bucket }) => bucket === "pending");
+      const lastRepair = publication.ciRepair?.attempts.at(-1);
+      const noChange =
+        publication.phase === "checks_failed" &&
+        lastRepair?.result?.outcome === "no_change" &&
+        !lastRepair.verificationError &&
+        !lastRepair.checksReconciled &&
+        lastRepair.base === publishedHead(publication)
+          ? lastRepair
+          : undefined;
+      let waiting = pending;
+      if (noChange) {
+        const decision = await recheckNoChangeCI({
+          stage: input,
+          codeHost,
+          read,
+          repair: noChange,
+          failed,
+          pending,
+        });
+        if (decision === "refresh") continue;
+        waiting = decision === "wait";
+      } else if (failed.length > 0) {
+        publication.phase = "checks_failed";
         await persist();
-        const remaining =
-          publication.checksDeadline - context.clock.now().getTime();
-        if (remaining <= 0) {
-          await pauseForOperator(
-            context.operator,
-            "Required checks timed out.",
-            context.signal,
-          );
-          publication.checksDeadline =
-            context.clock.now().getTime() +
-            loaded.config.timeouts.requiredChecksMinutes * 60_000;
-          await persist();
-        } else {
-          context.signal?.throwIfAborted();
-          await context.clock.sleep(Math.min(10_000, remaining));
-          context.signal?.throwIfAborted();
-        }
+        await repairPullRequest({
+          ...repairOptions,
+          kind: "ci",
+          alreadyObserved: true,
+        });
+        continue;
       }
+      if (!waiting) {
+        if (noChange) noChange.checksReconciled = true;
+        publication.checksState = merge;
+        publication.phase = "checks_ready";
+        await persist();
+        break;
+      }
+      await persist();
+      const remaining =
+        publication.checksDeadline - context.clock.now().getTime();
+      if (remaining > 0) {
+        await context.clock.sleep(Math.min(10_000, remaining));
+        continue;
+      }
+      const rerun = noChange?.actionsRerun;
+      await pauseForOperator(
+        context.operator,
+        rerun
+          ? `GitHub Actions rerun ${rerun.runId} timed out waiting for required checks.`
+          : "Required checks timed out.",
+        context.signal,
+      );
+      publication.checksDeadline = checksDeadline();
+      await persist();
     }
   } catch (error) {
     if (error !== merged) throw error;

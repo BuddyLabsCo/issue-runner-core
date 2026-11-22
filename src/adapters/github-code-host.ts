@@ -1,4 +1,6 @@
 import type {
+  ActionsRunObservation,
+  ActionsRunQuery,
   CodeHost,
   BranchObservation,
   PublicationObservation,
@@ -16,6 +18,7 @@ import {
   mergeFields,
   oid,
   publicationFields,
+  parseActionsRun,
   parseCheckContext,
   parseMergeFacts,
   pollQuery,
@@ -35,6 +38,22 @@ export class GitHubCodeHost implements CodeHost {
 
   constructor(token: string, command?: GitHubCommand) {
     this.client = new GitHubClient(token, command);
+  }
+
+  async observeActionsRun(
+    input: ActionsRunQuery,
+  ): Promise<ActionsRunObservation> {
+    const response = await this.client.request(["api", actionsRunPath(input)]);
+    return parseActionsRun(JSON.parse(response) as unknown, input.runId);
+  }
+
+  async rerunFailedJobs(input: ActionsRunQuery): Promise<void> {
+    await this.client.request([
+      "api",
+      `${actionsRunPath(input)}/rerun-failed-jobs`,
+      "--method",
+      "POST",
+    ]);
   }
 
   async observeDelivery(
@@ -381,7 +400,7 @@ export class GitHubCodeHost implements CodeHost {
           object(statusCheckRollup).contexts,
           "check context",
         ))
-          contexts.push(parseCheckContext(node));
+          contexts.push(parseCheckContext(node, repository));
         if (!page.done) continue;
       }
       return {
@@ -393,6 +412,12 @@ export class GitHubCodeHost implements CodeHost {
       };
     }
   }
+}
+
+function actionsRunPath({ repository, runId }: ActionsRunQuery): string {
+  if (!/^[1-9]\d*$/u.test(runId))
+    throw new Error("Invalid GitHub Actions run ID");
+  return `repos/${repository}/actions/runs/${runId}`;
 }
 
 const deliveryQuery = `

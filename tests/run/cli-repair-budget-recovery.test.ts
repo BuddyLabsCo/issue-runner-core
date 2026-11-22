@@ -26,9 +26,12 @@ await test("conflict-to-CI recovery preserves separate exhausted budgets until c
   };
   fixture.publicationState.onChecks = async () =>
     fixture.publicationState.pushes === 2 ? [failedCheck] : [];
-  fixture.scripts.ci.onTask = async (file) => {
+  fixture.scripts.ci.onTask = async (file, evidence) => {
     if (fixture.scripts.ci.tasks.length === 2) fixture.controller.abort();
-    else await publish(file, noChange);
+    else {
+      evidence.clean = false;
+      await publish(file, noChange);
+    }
   };
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   const before = await fixture.snapshot();
@@ -45,7 +48,10 @@ await test("conflict-to-CI recovery preserves separate exhausted budgets until c
   assert.equal(pending.sessionid, "ci-session-2");
 
   fixture.dependencies.signal = new AbortController().signal;
-  fixture.scripts.ci.onTask = async (file) => publish(file, noChange);
+  fixture.scripts.ci.onTask = async (file, evidence) => {
+    evidence.clean = false;
+    await publish(file, noChange);
+  };
   let pauses = 0;
   fixture.dependencies.operator.pause = async (message) => {
     assert.match(message, /CI repair failed after two attempts/u);

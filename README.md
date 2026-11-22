@@ -90,6 +90,7 @@ Grant the app read access to repository metadata and the permissions below.
 - **Issues** read/write to read Issues and manage assignments, labels, comments, and closure.
 - **Pull requests** read/write to read and publish PRs.
 - **Checks** and **Commit statuses** read to observe required checks.
+- **Actions** read/write to observe workflow attempts and rerun failed jobs after a no-change CI repair.
 - **Contents** read/write to read refs, fetch and push through Git, and merge PRs.
 
 GitHub lists Checks API access among the limitations of fine-grained personal
