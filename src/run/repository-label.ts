@@ -1,5 +1,6 @@
 import type { Tracker } from "./contracts.ts";
 import type { ReadOperation } from "./discovery.ts";
+import type { OperationOptions } from "./operations.ts";
 
 export async function ensureRepositoryLabel(
   tracker: Tracker,
@@ -7,8 +8,8 @@ export async function ensureRepositoryLabel(
   repository: string,
   label: string,
   kind: "maintenance" | "reservation",
+  retry: NonNullable<OperationOptions<void>["retry"]> = "automatic",
 ): Promise<void> {
-  const retry = kind === "reservation" ? "never" : "automatic";
   const labelExists = async () => {
     let page: number | null = 1;
     const visited = new Set<number>();

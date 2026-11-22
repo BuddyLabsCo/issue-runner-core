@@ -383,16 +383,21 @@ for (const operationRetry of [1, 0]) {
       ...validConfig,
       tracker: config,
       operationRetry,
+      operationRetryDelay: [7],
     });
-    const pauses: string[] = [];
+    const effects: string[] = [];
+    const reads: string[] = [];
+    fixture.dependencies.clock.sleep = async (milliseconds) => {
+      if (reads.length < 2) effects.push(`sleep:${milliseconds}`);
+    };
     fixture.dependencies.operator.pause = async (message) => {
-      pauses.push(message);
+      effects.push("pause");
       assert.match(message, /Create label denied/u);
       assert.deepEqual(fixture.writes, []);
       return "";
     };
-    const reads: string[] = [];
     const command: GitHubCommand = async () => {
+      effects.push("discover");
       const state = fixture.children[0]!.state;
       reads.push(state);
       if (reads.length <= 2) assert.deepEqual(fixture.writes, []);
@@ -412,9 +417,8 @@ for (const operationRetry of [1, 0]) {
     const tracker = new GitHubTracker("fake-token", command);
     fixture.dependencies.tracker.discoverParent =
       tracker.discoverParent.bind(tracker);
-    let createRequests = 0;
     fixture.dependencies.tracker.createLabel = async () => {
-      createRequests += 1;
+      effects.push("create");
       throw new Error("Create label denied");
     };
     const result = await fixture.run();
@@ -425,7 +429,11 @@ for (const operationRetry of [1, 0]) {
     );
     assert.deepEqual(fixture.dispatched, [51]);
     assert.deepEqual(reads, ["open", "open"]);
-    assert.equal(createRequests, 1);
-    assert.equal(pauses.length, operationRetry ? 0 : 1);
+    assert.deepEqual(effects, [
+      "discover",
+      "create",
+      operationRetry ? "sleep:7000" : "pause",
+      "discover",
+    ]);
   });
 }

@@ -14,11 +14,13 @@ async function reservationRun(
     eligible = true,
     runnerResolved = true,
     creation = "success",
+    assigneeAfterCreation,
   }: {
     existing?: boolean;
     eligible?: boolean;
     runnerResolved?: boolean;
     creation?: "success" | "concurrent" | "rejected";
+    assigneeAfterCreation?: string;
   } = {},
 ) {
   const ticket = child(51, eligible ? {} : { labels: [] });
@@ -50,6 +52,7 @@ async function reservationRun(
     effects.push("create");
     if (creation === "rejected") throw new Error("Create label denied");
     exists = true;
+    if (assigneeAfterCreation) ticket.assignees = [assigneeAfterCreation];
     if (creation === "concurrent") throw new Error("Label already exists");
   };
   const start = tracker.readIssueStart.bind(tracker);
@@ -106,14 +109,44 @@ for (const [scope, args, expected] of [
   ] as const) {
     await test(`${scope} skips label creation when ${condition}`, async (t) => {
       const fixture = await reservationRun(t, options);
+      const unresolved = "runnerResolved" in options && !options.runnerResolved;
+      const { operator, pauses } = fixture.dependencies;
+      if (unresolved)
+        operator.pause = async (message) => {
+          pauses.push(message);
+          return "q";
+        };
 
-      await fixture.run([...args]);
+      const { summary } = await fixture.run([...args]);
 
+      assert.equal(summary.outcome, unresolved ? "cancelled" : "incomplete");
+      if (unresolved) {
+        assert.equal(pauses.length, 1);
+        assert.match(
+          pauses[0]!,
+          /did not resolve the configured Reservation label or Runner account/u,
+        );
+      } else assert.deepEqual(pauses, []);
       assert.ok(!fixture.effects.includes("create"));
       assert.deepEqual(fixture.dispatched, dispatched);
+      if (!dispatched.length) assert.deepEqual(fixture.writes, []);
     });
   }
 }
+
+await test("Standalone Issue start rechecks ownership after creating the Reservation label", async (t) => {
+  const fixture = await reservationRun(t, {
+    assigneeAfterCreation: "developer",
+  });
+
+  const { summary } = await fixture.run(["--issue", "51"]);
+
+  assert.equal(summary.outcome, "incomplete");
+  assert.match(summary.tickets![0]!.detail, /Issue is externally owned/u);
+  assert.deepEqual(fixture.effects, ["start", "create", "start"]);
+  assert.deepEqual(fixture.writes, []);
+  assert.deepEqual(fixture.dispatched, []);
+});
 
 await test("Standalone Issue start reconciles a concurrent label creation before reserving", async (t) => {
   const fixture = await reservationRun(t, { creation: "concurrent" });

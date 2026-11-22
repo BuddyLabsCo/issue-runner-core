@@ -170,6 +170,7 @@ export function startIssue(input: {
           repository,
           reservationLabel,
           "reservation",
+          "never",
         );
         return start(false);
       }
