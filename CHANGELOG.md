@@ -1,12 +1,19 @@
 # Changelog
 
+## 1.0.7
+
+- - fix: [issue-431] rerun failed Actions jobs after no-change CI repair (#434)
+- - fix: [issue-432] create missing Reservation labels when needed (#433)
+
 ## 1.0.6
 
 - - fix: [issue-428] verify handoff commits by SHA (#429)
 
+
 ## 1.0.5
 
 - - fix: [issue-425] allow tracker issue comments (#426)
+
 
 
 ## 1.0.4
@@ -23,9 +30,11 @@
 
 
 
+
 ## 1.0.3
 
 - - fix: [issue-358] complete no-change Issues with resumable delivery (#359)
+
 
 
 
@@ -41,10 +50,12 @@
 
 
 
+
 ## 1.0.1
 
 - - docs: [issue-336] show complete Herdr and Codex configuration (#337)
 - - fix: [issue-333] allow pickup of runner-assigned issues (#334)
+
 
 
 
@@ -62,9 +73,11 @@
 
 
 
+
 ## 0.1.3
 
 - - fix: [issue-325] unblock conflict repairs and document agent startup (#326)
+
 
 
 
@@ -85,9 +98,11 @@
 
 
 
+
 ## 0.1.1
 
 - - docs: [issue-313] consolidate Core documentation (#320)
+
 
 
 
