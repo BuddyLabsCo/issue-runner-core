@@ -352,6 +352,8 @@ export async function publishImplementation(
           repair: noChange,
           failed,
           pending,
+          checksDeadline,
+          advance: context.advance,
         });
         if (decision === "refresh") continue;
         waiting = decision === "wait";

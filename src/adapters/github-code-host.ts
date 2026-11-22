@@ -14,11 +14,13 @@ import type {
 import { nonempty, object } from "../agent/handoff.ts";
 import { GitHubClient, type GitHubCommand } from "./github-client.ts";
 import {
+  actionsRunPath,
   branchFields,
   mergeFields,
   oid,
   publicationFields,
   parseActionsRun,
+  verifyActionsRerunResponse,
   parseCheckContext,
   parseMergeFacts,
   pollQuery,
@@ -48,12 +50,17 @@ export class GitHubCodeHost implements CodeHost {
   }
 
   async rerunFailedJobs(input: ActionsRunQuery): Promise<void> {
-    await this.client.request([
-      "api",
-      `${actionsRunPath(input)}/rerun-failed-jobs`,
-      "--method",
-      "POST",
-    ]);
+    const response = await this.client.request(
+      [
+        "api",
+        `${actionsRunPath(input)}/rerun-failed-jobs`,
+        "--method",
+        "POST",
+        "--include",
+      ],
+      [1],
+    );
+    verifyActionsRerunResponse(response);
   }
 
   async observeDelivery(
@@ -412,12 +419,6 @@ export class GitHubCodeHost implements CodeHost {
       };
     }
   }
-}
-
-function actionsRunPath({ repository, runId }: ActionsRunQuery): string {
-  if (!/^[1-9]\d*$/u.test(runId))
-    throw new Error("Invalid GitHub Actions run ID");
-  return `repos/${repository}/actions/runs/${runId}`;
 }
 
 const deliveryQuery = `

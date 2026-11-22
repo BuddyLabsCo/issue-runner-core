@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { GitHubCodeHost } from "../../src/adapters/github-code-host.ts";
+import { ActionsRerunRejected } from "../../src/run/contracts.ts";
 
 import {
   connection,
@@ -115,7 +116,7 @@ await test("required Actions checks identify a repository-scoped run for the fai
               status: "queued",
               conclusion: null,
             })
-          : "",
+          : "HTTP/2.0 201 Created\r\n\r\n",
       );
     },
   );
@@ -143,8 +144,28 @@ await test("required Actions checks identify a repository-scoped run for the fai
   await adapter.rerunFailedJobs(run);
   assert.deepEqual(requests, [
     ["api", apiPath],
-    ["api", `${apiPath}/rerun-failed-jobs`, "--method", "POST"],
+    ["api", `${apiPath}/rerun-failed-jobs`, "--method", "POST", "--include"],
   ]);
+});
+
+await test("the Actions adapter distinguishes a definite HTTP rejection from an uncertain write", async () => {
+  const run = { repository: publication.repository, runId: "45019148280" };
+  for (const status of [403, 503]) {
+    const adapter = new GitHubCodeHost(
+      "host-secret",
+      (_args, { allowedExitCodes }) => {
+        assert.deepEqual(allowedExitCodes, [1]);
+        return Promise.resolve(`HTTP/2.0 ${status} Error\r\n\r\n`);
+      },
+    );
+    await assert.rejects(
+      adapter.rerunFailedJobs(run),
+      (error: unknown) =>
+        error instanceof Error &&
+        error.message.includes(`HTTP ${status}`) &&
+        error instanceof ActionsRerunRejected === (status === 403),
+    );
+  }
 });
 
 await test("CI drains all context pages before deduplicating reruns and filtering required checks", async () => {

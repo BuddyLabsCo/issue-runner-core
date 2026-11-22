@@ -174,6 +174,8 @@ export interface ActionsRunObservation {
   conclusion: string | null;
 }
 
+export class ActionsRerunRejected extends Error {}
+
 export interface PullRequestState {
   headSha: string;
   createdAt: string;

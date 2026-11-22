@@ -143,8 +143,7 @@ async function executeProject(
     observePullRequest: (input, signal) =>
       host.observePullRequest(input, signal),
     observeActionsRun: (input) => host.observeActionsRun(input),
-    rerunFailedJobs: (input) =>
-      operator.advance(() => host.rerunFailedJobs(input)),
+    rerunFailedJobs: (input) => host.rerunFailedJobs(input),
     createPullRequest: (input) =>
       operator.advance(() => host.createPullRequest(input)),
     observeDelivery: (input, signal) => host.observeDelivery(input, signal),

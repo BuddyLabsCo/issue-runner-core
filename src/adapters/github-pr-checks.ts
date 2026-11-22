@@ -1,6 +1,8 @@
 import { nonempty, object } from "../agent/handoff.ts";
+import { ActionsRerunRejected } from "../run/contracts.ts";
 import type {
   ActionsRunObservation,
+  ActionsRunQuery,
   PullRequestMergeFacts,
   PullRequestState,
   RequiredCheck,
@@ -51,6 +53,21 @@ export const pollQuery = `
 `;
 
 export const oid = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
+
+export function actionsRunPath({ repository, runId }: ActionsRunQuery): string {
+  if (!/^[1-9]\d*$/u.test(runId))
+    throw new Error("Invalid GitHub Actions run ID");
+  return `repos/${repository}/actions/runs/${runId}`;
+}
+
+export function verifyActionsRerunResponse(response: string): void {
+  const status = /^HTTP\/\S+ (\d{3})\b/u.exec(response)?.[1];
+  if (status === "201") return;
+  const message = `GitHub Actions rerun returned ${status ? `HTTP ${status}` : "no HTTP status"}`;
+  if (status && /^(400|401|403|404|405|409|422|429)$/u.test(status))
+    throw new ActionsRerunRejected(message);
+  throw new Error(message);
+}
 
 export function parseActionsRun(
   value: unknown,

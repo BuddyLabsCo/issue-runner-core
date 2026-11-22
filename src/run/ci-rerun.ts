@@ -1,8 +1,13 @@
 import type { RepairProgress } from "../recovery.ts";
-import type { CodeHost, RequiredCheck } from "./contracts.ts";
+import {
+  ActionsRerunRejected,
+  type CodeHost,
+  type RequiredCheck,
+} from "./contracts.ts";
 import type { ReadOperation } from "./discovery.ts";
 import { pauseForOperator } from "./operations.ts";
 import type { IssueStageContext } from "../agent/stage.ts";
+import type { RunContext } from "./run.ts";
 
 export function validCiRerunCheckpoint(
   repair: RepairProgress,
@@ -23,18 +28,27 @@ export function validCiRerunCheckpoint(
     typeof actionsRerun.runId === "string" &&
     /^[1-9]\d*$/u.test(actionsRerun.runId) &&
     Number.isSafeInteger(actionsRerun.previousAttempt) &&
-    actionsRerun.previousAttempt >= 0
+    actionsRerun.previousAttempt >= 0 &&
+    (actionsRerun.retryable === undefined || actionsRerun.retryable === true) &&
+    (actionsRerun.failureAcknowledged === undefined ||
+      (actionsRerun.failureAcknowledged === true && !actionsRerun.retryable))
   );
 }
 
-export async function recheckNoChangeCI(input: {
+interface RecheckInput {
   stage: IssueStageContext;
   codeHost: CodeHost;
   read: ReadOperation;
   repair: RepairProgress;
   failed: RequiredCheck[];
   pending: boolean;
-}): Promise<"ready" | "wait" | "refresh"> {
+  checksDeadline: () => number;
+  advance: RunContext["advance"];
+}
+
+export async function recheckNoChangeCI(
+  input: RecheckInput,
+): Promise<"ready" | "wait" | "refresh"> {
   const { stage, codeHost, read, repair, failed, pending } = input;
   const { progress, operator, signal } = stage;
   const { repository, ticket } = progress;
@@ -42,10 +56,17 @@ export async function recheckNoChangeCI(input: {
     await pauseForOperator(operator, reason, signal, true);
     return "refresh" as const;
   };
-  const rerun = repair.actionsRerun;
+  const saved = repair.actionsRerun;
+  const rerun =
+    saved?.retryable &&
+    !failed.some((check) => check.actionsRunId === saved.runId)
+      ? undefined
+      : saved;
   const runId =
     rerun?.runId ?? failed.find((check) => check.actionsRunId)?.actionsRunId;
-  if (!rerun && (pending || failed.length === 0))
+  if ((!rerun || rerun.retryable) && (pending || failed.length === 0))
+    return pending ? "wait" : "ready";
+  if (rerun?.failureAcknowledged && failed.length === 0)
     return pending ? "wait" : "ready";
   if (!runId)
     return pause(
@@ -57,13 +78,21 @@ export async function recheckNoChangeCI(input: {
   const run = await read("observe_actions_run", target, () =>
     codeHost.observeActionsRun(query),
   );
-  if (rerun) {
+  if (rerun?.retryable && run.attempt > rerun.previousAttempt) {
+    delete rerun.retryable;
+    await stage.persist();
+  }
+  if (rerun && (!rerun.retryable || run.attempt < rerun.previousAttempt)) {
     if (run.attempt <= rerun.previousAttempt || run.status !== "completed")
       return "wait";
-    if (run.conclusion !== "success")
-      return pause(
+    if (run.conclusion !== "success") {
+      await pause(
         `GitHub Actions rerun ${runId} attempt ${run.attempt} failed (${run.conclusion}). Resolve the required checks.`,
       );
+      rerun.failureAcknowledged = true;
+      await stage.persist();
+      return "refresh";
+    }
     if (failed.length === 0) return pending ? "wait" : "ready";
     if (pending || failed.some((check) => check.actionsRunId === runId))
       return "wait";
@@ -73,22 +102,19 @@ export async function recheckNoChangeCI(input: {
   }
 
   const launch = run.status === "completed" && run.conclusion !== "success";
-  repair.actionsRerun = {
+  const checkpoint = {
     runId,
     previousAttempt: launch ? run.attempt : run.attempt - 1,
   };
-  const publication = progress.publication!;
-  publication.checksDeadline =
-    stage.clock.now().getTime() +
-    stage.loaded.config.timeouts.requiredChecksMinutes * 60_000;
-  await stage.persist();
-  if (!launch) return "wait";
-
+  if (!launch) {
+    await saveRerun(input, checkpoint);
+    return "wait";
+  }
   try {
     await read(
       "rerun_failed_actions_jobs",
       target,
-      () => codeHost.rerunFailedJobs(query),
+      () => dispatchRerun(input, checkpoint),
       { retry: "never" },
     );
   } catch (error) {
@@ -98,4 +124,41 @@ export async function recheckNoChangeCI(input: {
     );
   }
   return "refresh";
+}
+
+type RerunCheckpoint = NonNullable<RepairProgress["actionsRerun"]>;
+
+async function saveRerun(
+  input: RecheckInput,
+  checkpoint: RerunCheckpoint,
+): Promise<void> {
+  input.repair.actionsRerun = checkpoint;
+  input.stage.progress.publication!.checksDeadline = input.checksDeadline();
+  await input.stage.persist();
+}
+
+async function dispatchRerun(
+  input: RecheckInput,
+  checkpoint: RerunCheckpoint,
+): Promise<void> {
+  const { stage, codeHost, advance } = input;
+  let dispatched = false;
+  const dispatch = () => {
+    stage.signal?.throwIfAborted();
+    dispatched = true;
+    return codeHost.rerunFailedJobs({
+      repository: stage.progress.repository,
+      runId: checkpoint.runId,
+    });
+  };
+  try {
+    await saveRerun(input, checkpoint);
+    await (advance ? advance(dispatch) : dispatch());
+  } catch (error) {
+    if (!dispatched || error instanceof ActionsRerunRejected) {
+      checkpoint.retryable = true;
+      await stage.persist();
+    }
+    throw error;
+  }
 }

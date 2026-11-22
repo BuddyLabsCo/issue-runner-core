@@ -187,7 +187,12 @@ export interface RepairProgress extends StageProgress<ExecutionResult> {
   verificationError?: string;
   pendingPush?: string;
   pushed?: boolean;
-  actionsRerun?: { runId: string; previousAttempt: number };
+  actionsRerun?: {
+    runId: string;
+    previousAttempt: number;
+    retryable?: true;
+    failureAcknowledged?: true;
+  };
   checksReconciled?: true;
 }
 
