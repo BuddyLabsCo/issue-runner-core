@@ -34,6 +34,7 @@ export async function publishImplementation(
     context: RunContext;
     codeHost: CodeHost;
     read: ReadOperation;
+    persistDispatch: () => Promise<void>;
     autoMerge: boolean;
     observedConflict?: boolean;
   },
@@ -354,6 +355,7 @@ export async function publishImplementation(
           pending,
           checksDeadline,
           advance: context.advance,
+          persistDispatch: input.persistDispatch,
         });
         if (decision === "refresh") continue;
         waiting = decision === "wait";

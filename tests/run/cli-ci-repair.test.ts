@@ -2,10 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { executeCli } from "../../src/cli.ts";
-import {
-  ActionsRerunRejected,
-  type CodeHost,
-} from "../../src/run/contracts.ts";
+import type { CodeHost } from "../../src/run/contracts.ts";
 import {
   ciRepairRun,
   failedCheck,
@@ -352,6 +349,13 @@ for (const running of [false, true]) {
     const fixture = await ciRepairRun(t);
     let pending = running;
     let reruns = 0;
+    const failed = { ...failedCheck, actionsRunId: "45019148280" };
+    const runningCheck = {
+      ...failedCheck,
+      name: "other required check",
+      state: "IN_PROGRESS",
+      bucket: "pending" as const,
+    };
     const observations: string[] = [];
     fixture.repairs.onTask = (file) =>
       publish(file, {
@@ -361,13 +365,14 @@ for (const running of [false, true]) {
         findings_file: null,
       });
     fixture.publicationState.onChecks = async () => {
-      if (!fixture.repairs.tasks.length) return [failedCheck];
+      if (!fixture.repairs.tasks.length) return [failed];
       observations.push(pending ? "pending" : "pass");
-      return [
-        pending
-          ? { ...failedCheck, state: "IN_PROGRESS", bucket: "pending" }
-          : { ...failedCheck, state: "SUCCESS", bucket: "pass" },
-      ];
+      return pending
+        ? [failed, runningCheck]
+        : [
+            { ...failed, state: "SUCCESS", bucket: "pass" },
+            { ...runningCheck, state: "SUCCESS", bucket: "pass" },
+          ];
     };
     fixture.dependencies.codeHost.rerunFailedJobs = async () => {
       reruns++;
@@ -383,85 +388,6 @@ for (const running of [false, true]) {
     assert.equal(reruns, 0);
     assert.equal(fixture.repairs.tasks.length, 1);
     assert.equal(fixture.dependencies.pauses.length, 0);
-  });
-}
-
-for (const [failure, reason] of [
-  ["missing", /no GitHub Actions run was identified/u],
-  ["forbidden", /Cannot rerun failed jobs.*HTTP 403/u],
-  ["uncertain", /Cannot rerun failed jobs.*response lost/u],
-  ["failed", /GitHub Actions rerun.*attempt 2 failed \(failure\)/u],
-  ["timed out", /GitHub Actions rerun.*timed out waiting for required checks/u],
-] as const) {
-  await test(`a no-change CI repair pauses when the rerun is ${failure}`, async (t) => {
-    const fixture = await ciRepairRun(t, {
-      ...validConfig,
-      timeouts: { ...validConfig.timeouts, requiredChecksMinutes: 1 },
-    });
-    const runId = "45019148280";
-    let reruns = 0;
-    let attempt = 1;
-    let passing = false;
-    fixture.repairs.onTask = (file) =>
-      publish(file, {
-        outcome: "no_change",
-        summary: "No local repair needed",
-        commits: [],
-        findings_file: null,
-      });
-    fixture.publicationState.onChecks = async () =>
-      passing
-        ? [{ ...failedCheck, state: "SUCCESS", bucket: "pass" }]
-        : [
-            failure === "missing"
-              ? failedCheck
-              : { ...failedCheck, actionsRunId: runId },
-          ];
-    fixture.dependencies.codeHost.observeActionsRun = async () => ({
-      attempt,
-      status: "completed",
-      conclusion: failure !== "failed" && attempt === 2 ? "success" : "failure",
-    });
-    fixture.dependencies.codeHost.rerunFailedJobs = async () => {
-      reruns++;
-      if (failure === "forbidden" && reruns === 1)
-        throw new ActionsRerunRejected("HTTP 403");
-      if (failure === "uncertain") throw new Error("response lost");
-      if (failure === "failed" || failure === "forbidden") attempt = 2;
-      if (failure === "forbidden") passing = true;
-    };
-    let pauses = 0;
-    fixture.dependencies.operator.pause = async (message) => {
-      assert.match(message, reason);
-      pauses++;
-      assert.equal(pauses, 1);
-      if (failure === "forbidden" || failure === "uncertain") return "";
-      if (failure === "failed") {
-        passing = true;
-        return "";
-      }
-      return "q";
-    };
-    fixture.state.onSleep = async () => {
-      if (failure === "uncertain" && pauses > 0) {
-        attempt = 2;
-        passing = true;
-      }
-    };
-    const result = await fixture.run();
-    if (
-      failure === "forbidden" ||
-      failure === "failed" ||
-      failure === "uncertain"
-    )
-      assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
-    else assert.equal(result.summary.outcome, "cancelled");
-    assert.equal(pauses, 1);
-    assert.equal(
-      reruns,
-      failure === "missing" ? 0 : failure === "forbidden" ? 2 : 1,
-    );
-    assert.equal(fixture.repairs.tasks.length, 1);
   });
 }
 

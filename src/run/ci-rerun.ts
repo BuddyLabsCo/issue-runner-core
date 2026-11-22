@@ -44,6 +44,7 @@ interface RecheckInput {
   pending: boolean;
   checksDeadline: () => number;
   advance: RunContext["advance"];
+  persistDispatch: () => Promise<void>;
 }
 
 export async function recheckNoChangeCI(
@@ -66,7 +67,7 @@ export async function recheckNoChangeCI(
     rerun?.runId ?? failed.find((check) => check.actionsRunId)?.actionsRunId;
   if ((!rerun || rerun.retryable) && (pending || failed.length === 0))
     return pending ? "wait" : "ready";
-  if (rerun?.failureAcknowledged && failed.length === 0)
+  if (rerun?.failureAcknowledged && (pending || failed.length === 0))
     return pending ? "wait" : "ready";
   if (!runId)
     return pause(
@@ -143,7 +144,9 @@ async function dispatchRerun(
 ): Promise<void> {
   const { stage, codeHost, advance } = input;
   let dispatched = false;
-  const dispatch = () => {
+  const dispatch = async () => {
+    delete checkpoint.retryable;
+    await input.persistDispatch();
     stage.signal?.throwIfAborted();
     dispatched = true;
     return codeHost.rerunFailedJobs({
@@ -152,6 +155,7 @@ async function dispatchRerun(
     });
   };
   try {
+    checkpoint.retryable = true;
     await saveRerun(input, checkpoint);
     await (advance ? advance(dispatch) : dispatch());
   } catch (error) {

@@ -257,6 +257,7 @@ async function executeStandalone(
       context,
       codeHost: input.codeHost,
       read,
+      persistDispatch: () => saveProgress(progressFile, progress),
       autoMerge: input.autoMerge,
       observedConflict: conflict,
     });
