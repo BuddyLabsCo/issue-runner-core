@@ -1,5 +1,8 @@
 import { nonempty, object } from "../agent/handoff.ts";
+import { ActionsRerunRejected } from "../run/contracts.ts";
 import type {
+  ActionsRunObservation,
+  ActionsRunQuery,
   PullRequestMergeFacts,
   PullRequestState,
   RequiredCheck,
@@ -34,7 +37,7 @@ export const pollQuery = `
                 ... on CheckRun {
                   id name status conclusion startedAt detailsUrl
                   isRequired(pullRequestNumber: $number)
-                  checkSuite { workflowRun { event workflow { name } } }
+                  checkSuite { workflowRun { event resourcePath workflow { name } } }
                 }
                 ... on StatusContext {
                   id context state targetUrl
@@ -50,6 +53,41 @@ export const pollQuery = `
 `;
 
 export const oid = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
+
+export function actionsRunPath({ repository, runId }: ActionsRunQuery): string {
+  if (!/^[1-9]\d*$/u.test(runId))
+    throw new Error("Invalid GitHub Actions run ID");
+  return `repos/${repository}/actions/runs/${runId}`;
+}
+
+export function verifyActionsRerunResponse(response: string): void {
+  const status = /^HTTP\/\S+ (\d{3})\b/u.exec(response)?.[1];
+  if (status === "201") return;
+  const message = `GitHub Actions rerun returned ${status ? `HTTP ${status}` : "no HTTP status"}`;
+  if (status && /^(400|401|403|404|405|409|422|429)$/u.test(status))
+    throw new ActionsRerunRejected(message);
+  throw new Error(message);
+}
+
+export function parseActionsRun(
+  value: unknown,
+  runId: string,
+): ActionsRunObservation {
+  const { id, run_attempt: attempt, status, conclusion } = object(value);
+  if (
+    String(id) !== runId ||
+    typeof attempt !== "number" ||
+    !Number.isSafeInteger(attempt) ||
+    attempt < 1 ||
+    !nonempty(status) ||
+    (conclusion !== null && !nonempty(conclusion)) ||
+    (status === "completed" && conclusion === null)
+  )
+    throw new Error(
+      `GitHub returned invalid Actions run evidence for ${runId}`,
+    );
+  return { attempt, status, conclusion };
+}
 
 function parsePullRequestState(
   row: unknown,
@@ -130,7 +168,7 @@ export function parseMergeFacts(
   };
 }
 
-export function parseCheckContext(value: unknown) {
+export function parseCheckContext(value: unknown, repository: string) {
   const row = object(value);
   const { __typename, isRequired } = row;
   if (typeof isRequired !== "boolean")
@@ -150,6 +188,7 @@ export function parseCheckContext(value: unknown) {
       link: targetUrl ?? "",
       isRequired,
       startedAt: -Infinity,
+      actionsRunId: undefined,
     };
   }
   if (__typename !== "CheckRun")
@@ -179,7 +218,25 @@ export function parseCheckContext(value: unknown) {
     link: detailsUrl ?? "",
     isRequired,
     startedAt: startedAt === null ? -Infinity : Date.parse(startedAt),
+    actionsRunId: parseActionsRunId(run, repository),
   };
+}
+
+function parseActionsRunId(
+  run: unknown,
+  repository: string,
+): string | undefined {
+  if (run === null) return;
+  const { resourcePath } = object(run);
+  const prefix = `/${repository}/actions/runs/`;
+  if (
+    typeof resourcePath !== "string" ||
+    !resourcePath.toLowerCase().startsWith(prefix.toLowerCase())
+  )
+    return;
+  return /^([1-9]\d*)(?:\/attempts\/[1-9]\d*)?\/?$/u.exec(
+    resourcePath.slice(prefix.length),
+  )?.[1];
 }
 
 export function requiredChecks(
@@ -189,11 +246,17 @@ export function requiredChecks(
   contexts.sort((left, right) => right.startedAt - left.startedAt);
   const seen = new Set<string>();
   const checks: RequiredCheck[] = [];
-  for (const { key, isRequired, name, state, link } of contexts) {
+  for (const { key, isRequired, name, state, link, actionsRunId } of contexts) {
     if (seen.has(key)) continue;
     seen.add(key);
     if (isRequired)
-      checks.push({ name, state, link, bucket: checkBucket(state) });
+      checks.push({
+        name,
+        state,
+        link,
+        bucket: checkBucket(state),
+        ...(actionsRunId === undefined ? {} : { actionsRunId }),
+      });
   }
   return checks;
 }

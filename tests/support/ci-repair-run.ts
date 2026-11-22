@@ -2,6 +2,7 @@
 import { promptAssignment } from "./prompt-assignment.ts";
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
+import path from "node:path";
 import type { TestContext } from "node:test";
 import type { WorkspaceEvidence } from "../../src/run/contracts.ts";
 import { publicationRun } from "./publication-run.ts";
@@ -128,4 +129,51 @@ export async function ciRepairRun(
   fixture.publicationState.onChecks = async () =>
     fixture.publicationState.pushes === 1 ? [failedCheck] : [];
   return { ...fixture, repairs, scripts, workspaces };
+}
+
+export async function exhaustedLegacyCiRepair(t: TestContext) {
+  const fixture = await ciRepairRun(t);
+  const result = {
+    outcome: "no_change",
+    summary: "The dependency resolves locally",
+    commits: [],
+    findings_file: null,
+  };
+  fixture.repairs.onTask = (file) => publish(file, result);
+  fixture.state.onClose = async () => {
+    if (fixture.state.closedTabs.length === 2) fixture.controller.abort();
+  };
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  const saved = await fixture.snapshot();
+  const publication = saved.publication!;
+  assert.equal(publication.phase, "checks_failed");
+  const budget = publication.ciRepair!;
+  const secondId = "5eda78f1-bbb7-4c98-b15d-8707979b401e";
+  const suffix = `ticket-50-ci-repair-${secondId}`;
+  const handoffs = path.join(fixture.directory, "handoffs");
+  const second = {
+    ...budget.attempts[0]!,
+    attempt_id: secondId,
+    worktree: path.join(fixture.directory, "worktrees", saved.run_id, suffix),
+    branch: `sandcastle/run-${saved.run_id}/${suffix}`,
+    sessionid: "ci-session-2",
+    probe: { path: path.join(handoffs, "second-probe.json") },
+    invocation: {
+      invocation_id: secondId,
+      path: path.join(handoffs, "second-repair.json"),
+    },
+  };
+  await fixture.dependencies.gitWorkspace.createWorktree(second);
+  await publish(second.probe.path, { sessionid: second.sessionid });
+  await publish(second.invocation.path, result);
+  budget.attempts.push(second);
+  budget.consumed = 2;
+  assert.ok(
+    budget.attempts.every((attempt) => attempt.actionsRerun === undefined),
+  );
+  await publish(
+    path.join(fixture.directory, "recovery", `${saved.input_hash}-50.json`),
+    saved,
+  );
+  return { ...fixture, publication, secondId };
 }

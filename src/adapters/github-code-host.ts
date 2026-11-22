@@ -1,4 +1,6 @@
 import type {
+  ActionsRunObservation,
+  ActionsRunQuery,
   CodeHost,
   BranchObservation,
   PublicationObservation,
@@ -12,10 +14,13 @@ import type {
 import { nonempty, object } from "../agent/handoff.ts";
 import { GitHubClient, type GitHubCommand } from "./github-client.ts";
 import {
+  actionsRunPath,
   branchFields,
   mergeFields,
   oid,
   publicationFields,
+  parseActionsRun,
+  verifyActionsRerunResponse,
   parseCheckContext,
   parseMergeFacts,
   pollQuery,
@@ -35,6 +40,27 @@ export class GitHubCodeHost implements CodeHost {
 
   constructor(token: string, command?: GitHubCommand) {
     this.client = new GitHubClient(token, command);
+  }
+
+  async observeActionsRun(
+    input: ActionsRunQuery,
+  ): Promise<ActionsRunObservation> {
+    const response = await this.client.request(["api", actionsRunPath(input)]);
+    return parseActionsRun(JSON.parse(response) as unknown, input.runId);
+  }
+
+  async rerunFailedJobs(input: ActionsRunQuery): Promise<void> {
+    const response = await this.client.request(
+      [
+        "api",
+        `${actionsRunPath(input)}/rerun-failed-jobs`,
+        "--method",
+        "POST",
+        "--include",
+      ],
+      [1],
+    );
+    verifyActionsRerunResponse(response);
   }
 
   async observeDelivery(
@@ -381,7 +407,7 @@ export class GitHubCodeHost implements CodeHost {
           object(statusCheckRollup).contexts,
           "check context",
         ))
-          contexts.push(parseCheckContext(node));
+          contexts.push(parseCheckContext(node, repository));
         if (!page.done) continue;
       }
       return {

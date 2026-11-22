@@ -299,11 +299,104 @@ await test("cancellation after accepting a repair retains its consumed count and
   assert.equal(fixture.publicationState.pushes, 2);
 });
 
+await test("a no-change CI repair waits for a new Actions attempt on the recorded PR", async (t) => {
+  const fixture = await ciRepairRun(t);
+  const runId = "45019148280";
+  const failed = { ...failedCheck, actionsRunId: runId };
+  let reruns = 0;
+  let staleReads = 0;
+  let attempt = 1;
+  let requiredCheckPassed = false;
+  fixture.repairs.onTask = async (file) => {
+    await publish(file, {
+      outcome: "no_change",
+      summary: "The dependency resolves locally",
+      commits: [],
+      findings_file: null,
+    });
+  };
+  fixture.publicationState.onChecks = async () => {
+    if (fixture.repairs.tasks.length === 0) return [failedCheck];
+    if (reruns > 0 && !requiredCheckPassed) staleReads++;
+    return requiredCheckPassed
+      ? [{ ...failed, state: "SUCCESS", bucket: "pass" }]
+      : [failed];
+  };
+  fixture.dependencies.codeHost.observeActionsRun = async () => ({
+    attempt,
+    status: "completed",
+    conclusion: attempt === 1 ? "failure" : "success",
+  });
+  fixture.dependencies.codeHost.rerunFailedJobs = async (input) => {
+    assert.deepEqual(input, { repository: "owner/repo", runId });
+    reruns++;
+  };
+  fixture.state.onSleep = async () => {
+    if (staleReads === 1) attempt = 2;
+    if (staleReads === 2) requiredCheckPassed = true;
+  };
+  assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/u);
+  assert.equal(staleReads, 2);
+  assert.equal(reruns, 1);
+  assert.equal(fixture.repairs.tasks.length, 1);
+  assert.equal(fixture.publicationState.creations, 1);
+  assert.equal(fixture.publicationState.pushes, 1);
+  assert.equal(fixture.dependencies.pauses.length, 0);
+});
+
+for (const running of [false, true]) {
+  await test(`a no-change CI repair accepts ${running ? "pending checks after they pass" : "already-passing checks"} without rerunning`, async (t) => {
+    const fixture = await ciRepairRun(t);
+    let pending = running;
+    let reruns = 0;
+    const failed = { ...failedCheck, actionsRunId: "45019148280" };
+    const runningCheck = {
+      ...failedCheck,
+      name: "other required check",
+      state: "IN_PROGRESS",
+      bucket: "pending" as const,
+    };
+    const observations: string[] = [];
+    fixture.repairs.onTask = (file) =>
+      publish(file, {
+        outcome: "no_change",
+        summary: "No local repair needed",
+        commits: [],
+        findings_file: null,
+      });
+    fixture.publicationState.onChecks = async () => {
+      if (!fixture.repairs.tasks.length) return [failed];
+      observations.push(pending ? "pending" : "pass");
+      return pending
+        ? [failed, runningCheck]
+        : [
+            { ...failed, state: "SUCCESS", bucket: "pass" },
+            { ...runningCheck, state: "SUCCESS", bucket: "pass" },
+          ];
+    };
+    fixture.dependencies.codeHost.rerunFailedJobs = async () => {
+      reruns++;
+    };
+    fixture.state.onSleep = async () => {
+      if (observations.at(-1) === "pending") pending = false;
+    };
+    assert.match(
+      (await fixture.run()).summary.tickets![0]!.detail,
+      /CI-ready/u,
+    );
+    assert.deepEqual(observations, running ? ["pending", "pass"] : ["pass"]);
+    assert.equal(reruns, 0);
+    assert.equal(fixture.repairs.tasks.length, 1);
+    assert.equal(fixture.dependencies.pauses.length, 0);
+  });
+}
+
 await test("operator retry rechecks CI before authorizing a fresh two-attempt generation", async (t) => {
   const fixture = await ciRepairRun(t);
   const validRepair = fixture.repairs.onTask;
   fixture.repairs.onTask = async (file, evidence) => {
     if (fixture.repairs.tasks.length > 2) return validRepair(file, evidence);
+    evidence.clean = false;
     await publish(file, {
       outcome: "no_change",
       summary: "No repair",

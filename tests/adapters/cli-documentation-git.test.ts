@@ -146,21 +146,18 @@ for (const scenario of [
           return submit(tab, text, chord);
         const progress = await fixture.snapshot();
         const repair = progress.publication!.ciRepair!.attempts.at(-1)!;
-        const commits = [];
         if (++repairs === 2) {
           await writeFile(path.join(repair.worktree, "README.md"), "fixed\n");
           await git(repair.worktree, "add", ".");
-          const message = "docs: fix required checks";
-          await git(repair.worktree, "commit", "-m", message);
-          commits.push({
-            sha: await git(repair.worktree, "rev-parse", "HEAD"),
-            message,
-          });
         }
+        const message = "docs: fix required checks";
+        await git(repair.worktree, "commit", "--allow-empty", "-m", message);
         await publish(repair.invocation!.path, {
-          outcome: commits.length ? "committed" : "no_change",
+          outcome: "committed",
           summary: "Documentation repair checked",
-          commits,
+          commits: [
+            { sha: await git(repair.worktree, "rev-parse", "HEAD"), message },
+          ],
           findings_file: null,
         });
       };
@@ -312,7 +309,7 @@ for (const scenario of [
     if (scenario === "repaired") {
       const attempts = progress.publication!.ciRepair!.attempts;
       assert.equal(attempts.length, 2);
-      assert.equal(attempts[0]!.result?.outcome, "no_change");
+      assert.match(attempts[0]!.verificationError!, /no actual changes/u);
       assert.equal(attempts[0]!.pushed, undefined);
       assert.equal(attempts[1]!.pushed, true);
       for (const repair of attempts) {

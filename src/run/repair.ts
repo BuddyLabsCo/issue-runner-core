@@ -26,6 +26,7 @@ import type {
 import type { ReadOperation } from "./discovery.ts";
 import { verifyWorkspace } from "./verification.ts";
 import { OperationStopped, pauseForOperator } from "./operations.ts";
+import { validCiRerunCheckpoint } from "./ci-rerun.ts";
 
 function validateRepairBudget(
   progress: ImplementationProgress,
@@ -123,6 +124,7 @@ function validateRepairBudget(
       if (!attempt.invocation || !attempt.worktreeCreated || !attempt.counted)
         throw invalid();
     } else if (attempt.counted || attempt.verificationError) throw invalid();
+    if (!validCiRerunCheckpoint(attempt, kind)) throw invalid();
     if (attempt.pendingPush !== undefined || attempt.pushed) {
       if (
         attempt.result?.outcome !== "committed" ||

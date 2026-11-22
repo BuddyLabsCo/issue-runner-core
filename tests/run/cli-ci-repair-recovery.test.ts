@@ -5,7 +5,12 @@ import { access, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { executeCli } from "../../src/cli.ts";
-import { ciRepairRun, repairCommit } from "../support/ci-repair-run.ts";
+import {
+  ciRepairRun,
+  exhaustedLegacyCiRepair,
+  failedCheck,
+  repairCommit,
+} from "../support/ci-repair-run.ts";
 import { conflictRepairRun } from "../support/conflict-repair-run.ts";
 import { validConfig } from "../support/cli-project.ts";
 import {
@@ -167,6 +172,14 @@ await test(
     });
     const releaseSibling = deferred<void>();
     t.after(() => releaseSibling.resolve());
+    const git = fixture.dependencies.gitWorkspace;
+    const inspect = git.inspect.bind(git);
+    git.inspect = async (input) => {
+      const evidence = await inspect(input);
+      return input.worktree.includes("-ci-repair-")
+        ? { ...evidence, clean: false }
+        : evidence;
+    };
     const tabs = new Map<object, number>();
     const open = fixture.dependencies.terminalPlugin.createTab.bind(
       fixture.dependencies.terminalPlugin,
@@ -343,9 +356,52 @@ await test("unexpected remote advancement after repair completion never overwrit
   assert.equal(budget.attempts[0]!.pendingPush, repairCommit.sha);
 });
 
+await test("recovery reruns failed jobs for a pre-upgrade no-change handoff even with an exhausted repair budget", async (t) => {
+  const fixture = await exhaustedLegacyCiRepair(t);
+
+  const runId = "45019148280";
+  const failed = { ...failedCheck, actionsRunId: runId };
+  let reruns = 0;
+  let attempt = 1;
+  fixture.publicationState.onChecks = async () =>
+    attempt === 1
+      ? [failed]
+      : [{ ...failed, state: "SUCCESS", bucket: "pass" }];
+  fixture.dependencies.codeHost.observeActionsRun = async () => ({
+    attempt,
+    status: "completed",
+    conclusion: attempt === 1 ? "failure" : "success",
+  });
+  const interrupt = new AbortController();
+  fixture.dependencies.signal = interrupt.signal;
+  fixture.dependencies.codeHost.rerunFailedJobs = async (input) => {
+    assert.deepEqual(input, { repository: "owner/repo", runId });
+    reruns++;
+    interrupt.abort();
+  };
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  assert.equal(reruns, 1);
+  assert.equal(fixture.repairs.tasks.length, 1);
+  fixture.dependencies.signal = new AbortController().signal;
+  fixture.state.onSleep = async () => {
+    attempt = 2;
+  };
+  assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/u);
+  const after = (await fixture.snapshot()).publication!;
+  assert.deepEqual(after.pullRequest, fixture.publication.pullRequest);
+  assert.equal(after.ciRepair!.consumed, 2);
+  assert.equal(after.ciRepair!.attempts.at(-1)!.attempt_id, fixture.secondId);
+  assert.equal(fixture.repairs.tasks.length, 1);
+  assert.equal(reruns, 1);
+  assert.equal(fixture.publicationState.creations, 1);
+  assert.equal(fixture.publicationState.pushes, 1);
+  assert.equal(fixture.dependencies.pauses.length, 0);
+});
+
 await test("restart preserves an exhausted CI generation until the operator authorizes retry", async (t) => {
   const fixture = await ciRepairRun(t);
-  fixture.repairs.onTask = async (file) => {
+  fixture.repairs.onTask = async (file, evidence) => {
+    evidence.clean = false;
     await publish(file, {
       outcome: "no_change",
       summary: "No repair",

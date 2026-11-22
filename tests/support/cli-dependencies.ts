@@ -393,6 +393,18 @@ export function createCliDependencies(launchDirectory: string) {
               : [],
         };
       },
+      async observeActionsRun({
+        runId,
+      }: Parameters<CodeHost["observeActionsRun"]>[0]): ReturnType<
+        CodeHost["observeActionsRun"]
+      > {
+        assert.fail(`unexpected Actions run observation for ${runId}`);
+      },
+      async rerunFailedJobs({
+        runId,
+      }: Parameters<CodeHost["rerunFailedJobs"]>[0]): Promise<void> {
+        assert.fail(`unexpected Actions rerun for ${runId}`);
+      },
       checksFor,
     },
     gitWorkspace: {

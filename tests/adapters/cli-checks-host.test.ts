@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { GitHubCodeHost } from "../../src/adapters/github-code-host.ts";
+import { ActionsRerunRejected } from "../../src/run/contracts.ts";
 
 import {
   connection,
@@ -74,6 +75,98 @@ function statusContext(
     isRequired: true,
   };
 }
+
+await test("required Actions checks identify a repository-scoped run for the failed-jobs endpoint", async () => {
+  const runId = "45019148280";
+  const runPath = `/Owner/Repo/actions/runs/${runId}`;
+  const actionsCheck = (name: string, resourcePath: string) =>
+    checkRun(`CR_${name}`, name, "FAILURE", createdAt, {
+      checkSuite: {
+        workflowRun: {
+          workflow: { name: "Build" },
+          event: "push",
+          resourcePath,
+        },
+      },
+    });
+  const page = pollPage(
+    head,
+    connection([
+      actionsCheck("quality", `${runPath}/attempts/1`),
+      actionsCheck("foreign", `/another/repo/actions/runs/${runId}`),
+      statusContext("external", "FAILURE", `https://github.com${runPath}`),
+    ]),
+  );
+  const requests: string[][] = [];
+  const apiPath = `repos/${publication.repository}/actions/runs/${runId}`;
+  const adapter = new GitHubCodeHost(
+    "host-secret",
+    (args, { input, token }) => {
+      assert.equal(token, "host-secret");
+      if (args[1] === "graphql") {
+        assert.match(input ?? "", /workflowRun \{ event resourcePath/u);
+        return Promise.resolve(JSON.stringify({ data: { repository: page } }));
+      }
+      requests.push(args);
+      return Promise.resolve(
+        args[1] === apiPath
+          ? JSON.stringify({
+              id: Number(runId),
+              run_attempt: 2,
+              status: "queued",
+              conclusion: null,
+            })
+          : "HTTP/2.0 201 Created\r\n\r\n",
+      );
+    },
+  );
+  const { checks } = await adapter.observePullRequest({
+    ...publication,
+    number: exact.number,
+  });
+  assert.deepEqual(
+    checks.map(({ name, actionsRunId }) => [name, actionsRunId]),
+    [
+      ["quality", runId],
+      ["foreign", undefined],
+      ["external", undefined],
+    ],
+  );
+  const run = {
+    repository: publication.repository,
+    runId: checks[0]!.actionsRunId!,
+  };
+  assert.deepEqual(await adapter.observeActionsRun(run), {
+    attempt: 2,
+    status: "queued",
+    conclusion: null,
+  });
+  await adapter.rerunFailedJobs(run);
+  assert.deepEqual(requests, [
+    ["api", apiPath],
+    ["api", `${apiPath}/rerun-failed-jobs`, "--method", "POST", "--include"],
+  ]);
+});
+
+await test("the Actions adapter distinguishes a definite HTTP rejection from an uncertain write", async () => {
+  const run = { repository: publication.repository, runId: "45019148280" };
+  for (const status of [403, 503]) {
+    const adapter = new GitHubCodeHost(
+      "host-secret",
+      (_args, { allowedExitCodes }) => {
+        assert.deepEqual(allowedExitCodes, [1]);
+        return Promise.resolve(`HTTP/2.0 ${status} Error\r\n\r\n`);
+      },
+    );
+    await assert.rejects(
+      adapter.rerunFailedJobs(run),
+      (error: unknown) =>
+        error instanceof Error &&
+        error.message.includes(`HTTP ${status}`) &&
+        error instanceof ActionsRerunRejected === (status === 403),
+    );
+  }
+});
 
 await test("CI drains all context pages before deduplicating reruns and filtering required checks", async () => {
   const later = "2026-11-18T12:01:00Z";
