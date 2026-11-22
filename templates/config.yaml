@@ -23,7 +23,7 @@ workflow:
   docMaintainTriggerLabel: "" # Run documentation after a Batch delivers this label; empty disables.
 tracker:
   runnerAccount: your-github-account # GitHub account assigned to reserved Issues.
-  reservationLabel: sandcastle:reserved # Existing repository label marking reserved Issues.
+  reservationLabel: sandcastle:reserved # Core creates this label when it first needs to reserve an Issue.
 codeHost:
   tokenEnv: GH_TOKEN # Environment variable for the shared GitHub and Git credential.
   adminMerge: false # Request administrator merge. GitHub still enforces bypass permissions.

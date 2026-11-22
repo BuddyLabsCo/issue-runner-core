@@ -115,6 +115,10 @@ await test("invalid configuration fails before any external reads or delivery re
     [{ maxBatchSize: 0 }, /maxBatchSize/],
     [{ maxBatchSize: 1.5 }, /maxBatchSize/],
     [{ targetBranch: " " }, /targetBranch/],
+    [
+      { tracker: { ...validConfig.tracker, reservationLabel: "" } },
+      /tracker\.reservationLabel/,
+    ],
     ...[null, [], "plugin", 1, false].map(
       (terminalPlugins): [object, RegExp] => [
         { terminalPlugins },

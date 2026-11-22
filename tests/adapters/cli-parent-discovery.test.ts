@@ -378,21 +378,26 @@ for (const {
 }
 
 for (const operationRetry of [1, 0]) {
-  await test(`eligible work rereads a missing Reservation label ${operationRetry ? "after backoff" : "after Operator Pause"}`, async (t) => {
+  await test(`eligible work rereads a missing Reservation label after creation fails and ${operationRetry ? "backoff" : "Operator Pause"}`, async (t) => {
     const fixture = await parentDeliveryRun(t, [workflowChild(51)], {
       ...validConfig,
       tracker: config,
       operationRetry,
+      operationRetryDelay: [7],
     });
-    const pauses: string[] = [];
+    const effects: string[] = [];
+    const reads: string[] = [];
+    fixture.dependencies.clock.sleep = async (milliseconds) => {
+      if (reads.length < 2) effects.push(`sleep:${milliseconds}`);
+    };
     fixture.dependencies.operator.pause = async (message) => {
-      pauses.push(message);
-      assert.match(message, /configured Reservation label/u);
+      effects.push("pause");
+      assert.match(message, /Create label denied/u);
       assert.deepEqual(fixture.writes, []);
       return "";
     };
-    const reads: string[] = [];
     const command: GitHubCommand = async () => {
+      effects.push("discover");
       const state = fixture.children[0]!.state;
       reads.push(state);
       if (reads.length <= 2) assert.deepEqual(fixture.writes, []);
@@ -412,6 +417,10 @@ for (const operationRetry of [1, 0]) {
     const tracker = new GitHubTracker("fake-token", command);
     fixture.dependencies.tracker.discoverParent =
       tracker.discoverParent.bind(tracker);
+    fixture.dependencies.tracker.createLabel = async () => {
+      effects.push("create");
+      throw new Error("Create label denied");
+    };
     const result = await fixture.run();
     assert.equal(
       result.summary.outcome,
@@ -420,6 +429,11 @@ for (const operationRetry of [1, 0]) {
     );
     assert.deepEqual(fixture.dispatched, [51]);
     assert.deepEqual(reads, ["open", "open"]);
-    assert.equal(pauses.length, operationRetry ? 0 : 1);
+    assert.deepEqual(effects, [
+      "discover",
+      "create",
+      operationRetry ? "sleep:7000" : "pause",
+      "discover",
+    ]);
   });
 }

@@ -10,7 +10,6 @@ import {
   scopeOperator,
   TicketSkipped,
 } from "./operations.ts";
-import type { Tracker } from "./contracts.ts";
 import type { RunSummary } from "./run.ts";
 import {
   recoveringRead,
@@ -19,6 +18,7 @@ import {
 } from "./execution-recovery.ts";
 import { cleanupExecution } from "./cleanup.ts";
 import { reportTicket } from "./report.ts";
+import { ensureRepositoryLabel } from "./repository-label.ts";
 
 export async function runDocumentation(
   input: Omit<Parameters<typeof runStandalone>[0], "number"> & {
@@ -113,35 +113,13 @@ export async function runDocumentation(
     context.runId = maintenance.run_id;
     if (maintenance.ticket === undefined) {
       const label = loaded.config.maintenanceTicket.label;
-      const labelExists = async () => {
-        let page: number | null = 1;
-        const visited = new Set<number>();
-        while (page !== null) {
-          if (visited.has(page))
-            throw new Error("Repeated maintenance label page");
-          visited.add(page);
-          const current: number = page;
-          const result: Awaited<ReturnType<Tracker["listLabelsPage"]>> =
-            await read("read_maintenance_labels", `page:${page}`, () =>
-              tracker.listLabelsPage(maintenance.repository, current),
-            );
-          if (result.labels.includes(label)) return true;
-          page = result.nextPage;
-        }
-        return false;
-      };
-      if (!(await labelExists()))
-        await read(
-          "create_maintenance_label",
-          label,
-          () => tracker.createLabel(maintenance.repository, label),
-          {
-            reconcile: async () =>
-              (await labelExists())
-                ? { outcome: "completed", result: undefined }
-                : { outcome: "pending" },
-          },
-        );
+      await ensureRepositoryLabel(
+        tracker,
+        read,
+        maintenance.repository,
+        label,
+        "maintenance",
+      );
       await persist();
       await read(
         "create_maintenance_ticket",

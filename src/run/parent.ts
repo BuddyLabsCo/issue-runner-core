@@ -10,6 +10,7 @@ import {
   type ReadOperation,
 } from "./discovery.ts";
 import { OperationStopped, OperatorCancelled } from "./operations.ts";
+import { ensureRepositoryLabel } from "./repository-label.ts";
 import type { RunSummary } from "./run.ts";
 
 interface ParentScope {
@@ -137,7 +138,7 @@ interface ParentRun extends ParentScope {
 
 function discoverBatch(input: ParentRun) {
   const { read, repository, parentTicket, tracker, markers } = input;
-  return read("discover_parent", `parent:${parentTicket}`, async () => {
+  const inspect = async () => {
     const { parent, children, reservation, runner } =
       await tracker.discoverParent(
         repository,
@@ -149,6 +150,22 @@ function discoverBatch(input: ParentRun) {
     const tickets = parentBatchTickets(children);
     const eligible =
       parent.state === "open" ? await input.eligibleIssues(tickets) : [];
+    return { parent, tickets, eligible, reservation, runner };
+  };
+  return read("discover_parent", `parent:${parentTicket}`, async () => {
+    let facts = await inspect();
+    if (facts.eligible.length && !facts.reservation && facts.runner) {
+      await ensureRepositoryLabel(
+        tracker,
+        read,
+        repository,
+        markers.reservationLabel,
+        "reservation",
+        "never",
+      );
+      facts = await inspect();
+    }
+    const { parent, tickets, eligible, reservation, runner } = facts;
     if (eligible.length && !(reservation && runner))
       throw new Error(
         "GitHub did not resolve the configured Reservation label or Runner account",
