@@ -378,7 +378,7 @@ for (const {
 }
 
 for (const operationRetry of [1, 0]) {
-  await test(`eligible work rereads a missing Reservation label ${operationRetry ? "after backoff" : "after Operator Pause"}`, async (t) => {
+  await test(`eligible work rereads a missing Reservation label after creation fails and ${operationRetry ? "backoff" : "Operator Pause"}`, async (t) => {
     const fixture = await parentDeliveryRun(t, [workflowChild(51)], {
       ...validConfig,
       tracker: config,
@@ -387,7 +387,7 @@ for (const operationRetry of [1, 0]) {
     const pauses: string[] = [];
     fixture.dependencies.operator.pause = async (message) => {
       pauses.push(message);
-      assert.match(message, /configured Reservation label/u);
+      assert.match(message, /Create label denied/u);
       assert.deepEqual(fixture.writes, []);
       return "";
     };
@@ -412,6 +412,11 @@ for (const operationRetry of [1, 0]) {
     const tracker = new GitHubTracker("fake-token", command);
     fixture.dependencies.tracker.discoverParent =
       tracker.discoverParent.bind(tracker);
+    let createRequests = 0;
+    fixture.dependencies.tracker.createLabel = async () => {
+      createRequests += 1;
+      throw new Error("Create label denied");
+    };
     const result = await fixture.run();
     assert.equal(
       result.summary.outcome,
@@ -420,6 +425,7 @@ for (const operationRetry of [1, 0]) {
     );
     assert.deepEqual(fixture.dispatched, [51]);
     assert.deepEqual(reads, ["open", "open"]);
+    assert.equal(createRequests, 1);
     assert.equal(pauses.length, operationRetry ? 0 : 1);
   });
 }
