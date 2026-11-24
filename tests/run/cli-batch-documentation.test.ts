@@ -292,8 +292,46 @@ await test("a command version upgrade recovers pending documentation before pare
   assert.equal(fixture.maintenance.length, 1);
 });
 
-for (const change of ["configuration", "command name", "command rename"]) {
-  await test(`changed ${change} ignores the pending Batch and maintenance occurrence and retains its artifacts`, async (t) => {
+await test("changed configuration ignores the pending Batch and maintenance occurrence and retains its artifacts", async (t) => {
+  const fixture = await batchDocumentationRun(t, [
+    child(51, { labels: ["ready-for-agent", "Docs"] }),
+  ]);
+  fixture.state.onDocument = async () => {
+    fixture.controller.abort();
+  };
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  const original = await implementationProgress(fixture.directory, 100);
+  const recovery = path.join(fixture.directory, "recovery");
+  const files = await readdir(recovery);
+  const saved = await Promise.all(
+    files.map((file) => readFile(path.join(recovery, file), "utf8")),
+  );
+  await writeFile(
+    path.join(fixture.directory, "config.yaml"),
+    stringify({
+      ...batchDocumentationConfig,
+      targetBranch: "another-target",
+    }),
+  );
+  fixture.dependencies.signal = new AbortController().signal;
+  assert.equal((await fixture.run()).summary.outcome, "succeeded");
+  assert.equal(fixture.maintenance.length, 1);
+  assert.equal(fixture.maintenance[0]!.state, "open");
+  assert.deepEqual(fixture.cleanup, [
+    (await implementationProgress(fixture.directory, 51)).worktree,
+  ]);
+  await access(original.worktree);
+  await access(original.probe!.path);
+  assert.deepEqual(
+    await Promise.all(
+      files.map((file) => readFile(path.join(recovery, file), "utf8")),
+    ),
+    saved,
+  );
+});
+
+for (const change of ["command name", "command rename"] as const) {
+  await test(`changed ${change} recovers pending documentation with its Batch association`, async (t) => {
     const fixture = await batchDocumentationRun(t, [
       child(51, { labels: ["ready-for-agent", "Docs"] }),
     ]);
@@ -302,38 +340,26 @@ for (const change of ["configuration", "command name", "command rename"]) {
     };
     assert.equal((await fixture.run()).summary.outcome, "cancelled");
     const original = await implementationProgress(fixture.directory, 100);
-    const recovery = path.join(fixture.directory, "recovery");
-    const files = await readdir(recovery);
-    const saved = await Promise.all(
-      files.map((file) => readFile(path.join(recovery, file), "utf8")),
-    );
-    if (change === "configuration")
-      await writeFile(
-        path.join(fixture.directory, "config.yaml"),
-        stringify({
-          ...batchDocumentationConfig,
-          targetBranch: "another-target",
-        }),
-      );
-    else
-      fixture.dependencies.commandName =
-        change === "command name"
-          ? "another-terminal"
-          : "generic-terminal-next";
+    fixture.dependencies.commandName =
+      change === "command name" ? "another-terminal" : "generic-terminal-next";
     fixture.dependencies.signal = new AbortController().signal;
-    assert.equal((await fixture.run()).summary.outcome, "succeeded");
+    const submit = fixture.dependencies.terminalPlugin.onInput.bind(
+      fixture.dependencies.terminalPlugin,
+    );
+    fixture.dependencies.terminalPlugin.onInput = async (tab, text) => {
+      await submit(tab, text);
+      if (text === "continue")
+        await publish(original.invocation!.path, documentationNoChange);
+    };
+
+    const result = await fixture.run();
+
+    assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
     assert.equal(fixture.maintenance.length, 1);
-    assert.equal(fixture.maintenance[0]!.state, "open");
-    assert.deepEqual(fixture.cleanup, [
-      (await implementationProgress(fixture.directory, 51)).worktree,
-    ]);
-    await access(original.worktree);
-    await access(original.probe!.path);
-    assert.deepEqual(
-      await Promise.all(
-        files.map((file) => readFile(path.join(recovery, file), "utf8")),
-      ),
-      saved,
+    assert.equal(fixture.maintenance[0]!.stateReason, "completed");
+    assert.equal(
+      (await implementationProgress(fixture.directory, 100)).execution_id,
+      original.execution_id,
     );
   });
 }

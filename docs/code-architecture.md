@@ -45,7 +45,7 @@ Keep policy with its workflow owner and external operations with adapters:
 | Public interfaces | `terminal.ts`, `cli-entry.ts` | Supported plugin/CLI contracts; keep implementation and testing entries private |
 | External operations | `adapters/`, `run/contracts.ts` | API/Git/clock/operator operations and facts; no workflow decisions in adapters |
 | Enhancement discovery | `adapters/enhancement-discovery.ts`, CLI | Validate executing terminal installation; resolve optional same-prefix modules; never initialize instances |
-| Recovery persistence | `recovery.ts`, `run/scope.ts`, `agent/native-identity.ts` | Atomic snapshots, canonical Issue Run scope and native session fingerprints; versions and installation paths excluded |
+| Recovery persistence | `recovery.ts`, `run/scope.ts`, `agent/native-identity.ts` | Atomic snapshots, canonical Run scope and native session fingerprints; versions and installation paths excluded |
 | Restored behavior | `run/`, `agent/`, `run/execution-recovery.ts` | Revalidate saved ownership, scope and native identities; resume exact native refs, preserve unfinished resources, explicitly restart unrecoverable Issues |
 | Audit | `audit.ts`, operation owners | Record workflow facts; retry failed logging without replaying completed external operations |
 | Cleanup and reporting | `run/cleanup.ts`, `review.ts`, `report.ts`, `agent/conversation.ts` | Checkpoint owned-resource removal; findings belong to Review; enhancement cleanup precedes owned-tab closure; retain/report failed and unfinished resources |

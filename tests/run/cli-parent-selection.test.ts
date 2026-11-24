@@ -1,12 +1,13 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import assert from "node:assert/strict";
-import { readFile, readdir, writeFile } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
-import { stringify } from "yaml";
 import test from "node:test";
 import { validConfig } from "../support/cli-project.ts";
 import { child, parentDeliveryRun, parentRun } from "../support/parent-run.ts";
 import type { ParentDiscovery } from "../../src/run/contracts.ts";
+import { implementationProgress } from "../support/implementation-run.ts";
+import { updateConfig } from "../support/run-scope.ts";
 
 await test("parent discovery seeds the viewer cache without a viewer-only query", async (t) => {
   const fixture = await parentRun(t, [child(51)]);
@@ -335,22 +336,44 @@ await test("matching parent progress continues only recorded Reservations among 
   );
 });
 
-await test("changed configuration never adopts parent Reservations from a different input hash", async (t) => {
-  const fixture = await parentRun(t, [child(51)]);
+await test("a changed Parent scope never adopts a Reservation and retains recorded work", async (t) => {
+  const fixture = await parentRun(t, [child(51)], {
+    ...validConfig,
+    issueList: [51],
+  });
   await fixture.run();
-  await writeFile(
-    path.join(fixture.directory, "config.yaml"),
-    stringify({
-      ...validConfig,
-      workflow: { review: false },
-      maxBatchSize: 1,
-    }),
+  const saved = await implementationProgress(fixture.directory, 51);
+  const recovery = path.join(fixture.directory, "recovery");
+  const batchFile = (await readdir(recovery)).find((file) =>
+    file.endsWith("-batch.json"),
+  )!;
+  const batch = await readFile(path.join(recovery, batchFile), "utf8");
+  const cleanups: string[] = [];
+  const cleanup = fixture.dependencies.gitWorkspace.cleanupWorktree.bind(
+    fixture.dependencies.gitWorkspace,
   );
-  const result = await fixture.run();
-  assert.equal(result.summary.outcome, "incomplete");
+  fixture.dependencies.gitWorkspace.cleanupWorktree = async (input) => {
+    cleanups.push(input.worktree);
+    return cleanup(input);
+  };
+  await updateConfig(fixture, (config) => ({
+    ...config,
+    issueList: [],
+  }));
+  fixture.dependencies.signal = new AbortController().signal;
 
-  assert.deepEqual(fixture.dispatched, [51]);
+  const result = await fixture.run();
+
+  assert.equal(result.summary.outcome, "incomplete");
+  assert.deepEqual(result.summary.tickets, []);
   assert.deepEqual(fixture.writes, ["label:51", "assignee:51"]);
+  assert.equal(await readFile(path.join(recovery, batchFile), "utf8"), batch);
+  assert.equal(
+    (await implementationProgress(fixture.directory, 51)).execution_id,
+    saved.execution_id,
+  );
+  await access(saved.worktree);
+  assert.deepEqual(cleanups, []);
 });
 
 await test("failed assignee writes retain a partial Reservation without automatic compensation or later adoption", async (t) => {
