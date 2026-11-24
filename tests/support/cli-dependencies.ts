@@ -189,7 +189,7 @@ export function terminalModule(plugin: TestTerminal) {
 }
 
 export function createCliDependencies(launchDirectory: string) {
-  const git = new LocalGitWorkspace("host-secret");
+  const git = new LocalGitWorkspace();
   const messages: string[] = [];
   const effects: string[] = [];
   const reads: string[] = [];
@@ -214,7 +214,6 @@ export function createCliDependencies(launchDirectory: string) {
   };
   const fixture = {
     launchDirectory,
-    env: { HOST_TOKEN: "host-secret" },
     messages,
     effects,
     reads,

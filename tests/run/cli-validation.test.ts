@@ -12,25 +12,64 @@ import { createCliDependencies } from "../support/cli-dependencies.ts";
 
 const run = ["run", "--project", "demo", "--parent", "48"];
 
-await test("the CLI needs only the credential named by codeHost.tokenEnv", async (t) => {
+await test("the CLI requires no project credential or token environment variable", async (t) => {
   const { root } = await createProject(t);
   const dependencies = createCliDependencies(root);
-  const result = await executeCli(run, {
-    ...dependencies,
-    env: { HOST_TOKEN: "host-secret" },
-  });
+  const result = await executeCli(run, dependencies);
   assert.equal(result.summary.outcome, "no_work", result.summary.failure);
+});
 
-  const missing = await executeCli(run, { ...dependencies, env: {} });
-  assert.equal(missing.summary.failure, "missing credential HOST_TOKEN");
-  assert.equal(missing.logPath, null);
+await test("legacy tokenEnv and unknown Core-owned keys are ignored without changing config bytes", async (t) => {
+  const config = {
+    ...validConfig,
+    obsolete: { enabled: true },
+    tracker: {
+      ...validConfig.tracker,
+      tokenEnv: "MISSING",
+      futureTrackerOption: true,
+    },
+    codeHost: {
+      ...validConfig.codeHost,
+      tokenEnv: "MISSING",
+      futureHostOption: "ignored",
+    },
+    workflow: { review: false, futureWorkflowOption: 1 },
+    agents: {
+      ...validConfig.agents,
+      futureRole: agent,
+      implement: { ...agent, futureAgentOption: "ignored" },
+    },
+    maintenanceTicket: { futureDocumentationOption: true },
+    timeouts: { ...validConfig.timeouts, futureTimeout: 1 },
+  };
+  const { root, directory } = await createProject(t, config);
+  const bytes = await readFile(path.join(directory, "config.yaml"));
+  const loaded = await loadProject(root, "demo", {});
+
+  assert.equal("tokenEnv" in loaded.config.codeHost, false);
+  assert.equal("tokenEnv" in loaded.config.tracker, false);
+  assert.deepEqual(loaded.config.tracker, validConfig.tracker);
+  assert.deepEqual(loaded.config.codeHost, validConfig.codeHost);
+  assert.deepEqual(loaded.config.workflow, {
+    review: false,
+    docMaintainTriggerLabel: "",
+  });
+  assert.deepEqual(Object.keys(loaded.config.agents).sort(), [
+    "ciRepair",
+    "conflictRepair",
+    "implement",
+    "review",
+  ]);
+  assert.deepEqual(Buffer.from(loaded.configBytes), bytes);
+  assert.equal(
+    (await executeCli(run, createCliDependencies(root))).summary.outcome,
+    "no_work",
+  );
 });
 
 await test("omitted terminalPlugins supplies Core defaults", async (t) => {
   const { root } = await createProject(t);
-  const loaded = await loadProject(root, "demo", {
-    HOST_TOKEN: "host",
-  });
+  const loaded = await loadProject(root, "demo");
   assert.deepEqual(loaded.config.terminalPlugins, {
     agentStartDelay: 10,
     enhancements: {},
@@ -49,10 +88,7 @@ await test("tagged terminalPlugins containers fail before external access", asyn
       `${stringify(validConfig)}\nterminalPlugins: ${container}\n`,
     );
     const deps = createCliDependencies(root);
-    await assert.rejects(
-      loadProject(root, "demo", deps.env),
-      /terminalPlugins/,
-    );
+    await assert.rejects(loadProject(root, "demo"), /terminalPlugins/);
     const result = await executeCli(run, deps);
     assert.equal(result.exitCode, 1, container);
     assert.equal(result.logPath, null);
@@ -82,9 +118,7 @@ await test("terminalPlugins preserves plugin-owned nested values without install
     set: !!set { key: null }
 `,
   );
-  const loaded = await loadProject(root, "demo", {
-    HOST_TOKEN: "host",
-  });
+  const loaded = await loadProject(root, "demo");
   assert.deepEqual(loaded.config.terminalPlugins, {
     ...terminalPlugins,
     agentStartDelay: 10,
@@ -132,18 +166,6 @@ await test("invalid configuration fails before any external reads or delivery re
     [
       { workflow: { docMaintainTriggerLabel: false } },
       /docMaintainTriggerLabel/,
-    ],
-    [{ workflow: { reviewRounds: 1 } }, /unknown field/],
-    [{ terminal: { backend: "fake" } }, /unknown field terminal/],
-    [{ agentPause: true }, /unknown field agentPause/],
-    [
-      {
-        agents: {
-          ...validConfig.agents,
-          implement: { agent: "codex", model: "model" },
-        },
-      },
-      /unknown field model/,
     ],
     [
       { agents: { ...validConfig.agents, implement: { ...agent, start: "" } } },
@@ -204,27 +226,6 @@ await test("invalid configuration fails before any external reads or delivery re
       /outside options/,
     ],
     [
-      {
-        agents: {
-          ...validConfig.agents,
-          implement: { ...agent, reasoningEffort: "high" },
-        },
-      },
-      /unknown field/,
-    ],
-    [
-      { agents: { ...validConfig.agents, extra: agent } },
-      /unknown field extra/,
-    ],
-    [
-      { tracker: { ...validConfig.tracker, tokenEnv: "MISSING" } },
-      /tracker contains unknown field tokenEnv/,
-    ],
-    [
-      { tracker: { ...validConfig.tracker, extra: true } },
-      /unknown field extra/,
-    ],
-    [
       { codeHost: { ...validConfig.codeHost, adminMerge: "true" } },
       /adminMerge/,
     ],
@@ -236,43 +237,7 @@ await test("invalid configuration fails before any external reads or delivery re
       { timeouts: { ...validConfig.timeouts, mergeQueueMinutes: 0 } },
       /mergeQueueMinutes/,
     ],
-    [
-      { timeouts: { ...validConfig.timeouts, pause: true } },
-      /unknown field pause/,
-    ],
-    [{ maintenanceTicket: { obsolete: true } }, /unknown field obsolete/],
   ];
-  for (const purpose of [
-    "implement",
-    "review",
-    "ciRepair",
-    "conflictRepair",
-    "documentation",
-  ]) {
-    for (const startupDelaySeconds of [
-      10,
-      0,
-      -1,
-      "20",
-      null,
-      true,
-      NaN,
-      Infinity,
-      -Infinity,
-    ]) {
-      cases.push([
-        {
-          agents: {
-            ...validConfig.agents,
-            [purpose]: { ...agent, startupDelaySeconds },
-          },
-        },
-        new RegExp(
-          `agents\\.${purpose} contains unknown field startupDelaySeconds`,
-        ),
-      ]);
-    }
-  }
   const { root, directory } = await createProject(t);
   for (const [patch, expected] of cases) {
     await writeFile(
@@ -498,9 +463,7 @@ for (const ticketClosure of ["runner", "code_host"] as const) {
     });
     const file = path.join(directory, "config.yaml");
     const bytes = await readFile(file);
-    const loaded = await loadProject(root, "demo", {
-      HOST_TOKEN: "host",
-    });
+    const loaded = await loadProject(root, "demo");
     assert.equal("ticketClosure" in loaded.config, false);
     assert.deepEqual(Buffer.from(loaded.configBytes), bytes);
     assert.deepEqual(await readFile(file), bytes);

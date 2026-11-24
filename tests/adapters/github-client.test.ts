@@ -50,7 +50,7 @@ await test("GraphQL preserves the response and timeout when the child exits zero
     syncBuiltinESMExports();
   });
 
-  const client = new GitHubClient("fixture-credential");
+  const client = new GitHubClient();
   const result = await client.graphql("query Example { nodes }", {});
   assert.equal(result.exitCode, undefined);
   assert.deepEqual(result.response, response);
@@ -73,6 +73,35 @@ async function installFakeExecutables(t: TestContext) {
 }
 
 await executableTest(
+  "gh inherits its existing authenticated environment",
+  async (t) => {
+    const bin = await installFakeExecutables(t);
+    const previous = process.env.GH_TOKEN;
+    process.env.GH_TOKEN = "ambient-gh-credential";
+    t.after(() => {
+      if (previous === undefined) delete process.env.GH_TOKEN;
+      else process.env.GH_TOKEN = previous;
+    });
+    await writeFile(
+      path.join(bin, "gh"),
+      "#!/usr/bin/env node\n" +
+        [
+          'const assert = require("node:assert/strict");',
+          'assert.equal(process.env.GH_TOKEN, "ambient-gh-credential");',
+          "process.stdout.write(JSON.stringify({data: {nodes: []}}));",
+        ].join("\n"),
+      { mode: 0o700 },
+    );
+
+    const client = new GitHubClient();
+    assert.deepEqual(await client.graphql("query Example { nodes }", {}), {
+      response: { data: { nodes: [] } },
+      commandError: null,
+    });
+  },
+);
+
+await executableTest(
   "GraphQL preserves structured input and partial evidence from a failed gh command",
   async (t) => {
     const bin = await installFakeExecutables(t);
@@ -85,29 +114,28 @@ await executableTest(
           'const assert = require("node:assert/strict");',
           'const request = JSON.parse(readFileSync(0, "utf8"));',
           'assert.deepEqual(process.argv.slice(2), ["api", "graphql", "--method", "POST", "--input", "-"]);',
-          'assert.equal(process.env.GH_TOKEN, "shared-secret");',
           "switch (request.variables.scenario) {",
           'case "partial":',
           "  process.stdout.write(JSON.stringify({",
           "    data: { reserved: { input: request.variables.input, query: request.query }, assigned: null },",
-          '    errors: [{ message: "denied shared-secret", path: ["assigned", "assignees", 0], extensions: { code: "FORBIDDEN" } }],',
+          '    errors: [{ message: "denied", path: ["assigned", "assignees", 0], extensions: { code: "FORBIDDEN" } }],',
           '    extensions: { requestId: "request-123" },',
           "  }));",
-          '  process.stderr.write("gh: denied shared-secret");',
+          '  process.stderr.write("gh: denied");',
           "  process.exitCode = 1;",
           "  break;",
           'case "empty": process.stdout.write(JSON.stringify({data: { nodes: [] }})); break;',
           'case "missing": process.stdout.write(JSON.stringify({data: null})); break;',
           'case "blank": break;',
           'case "errors": process.stdout.write(JSON.stringify({errors: [{message: "not authorized"}]})); process.exitCode = 1; break;',
-          'case "invalid": process.stdout.write("invalid JSON shared-secret"); process.exitCode = 1; break;',
-          'case "lost": process.stderr.write("connection reset shared-secret"); process.exitCode = 1; break;',
+          'case "invalid": process.stdout.write("invalid JSON"); process.exitCode = 1; break;',
+          'case "lost": process.stderr.write("connection reset"); process.exitCode = 1; break;',
           "}",
         ].join("\n"),
       { mode: 0o700 },
     );
 
-    const client = new GitHubClient("shared-secret");
+    const client = new GitHubClient();
     const query =
       "mutation Example {\n  reserved: reserve\n  assigned: assign\n}";
     const input = {
@@ -120,17 +148,14 @@ await executableTest(
       data: { reserved: { input, query }, assigned: null },
       errors: [
         {
-          message: "denied [redacted]",
+          message: "denied",
           path: ["assigned", "assignees", 0],
           extensions: { code: "FORBIDDEN" },
         },
       ],
       extensions: { requestId: "request-123" },
     });
-    assert.match(
-      partial.commandError?.message ?? "",
-      /gh: denied \[redacted\]/u,
-    );
+    assert.match(partial.commandError?.message ?? "", /gh: denied/u);
     assert.deepEqual(await client.graphql(query, { scenario: "empty" }), {
       response: { data: { nodes: [] } },
       commandError: null,
@@ -151,15 +176,29 @@ await executableTest(
       message: "GitHub returned invalid GraphQL JSON",
     });
     await assert.rejects(client.graphql(query, { scenario: "lost" }), {
-      message: "gh command failed: connection reset [redacted]",
+      message: "gh command failed: connection reset",
     });
   },
 );
 
 await executableTest(
-  "the CLI uses the same configured credential for Issue, Code Host, and Git operations",
+  "the CLI leaves gh and Git authentication to the inherited environment",
   async (t) => {
     const bin = await installFakeExecutables(t);
+    const inherited = {
+      GH_TOKEN: process.env.GH_TOKEN,
+      GIT_CONFIG_KEY_0: process.env.GIT_CONFIG_KEY_0,
+      GIT_CONFIG_VALUE_0: process.env.GIT_CONFIG_VALUE_0,
+    };
+    process.env.GH_TOKEN = "ambient-gh-credential";
+    process.env.GIT_CONFIG_KEY_0 = "ambient-config-key";
+    process.env.GIT_CONFIG_VALUE_0 = "ambient-config-value";
+    t.after(() => {
+      for (const [name, value] of Object.entries(inherited)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    });
     const { root } = await createProject(t, {
       ...validConfig,
       operationRetry: 0,
@@ -200,7 +239,7 @@ await executableTest(
         [
           'const assert = require("node:assert/strict");',
           'const fs = require("node:fs");',
-          'assert.equal(process.env.GH_TOKEN, "shared-secret");',
+          'assert.equal(process.env.GH_TOKEN, "ambient-gh-credential");',
           "const args = process.argv.slice(2);",
           'if (args[3] === "repos/owner/repo") {',
           '  assert.deepEqual(args, ["api", "--method", "GET", "repos/owner/repo"]);',
@@ -226,10 +265,10 @@ await executableTest(
         [
           'const assert = require("node:assert/strict");',
           'assert.deepEqual(process.argv.slice(2), ["fetch", "--no-tags", "origin", "fixture-base"]);',
-          'const expected = Buffer.from("x-access-token:" + "shared-secret").toString("base64");',
-          'assert.equal(process.env.GIT_CONFIG_KEY_0, "http.https://github.com/.extraHeader");',
-          'assert.equal(process.env.GIT_CONFIG_VALUE_0, "Authorization: Basic " + expected);',
-          'process.stderr.write("fixture stopped after verifying Git authentication");',
+          'assert.equal(process.env.GH_TOKEN, "ambient-gh-credential");',
+          'assert.equal(process.env.GIT_CONFIG_KEY_0, "ambient-config-key");',
+          'assert.equal(process.env.GIT_CONFIG_VALUE_0, "ambient-config-value");',
+          'process.stderr.write("fixture stopped after verifying the Git environment");',
           "process.exitCode = 1;",
         ].join("\n"),
       { mode: 0o700 },
@@ -249,7 +288,6 @@ await executableTest(
         commandVersion: "2.3.4",
         terminalPackageRoot: root,
         terminalCliEntry: path.join(root, "cli.mjs"),
-        env: { HOST_TOKEN: "shared-secret" },
         operator: {
           write() {
             /* The fixture stops at the first Git command. */
@@ -269,7 +307,7 @@ await executableTest(
     assert.equal(pauses.length, 1);
     assert.match(
       pauses[0]!,
-      /fixture stopped after verifying Git authentication/u,
+      /fixture stopped after verifying the Git environment/u,
     );
   },
 );

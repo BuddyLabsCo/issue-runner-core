@@ -270,8 +270,8 @@ for (const stage of ["review", "fix"] as const) {
       );
       await access(saved.reviews![0]!.findings);
     }
-    for (const file of fixture.state.gitConfigs)
-      await assert.rejects(access(file));
+    for (const env of fixture.state.agentEnvironments)
+      assert.deepEqual(env, {});
   });
 }
 

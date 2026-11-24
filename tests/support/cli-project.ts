@@ -22,7 +22,7 @@ export const validConfig = {
     runnerAccount: "runner",
     reservationLabel: "sandcastle:reserved",
   },
-  codeHost: { tokenEnv: "HOST_TOKEN", adminMerge: false },
+  codeHost: { adminMerge: false },
   agents: {
     implement: agent,
     review: agent,

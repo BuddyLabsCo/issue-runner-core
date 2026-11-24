@@ -98,8 +98,7 @@ await test("one standalone implementation persists verified completion before cl
       async createTab(options) {
         assert.equal(options.cwd, worktree);
         assert.ok(path.isAbsolute(options.cwd));
-        assert.ok(path.isAbsolute(options.env.GIT_CONFIG_GLOBAL!));
-        assert.ok(await readFile(options.env.GIT_CONFIG_GLOBAL!, "utf8"));
+        assert.deepEqual(options.env, {});
         effects.push("open");
         return this.bindTab(
           { privatePluginState: "NEVER_PERSIST_THIS" },

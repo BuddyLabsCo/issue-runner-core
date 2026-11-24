@@ -1,6 +1,5 @@
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { mkdir, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, realpath } from "node:fs/promises";
 import path from "node:path";
 import type { GitWorkspace, CommitEvidence } from "../run/contracts.ts";
 import { formatToolError } from "./process-errors.ts";
@@ -17,40 +16,14 @@ async function resolveWorktreePath(directory: string): Promise<string> {
 
 // Extracted from sandcastle-runner at 0adf499bf69217b56256ca2affb1c0dca0894110.
 export class LocalGitWorkspace implements GitWorkspace {
-  private readonly token: string;
-
-  constructor(token: string) {
-    this.token = token;
-  }
-
   async withAgentEnvironment<T>(
-    directory: string,
+    _directory: string,
     action: (env: Readonly<Record<string, string>>) => Promise<T>,
   ): Promise<T> {
-    const file = path.resolve(directory, `git-config-${randomUUID()}`);
-    const authorization = Buffer.from(`x-access-token:${this.token}`).toString(
-      "base64",
-    );
-    try {
-      await writeFile(
-        file,
-        `[user]\n\tname = Issue Runner\n\temail = issue-runner@users.noreply.github.com\n[http "https://github.com/"]\n\textraHeader = Authorization: Basic ${authorization}\n`,
-        { mode: 0o600 },
-      );
-      return await action({ GIT_CONFIG_GLOBAL: file });
-    } finally {
-      await rm(file, { force: true });
-    }
+    return action({});
   }
 
-  private command(
-    cwd: string,
-    args: string[],
-    remote = false,
-  ): Promise<string> {
-    const authorization = Buffer.from(`x-access-token:${this.token}`).toString(
-      "base64",
-    );
+  private command(cwd: string, args: string[]): Promise<string> {
     return new Promise((resolve, reject) => {
       execFile(
         "git",
@@ -61,27 +34,11 @@ export class LocalGitWorkspace implements GitWorkspace {
           shell: false,
           timeout: 60_000,
           maxBuffer: 10 * 1024 * 1024,
-          env: {
-            ...process.env,
-            ...(remote
-              ? {
-                  GIT_CONFIG_COUNT: "1",
-                  GIT_CONFIG_KEY_0: "http.https://github.com/.extraHeader",
-                  GIT_CONFIG_VALUE_0: `Authorization: Basic ${authorization}`,
-                }
-              : {}),
-          },
         },
         (error, stdout, stderr) => {
           if (!error) resolve(stdout);
           else
-            reject(
-              new Error(
-                (stderr.trim() || formatToolError("git", error))
-                  .replaceAll(this.token, "[redacted]")
-                  .replaceAll(authorization, "[redacted]"),
-              ),
-            );
+            reject(new Error(stderr.trim() || formatToolError("git", error)));
         },
       );
     });
@@ -91,11 +48,12 @@ export class LocalGitWorkspace implements GitWorkspace {
     checkout: string,
     targetBranch: string,
   ): Promise<string> {
-    await this.command(
-      checkout,
-      ["fetch", "--no-tags", "origin", targetBranch],
-      true,
-    );
+    await this.command(checkout, [
+      "fetch",
+      "--no-tags",
+      "origin",
+      targetBranch,
+    ]);
     const base = (
       await this.command(checkout, ["rev-parse", "FETCH_HEAD"])
     ).trim();
@@ -127,11 +85,11 @@ export class LocalGitWorkspace implements GitWorkspace {
     if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(headSha))
       throw new Error("Invalid publication head SHA");
     await this.command(worktree, ["check-ref-format", `refs/heads/${branch}`]);
-    await this.command(
-      worktree,
-      ["push", "origin", `${headSha}:refs/heads/${branch}`],
-      true,
-    );
+    await this.command(worktree, [
+      "push",
+      "origin",
+      `${headSha}:refs/heads/${branch}`,
+    ]);
   }
 
   async cleanupWorktree(input: {

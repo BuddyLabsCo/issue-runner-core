@@ -37,7 +37,7 @@ Keep policy with its workflow owner and external operations with adapters:
 | Concern | Owner | Boundary |
 | --- | --- | --- |
 | Process and CLI | `cli-entry.ts`, `cli.ts` | Command identity, signals/operator, validation and lazy dependency assembly; no Core executable |
-| Configuration | `config.ts`, `config-terminal.ts` | Project/init, credential/prompt validation, generic defaults; adapter-owned options remain opaque |
+| Configuration | `config.ts`, `config-terminal.ts` | Project/init, field/prompt validation, generic defaults; adapter-owned options remain opaque |
 | Delivery workflow | `run/run.ts`, `discovery.ts`, `batch.ts`, `standalone.ts` | Scope, Reservations, eligibility, Batch membership, concurrency and acceptance barriers |
 | Review, publication, integration | `run/review.ts`, `publication.ts`, `integration.ts`, `repair.ts` | Verify local/remote facts before crediting delivery; own remote mutations and repair budgets |
 | Documentation | `run/documentation.ts` | Maintenance Ticket occurrences, Batch associations, continuation and cleanup scope; reuse standalone execution without business selection or ordinary Review |

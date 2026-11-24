@@ -3,14 +3,7 @@ import { terminalModule } from "../support/cli-dependencies.ts";
 import { promptAssignment } from "../support/prompt-assignment.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import {
-  access,
-  mkdir,
-  mkdtemp,
-  readFile,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -59,7 +52,7 @@ for (const kind of ["ci", "conflict"] as const) {
       const base = await git(origin, "rev-parse", "HEAD");
       await git(root, "clone", origin, checkout);
       const fixture = await publicationRun(t, { ...validConfig, checkout });
-      const workspace = new LocalGitWorkspace("unused-local-test-token");
+      const workspace = new LocalGitWorkspace();
       const push = workspace.push.bind(workspace);
       let targetBase = base;
       let merged = false;
@@ -121,14 +114,15 @@ for (const kind of ["ci", "conflict"] as const) {
         },
       });
       const tabs = new Map<object, CreateTabOptions>();
-      const configs: string[] = [];
+      const environments: Readonly<Record<string, string>>[] = [];
       let repairs = 0;
       fixture.dependencies.terminal = terminalModule({
         ...fixture.dependencies.terminalPlugin,
         async createTab(options) {
           const tab = {};
           tabs.set(tab, options);
-          configs.push(options.env.GIT_CONFIG_GLOBAL!);
+          assert.deepEqual(options.env, {});
+          environments.push(options.env);
           return this.bindTab(tab, options);
         },
         async onInput(tab, text) {
@@ -296,8 +290,7 @@ for (const kind of ["ci", "conflict"] as const) {
       }
       assert.equal(await git(checkout, "rev-parse", "HEAD"), base);
       assert.equal(fixture.publicationState.creations, 1);
-      for (const file of configs)
-        await assert.rejects(readFile(file), { code: "ENOENT" });
+      for (const env of environments) assert.deepEqual(env, {});
     });
   }
 }

@@ -99,27 +99,23 @@ await test("required Actions checks identify a repository-scoped run for the fai
   );
   const requests: string[][] = [];
   const apiPath = `repos/${publication.repository}/actions/runs/${runId}`;
-  const adapter = new GitHubCodeHost(
-    "host-secret",
-    (args, { input, token }) => {
-      assert.equal(token, "host-secret");
-      if (args[1] === "graphql") {
-        assert.match(input ?? "", /workflowRun \{ event resourcePath/u);
-        return Promise.resolve(JSON.stringify({ data: { repository: page } }));
-      }
-      requests.push(args);
-      return Promise.resolve(
-        args[1] === apiPath
-          ? JSON.stringify({
-              id: Number(runId),
-              run_attempt: 2,
-              status: "queued",
-              conclusion: null,
-            })
-          : "HTTP/2.0 201 Created\r\n\r\n",
-      );
-    },
-  );
+  const adapter = new GitHubCodeHost((args, { input }) => {
+    if (args[1] === "graphql") {
+      assert.match(input ?? "", /workflowRun \{ event resourcePath/u);
+      return Promise.resolve(JSON.stringify({ data: { repository: page } }));
+    }
+    requests.push(args);
+    return Promise.resolve(
+      args[1] === apiPath
+        ? JSON.stringify({
+            id: Number(runId),
+            run_attempt: 2,
+            status: "queued",
+            conclusion: null,
+          })
+        : "HTTP/2.0 201 Created\r\n\r\n",
+    );
+  });
   const { checks } = await adapter.observePullRequest({
     ...publication,
     number: exact.number,
@@ -151,13 +147,10 @@ await test("required Actions checks identify a repository-scoped run for the fai
 await test("the Actions adapter distinguishes a definite HTTP rejection from an uncertain write", async () => {
   const run = { repository: publication.repository, runId: "45019148280" };
   for (const status of [403, 503]) {
-    const adapter = new GitHubCodeHost(
-      "host-secret",
-      (_args, { allowedExitCodes }) => {
-        assert.deepEqual(allowedExitCodes, [1]);
-        return Promise.resolve(`HTTP/2.0 ${status} Error\r\n\r\n`);
-      },
-    );
+    const adapter = new GitHubCodeHost((_args, { allowedExitCodes }) => {
+      assert.deepEqual(allowedExitCodes, [1]);
+      return Promise.resolve(`HTTP/2.0 ${status} Error\r\n\r\n`);
+    });
     await assert.rejects(
       adapter.rerunFailedJobs(run),
       (error: unknown) =>
@@ -209,7 +202,7 @@ await test("CI drains all context pages before deduplicating reruns and filterin
     ),
   ];
   const cursors: (string | null)[] = [];
-  const adapter = new GitHubCodeHost("host-secret", (args, { input }) => {
+  const adapter = new GitHubCodeHost((args, { input }) => {
     assert.equal(args[1], "graphql");
     const { query, variables } = JSON.parse(input!) as {
       query: string;
@@ -294,7 +287,7 @@ await test("CI restarts context pagination from the first page after the Pull Re
     ),
   ];
   const cursors: (string | null)[] = [];
-  const adapter = new GitHubCodeHost("host-secret", (_args, { input }) => {
+  const adapter = new GitHubCodeHost((_args, { input }) => {
     const { variables } = JSON.parse(input!) as {
       variables: { after: string | null };
     };
@@ -340,7 +333,7 @@ await test("CI distinguishes empty required checks from missing or errored GitHu
     },
     { data: { repository: pollPage(head, connection([], 1)) } },
   ]) {
-    const adapter = new GitHubCodeHost("host-secret", () =>
+    const adapter = new GitHubCodeHost(() =>
       Promise.resolve(JSON.stringify(reply)),
     );
     await assert.rejects(
@@ -359,7 +352,7 @@ await test("CI distinguishes empty required checks from missing or errored GitHu
       ]),
     ),
   ]) {
-    const adapter = new GitHubCodeHost("host-secret", () =>
+    const adapter = new GitHubCodeHost(() =>
       Promise.resolve(JSON.stringify({ data: { repository: validPage } })),
     );
     assert.deepEqual(
@@ -380,7 +373,7 @@ await test("CI rejects overlapping check-context pages even when the reported co
     pollPage(head, connection([repeated], 2, "next")),
     pollPage(head, connection([repeated], 2)),
   ];
-  const adapter = new GitHubCodeHost("host-secret", () =>
+  const adapter = new GitHubCodeHost(() =>
     Promise.resolve(JSON.stringify({ data: { repository: replies.shift() } })),
   );
   await assert.rejects(
@@ -399,7 +392,7 @@ for (const malformed of [
       head,
       connection([statusContext("build", "SUCCESS", null)]),
     );
-    const adapter = new GitHubCodeHost("host-secret", () =>
+    const adapter = new GitHubCodeHost(() =>
       Promise.resolve(
         JSON.stringify({
           data: {

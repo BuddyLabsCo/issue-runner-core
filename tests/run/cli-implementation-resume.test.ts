@@ -229,8 +229,7 @@ await test("cancellation during recovered startup prevents the delayed continue"
     [],
   );
   assert.deepEqual(await fixture.snapshot(), saved);
-  for (const file of fixture.state.gitConfigs)
-    await assert.rejects(access(file));
+  for (const env of fixture.state.agentEnvironments) assert.deepEqual(env, {});
 });
 
 await test("invalid retained output resumes only for correction and keeps its implementation assignment", async (t) => {

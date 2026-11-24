@@ -88,7 +88,8 @@ for (const boundary of [
     assert.equal(fixture.state.submissions.length, submissions);
     assert.deepEqual(fixture.state.events, events);
     assert.equal(fixture.state.closedTabs.length, 0);
-    await assert.rejects(access(fixture.state.gitConfigs[0]!));
+    for (const env of fixture.state.agentEnvironments)
+      assert.deepEqual(env, {});
     if (boundary === "operation backoff") assert.equal(operationAttempts, 1);
   });
 }

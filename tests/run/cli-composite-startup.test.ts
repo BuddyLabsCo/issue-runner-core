@@ -2,7 +2,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { setImmediate } from "node:timers/promises";
-import { access } from "node:fs/promises";
 import path from "node:path";
 import { executeCli } from "../../src/cli.ts";
 import {
@@ -147,8 +146,8 @@ for (const phase of ["command", "delay"] as const) {
     assert.equal(fixture.state.probeCount, 0);
     assert.equal(fixture.state.taskCount, 0);
     assert.deepEqual(fixture.state.closedTabs, []);
-    for (const file of fixture.state.gitConfigs)
-      await assert.rejects(access(file));
+    for (const env of fixture.state.agentEnvironments)
+      assert.deepEqual(env, {});
   });
 }
 

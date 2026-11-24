@@ -108,12 +108,9 @@ for (const selector of ["parent", "issue"] as const) {
       assert.equal(tabs.size, 2);
       assert.equal(fetches, 1);
       const contexts = [...tabs.values()];
-      const configs = contexts.map(
-        ({ options }) => options.env.GIT_CONFIG_GLOBAL!,
-      );
-      assert.equal(new Set(configs).size, 2);
-      for (const file of configs)
-        assert.match(await readFile(file, "utf8"), /name = Issue Runner/u);
+      const environments = contexts.map(({ options }) => options.env);
+      assert.equal(environments.length, 2);
+      for (const env of environments) assert.deepEqual(env, {});
       const before = await Promise.all(
         [51, 52].map((number) => progress(fixture.directory, number)),
       );
@@ -158,8 +155,6 @@ for (const selector of ["parent", "issue"] as const) {
         fixture.writes.some((write) => write.endsWith(":53")),
         false,
       );
-      for (const file of configs)
-        await assert.rejects(readFile(file), { code: "ENOENT" });
     } finally {
       clearTimeout(deadline);
       for (const gate of gates.values()) gate.resolve();

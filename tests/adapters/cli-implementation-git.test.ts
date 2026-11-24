@@ -139,7 +139,7 @@ for (const scenario of [
     };
     const result = await executeCli(implementationCommand, {
       ...fixture.dependencies,
-      gitWorkspace: new LocalGitWorkspace("unused-local-test-token"),
+      gitWorkspace: new LocalGitWorkspace(),
     });
     const progress = await fixture.snapshot();
     assert.equal(progress.base, base);
@@ -190,7 +190,7 @@ for (const scenario of [
       const restarted = await executeCli(implementationCommand, {
         ...fixture.dependencies,
         signal: controller.signal,
-        gitWorkspace: new LocalGitWorkspace("unused-local-test-token"),
+        gitWorkspace: new LocalGitWorkspace(),
       });
       assert.equal(
         restarted.summary.outcome,
@@ -237,11 +237,10 @@ for (const scenario of [
             message.includes(progress.worktree),
         ),
       );
-      const oldConfig = fixture.state.gitConfigs[0]!;
-      await assert.rejects(readFile(oldConfig), { code: "ENOENT" });
+      assert.deepEqual(fixture.state.agentEnvironments[0], {});
       const controller = new AbortController();
       const submissions: { text: string; chord?: string }[] = [];
-      const configs: string[] = [];
+      const environments: Readonly<Record<string, string>>[] = [];
       const terminal = fixture.dependencies.terminalPlugin;
       const onSleep = fixture.state.onSleep;
       fixture.state.onSleep = async (ms) => {
@@ -251,24 +250,13 @@ for (const scenario of [
       const resumed = await executeCli(implementationCommand, {
         ...fixture.dependencies,
         signal: controller.signal,
-        gitWorkspace: new LocalGitWorkspace("unused-local-test-token"),
+        gitWorkspace: new LocalGitWorkspace(),
         terminal: terminalModule({
           ...fixture.dependencies.terminalPlugin,
           async createTab(options) {
             assert.equal(options.cwd, progress.worktree);
-            const config = options.env.GIT_CONFIG_GLOBAL!;
-            assert.notEqual(config, oldConfig);
-            configs.push(config);
-            const { stdout } = await execute(
-              "git",
-              ["config", "--global", "--get", "user.name"],
-              {
-                cwd: options.cwd,
-                env: { ...process.env, ...options.env },
-                encoding: "utf8",
-              },
-            );
-            assert.equal(stdout.trim(), "Issue Runner");
+            assert.deepEqual(options.env, {});
+            environments.push(options.env);
             assert.match(
               await git(options.cwd, "status", "--porcelain"),
               /M {2}README\.md\n\?\? untracked\.txt/u,
@@ -299,8 +287,8 @@ for (const scenario of [
         { text: "continue", chord: "Shift+Enter" },
       ]);
       assert.deepEqual(await fixture.snapshot(), progress);
-      assert.equal(configs.length, 1);
-      await assert.rejects(readFile(configs[0]!), { code: "ENOENT" });
+      assert.equal(environments.length, 1);
+      assert.deepEqual(environments[0], {});
       assert.equal(await git(progress.worktree, "rev-parse", "HEAD"), base);
       fixture.state.onSleep = onSleep;
       assert.equal(
@@ -331,7 +319,7 @@ for (const scenario of [
       const recovered = await executeCli(implementationCommand, {
         ...fixture.dependencies,
         signal: new AbortController().signal,
-        gitWorkspace: new LocalGitWorkspace("unused-local-test-token"),
+        gitWorkspace: new LocalGitWorkspace(),
         terminal: terminalModule({
           ...fixture.dependencies.terminalPlugin,
           async createTab() {
@@ -375,7 +363,7 @@ for (const scenario of [
   });
 }
 
-await test("a concurrent Batch uses a fresh fetched base and isolated real Git Worktrees and configurations", async (t) => {
+await test("a concurrent Batch uses a fresh fetched base and isolated real Git Worktrees", async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "core-batch-git "));
   t.after(() => rm(root, { recursive: true, force: true }));
   const origin = path.join(root, "origin");
@@ -408,8 +396,7 @@ await test("a concurrent Batch uses a fresh fetched base and isolated real Git W
     )) || null;
   const tabs = new Map<object, CreateTabOptions>();
   const closed = new Set<object>();
-  const configs: string[] = [];
-  const inheritedConfig = process.env.GIT_CONFIG_GLOBAL;
+  const environments: Readonly<Record<string, string>>[] = [];
   let release!: () => void;
   const bothTasks = new Promise<void>((resolve) => {
     release = resolve;
@@ -419,23 +406,14 @@ await test("a concurrent Batch uses a fresh fetched base and isolated real Git W
     ["run", "--project", "demo", "--parent", "48"],
     {
       ...fixture.dependencies,
-      gitWorkspace: new LocalGitWorkspace("unused-local-test-token"),
+      gitWorkspace: new LocalGitWorkspace(),
       terminal: terminalModule({
         ...fixture.dependencies.terminalPlugin,
         async createTab(options) {
           const tab = {};
           tabs.set(tab, options);
-          configs.push(options.env.GIT_CONFIG_GLOBAL!);
-          const { stdout } = await execute(
-            "git",
-            ["config", "--global", "--get", "user.name"],
-            {
-              cwd: options.cwd,
-              env: { ...process.env, ...options.env },
-              encoding: "utf8",
-            },
-          );
-          assert.equal(stdout.trim(), "Issue Runner");
+          assert.deepEqual(options.env, {});
+          environments.push(options.env);
           return this.bindTab(tab, options);
         },
         async onInput(tab, text) {
@@ -486,10 +464,8 @@ await test("a concurrent Batch uses a fresh fetched base and isolated real Git W
   assert.equal(result.summary.outcome, "incomplete");
   assert.equal(tasks, 2);
   assert.equal(closed.size, 2);
-  assert.equal(new Set(configs).size, 2);
-  assert.equal(process.env.GIT_CONFIG_GLOBAL, inheritedConfig);
-  for (const file of configs)
-    await assert.rejects(readFile(file), { code: "ENOENT" });
+  assert.equal(environments.length, 2);
+  for (const env of environments) assert.deepEqual(env, {});
   for (const { cwd } of tabs.values()) {
     const own = Number(/ticket-(\d+)$/u.exec(cwd)![1]);
     const other = own === 51 ? 52 : 51;

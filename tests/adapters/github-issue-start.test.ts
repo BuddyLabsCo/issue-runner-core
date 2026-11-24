@@ -20,7 +20,7 @@ await test("standalone start reads its own Issue and confirms grouped additive m
     url: "https://github.com/owner/repo/issues/51",
   });
   let requests = 0;
-  const tracker = new GitHubTracker("secret", async (_args, { input }) => {
+  const tracker = new GitHubTracker(async (_args, { input }) => {
     const { query, variables } = JSON.parse(input!) as {
       query: string;
       variables: unknown;
@@ -108,7 +108,7 @@ await test("parent-scoped start drains parent membership independently of target
     ),
   });
   const cursors: string[] = [];
-  const tracker = new GitHubTracker("secret", async (_args, { input }) => {
+  const tracker = new GitHubTracker(async (_args, { input }) => {
     const { query, variables } = JSON.parse(input!) as {
       query: string;
       variables: { parent?: number; owner: string; after?: string };
@@ -185,7 +185,7 @@ for (const [alias, data] of [
   await test("a failed GraphQL command retains Reservation data and alias errors", async () => {
     const errors = [{ message: "write uncertain", path: [alias] }];
     const response = { data, errors };
-    const tracker = new GitHubTracker("secret", async () => ({
+    const tracker = new GitHubTracker(async () => ({
       stdout: JSON.stringify(response),
       error: new Error("gh failed"),
       exitCode: 1,
@@ -210,7 +210,7 @@ for (const [alias, data] of [
 }
 
 await test("a valid final payload cannot confirm a grouped write when the first payload is missing", async () => {
-  const tracker = new GitHubTracker("secret", async () =>
+  const tracker = new GitHubTracker(async () =>
     JSON.stringify({ data: { addRunner: { assignable: payload } } }),
   );
   await assert.rejects(
@@ -228,7 +228,7 @@ await test("a valid final payload cannot confirm a grouped write when the first 
 await test("label-only confirmation returns all paginated assignees to the workflow", async () => {
   let requests = 0;
   const external = { id: "external", login: "developer" };
-  const tracker = new GitHubTracker("secret", async (_args, { input }) => {
+  const tracker = new GitHubTracker(async (_args, { input }) => {
     const { query, variables } = JSON.parse(input!) as {
       query: string;
       variables: unknown;

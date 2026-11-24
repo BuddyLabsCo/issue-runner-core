@@ -26,7 +26,6 @@ await test("help and version need no Project, credentials, plugin, or delivery r
     const result = await executeCli(argv, {
       ...deps,
       launchDirectory,
-      env: {},
       operator: {
         write(message) {
           messages.push(message);
@@ -99,7 +98,7 @@ await test("init creates a Project without credentials and refuses to overwrite 
   const runDependencies = createCliDependencies(launchDirectory);
   const generated = await executeCli(
     ["run", "--project", "demo", "--parent", "48"],
-    { ...runDependencies, env: { GH_TOKEN: "test" } },
+    runDependencies,
   );
   assert.equal(generated.summary.outcome, "no_work", generated.summary.failure);
   for (const project of [
@@ -219,7 +218,7 @@ await test("public process entry handles signals after a pending factory and rem
       ],
       {
         cwd: root,
-        env: { ...process.env, HOST_TOKEN: "test" },
+        env: process.env,
         encoding: "utf8",
         timeout: 10_000,
       },
@@ -270,7 +269,7 @@ await test("public entry sets exitCode for success and handled failures and clea
     ],
     {
       cwd: root,
-      env: { ...process.env, HOST_TOKEN: "test" },
+      env: process.env,
       encoding: "utf8",
       timeout: 10_000,
     },

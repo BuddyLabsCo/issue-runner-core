@@ -20,8 +20,7 @@ await test("GitHub no-change comment preserves evidence and retries failure befo
     });
   };
   let comments = 0;
-  const tracker = new GitHubTracker("tracker-secret", async (args, options) => {
-    assert.equal(options.token, "tracker-secret");
+  const tracker = new GitHubTracker(async (args) => {
     if (args[0] === "api") {
       assert.deepEqual(args.slice(0, 5), [
         "api",

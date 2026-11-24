@@ -61,7 +61,7 @@ await test("parent completion uses a final scope scan and confirms closure from 
   };
   const result = await executeCli(
     ["run", "--project", "demo", "--parent", "48"],
-    { ...dependencies, tracker: new GitHubTracker("fake-token", command) },
+    { ...dependencies, tracker: new GitHubTracker(command) },
   );
   assert.deepEqual(requests, ["discover", "scan", "close"]);
   assert.equal(result.summary.outcome, "succeeded");
@@ -159,7 +159,7 @@ for (const mode of [
     };
     const result = await executeCli(
       ["run", "--project", "demo", "--parent", "48"],
-      { ...dependencies, tracker: new GitHubTracker("fake-token", command) },
+      { ...dependencies, tracker: new GitHubTracker(command) },
     );
     const expected = ["discover", "scan", "scan-next"];
     if (mode !== "open in scan") expected.push("close", "confirmation-next");
@@ -255,7 +255,7 @@ for (const invalid of [
     };
     const result = await executeCli(
       ["run", "--project", "demo", "--parent", "48"],
-      { ...dependencies, tracker: new GitHubTracker("fake-token", command) },
+      { ...dependencies, tracker: new GitHubTracker(command) },
     );
     assert.deepEqual(requests, ["discover", "scan", "close", "reconcile"]);
     assert.equal(result.summary.outcome, "succeeded");
@@ -362,7 +362,7 @@ for (const {
       {
         ...dependencies,
         signal: controller.signal,
-        tracker: new GitHubTracker("fake-token", command),
+        tracker: new GitHubTracker(command),
       },
     );
     assert.equal(
@@ -414,7 +414,7 @@ for (const operationRetry of [1, 0]) {
         });
       return JSON.stringify({ data });
     };
-    const tracker = new GitHubTracker("fake-token", command);
+    const tracker = new GitHubTracker(command);
     fixture.dependencies.tracker.discoverParent =
       tracker.discoverParent.bind(tracker);
     fixture.dependencies.tracker.createLabel = async () => {

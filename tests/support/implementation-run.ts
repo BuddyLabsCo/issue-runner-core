@@ -90,7 +90,7 @@ export async function implementationRun(
       commits: [],
     } as WorkspaceEvidence,
     expectedPath: "",
-    gitConfigs: [] as string[],
+    agentEnvironments: [] as Readonly<Record<string, string>>[],
     tabOptions: [] as CreateTabOptions[],
     closedTabs: [] as object[],
     sleeps: [] as number[],
@@ -122,7 +122,7 @@ export async function implementationRun(
     async createTab(options) {
       state.events.push("open");
       state.tabOptions.push(options);
-      state.gitConfigs.push(options.env.GIT_CONFIG_GLOBAL!);
+      state.agentEnvironments.push(options.env);
       return this.bindTab({}, options);
     },
     async onInput(tab, text, chord) {

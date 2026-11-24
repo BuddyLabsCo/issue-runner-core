@@ -87,11 +87,7 @@ export async function testInstalledArtifacts(
               "codebuddy",
             );
           assert.throws(
-            () =>
-              cli(["run", "--project", "demo", "--parent", "48"], {
-                ...process.env,
-                GH_TOKEN: "fixture-token",
-              }),
+            () => cli(["run", "--project", "demo", "--parent", "48"]),
             (error) => {
               assert.ok(
                 error && typeof error === "object" && "stdout" in error,

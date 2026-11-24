@@ -19,7 +19,6 @@ export async function runCli(options: CliOptions): Promise<void> {
     const result = await executeCli(process.argv.slice(2), {
       ...options,
       launchDirectory: process.cwd(),
-      env: process.env,
       operator: new TerminalOperator(controller.signal),
       signal: controller.signal,
     });
