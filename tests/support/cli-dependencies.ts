@@ -500,7 +500,7 @@ export function createTestTerminal() {
     async createTab(options: CreateTabOptions) {
       return this.bindTab({}, options);
     },
-    async execute(handle: TabHandle, command: string) {
+    async execute(handle: TabHandle, command: string): Promise<string | void> {
       await this.onInput(handle, command, "Enter");
     },
     async closeTab(_handle: TabHandle) {

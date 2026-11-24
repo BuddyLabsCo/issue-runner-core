@@ -192,7 +192,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
             );
           }
         }
-        if (input.enhancements?.[profile.agent]) {
+        if (input.enhancements?.[profile.agent] || identity !== undefined) {
           saveIdentity(identity, expected);
           if (expected === undefined) await persist();
         }

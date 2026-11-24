@@ -30,15 +30,17 @@ export function executionTerminal(input: {
       ),
     execute(tab, command) {
       let attempted = false;
+      let result: string | void;
       return read(
         "execute_agent",
         `ticket:${progress.ticket}:${progress.phase}`,
         async () => {
           // Delivery may be partial: continuing after pause must not launch twice.
-          if (attempted) return;
+          if (attempted) return result;
           attempted = true;
           try {
-            await plugin.execute(tab, command);
+            result = await plugin.execute(tab, command);
+            return result;
           } catch (error) {
             throw new Error(
               `Agent command delivery is uncertain; inspect the retained tab before continuing. Command will not be replayed: ${error instanceof Error ? error.message : String(error)}`,

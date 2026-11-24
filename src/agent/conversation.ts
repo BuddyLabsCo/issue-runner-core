@@ -23,6 +23,7 @@ interface TabState {
   closed: boolean;
   monitored: boolean;
   commanded: boolean;
+  startup?: string;
   readiness?: { identity: string | undefined };
   assignment?: { id: string; expectedFile: string; recoveryText: string };
   confirmation?: { assignmentId: string; controller: AbortController };
@@ -156,14 +157,15 @@ export class NativeConversations {
     }
     if (!state.commanded) {
       state.commanded = true;
-      await this.start(tab, profile, sessionid);
+      const startup = await this.start(tab, profile, sessionid);
+      if (startup !== undefined) state.startup = startup;
     }
     const identity = state.enhancement
       ? await cancellableOperation(
           () => state.enhancement!.waitUntilReady(),
           signal,
         )
-      : await baseWait();
+      : (await baseWait(), state.startup);
     state.readiness = { identity: identity ?? undefined };
     return state.readiness.identity;
   }
@@ -172,7 +174,7 @@ export class NativeConversations {
     tab: ConversationTab,
     profile: AgentConfig,
     sessionid?: string,
-  ): Promise<void> {
+  ): Promise<string | void> {
     return this.enqueue(tab, () =>
       this.plugin.execute(
         tab.handle,
