@@ -37,6 +37,74 @@ async function git(cwd: string, ...args: string[]) {
   return stdout.trim();
 }
 
+await test("real Git inspection orders merge parents before children despite skewed commit times", async (t) => {
+  const worktree = await mkdtemp(path.join(tmpdir(), "core-topology "));
+  t.after(() => rm(worktree, { recursive: true, force: true }));
+  await git(worktree, "init", "--initial-branch=main");
+  const tree = await git(worktree, "write-tree");
+  const commit = async (message: string, day: number, ...parents: string[]) => {
+    const date = `2026-01-0${day}T00:00:00Z`;
+    const { stdout } = await execute(
+      "git",
+      [
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "-c",
+        "commit.gpgsign=false",
+        "commit-tree",
+        tree,
+        "-m",
+        message,
+        ...parents.flatMap((parent) => ["-p", parent]),
+      ],
+      {
+        cwd: worktree,
+        encoding: "utf8",
+        timeout: 60_000,
+        env: {
+          ...process.env,
+          GIT_AUTHOR_DATE: date,
+          GIT_COMMITTER_DATE: date,
+        },
+      },
+    );
+    return stdout.trim();
+  };
+  const base = await commit("Base", 1);
+  const ancestor = await commit("Shared ancestor", 7, base);
+  const left = await commit("Left branch", 6, ancestor);
+  const right = await commit("Right branch first", 3, ancestor);
+  const rightTip = await commit("Right branch second", 4, right);
+  const merge = await commit("Merge branches", 5, left, rightTip);
+  await git(worktree, "update-ref", "refs/heads/main", merge);
+
+  const reverseLog = (
+    await git(worktree, "log", "--reverse", "--format=%H", `${base}..HEAD`)
+  ).split("\n");
+  assert.ok(
+    reverseLog.indexOf(right) < reverseLog.indexOf(ancestor),
+    "ordinary reverse log must misorder this history",
+  );
+  const evidence = await new LocalGitWorkspace().inspect({ worktree, base });
+  const shas = evidence.commits.map(({ sha }) => sha);
+  assert.equal(shas.length, 5);
+  assert.deepEqual(
+    new Set(shas),
+    new Set([ancestor, left, right, rightTip, merge]),
+  );
+  for (const [parent, child] of [
+    [ancestor, left],
+    [ancestor, right],
+    [right, rightTip],
+    [left, merge],
+    [rightTip, merge],
+  ] as const)
+    assert.ok(shas.indexOf(parent) < shas.indexOf(child));
+  assert.equal(shas.at(-1), await git(worktree, "rev-parse", "HEAD"));
+});
+
 for (const kind of ["ci", "conflict"] as const) {
   for (const emptyFirst of [false, true]) {
     await test(`real Git ${kind} repairs preserve the original PR branch${emptyFirst ? " after rejecting invalid Git evidence" : ""}`, async (t) => {
@@ -58,6 +126,7 @@ for (const kind of ["ci", "conflict"] as const) {
       let merged = false;
       const pushed: { worktree: string; branch: string; head: string }[] = [];
       workspace.push = async (worktree, branch, head) => {
+        assert.equal(head, await git(worktree, "rev-parse", "HEAD"));
         const saved = await fixture.snapshot();
         const pending =
           saved.publication![
@@ -171,39 +240,45 @@ for (const kind of ["ci", "conflict"] as const) {
             }
             const message = repair ? `fix: ${kind} repair` : "feat: implement";
             await git(options.cwd, "commit", "--allow-empty", "-m", message);
+            if (kind === "ci" && repair && !empty)
+              await git(
+                options.cwd,
+                "commit",
+                "--allow-empty",
+                "-m",
+                "fix: CI follow-up",
+              );
+            const rangeBase = repair
+              ? (await fixture.snapshot()).publication![
+                  kind === "ci" ? "ciRepair" : "conflictRepair"
+                ]!.attempts.at(-1)!.base
+              : base;
+            const commits = await Promise.all(
+              (
+                await git(
+                  options.cwd,
+                  "log",
+                  "--topo-order",
+                  "--format=%H",
+                  `${rangeBase}..HEAD`,
+                )
+              )
+                .split("\n")
+                .map(async (sha) => ({
+                  sha,
+                  message: await git(
+                    options.cwd,
+                    "show",
+                    "-s",
+                    "--format=%B",
+                    sha,
+                  ),
+                })),
+            );
             await publish(assignment.path, {
               outcome: "committed",
               summary: "Completed",
-              commits:
-                kind === "conflict" && repair && !empty
-                  ? await Promise.all(
-                      (
-                        await git(
-                          options.cwd,
-                          "log",
-                          "--reverse",
-                          "--format=%H",
-                          `${(await fixture.snapshot()).publication!.conflictRepair!.attempts.at(-1)!.base}..HEAD`,
-                        )
-                      )
-                        .split("\n")
-                        .map(async (sha) => ({
-                          sha,
-                          message: await git(
-                            options.cwd,
-                            "show",
-                            "-s",
-                            "--format=%B",
-                            sha,
-                          ),
-                        })),
-                    )
-                  : [
-                      {
-                        sha: await git(options.cwd, "rev-parse", "HEAD"),
-                        message,
-                      },
-                    ],
+              commits,
               findings_file: null,
               ...(text.startsWith("Implementation assignment\n")
                 ? {
@@ -260,6 +335,16 @@ for (const kind of ["ci", "conflict"] as const) {
       );
       if (kind === "conflict") {
         assert.notEqual(targetBase, base);
+        assert.deepEqual(
+          saved.publication!.conflictRepair!.attempts.at(-1)!.result!.commits,
+          [
+            {
+              sha: targetBase,
+              message: "Advance target\n\nThis commit has a body.",
+            },
+            { sha: pushed[1]!.head, message: "fix: conflict repair" },
+          ],
+        );
         assert.equal(
           await git(checkout, "merge-base", targetBase, pushed[1]!.head),
           targetBase,
@@ -287,9 +372,21 @@ for (const kind of ["ci", "conflict"] as const) {
             code: "ENOENT",
           });
         }
+      } else {
+        assert.deepEqual(
+          saved.publication!.ciRepair!.attempts.at(-1)!.result!.commits,
+          [
+            {
+              sha: await git(checkout, "rev-parse", `${pushed[1]!.head}^`),
+              message: "fix: ci repair",
+            },
+            { sha: pushed[1]!.head, message: "fix: CI follow-up" },
+          ],
+        );
       }
       assert.equal(await git(checkout, "rev-parse", "HEAD"), base);
       assert.equal(fixture.publicationState.creations, 1);
+      assert.equal(fixture.dependencies.pauses.length, 0);
       for (const env of environments) assert.deepEqual(env, {});
     });
   }

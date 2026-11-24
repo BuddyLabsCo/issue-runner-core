@@ -292,6 +292,7 @@ export interface WorkspaceEvidence {
   worktree: string;
   branch: string;
   base: string;
+  // Git parent-before-child order, ending at the independently observed HEAD when nonempty.
   commits: CommitEvidence[];
   clean: boolean;
   changed: boolean;

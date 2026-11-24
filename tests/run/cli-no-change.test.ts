@@ -75,6 +75,18 @@ await test("passed no-change Review uses Session B without consuming an ordinary
 
 await test("no-change findings resume A with fresh PR metadata, then resume B for ordinary round 1", async (t) => {
   const fixture = await noChangeReviewRun(t);
+  const commits = [
+    ...committed().commits,
+    { sha: "c".repeat(40), message: "Another required change" },
+  ];
+  fixture.noChangeState.onFix = async (fix) => {
+    fixture.state.evidence.commits = commits;
+    fixture.state.evidence.changed = true;
+    await publish(fix.invocation!.path, {
+      ...committed(),
+      commits: [...commits].reverse(),
+    });
+  };
   fixture.noChangeState.onReview = async (review) => {
     await writeFile(review.findings, "Implement the missing requirement.\n");
     await publish(review.invocation!.path, {
@@ -95,6 +107,9 @@ await test("no-change findings resume A with fresh PR metadata, then resume B fo
   assert.equal(saved.reviews?.length, 1);
   assert.equal(saved.reviews[0]!.round, 1);
   assert.equal(saved.reviews[0]!.base, "a".repeat(40));
+  assert.equal(saved.reviews[0]!.head, commits[1]!.sha);
+  assert.deepEqual(saved.noChange?.fix?.result?.commits, commits);
+  assert.deepEqual(saved.publication?.commits, commits);
   assert.equal(fixture.state.probeCount, 2);
   assert.equal(fixture.state.taskCount, 1);
   const texts = fixture.state.submissions.map(({ text }) => text);

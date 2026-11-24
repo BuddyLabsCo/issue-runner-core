@@ -113,6 +113,19 @@ for (const scenario of [
         };
         commits.push(commit);
         fixture.integrationState.pullRequest.headSha = commit.sha;
+        if (scenario === "committed") {
+          const message = "docs: follow-up";
+          await git(
+            progress.worktree,
+            "commit",
+            "--allow-empty",
+            "-m",
+            message,
+          );
+          const sha = await git(progress.worktree, "rev-parse", "HEAD");
+          commits.unshift({ sha, message });
+          fixture.integrationState.pullRequest.headSha = sha;
+        }
       }
       await publish(file, {
         outcome: commits.length ? "committed" : "no_change",
@@ -244,6 +257,16 @@ for (const scenario of [
     }
     const result = await run();
     const progress = await fixture.snapshot();
+    if (scenario === "committed") {
+      assert.deepEqual(
+        progress.result?.commits.map(({ message }) => message),
+        ["docs: maintain documentation", "docs: follow-up"],
+      );
+      assert.equal(
+        progress.result?.commits.at(-1)?.sha,
+        fixture.integrationState.pullRequest.headSha,
+      );
+    }
     if (scenario === "recovered") {
       assert.equal(fixture.state.taskCount, 1);
       assert.equal(fixture.state.probeCount, 1);

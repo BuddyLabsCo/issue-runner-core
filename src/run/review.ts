@@ -19,7 +19,7 @@ import type { ImplementationProgress, StageProgress } from "../recovery.ts";
 import type { LoadedProject } from "../config.ts";
 import type { GitWorkspace } from "./contracts.ts";
 import type { ReadOperation } from "./discovery.ts";
-import { verifyWorkspace } from "./verification.ts";
+import { verifyHandoffWorkspace, verifyWorkspace } from "./verification.ts";
 
 export function verifiedImplementation(progress: ImplementationProgress) {
   const implementation = progress.noChange?.fix?.result ?? progress.result!;
@@ -244,7 +244,7 @@ export async function reviewImplementation(
               "Review findings require a committed fix; no_change cannot satisfy findings",
             );
           const fixBase = { ...progress, base: round.head };
-          verifyWorkspace(
+          const verified = verifyHandoffWorkspace(
             fixBase,
             await read("inspect_review_fix", `ticket:${progress.ticket}`, () =>
               input.git.inspect(fixBase),
@@ -258,9 +258,9 @@ export async function reviewImplementation(
               `ticket:${progress.ticket}`,
               () => input.git.inspect(progress),
             ),
-            { ...handoff, commits: [...handoff.commits, ...result.commits] },
+            { ...handoff, commits: [...handoff.commits, ...verified.commits] },
           );
-          return result;
+          return verified;
         },
       });
     }

@@ -11,7 +11,7 @@ import {
 import { runIssueStage, type IssueStageContext } from "../agent/stage.ts";
 import { executionPrompt } from "../prompts/implement.ts";
 import { reviewImplementation, verifiedImplementation } from "./review.ts";
-import { verifyWorkspace } from "./verification.ts";
+import { verifyHandoffWorkspace, verifyWorkspace } from "./verification.ts";
 import { parsePRExecution } from "../agent/handoff.ts";
 import type {
   CodeHost,
@@ -100,7 +100,7 @@ async function executeStandalone(
       `ticket:${number}`,
       () => context.git.inspect(progress),
     );
-    verifyWorkspace(progress, evidence, result);
+    const verified = verifyHandoffWorkspace(progress, evidence, result);
     if (
       input.documentation &&
       result.outcome === "no_change" &&
@@ -109,7 +109,7 @@ async function executeStandalone(
       throw new Error("Documentation no_change requires an unchanged Worktree");
     progress.pr_title = result.pr_title;
     progress.pr_body = result.pr_body;
-    return result;
+    return verified;
   };
   const progressFile = path.join(
     root,

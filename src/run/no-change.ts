@@ -16,7 +16,7 @@ import type { TicketReport } from "./report.ts";
 import type { ReadOperation } from "./discovery.ts";
 import type { GitWorkspace, Ticket, Tracker } from "./contracts.ts";
 import { OperationStopped } from "./operations.ts";
-import { verifyWorkspace } from "./verification.ts";
+import { verifyHandoffWorkspace, verifyWorkspace } from "./verification.ts";
 
 const noChangeReviewInstructions = loadPrompt("no-change-review");
 const noChangeFixInstructions = loadPrompt("no-change-fix");
@@ -159,14 +159,13 @@ async function reviewNoChange(
           throw new Error(
             "Review findings require a committed implementation; no_change cannot satisfy findings",
           );
-        verifyWorkspace(
+        return verifyHandoffWorkspace(
           progress,
           await read("inspect_no_change_fix", `ticket:${progress.ticket}`, () =>
             input.git.inspect(progress),
           ),
           result,
         );
-        return result;
       },
     });
   }
