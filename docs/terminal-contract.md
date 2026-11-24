@@ -25,7 +25,7 @@ Only `/cli` and `/terminal` are public entries. Core registers no executable. Se
 
 ```typescript
 export interface CliOptions {
-  commandName: string; // Executing command; used in help, errors, and current parent/documentation recovery identity.
+  commandName: string; // Executing command; used in help, errors, and current documentation recovery identity.
   commandVersion: string; // Terminal package version; excluded from recovery identity.
   terminal: TerminalPluginModule; // Lazy factory; imports must not create tabs.
   terminalPackageRoot: string; // Absolute real path to the installed terminal package.

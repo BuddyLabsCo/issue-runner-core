@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { LoadedProject } from "../config.ts";
 import { nonempty, object, readHandoff } from "../agent/handoff.ts";
 import {
+  checkpointVersion,
   sameRepositoryName,
   saveProgress,
   type BatchProgress,
@@ -10,6 +11,7 @@ import {
 import type { ChildPage, Ticket, Tracker } from "./contracts.ts";
 import { OperationStopped, type OperationOptions } from "./operations.ts";
 import type { RunContext } from "./run.ts";
+import type { RunScope } from "./scope.ts";
 import { viewerOf } from "./viewer.ts";
 
 export type ReadOperation = <T>(
@@ -97,19 +99,20 @@ export async function hasOpenBlocker(
 
 function parseBatch(
   text: string,
-  expected: Pick<
-    BatchProgress,
-    "input_hash" | "repository" | "target_branch"
-  > & { run_arguments?: readonly string[] },
-  maxBatchSize: number,
+  expected: {
+    inputHash: string;
+    scope: RunScope;
+    repository: string;
+    targetBranch: string;
+  },
 ): BatchProgress {
   const saved = object(JSON.parse(text) as unknown);
   if (
-    Object.entries(expected).some(([key, value]) =>
-      key === "repository"
-        ? !sameRepositoryName(saved[key], String(value))
-        : JSON.stringify(saved[key]) !== JSON.stringify(value),
-    ) ||
+    saved.checkpoint_version !== checkpointVersion ||
+    JSON.stringify(saved.run_scope) !== JSON.stringify(expected.scope) ||
+    saved.input_hash !== expected.inputHash ||
+    !sameRepositoryName(saved.repository, expected.repository) ||
+    saved.target_branch !== expected.targetBranch ||
     !nonempty(saved.run_id) ||
     (saved.completed !== undefined && typeof saved.completed !== "boolean") ||
     (saved.documentation !== undefined &&
@@ -117,7 +120,6 @@ function parseBatch(
         !/^[0-9a-f-]{36}$/u.test(saved.documentation))) ||
     !Array.isArray(saved.tickets) ||
     saved.tickets.length === 0 ||
-    saved.tickets.length > maxBatchSize ||
     !saved.tickets.every(
       (number: unknown, index: number, numbers: unknown[]) =>
         Number.isSafeInteger(number) &&
@@ -213,27 +215,29 @@ export async function selectIssueBatch(
   const previous = await read("read_batch_checkpoint", batchFile, () =>
     readHandoff(batchFile),
   );
+  const scope = context.scope;
+  if (!scope) throw new Error("Batch checkpoint requires a Run scope");
   const ownership = {
     input_hash: context.inputHash,
     run_arguments: context.runArguments,
     repository: config.repository,
     target_branch: input.targetBranch,
   };
-  const comparison = context.scope
-    ? {
-        input_hash: ownership.input_hash,
-        repository: ownership.repository,
-        target_branch: ownership.target_branch,
-      }
-    : ownership;
   const recorded = previous
-    ? parseBatch(previous.text, comparison, config.maxBatchSize)
+    ? parseBatch(previous.text, {
+        inputHash: context.inputHash,
+        scope,
+        repository: config.repository,
+        targetBranch: input.targetBranch,
+      })
     : undefined;
   const eligible = input.eligible ?? (await eligibleIssueNumbers(input));
   const batch =
     (recorded && !recorded.completed ? recorded.tickets : undefined) ??
     [...new Set(eligible)].slice(0, config.maxBatchSize);
   const progress: BatchProgress = {
+    checkpoint_version: checkpointVersion,
+    run_scope: scope,
     run_id: recorded?.run_id ?? context.runId,
     ...ownership,
     tickets: batch,

@@ -238,7 +238,7 @@ async function executeProject(
     ));
   if (!targetBranch.trim()) throw new Error("Target Branch must not be empty");
   summary.targetBranch = targetBranch;
-  if (options.selector === "issue") {
+  if (options.selector !== "document") {
     const scope = runScope(options, loaded, targetBranch);
     context = { ...context, scope, inputHash: runScopeId(scope) };
   }

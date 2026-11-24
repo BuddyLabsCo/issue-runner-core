@@ -218,6 +218,8 @@ export interface RepairProgress extends StageProgress<ExecutionResult> {
 }
 
 export interface BatchProgress {
+  checkpoint_version: typeof checkpointVersion;
+  run_scope: RunScope;
   run_id: string;
   run_arguments: readonly string[];
   input_hash: string;
@@ -229,6 +231,8 @@ export interface BatchProgress {
 }
 
 export interface MaintenanceProgress {
+  checkpoint_version?: typeof checkpointVersion;
+  run_scope?: RunScope;
   run_id: string;
   run_arguments: readonly string[];
   input_hash: string;
