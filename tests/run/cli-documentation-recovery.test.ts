@@ -221,7 +221,7 @@ await test("cancelled Maintenance Tickets retain documentation artifacts and ear
   assert.equal(fixture.maintenance.cleanup.length, 0);
 });
 
-await test("changed configuration starts separate documentation and retains the interrupted occurrence", async (t) => {
+await test("a changed target branch starts separate documentation and retains the interrupted occurrence", async (t) => {
   const fixture = await documentationRun(t);
   const task = fixture.state.onTask;
   fixture.state.onTask = async () => {
@@ -232,7 +232,7 @@ await test("changed configuration starts separate documentation and retains the 
   await access(previous.worktree);
   await appendFile(
     path.join(fixture.directory, "config.yaml"),
-    "\n# New Run input\n",
+    "\ntargetBranch: another-branch\n",
   );
   fixture.dependencies.signal = new AbortController().signal;
   fixture.state.onTask = task;

@@ -43,6 +43,8 @@ export async function runDocumentation(
       operator: context.operator,
       ...settings,
     });
+  const scope = context.scope;
+  if (!scope) throw new Error("Documentation Run requires a Run scope");
   const file = path.join(
     loaded.directory,
     "recovery",
@@ -51,12 +53,8 @@ export async function runDocumentation(
   context.retained?.set(file, undefined);
   const previous = await readHandoff(file);
   let maintenance: MaintenanceProgress = {
-    ...(context.scope
-      ? {
-          checkpoint_version: checkpointVersion,
-          run_scope: context.scope,
-        }
-      : {}),
+    checkpoint_version: checkpointVersion,
+    run_scope: scope,
     run_id: context.runId,
     input_hash: context.inputHash,
     run_arguments: context.runArguments,
@@ -84,11 +82,8 @@ export async function runDocumentation(
       }
       if (
         saved.input_hash !== context.inputHash ||
-        (context.scope
-          ? saved.checkpoint_version !== checkpointVersion ||
-            JSON.stringify(saved.run_scope) !== JSON.stringify(context.scope)
-          : JSON.stringify(saved.run_arguments) !==
-            JSON.stringify(context.runArguments)) ||
+        saved.checkpoint_version !== checkpointVersion ||
+        JSON.stringify(saved.run_scope) !== JSON.stringify(scope) ||
         !sameRepositoryName(saved.repository, maintenance.repository) ||
         saved.target_branch !== maintenance.target_branch ||
         saved.batch !== input.batch ||
@@ -212,7 +207,7 @@ export async function runDocumentation(
       runId: maintenance.run_id,
       inputHash: context.inputHash,
       runArguments: context.runArguments,
-      ...(context.scope ? { scope: context.scope } : {}),
+      scope,
     });
     if (!progress)
       throw new Error("Missing owned documentation execution for cleanup");

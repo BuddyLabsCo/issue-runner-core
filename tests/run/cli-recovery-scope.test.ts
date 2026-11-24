@@ -3,11 +3,7 @@ import assert from "node:assert/strict";
 import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import {
-  implementationCommand,
-  implementationRun,
-  publish,
-} from "../support/implementation-run.ts";
+import { implementationRun, publish } from "../support/implementation-run.ts";
 import {
   documentCommand,
   documentationRun,
@@ -110,7 +106,7 @@ await test("a failed atomic checkpoint write preserves the last valid invocation
   await access(saved.invocation!.path);
 });
 
-await test("standalone documentation retains Run arguments on its occurrence and execution", async (t) => {
+await test("standalone documentation checkpoints are owned by their Run scope", async (t) => {
   const fixture = await documentationRun(t);
   fixture.state.onTask = async () => {
     fixture.controller.abort();
@@ -130,10 +126,13 @@ await test("standalone documentation retains Run arguments on its occurrence and
     name.endsWith("-document.json"),
   )!;
   const file = path.join(recovery, name);
-  const saved = JSON.parse(await readFile(file, "utf8")) as object;
+  const saved = JSON.parse(await readFile(file, "utf8")) as {
+    run_scope?: Record<string, unknown>;
+  };
+  assert.ok(saved.run_scope);
   const text = JSON.stringify({
     ...saved,
-    run_arguments: implementationCommand,
+    run_scope: { ...saved.run_scope, targetBranch: "other-branch" },
   });
   await writeFile(file, text);
   fixture.dependencies.signal = new AbortController().signal;

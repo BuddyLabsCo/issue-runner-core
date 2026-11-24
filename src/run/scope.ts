@@ -14,8 +14,9 @@ export interface RunScope {
   selector:
     | { kind: "issue"; ticket: number }
     | { kind: "issue"; issueList: number[] }
-    | { kind: "parent"; ticket: number; issueList?: number[] };
-  review: { enabled: boolean; maxReviewRounds?: number };
+    | { kind: "parent"; ticket: number; issueList?: number[] }
+    | { kind: "document" };
+  review?: { enabled: boolean; maxReviewRounds?: number };
 }
 
 function canonicalPath(value: string): string {
@@ -52,7 +53,7 @@ export function runScope(
       return options.issueTicket === undefined
         ? { kind: "issue", issueList: loaded.config.issueList }
         : { kind: "issue", ticket: options.issueTicket };
-    throw new Error("Documentation Run scope is not supported");
+    return { kind: "document" };
   };
   return {
     version: runScopeVersion,
@@ -61,10 +62,16 @@ export function runScope(
     checkout: canonicalPath(loaded.config.checkout),
     targetBranch,
     selector: selector(),
-    review: {
-      enabled: review,
-      ...(review && maxReviewRounds !== undefined ? { maxReviewRounds } : {}),
-    },
+    ...(options.selector === "document"
+      ? {}
+      : {
+          review: {
+            enabled: review,
+            ...(review && maxReviewRounds !== undefined
+              ? { maxReviewRounds }
+              : {}),
+          },
+        }),
   };
 }
 

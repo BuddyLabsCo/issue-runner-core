@@ -238,10 +238,8 @@ async function executeProject(
     ));
   if (!targetBranch.trim()) throw new Error("Target Branch must not be empty");
   summary.targetBranch = targetBranch;
-  if (options.selector !== "document") {
-    const scope = runScope(options, loaded, targetBranch);
-    context = { ...context, scope, inputHash: runScopeId(scope) };
-  }
+  const scope = runScope(options, loaded, targetBranch);
+  context = { ...context, scope, inputHash: runScopeId(scope) };
   let base: Promise<string> | undefined;
   const fetchBase = () =>
     (base ??= read("fetch_target_branch", targetBranch, () =>
