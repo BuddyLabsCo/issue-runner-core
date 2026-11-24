@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.11
+
+- fix: [issue-462] accept unordered handoff commits in Git order (#463)
+
 ## 1.0.10
 
 - docs: [issue-460] simplify recovery and checkpoint guidance (#461)
