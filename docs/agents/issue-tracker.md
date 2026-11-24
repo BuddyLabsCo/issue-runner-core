@@ -73,7 +73,7 @@ this is done; it does not enforce it or adopt surviving live tabs.
 
 Keep Run arguments and `config.yaml` unchanged when testing recovery. For the
 config-change case, keep arguments unchanged and modify `config.yaml` so the
-combined input hash differs: expect a new Run that ignores old persisted
+effective Run scope differs: expect a new Run that ignores old persisted
 progress, rather than recovery. Existing remote-state reconciliation and
 retention of interrupted resources still apply.
 

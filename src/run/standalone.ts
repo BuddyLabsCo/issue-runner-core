@@ -134,9 +134,8 @@ async function executeStandalone(
     documentation: input.documentation === true,
     runId: context.runId,
     inputHash: context.inputHash,
-    runArguments: context.runArguments,
     now: context.clock.now().getTime(),
-    ...(context.scope ? { scope: context.scope } : {}),
+    scope: context.scope,
     restarting,
   });
   execution = restored;
@@ -437,7 +436,7 @@ async function executeStandalone(
   const executionId = randomUUID();
   const progress: ImplementationProgress = (execution = restored ?? {
     checkpoint_version: checkpointVersion,
-    ...(context.scope ? { run_scope: context.scope } : {}),
+    run_scope: context.scope,
     ...(input.documentation ? { purpose: "documentation" } : {}),
     ...(started.reservation ? { reservation: started.reservation } : {}),
     run_id: context.runId,

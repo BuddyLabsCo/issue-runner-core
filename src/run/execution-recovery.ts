@@ -148,9 +148,8 @@ export async function restoreExecution(input: {
   documentation: boolean;
   runId: string;
   inputHash: string;
-  runArguments: readonly string[];
   now: number;
-  scope?: RunScope;
+  scope: RunScope;
   restarting?: boolean;
 }): Promise<ImplementationProgress | undefined> {
   if (input.restarting) return;
@@ -172,12 +171,8 @@ export async function restoreExecution(input: {
       const reservation = object(saved.reservation ?? {});
       if (
         saved.input_hash !== input.inputHash ||
-        (!input.scope &&
-          JSON.stringify(saved.run_arguments) !==
-            JSON.stringify(input.runArguments)) ||
-        (input.scope !== undefined &&
-          (saved.checkpoint_version !== checkpointVersion ||
-            JSON.stringify(saved.run_scope) !== JSON.stringify(input.scope))) ||
+        saved.checkpoint_version !== checkpointVersion ||
+        JSON.stringify(saved.run_scope) !== JSON.stringify(input.scope) ||
         saved.project !== project ||
         saved.ticket !== number ||
         !sameRepositoryName(saved.repository, repository) ||

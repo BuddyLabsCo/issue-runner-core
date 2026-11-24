@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import type { RunContext, RunSummary } from "./run.ts";
+import type { RunSetup, RunSummary } from "./run.ts";
 import type { runStandalone } from "./standalone.ts";
 import { OperatorCancelled, TicketSkipped } from "./operations.ts";
 
@@ -114,7 +114,7 @@ export async function reportTicket(
   );
 }
 
-export function reportRetained(context: RunContext, summary: RunSummary): void {
+export function reportRetained(context: RunSetup, summary: RunSummary): void {
   for (const report of summary.tickets ?? [])
     report.retainedWorktrees = report.retainedWorktrees.filter(existsSync);
   for (const [snapshot, progress] of context.retained ?? []) {

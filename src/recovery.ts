@@ -1,5 +1,4 @@
 import { mkdir, rename, writeFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
 import path from "node:path";
 import type {
   CommitEvidence,
@@ -24,17 +23,6 @@ export interface NativeSession {
   sessionid: string;
   agent: string;
   resume: string;
-}
-
-export function hashRunInput(
-  commandName: string,
-  argv: readonly string[],
-  config: Uint8Array,
-): string {
-  return createHash("sha256")
-    .update(JSON.stringify([commandName, argv]))
-    .update(config)
-    .digest("hex");
 }
 
 export interface ExecutionResult {
@@ -108,7 +96,7 @@ export interface ReservationIdentity {
 
 export interface ImplementationProgress extends StageProgress<PRExecutionResult> {
   checkpoint_version: typeof checkpointVersion;
-  run_scope?: RunScope;
+  run_scope: RunScope;
   operations?: Record<string, OperationProgress>;
   reservation?: ReservationIdentity;
   purpose?: "documentation";

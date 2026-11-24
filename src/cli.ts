@@ -4,7 +4,6 @@ import { setTimeout as delay } from "node:timers/promises";
 import { cac } from "cac";
 import { initializeProject, loadProject } from "./config.ts";
 import { AuditLog } from "./audit.ts";
-import { hashRunInput } from "./recovery.ts";
 import { GitHubTracker } from "./adapters/github-tracker.ts";
 import { GitHubCodeHost } from "./adapters/github-code-host.ts";
 import { LocalGitWorkspace } from "./adapters/git-workspace.ts";
@@ -283,11 +282,6 @@ export async function executeRun(
         audit,
         runId,
         runArguments: [...argv],
-        inputHash: hashRunInput(
-          dependencies.commandName,
-          argv,
-          loaded.configBytes,
-        ),
         clock,
         operator: dependencies.operator,
         git: dependencies.gitWorkspace ?? new LocalGitWorkspace(),
