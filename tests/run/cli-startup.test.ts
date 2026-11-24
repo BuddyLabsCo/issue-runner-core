@@ -63,7 +63,6 @@ await test("init creates a Project without credentials and refuses to overwrite 
   const dependencies = {
     ...createCliDependencies(launchDirectory),
     launchDirectory,
-    env: {},
     operator: {
       write() {
         /* Init output is checked through its created files. */
