@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.10
+
+- docs: [issue-460] simplify recovery and checkpoint guidance (#461)
+- refactor: [issue-448] retire config-byte recovery identity (#459)
+- feat: [issue-447] use canonical Documentation recovery scope (#458)
+- fix: [issue-446] apply operation retry policy prospectively (#457)
+- feat: [issue-445] add canonical Parent and Batch recovery scope (#456)
+- fix: [issue-444] narrow recovery to resumable native sessions (#455)
+- feat: [issue-443] use versioned Run scope and native session identity (#453)
+
 ## 1.0.9
 
 - fix: [issue-451] prevent changelog blank-line accumulation (#452)
