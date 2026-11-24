@@ -69,7 +69,7 @@ await test("verified documentation no_change closes without a PR even with no-au
   assert.notEqual(next.run_id, previous.run_id);
 });
 
-await test("a documentation Probe written while stopped is accepted before exact conversation resume", async (t) => {
+await test("a documentation Probe written while stopped requires a saved identity before resume", async (t) => {
   const fixture = await documentationRun(t);
   const probe = fixture.state.onProbe;
   fixture.state.onProbe = async (assignment) => {
@@ -79,11 +79,16 @@ await test("a documentation Probe written while stopped is accepted before exact
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   const before = await fixture.snapshot();
   fixture.dependencies.signal = new AbortController().signal;
+  fixture.dependencies.operator.pause = (message) => {
+    assert.match(message, /Enter to restart/u);
+    return Promise.resolve("q");
+  };
   const result = await fixture.run();
-  assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
+  assert.equal(result.summary.outcome, "cancelled", JSON.stringify(result));
+  assert.ok(fixture.dependencies.messages.includes("unable to recover"));
   assert.equal((await fixture.snapshot()).execution_id, before.execution_id);
   assert.equal(fixture.state.probeCount, 1);
-  assert.equal(fixture.state.taskCount, 1);
+  assert.equal(fixture.state.taskCount, 0);
   assert.equal(fixture.maintenance.creates, 1);
 });
 

@@ -6,7 +6,7 @@ import { ciRepairRun } from "../support/ci-repair-run.ts";
 import { conflictRepairRun } from "../support/conflict-repair-run.ts";
 
 for (const kind of ["ci", "conflict"] as const) {
-  await test(`interrupted ${kind} repair Probe restores retained native identity before dispatch`, async (t) => {
+  await test(`interrupted ${kind} repair Probe without a saved identity requires an explicit restart`, async (t) => {
     const fixture = await (kind === "ci" ? ciRepairRun : conflictRepairRun)(t);
     const submit = fixture.dependencies.terminalPlugin.onInput.bind(
       fixture.dependencies.terminalPlugin,
@@ -27,25 +27,25 @@ for (const kind of ["ci", "conflict"] as const) {
     assert.equal(pending.sessionid, undefined);
     fixture.dependencies.signal = new AbortController().signal;
     fixture.dependencies.terminalPlugin.onInput = submit;
+    fixture.dependencies.operator.pause = async (message) => {
+      assert.equal(
+        message,
+        "Enter to restart the entire Issue #50, or q to exit Runner.",
+      );
+      return "q";
+    };
     const submissions = fixture.state.submissions.length;
     const result = await fixture.run();
-    assert.match(result.summary.tickets![0]!.detail, /CI-ready|completed/u);
-    const after = await fixture.snapshot();
-    const restored = after.publication![key]!.attempts[0]!;
-    assert.equal(restored.attempt_id, pending.attempt_id);
-    assert.deepEqual(restored.probe, pending.probe);
-    assert.equal(restored.sessionid, `${kind}-session-1`);
-    assert.equal(after.publication![key]!.consumed, 1);
+    assert.equal(result.summary.outcome, "cancelled");
+    assert.ok(fixture.dependencies.messages.includes("unable to recover"));
+    assert.equal(fixture.state.submissions.length, submissions);
     assert.equal(fixture.repairs.probes.length, 1);
-    assert.equal(fixture.repairs.tasks.length, 1);
-    assert.ok(
-      fixture.state.submissions
-        .slice(submissions)
-        .some(({ text }) => text.includes(`--resume "${kind}-session-1"`)),
-    );
-    assert.equal(after.pr_title, before.pr_title);
-    assert.equal(after.pr_body, before.pr_body);
+    assert.equal(fixture.repairs.tasks.length, 0);
     assert.equal(fixture.publicationState.creations, 1);
+    assert.deepEqual(await fixture.snapshot(), before);
+    await access(pending.worktree);
+    await access(before.worktree);
+    await access(pending.probe.path);
   });
 
   for (const probe of ["missing", "invalid", "directory"] as const) {

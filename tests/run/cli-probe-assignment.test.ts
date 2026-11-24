@@ -99,7 +99,7 @@ for (const [purpose, create] of [
   });
 }
 
-await test("restored documentation uses the current corrected Probe instead of superseded identity", async (t) => {
+await test("a retained documentation Probe without a saved identity requires an explicit restart", async (t) => {
   const fixture = await documentationRun(t);
   fixture.state.onProbe = async (assignment) => {
     await publish(String(assignment.path), {
@@ -113,20 +113,15 @@ await test("restored documentation uses the current corrected Probe instead of s
   assert.equal(before.superseded.length, 1);
   assert.notEqual(before.probe!.path, before.superseded[0]);
   await publish(before.superseded[0]!, { sessionid: "superseded-native" });
-  fixture.state.onProbe = async () =>
-    assert.fail("retained Probe needs no replay");
-  fixture.dependencies.terminalPlugin.execute = async () =>
-    assert.fail("restored identity must resume its native conversation");
-  const refs: string[] = [];
-  fixture.dependencies.terminalPlugin.execute = async (_tab, command) => {
-    refs.push(command);
-    assert.equal(command, 'document-cli --resume "current-native"');
-  };
   fixture.dependencies.signal = new AbortController().signal;
-  assert.equal((await fixture.run()).summary.outcome, "succeeded");
-  assert.deepEqual(refs, ['document-cli --resume "current-native"']);
-  const after = await fixture.snapshot();
-  assert.deepEqual(after.probe, before.probe);
-  assert.deepEqual(after.superseded, before.superseded);
-  assert.equal(after.roles.documentation?.sessionid, "current-native");
+  fixture.dependencies.operator.pause = async (message) => {
+    assert.match(message, /Enter to restart/u);
+    return "q";
+  };
+  const submissions = fixture.state.submissions.length;
+  const result = await fixture.run();
+  assert.equal(result.summary.outcome, "cancelled");
+  assert.ok(fixture.dependencies.messages.includes("unable to recover"));
+  assert.equal(fixture.state.submissions.length, submissions);
+  assert.deepEqual(await fixture.snapshot(), before);
 });

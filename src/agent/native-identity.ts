@@ -64,10 +64,7 @@ function futureReview(
     const noChange = progress.noChange;
     if (noChange?.delivery !== undefined) return false;
     if (noChange?.review?.result === undefined) return true;
-    return (
-      noChange.review.result.outcome === "findings" &&
-      noChange.fix?.result === undefined
-    );
+    return noChange.review.result.outcome === "findings";
   }
   if (progress.publication !== undefined) return false;
   const reviews = progress.reviews;
@@ -77,6 +74,29 @@ function futureReview(
   if (last.result.outcome === "passed") return false;
   const max = loaded.config.workflow.maxReviewRounds;
   return max === undefined || last.round < max;
+}
+
+function hasStageEvidence(
+  stage: { probe?: unknown; invocation?: unknown } | undefined,
+): boolean {
+  return stage?.probe !== undefined || stage?.invocation !== undefined;
+}
+
+function hasNativeEvidence(
+  progress: ImplementationProgress,
+  role: NativeRole,
+): boolean {
+  if (role === "documentation") return hasStageEvidence(progress);
+  if (role === "review")
+    return (
+      hasStageEvidence(progress.noChange?.review) ||
+      (progress.reviews ?? []).some(hasStageEvidence)
+    );
+  return [
+    progress,
+    progress.noChange?.fix,
+    ...(progress.reviews ?? []).map((round) => round.fix),
+  ].some(hasStageEvidence);
 }
 
 function resumableRoles(
@@ -89,7 +109,10 @@ function resumableRoles(
   } else {
     if (progress.result === undefined || pendingFix(progress))
       roles.add("implement");
-    if (futureReview(progress, loaded)) roles.add("review");
+    if (futureReview(progress, loaded)) {
+      roles.add("implement");
+      roles.add("review");
+    }
   }
   return roles;
 }
@@ -106,6 +129,10 @@ export function validateNativeSessions(
         `unable to recover: native ${role} conversation identity changed; restart to use the current Agent configuration`,
       );
     if (saved !== undefined) assertNativeSession(object(saved), profile, role);
+    else if (hasNativeEvidence(progress, role))
+      throw new Error(
+        `unable to recover: native ${role} conversation identity is missing; restart to use the current Agent configuration`,
+      );
   }
   for (const [kind, attempts] of [
     ["CI repair", progress.publication?.ciRepair?.attempts],
@@ -117,7 +144,14 @@ export function validateNativeSessions(
       ];
     for (const attempt of attempts ?? []) {
       const saved = object(attempt) as Partial<RepairProgress>;
-      if (saved.result !== undefined || saved.sessionid === undefined) continue;
+      if (saved.result !== undefined) continue;
+      if (saved.sessionid === undefined) {
+        if (saved.probe !== undefined || saved.invocation !== undefined)
+          throw new Error(
+            `unable to recover: native ${kind} conversation identity is missing; restart to use the current Agent configuration`,
+          );
+        continue;
+      }
       assertNativeSession(object(saved), profile, kind);
     }
   }

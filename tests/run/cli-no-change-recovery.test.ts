@@ -34,7 +34,7 @@ await test("an accepted no-change Review survives restart without rerunning eith
   assert.equal(fixture.noChangeState.comments.length, 1);
 });
 
-await test("a retained no-change Review Probe yields to a startup reference without a new Probe", async (t) => {
+await test("a retained no-change Review Probe without a saved fingerprint requires an explicit restart", async (t) => {
   const fixture = await noChangeReviewRun(t);
   fixture.noChangeState.onReview = async () => {
     /* Interrupt before the Review handoff is accepted. */
@@ -51,31 +51,19 @@ await test("a retained no-change Review Probe yields to a startup reference with
   await writeFile(checkpointFile(fixture.directory)!, JSON.stringify(saved));
 
   const before = fixture.state.submissions.length;
-  const probes = fixture.state.probeCount;
-  fixture.noChangeState.onReview = async (review) =>
-    publish(review.invocation!.path, passed());
-  fixture.state.onSleep = async () => {
-    /* The resumed Review must settle without another interruption. */
-  };
   fixture.dependencies.signal = new AbortController().signal;
-  const commands: string[] = [];
-  fixture.dependencies.terminalPlugin.execute = async (_tab, command) => {
-    commands.push(command);
-    return "startup-review-native";
+  fixture.dependencies.operator.pause = async (message) => {
+    assert.equal(
+      message,
+      "Enter to restart the entire Issue #50, or q to exit Runner.",
+    );
+    return "q";
   };
   const result = await fixture.run();
-  assert.deepEqual(commands, ["review-cli start"]);
-  assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
-  assert.equal(fixture.state.probeCount, probes);
-  assert.ok(
-    fixture.state.submissions
-      .slice(before)
-      .every(({ text }) => !text.startsWith("Session Probe\n")),
-  );
-  assert.equal(
-    (await fixture.snapshot()).roles.review?.sessionid,
-    "startup-review-native",
-  );
+  assert.equal(result.summary.outcome, "cancelled");
+  assert.ok(fixture.dependencies.messages.includes("unable to recover"));
+  assert.equal(fixture.state.submissions.length, before);
+  assert.equal((await fixture.snapshot()).roles.review, undefined);
 });
 
 for (const stage of ["review", "fix"] as const) {
