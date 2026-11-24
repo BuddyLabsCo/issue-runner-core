@@ -1,8 +1,10 @@
 # Edit this file and prompts/{implement,review,documentation}.md before running.
 # An interrupted Run resumes when its Run scope is unchanged: project directory,
 # repository, checkout, effective target branch, selected work, the Issue list
-# used by Parent or value-less Issue selection, and Review settings. Other edits
-# apply to remaining work. Older configuration-byte checkpoints are ignored.
+# used by Parent or value-less Issue selection, and Review settings. A saved
+# native conversation also requires the same agents.<role>.agent value and exact
+# resume command. Other edits apply only when no saved conversation is resumed.
+# Older configuration-byte checkpoints are ignored.
 
 repository: your-account/your-repository # GitHub owner/repo matching the checkout.
 checkout: /absolute/path/to/your-repository # Absolute path; Windows: C:\work\your-repository.
