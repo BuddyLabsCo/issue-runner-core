@@ -176,9 +176,11 @@ export interface PublicationProgress {
   creationAttempted?: boolean;
   discoveryNotBefore?: number;
   checksDeadline?: number;
+  checksStartedAt?: number;
   checks?: RequiredCheck[];
   checksState?: PullRequestMergeFacts;
   mergeDeadline?: number;
+  mergeStartedAt?: number;
   merge?: PullRequestState;
   closure?: { state: "closed"; stateReason: "completed" };
   deliveryLabels?: string[];

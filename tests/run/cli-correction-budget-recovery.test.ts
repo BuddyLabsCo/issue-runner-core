@@ -238,7 +238,9 @@ await test("lowering operationRetry below retained attempts recovers, pauses, an
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   assert.equal(attempts, 2);
   const saved = await fixture.snapshot();
-  const retry = Object.values(saved.operations!)[0]!;
+  const retry = Object.values(saved.operations!).find(
+    (operation) => operation.notBefore !== undefined,
+  )!;
   assert.equal(retry.consumed, 2);
   await writeFile(
     path.join(fixture.directory, "config.yaml"),
@@ -272,6 +274,109 @@ await test("lowering operationRetry below retained attempts recovers, pauses, an
   assert.deepEqual(
     sleeps.filter((ms) => ms !== 10_000 && ms !== 30_000),
     [9_000],
+  );
+  const recovered = await fixture.snapshot();
+  assert.deepEqual(recovered.invocation, saved.invocation);
+  assert.equal(recovered.execution_id, saved.execution_id);
+});
+
+await test("lowering operationRetry below a retained count without a scheduled delay recovers and pauses once", async (t) => {
+  const fixture = await implementationRun(t, {
+    ...validConfig,
+    operationRetry: 3,
+    operationRetryDelay: [1],
+  });
+  const inspect = fixture.dependencies.gitWorkspace.inspect.bind(
+    fixture.dependencies.gitWorkspace,
+  );
+  let attempts = 0;
+  let resumedAttempt: number | undefined;
+  let unavailable = true;
+  fixture.dependencies.gitWorkspace.inspect = async (input) => {
+    if (fixture.state.taskCount) {
+      attempts += 1;
+      if (attempts === 4) fixture.controller.abort();
+      if (unavailable) throw new Error("Git inspection unavailable");
+      resumedAttempt ??= attempts;
+    }
+    return inspect(input);
+  };
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  assert.equal(attempts, 4);
+  const saved = await fixture.snapshot();
+  const retry = Object.values(saved.operations!).find(
+    (operation) => operation.consumed === 4,
+  )!;
+  assert.equal(retry.notBefore, undefined);
+  await writeFile(
+    path.join(fixture.directory, "config.yaml"),
+    stringify({
+      ...validConfig,
+      workflow: { review: false },
+      operationRetry: 1,
+      operationRetryDelay: [1],
+    }),
+  );
+  unavailable = false;
+  fixture.dependencies.signal = new AbortController().signal;
+  const pauses: string[] = [];
+  fixture.dependencies.operator.pause = async (message) => {
+    pauses.push(message);
+    return "";
+  };
+  const result = await fixture.run();
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
+  assert.equal(pauses.length, 1);
+  assert.match(pauses[0]!, /Operation failed: Git inspection unavailable/u);
+  assert.equal(resumedAttempt, 5);
+  const recovered = await fixture.snapshot();
+  assert.deepEqual(recovered.invocation, saved.invocation);
+  assert.equal(recovered.execution_id, saved.execution_id);
+});
+
+await test("a delay-only change keeps the retained backoff for the already scheduled attempt", async (t) => {
+  const fixture = await implementationRun(t, {
+    ...validConfig,
+    operationRetry: 2,
+    operationRetryDelay: [4],
+  });
+  const inspect = fixture.dependencies.gitWorkspace.inspect.bind(
+    fixture.dependencies.gitWorkspace,
+  );
+  let unavailable = true;
+  fixture.dependencies.gitWorkspace.inspect = async (input) => {
+    if (fixture.state.taskCount && unavailable)
+      throw new Error("Git inspection unavailable");
+    return inspect(input);
+  };
+  let now = Date.parse("2026-10-30T00:00:00Z");
+  fixture.dependencies.clock.now = () => new Date(now);
+  fixture.state.onSleep = async (ms) => {
+    now += ms === 4_000 ? 1_500 : ms;
+    if (ms === 4_000) fixture.controller.abort();
+  };
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  const saved = await fixture.snapshot();
+  await writeFile(
+    path.join(fixture.directory, "config.yaml"),
+    stringify({
+      ...validConfig,
+      workflow: { review: false },
+      operationRetry: 2,
+      operationRetryDelay: [9],
+    }),
+  );
+  unavailable = false;
+  fixture.dependencies.signal = new AbortController().signal;
+  const sleeps: number[] = [];
+  fixture.state.onSleep = async (ms) => {
+    sleeps.push(ms);
+  };
+  const result = await fixture.run();
+  assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
+  assert.deepEqual(
+    sleeps.filter((ms) => ms !== 10_000 && ms !== 30_000),
+    [2_500],
   );
   const recovered = await fixture.snapshot();
   assert.deepEqual(recovered.invocation, saved.invocation);

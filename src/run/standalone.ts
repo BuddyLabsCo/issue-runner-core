@@ -337,8 +337,19 @@ async function executeStandalone(
       "merged",
       "delivered",
     ].includes(restored.publication.phase)
-  )
+  ) {
+    if (
+      !input.autoMerge &&
+      selected.ticket.state !== "closed" &&
+      ["conflict_repair", "pending_merge", "merge_requested"].includes(
+        restored.publication.phase,
+      )
+    ) {
+      report.detail = "Auto-merge is disabled; Pull Request retained";
+      return summary;
+    }
     return integrate(restored);
+  }
   if (
     selected.reason &&
     !completed &&

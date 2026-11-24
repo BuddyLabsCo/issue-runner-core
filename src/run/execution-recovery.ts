@@ -305,6 +305,7 @@ export async function restoreExecution(input: {
       }
       validateRepairContext(restored, loaded);
       validateRetryProgress(restored);
+      applyCurrentTimeouts(restored, loaded);
       return restored;
     }
   } catch (error) {
@@ -314,6 +315,29 @@ export async function restoreExecution(input: {
       `unable to recover: invalid ${documentation ? "documentation" : "implementation"} execution context`,
       { cause: error },
     );
+  }
+}
+
+function applyCurrentTimeouts(
+  progress: ImplementationProgress,
+  loaded: LoadedProject,
+): void {
+  const publication = progress.publication;
+  if (!publication) return;
+  const { requiredChecksMinutes, mergeQueueMinutes } = loaded.config.timeouts;
+  if (publication.checksStartedAt !== undefined) {
+    if (!Number.isFinite(publication.checksStartedAt))
+      throw new Error("unable to recover: invalid checks timeout basis");
+    if (publication.checksDeadline !== undefined)
+      publication.checksDeadline =
+        publication.checksStartedAt + requiredChecksMinutes * 60_000;
+  }
+  if (publication.mergeStartedAt !== undefined) {
+    if (!Number.isFinite(publication.mergeStartedAt))
+      throw new Error("unable to recover: invalid merge timeout basis");
+    if (publication.mergeDeadline !== undefined)
+      publication.mergeDeadline =
+        publication.mergeStartedAt + mergeQueueMinutes * 60_000;
   }
 }
 
