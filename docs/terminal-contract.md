@@ -86,7 +86,8 @@ export interface TerminalPlugin {
     Promise<{ handle: TabHandle; io: TerminalIO }>;
   // Submit the opaque command, then Right and Enter; resolve after input, not process exit.
   // Core passes start unchanged and replaces every {sessionref} literally for resume.
-  execute(handle: TabHandle, command: string): Promise<void>;
+  // Resolve with the native session reference when startup establishes it; otherwise resolve with void.
+  execute(handle: TabHandle, command: string): Promise<string | void>;
   // Close only this owned tab; reject foreign handles/backend errors. Absent is allowed.
   // Never choose a replacement target. Closure does not prove descendant processes stopped.
   closeTab(tab: TabHandle): Promise<void>;
@@ -118,7 +119,7 @@ flowchart TD
     Verify -- No --> Error["Fail startup with cause"]
     Verify -- Yes --> Layout["Unix: prefix/lib/node_modules + bin symlink<br/>Windows: prefix/node_modules + command.cmd"]
     Layout --> Agent{"Configured Agent can form issue-runner-agent-AGENT?"}
-    Agent -- No --> Base["Base startup: delay and Session Probe"]
+    Agent -- No --> Base["Base startup: delay, then reference, conditional Probe, or exact resume"]
     Agent -- Yes --> Package{"Direct same-prefix package present?"}
     Package -- Absent --> Base
     Package -- Present --> Entry["Resolve Node import exports from that prefix"]
@@ -199,7 +200,6 @@ Enhancements must export contract version 3 and implement `enhancementResume`. C
 ## Lifecycle and failure flows
 
 ### Base startup and exact resume
-
 ```mermaid
 %%{init: {"sequence": {"width": 220, "wrap": true}}}%%
 sequenceDiagram
@@ -214,14 +214,18 @@ sequenceDiagram
     end
     Core->>Core: Wait configured base delay (default 10 seconds)
     alt New conversation
-        Core->>Terminal: io.submitText(identity-only Session Probe)
-        Core->>Core: Observe assigned file, validate actual native ref
-        opt Invalid Probe result
-            Core->>Terminal: Correction with fresh Probe path
-            Core->>Core: Observe and validate corrected file
+        alt execute returned a native reference
+            Core->>Core: Validate and checkpoint reference, no Probe
+        else No reference
+            Core->>Terminal: io.submitText(identity-only Session Probe)
+            Core->>Core: Observe assigned file, validate actual native ref
+            opt Invalid Probe result
+                Core->>Terminal: Correction with fresh Probe path
+                Core->>Core: Observe and validate corrected file
+            end
         end
     else Saved conversation
-        Core->>Core: Validate saved exact ref, no fresh Probe
+        Core->>Core: Validate saved exact ref and any returned ref, no fresh Probe
     end
     Note over Core,Terminal: A retained Probe may establish identity before exact resume
     Core->>Terminal: io.submitText(task, correction, or saved continuation)

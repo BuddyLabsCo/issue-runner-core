@@ -170,7 +170,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
         );
         const expected = sessionid();
         if (expected !== undefined) saveIdentity(expected, expected);
-        let identity: string | undefined;
+        let identity: unknown;
         for (;;) {
           try {
             identity = await conversations.ready(tab, profile, expected, () =>
@@ -192,7 +192,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
             );
           }
         }
-        if (input.enhancements?.[profile.agent]) {
+        if (input.enhancements?.[profile.agent] || identity !== undefined) {
           saveIdentity(identity, expected);
           if (expected === undefined) await persist();
         }
@@ -235,14 +235,17 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
         });
         return true;
       };
-      const submitProbe = async (text: string) =>
-        conversations.submit(await open(), text, {
+      const submitProbe = async (text: string) => {
+        const tab = await open();
+        if (sessionid()) return;
+        await conversations.submit(tab, text, {
           expectedFile: stage.probe!.path,
           recoveryText: renderPrompt(probeRecoveryInstructions, {
             temporary: JSON.stringify(`${stage.probe!.path}.tmp`),
             path: JSON.stringify(stage.probe!.path),
           }),
         });
+      };
       if (!sessionid()) {
         stage.probe ??= { path: assignment(`${purpose}-probe`) };
         if (primaryExecution) progress.phase = "probing";
@@ -261,7 +264,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
           !(await readHandoff(stage.probe.path))
         )
           await submitProbe(prompt());
-        for (;;) {
+        while (!sessionid()) {
           signal?.throwIfAborted();
           if (tab) conversations.check(tab);
           const observed = await readHandoff(stage.probe.path);

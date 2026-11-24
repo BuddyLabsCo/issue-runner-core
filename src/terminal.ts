@@ -16,7 +16,7 @@ export interface TerminalPlugin {
   createTab(
     options: CreateTabOptions,
   ): Promise<{ handle: TabHandle; io: TerminalIO }>;
-  execute(handle: TabHandle, command: string): Promise<void>;
+  execute(handle: TabHandle, command: string): Promise<string | void>;
   closeTab(tab: TabHandle): Promise<void>;
 }
 

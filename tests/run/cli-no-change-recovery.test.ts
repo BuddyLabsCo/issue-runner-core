@@ -34,6 +34,50 @@ await test("an accepted no-change Review survives restart without rerunning eith
   assert.equal(fixture.noChangeState.comments.length, 1);
 });
 
+await test("a retained no-change Review Probe yields to a startup reference without a new Probe", async (t) => {
+  const fixture = await noChangeReviewRun(t);
+  fixture.noChangeState.onReview = async () => {
+    /* Interrupt before the Review handoff is accepted. */
+  };
+  fixture.state.onSleep = async (ms) => {
+    if (ms === 250) fixture.controller.abort();
+  };
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  const saved = await fixture.snapshot();
+  assert.ok(saved.noChange?.review?.probe);
+  delete saved.roles.review;
+  delete saved.noChange.review.invocation;
+  delete saved.noChange.review.pendingPrompt;
+  await writeFile(checkpointFile(fixture.directory)!, JSON.stringify(saved));
+
+  const before = fixture.state.submissions.length;
+  const probes = fixture.state.probeCount;
+  fixture.noChangeState.onReview = async (review) =>
+    publish(review.invocation!.path, passed());
+  fixture.state.onSleep = async () => {
+    /* The resumed Review must settle without another interruption. */
+  };
+  fixture.dependencies.signal = new AbortController().signal;
+  const commands: string[] = [];
+  fixture.dependencies.terminalPlugin.execute = async (_tab, command) => {
+    commands.push(command);
+    return "startup-review-native";
+  };
+  const result = await fixture.run();
+  assert.deepEqual(commands, ["review-cli start"]);
+  assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
+  assert.equal(fixture.state.probeCount, probes);
+  assert.ok(
+    fixture.state.submissions
+      .slice(before)
+      .every(({ text }) => !text.startsWith("Session Probe\n")),
+  );
+  assert.equal(
+    (await fixture.snapshot()).roles.review?.sessionid,
+    "startup-review-native",
+  );
+});
+
 for (const stage of ["review", "fix"] as const) {
   await test(`interrupted no-change ${stage} reuses the native session and assigned handoff`, async (t) => {
     const fixture = await noChangeReviewRun(t);
