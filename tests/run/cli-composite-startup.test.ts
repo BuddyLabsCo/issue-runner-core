@@ -388,10 +388,14 @@ await test("enhanced startup completes preflight and monitoring before command, 
   const task = fixture.state.onTask;
   fixture.state.onTask = async (file) => {
     order.push("task");
-    assert.equal(
-      (await fixture.snapshot()).roles.implement?.sessionid,
-      "enhanced-native",
-    );
+    assert.deepEqual((await fixture.snapshot()).roles.implement, {
+      sessionid: "enhanced-native",
+      agent: validConfig.agents.implement.agent,
+      resume: validConfig.agents.implement.resume.replaceAll(
+        "{sessionref}",
+        () => "enhanced-native",
+      ),
+    });
     await task(file);
   };
   fixture.state.onClose = async () => {

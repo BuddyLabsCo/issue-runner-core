@@ -26,7 +26,14 @@ await test("base startup checkpoints an execute reference after the startup dela
   fixture.state.onTask = async (file) => {
     order.push("task");
     const saved = await fixture.snapshot();
-    assert.equal(saved.roles.implement?.sessionid, reference);
+    assert.deepEqual(saved.roles.implement, {
+      sessionid: reference,
+      agent: validConfig.agents.implement.agent,
+      resume: validConfig.agents.implement.resume.replaceAll(
+        "{sessionref}",
+        () => reference,
+      ),
+    });
     assert.equal(saved.probe, undefined);
     fixture.state.evidence.commits = committed().commits;
     await publish(file, committed());

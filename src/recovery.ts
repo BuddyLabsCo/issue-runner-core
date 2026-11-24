@@ -8,6 +8,23 @@ import type {
   PullRequestState,
   PullRequestMergeFacts,
 } from "./run/contracts.ts";
+import type { RunScope } from "./run/scope.ts";
+
+export const checkpointVersion = 1;
+
+export function sameRepositoryName(value: unknown, expected: string): boolean {
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0 &&
+    value.toLowerCase() === expected.toLowerCase()
+  );
+}
+
+export interface NativeSession {
+  sessionid: string;
+  agent: string;
+  resume: string;
+}
 
 export function hashRunInput(
   commandName: string,
@@ -46,6 +63,8 @@ export interface ReviewResult {
 
 export interface StageProgress<R> {
   sessionid?: string;
+  agent?: string;
+  resume?: string;
   probe?: { path: string };
   invocation?: Invocation;
   pendingPrompt?: string;
@@ -88,6 +107,8 @@ export interface ReservationIdentity {
 }
 
 export interface ImplementationProgress extends StageProgress<PRExecutionResult> {
+  checkpoint_version: typeof checkpointVersion;
+  run_scope?: RunScope;
   operations?: Record<string, OperationProgress>;
   reservation?: ReservationIdentity;
   purpose?: "documentation";
@@ -122,7 +143,7 @@ export interface ImplementationProgress extends StageProgress<PRExecutionResult>
     | "conflict_repair_completed"
     | "publication_eligible";
   roles: Partial<
-    Record<"implement" | "review" | "documentation", { sessionid: string }>
+    Record<"implement" | "review" | "documentation", NativeSession>
   >;
   pr_title?: string;
   pr_body?: string;

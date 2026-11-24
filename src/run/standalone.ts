@@ -3,7 +3,11 @@ import path from "node:path";
 import { existsSync } from "node:fs";
 import type { LoadedProject } from "../config.ts";
 import { integrateImplementation } from "./integration.ts";
-import { saveProgress, type ImplementationProgress } from "../recovery.ts";
+import {
+  checkpointVersion,
+  saveProgress,
+  type ImplementationProgress,
+} from "../recovery.ts";
 import { runIssueStage, type IssueStageContext } from "../agent/stage.ts";
 import { executionPrompt } from "../prompts/implement.ts";
 import { reviewImplementation, verifiedImplementation } from "./review.ts";
@@ -131,6 +135,7 @@ async function executeStandalone(
     runId: context.runId,
     inputHash: context.inputHash,
     runArguments: context.runArguments,
+    ...(context.scope ? { scope: context.scope } : {}),
     restarting,
   });
   execution = restored;
@@ -429,6 +434,8 @@ async function executeStandalone(
   }
   const executionId = randomUUID();
   const progress: ImplementationProgress = (execution = restored ?? {
+    checkpoint_version: checkpointVersion,
+    ...(context.scope ? { run_scope: context.scope } : {}),
     ...(input.documentation ? { purpose: "documentation" } : {}),
     ...(started.reservation ? { reservation: started.reservation } : {}),
     run_id: context.runId,

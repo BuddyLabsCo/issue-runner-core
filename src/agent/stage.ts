@@ -18,6 +18,7 @@ import {
 import type { TerminalPlugin, EnhancementModule } from "../terminal.ts";
 import { NativeConversations, type ConversationTab } from "./conversation.ts";
 import { nonempty, object, readHandoff } from "./handoff.ts";
+import { nativeSession } from "./native-identity.ts";
 import { renderPrompt } from "../prompts/load.ts";
 import {
   probeInstructions,
@@ -153,8 +154,12 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
           throw new Error(
             "Invalid native session identity: expected the actual native ref and exact resume identity",
           );
-        if (repairRole) stage.sessionid = ref;
-        else progress.roles[role] = { sessionid: ref };
+        const identity = nativeSession(profile, ref);
+        if (repairRole) {
+          stage.sessionid = identity.sessionid;
+          stage.agent = identity.agent;
+          stage.resume = identity.resume;
+        } else progress.roles[role] = identity;
       };
       const open = async () => {
         tab ??= await conversations.create(

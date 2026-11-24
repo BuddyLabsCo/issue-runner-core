@@ -2,7 +2,11 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { LoadedProject } from "../config.ts";
 import { nonempty, object, readHandoff } from "../agent/handoff.ts";
-import { saveProgress, type BatchProgress } from "../recovery.ts";
+import {
+  sameRepositoryName,
+  saveProgress,
+  type BatchProgress,
+} from "../recovery.ts";
 import type { ChildPage, Ticket, Tracker } from "./contracts.ts";
 import { OperationStopped, type OperationOptions } from "./operations.ts";
 import type { RunContext } from "./run.ts";
@@ -95,14 +99,16 @@ function parseBatch(
   text: string,
   expected: Pick<
     BatchProgress,
-    "input_hash" | "run_arguments" | "repository" | "target_branch"
-  >,
+    "input_hash" | "repository" | "target_branch"
+  > & { run_arguments?: readonly string[] },
   maxBatchSize: number,
 ): BatchProgress {
   const saved = object(JSON.parse(text) as unknown);
   if (
-    Object.entries(expected).some(
-      ([key, value]) => JSON.stringify(saved[key]) !== JSON.stringify(value),
+    Object.entries(expected).some(([key, value]) =>
+      key === "repository"
+        ? !sameRepositoryName(saved[key], String(value))
+        : JSON.stringify(saved[key]) !== JSON.stringify(value),
     ) ||
     !nonempty(saved.run_id) ||
     (saved.completed !== undefined && typeof saved.completed !== "boolean") ||
@@ -213,8 +219,15 @@ export async function selectIssueBatch(
     repository: config.repository,
     target_branch: input.targetBranch,
   };
+  const comparison = context.scope
+    ? {
+        input_hash: ownership.input_hash,
+        repository: ownership.repository,
+        target_branch: ownership.target_branch,
+      }
+    : ownership;
   const recorded = previous
-    ? parseBatch(previous.text, ownership, config.maxBatchSize)
+    ? parseBatch(previous.text, comparison, config.maxBatchSize)
     : undefined;
   const eligible = input.eligible ?? (await eligibleIssueNumbers(input));
   const batch =

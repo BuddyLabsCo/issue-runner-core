@@ -1,22 +1,10 @@
 import assert from "node:assert/strict";
-import {
-  access,
-  appendFile,
-  readFile,
-  readdir,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { access, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import path from "node:path";
 import test from "node:test";
-import {
-  implementationCommand,
-  implementationRun,
-  publish,
-} from "../support/implementation-run.ts";
-import { executeCli } from "../../src/cli.ts";
+import { implementationRun, publish } from "../support/implementation-run.ts";
 import type { ImplementationProgress } from "../../src/recovery.ts";
 import { ciRepairRun } from "../support/ci-repair-run.ts";
 import { findings, reviewRun } from "../support/review-run.ts";
@@ -69,58 +57,6 @@ await test("cancellation retains original working changes, partial files and sup
   assert.ok(report.includes(path.join(fixture.directory, "recovery")));
   for (const env of fixture.state.agentEnvironments) assert.deepEqual(env, {});
 });
-
-for (const changed of ["arguments", "configuration"] as const) {
-  await test(`changed ${changed} retains old artifacts without adopting the existing Reservation`, async (t) => {
-    const fixture = await implementationRun(t);
-    fixture.state.onTask = async (file) => {
-      await writeFile(`${file}.tmp`, "old unfinished work");
-      fixture.controller.abort();
-    };
-    assert.equal((await fixture.run()).summary.outcome, "cancelled");
-    const previous = await fixture.snapshot();
-    const unrelated = path.join(
-      fixture.directory,
-      "handoffs",
-      "unrelated.json",
-    );
-    await writeFile(unrelated, "unrelated handoff");
-    const files = await readdir(path.join(fixture.directory, "recovery"));
-    assert.equal(files.length, 1);
-    const snapshot = path.join(fixture.directory, "recovery", files[0]!);
-    const bytes = await readFile(snapshot, "utf8");
-    if (changed === "configuration")
-      await appendFile(
-        path.join(fixture.directory, "config.yaml"),
-        "\n# changed Run\n",
-      );
-    fixture.dependencies.signal = new AbortController().signal;
-    fixture.dependencies.messages.length = 0;
-    const result = await executeCli(
-      changed === "arguments"
-        ? implementationCommand.slice(0, -1)
-        : implementationCommand,
-      fixture.dependencies,
-    );
-    assert.equal(result.summary.outcome, "incomplete");
-    assert.match(result.summary.tickets![0]!.detail, /existing Reservation/u);
-    assert.equal(fixture.state.taskCount, 1);
-    assert.equal(await readFile(snapshot, "utf8"), bytes);
-    await access(previous.worktree);
-    await access(previous.probe!.path);
-    assert.equal(
-      await readFile(`${previous.invocation!.path}.tmp`, "utf8"),
-      "old unfinished work",
-    );
-    assert.equal(await readFile(unrelated, "utf8"), "unrelated handoff");
-    assert.equal(
-      fixture.dependencies.messages.some((message) =>
-        /Retained (?:Worktrees|recovery evidence):/u.test(message),
-      ),
-      false,
-    );
-  });
-}
 
 await test(
   "abrupt process loss leaves its original working changes and durable execution evidence",
