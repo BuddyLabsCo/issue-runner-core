@@ -166,9 +166,16 @@ Auto-merge defaults on. `--no-auto-merge` applies to numbered Issues and standal
 
 ### Recovery and checkpoints
 
-An interrupted Run resumes when its canonical Run scope is unchanged. Scope covers the Project directory, repository, checkout, effective target branch, the selected Issue or Parent/Batch identity (including the configured Issue list for Parent and value-less Issue Runs), and Review settings for Issue and Parent Runs. Comments, formatting, timeouts, `autoMerge`, prompt files, and other changes outside that scope do not prevent recovery. An existing native conversation is resumed only when its Agent `agent` value and exact `resume` command still match.
+Runner saves progress to the Project's `recovery/` directory. After an interruption, rerun the same command to continue from the last checkpoint.
 
-Checkpoints live under the Project's `recovery/` directory. Raw Run arguments remain there for diagnostics only. This scope model intentionally breaks checkpoints written by older configuration-byte identities: Runner ignores them instead of migrating or deleting them. Worktrees, Handoffs, native evidence, and Reservations retained by that older work are not cleaned automatically; release or remove them manually after confirming they are no longer needed.
+A checkpoint is reused only when its format and Run scope still match:
+
+- Project directory, repository, checkout, and effective target branch
+- Selected Issue or Parent/Batch identity, including the configured Issue list
+- Review settings for Issue and Parent Runs
+- Agent `agent` value and exact `resume` command for any conversation still in progress
+
+If any of these differ, Runner reports `unable to recover`. An affected Issue or documentation Run asks whether to restart from scratch; a failed Batch checkpoint ends the Run. Retained Worktrees and Handoffs are left on disk.
 
 ## Known issues
 
