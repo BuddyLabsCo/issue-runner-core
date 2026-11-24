@@ -304,7 +304,7 @@ export async function restoreExecution(input: {
         validateReviewContext(restored, loaded);
       }
       validateRepairContext(restored, loaded);
-      validateRetryProgress(restored, loaded);
+      validateRetryProgress(restored);
       return restored;
     }
   } catch (error) {
@@ -317,10 +317,7 @@ export async function restoreExecution(input: {
   }
 }
 
-function validateRetryProgress(
-  progress: ImplementationProgress,
-  loaded: LoadedProject,
-): void {
+function validateRetryProgress(progress: ImplementationProgress): void {
   try {
     const stages = [
       progress,
@@ -348,12 +345,10 @@ function validateRetryProgress(
       if (
         !Number.isSafeInteger(retry.consumed) ||
         (retry.consumed as number) < 1 ||
-        (retry.consumed as number) > loaded.config.operationRetry + 1 ||
         typeof retry.error !== "string" ||
         (retry.notBefore !== undefined &&
           (!Number.isFinite(retry.notBefore) ||
-            (retry.notBefore as number) < 0 ||
-            (retry.consumed as number) > loaded.config.operationRetry))
+            (retry.notBefore as number) < 0))
       )
         throw new Error("invalid operation budget or delay");
     }
