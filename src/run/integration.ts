@@ -31,6 +31,7 @@ export async function integrateImplementation(input: {
   read: ReadOperation;
   persist: () => Promise<void>;
   beforeDispatch?: () => Promise<boolean>;
+  autoMerge: boolean;
   issueClosureReason: Ticket["stateReason"];
   continuePublication: (observedConflict?: boolean) => Promise<string>;
 }): Promise<{ outcome: "succeeded"; reason: string }> {
@@ -106,11 +107,15 @@ export async function integrateImplementation(input: {
     publication.conflict ??= reason;
     publication.phase = "conflict_repair";
     delete publication.mergeDeadline;
+    delete publication.mergeStartedAt;
     await persist();
     await input.continuePublication(true);
   };
   const waitForMergeability = async () => {
-    publication.mergeDeadline ??= now() + mergeTimeout;
+    if (publication.mergeDeadline === undefined) {
+      publication.mergeStartedAt = now();
+      publication.mergeDeadline = now() + mergeTimeout;
+    }
     await persist();
     const remaining = publication.mergeDeadline - now();
     if (remaining > 0) await sleep(Math.min(10_000, remaining));
@@ -121,6 +126,7 @@ export async function integrateImplementation(input: {
         context.signal,
       );
       delete publication.mergeDeadline;
+      delete publication.mergeStartedAt;
       await persist();
     }
   };
@@ -164,6 +170,10 @@ export async function integrateImplementation(input: {
     }
     if (input.issueClosureReason !== null)
       throw new OperationStopped("Issue is already terminal");
+    if (!input.autoMerge)
+      throw new OperationStopped(
+        "Auto-merge is disabled; Pull Request retained",
+      );
     if (state.mergeFailure !== null) {
       await pauseForOperator(
         context.operator,
@@ -173,6 +183,7 @@ export async function integrateImplementation(input: {
       if (publication.phase === "merge_requested") {
         publication.phase = "pending_merge";
         delete publication.mergeDeadline;
+        delete publication.mergeStartedAt;
         await persist();
       }
       observation = undefined;
@@ -201,6 +212,7 @@ export async function integrateImplementation(input: {
         } else {
           delete publication.conflict;
           delete publication.mergeDeadline;
+          delete publication.mergeStartedAt;
           publication.phase = "pr_created";
           publication.discoveryNotBefore = now() + 30_000;
           await persist();
@@ -290,7 +302,10 @@ export async function integrateImplementation(input: {
 
     if (publication.phase !== "merge_requested") {
       publication.phase = "merge_requested";
-      publication.mergeDeadline ??= now() + mergeTimeout;
+      if (publication.mergeDeadline === undefined) {
+        publication.mergeStartedAt = now();
+        publication.mergeDeadline = now() + mergeTimeout;
+      }
       if (progress.operations) delete progress.operations[mergeKey];
       await persist();
     }
@@ -308,6 +323,7 @@ export async function integrateImplementation(input: {
       );
       publication.phase = "pending_merge";
       delete publication.mergeDeadline;
+      delete publication.mergeStartedAt;
       await persist();
     } else await sleep(Math.min(10_000, remaining));
     observation = undefined;

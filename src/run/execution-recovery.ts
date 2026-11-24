@@ -149,6 +149,7 @@ export async function restoreExecution(input: {
   runId: string;
   inputHash: string;
   runArguments: readonly string[];
+  now: number;
   scope?: RunScope;
   restarting?: boolean;
 }): Promise<ImplementationProgress | undefined> {
@@ -304,7 +305,8 @@ export async function restoreExecution(input: {
         validateReviewContext(restored, loaded);
       }
       validateRepairContext(restored, loaded);
-      validateRetryProgress(restored, loaded);
+      validateRetryProgress(restored);
+      applyCurrentTimeouts(restored, loaded, input.now);
       return restored;
     }
   } catch (error) {
@@ -317,10 +319,38 @@ export async function restoreExecution(input: {
   }
 }
 
-function validateRetryProgress(
+function applyCurrentTimeouts(
   progress: ImplementationProgress,
   loaded: LoadedProject,
+  now: number,
 ): void {
+  const publication = progress.publication;
+  if (!publication) return;
+  const { requiredChecksMinutes, mergeQueueMinutes } = loaded.config.timeouts;
+  const valid = (value: number) => Number.isFinite(value) && value >= 0;
+  if (
+    publication.checksStartedAt !== undefined &&
+    !valid(publication.checksStartedAt)
+  )
+    throw new Error("unable to recover: invalid checks timeout basis");
+  if (
+    publication.mergeStartedAt !== undefined &&
+    !valid(publication.mergeStartedAt)
+  )
+    throw new Error("unable to recover: invalid merge timeout basis");
+  if (publication.checksDeadline !== undefined) {
+    publication.checksStartedAt ??= now;
+    publication.checksDeadline =
+      publication.checksStartedAt + requiredChecksMinutes * 60_000;
+  }
+  if (publication.mergeDeadline !== undefined) {
+    publication.mergeStartedAt ??= now;
+    publication.mergeDeadline =
+      publication.mergeStartedAt + mergeQueueMinutes * 60_000;
+  }
+}
+
+function validateRetryProgress(progress: ImplementationProgress): void {
   try {
     const stages = [
       progress,
@@ -348,12 +378,10 @@ function validateRetryProgress(
       if (
         !Number.isSafeInteger(retry.consumed) ||
         (retry.consumed as number) < 1 ||
-        (retry.consumed as number) > loaded.config.operationRetry + 1 ||
         typeof retry.error !== "string" ||
         (retry.notBefore !== undefined &&
           (!Number.isFinite(retry.notBefore) ||
-            (retry.notBefore as number) < 0 ||
-            (retry.consumed as number) > loaded.config.operationRetry))
+            (retry.notBefore as number) < 0))
       )
         throw new Error("invalid operation budget or delay");
     }

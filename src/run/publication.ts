@@ -320,7 +320,10 @@ export async function publishImplementation(
         await context.clock.sleep(wait);
         context.signal?.throwIfAborted();
       }
-      publication.checksDeadline ??= checksDeadline();
+      if (publication.checksDeadline === undefined) {
+        publication.checksStartedAt = context.clock.now().getTime();
+        publication.checksDeadline = checksDeadline();
+      }
       const { checks, merge } = await read(
         "required_checks",
         target,
@@ -391,6 +394,7 @@ export async function publishImplementation(
           : "Required checks timed out.",
         context.signal,
       );
+      publication.checksStartedAt = context.clock.now().getTime();
       publication.checksDeadline = checksDeadline();
       await persist();
     }

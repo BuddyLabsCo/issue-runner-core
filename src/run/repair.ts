@@ -207,6 +207,7 @@ export async function repairPullRequest(
         publication.discoveryNotBefore = input.clock.now().getTime() + 30_000;
       else publication.phase = "pending_merge";
       delete publication.checksDeadline;
+      delete publication.checksStartedAt;
       await input.persist();
       return;
     }
@@ -426,8 +427,10 @@ export function acceptRepairPush(
   publication.phase = "pr_created";
   delete publication.conflict;
   delete publication.mergeDeadline;
+  delete publication.mergeStartedAt;
   publication.discoveryNotBefore = now + 30_000;
   delete publication.checksDeadline;
+  delete publication.checksStartedAt;
   delete publication.checks;
   delete publication.checksState;
 }

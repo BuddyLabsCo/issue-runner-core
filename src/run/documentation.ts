@@ -207,6 +207,7 @@ export async function runDocumentation(
       runId: maintenance.run_id,
       inputHash: context.inputHash,
       runArguments: context.runArguments,
+      now: context.clock.now().getTime(),
       scope,
     });
     if (!progress)
