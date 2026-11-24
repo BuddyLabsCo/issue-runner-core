@@ -134,6 +134,9 @@ async function saveRerun(
   checkpoint: RerunCheckpoint,
 ): Promise<void> {
   input.repair.actionsRerun = checkpoint;
+  input.stage.progress.publication!.checksStartedAt = input.stage.clock
+    .now()
+    .getTime();
   input.stage.progress.publication!.checksDeadline = input.checksDeadline();
   await input.stage.persist();
 }

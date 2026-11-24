@@ -103,6 +103,59 @@ for (const interruption of [
   });
 }
 
+for (const phase of ["pending_merge", "merge_requested"] as const) {
+  await test(`recovery with auto-merge disabled retains a ${phase} Pull Request without another merge request`, async (t) => {
+    const fixture = await integrationRun(t);
+    if (phase === "pending_merge") {
+      fixture.integrationState.onMerge = async () => {
+        fixture.controller.abort();
+        return { outcome: "accepted" };
+      };
+    } else {
+      fixture.integrationState.onMerge = async () => {
+        fixture.integrationState.pullRequest.mergeRequested = true;
+        throw new Error("queue response lost");
+      };
+      fixture.state.onSleep = async () => {
+        if (fixture.integrationState.pullRequest.mergeRequested)
+          fixture.controller.abort();
+      };
+    }
+    assert.equal((await fixture.run()).summary.outcome, "cancelled");
+    assert.equal((await fixture.snapshot()).publication!.phase, phase);
+    const requests = fixture.integrationState.requests.length;
+    assert.equal(requests, 1);
+    fixture.dependencies.signal = new AbortController().signal;
+    fixture.state.onSleep = async () => {
+      /* Retained work runs without further waits in this scenario. */
+    };
+    fixture.dependencies.operator.pause = async () =>
+      assert.fail("auto-merge disabled recovery must not pause");
+    const result = await executeCli(
+      [...implementationCommand, "--no-auto-merge"],
+      fixture.dependencies,
+    );
+    assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
+    assert.match(
+      result.summary.tickets![0]!.detail ?? "",
+      /Auto-merge is disabled/u,
+    );
+    assert.equal(fixture.integrationState.requests.length, requests);
+    assert.equal(fixture.integrationState.closures, 0);
+    assert.equal((await fixture.snapshot()).publication!.phase, phase);
+    fixture.integrationState.pullRequest.merged = true;
+    const delivered = await fixture.run();
+    assert.equal(
+      delivered.summary.outcome,
+      "succeeded",
+      JSON.stringify(delivered),
+    );
+    assert.equal(fixture.integrationState.requests.length, requests);
+    assert.equal(fixture.integrationState.closures, 1);
+    assert.equal((await fixture.snapshot()).publication!.phase, "delivered");
+  });
+}
+
 await test("restart from durable pushed evidence observes and adopts an exact PR without another write", async (t) => {
   const fixture = await publicationRun(t);
   const { gitWorkspace } = fixture.dependencies;

@@ -135,6 +135,7 @@ async function executeStandalone(
     runId: context.runId,
     inputHash: context.inputHash,
     runArguments: context.runArguments,
+    now: context.clock.now().getTime(),
     ...(context.scope ? { scope: context.scope } : {}),
     restarting,
   });
@@ -298,6 +299,7 @@ async function executeStandalone(
           codeHost: input.codeHost,
           tracker,
           read,
+          autoMerge: input.autoMerge,
           issueClosureReason: started.ticket.stateReason,
           continuePublication: (conflict) => publish(progress, conflict),
         });
