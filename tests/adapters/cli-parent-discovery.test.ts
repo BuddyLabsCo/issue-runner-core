@@ -18,7 +18,6 @@ import {
   issue,
   observation,
   reservation,
-  runnerNotFound,
 } from "../support/github-parent-discovery.ts";
 
 await test("parent completion uses a final scope scan and confirms closure from the mutation response", async (t) => {
@@ -263,16 +262,7 @@ for (const invalid of [
   });
 }
 
-for (const {
-  name,
-  subIssues,
-  parentFields,
-  label,
-  outcome,
-  error,
-  cancel,
-  missingUser,
-} of [
+for (const { name, subIssues, parentFields, label, outcome, error, cancel } of [
   {
     name: "a readable foreign child fails the Run without pause or retry",
     subIssues: connection([
@@ -311,12 +301,6 @@ for (const {
     outcome: "incomplete",
   },
   {
-    name: "an empty parent needs no Runner ID when gh reports a missing user",
-    subIssues: connection([]),
-    missingUser: true,
-    outcome: "no_work",
-  },
-  {
     name: "cancellation during the first discovery request prevents every continuation",
     subIssues: connection([child(51)], 2, "child-next", true),
     outcome: "cancelled",
@@ -344,18 +328,7 @@ for (const {
           issue: { ...result.data.repository.issue, ...parentFields },
         },
       };
-      return missingUser
-        ? {
-            stdout: JSON.stringify({
-              data: { ...data, user: null },
-              errors: [runnerNotFound],
-            }),
-            error: new Error(
-              "gh: Could not resolve to a User with the login of 'runner'.",
-            ),
-            exitCode: 1,
-          }
-        : JSON.stringify({ data });
+      return JSON.stringify({ data });
     };
     const result = await executeCli(
       ["run", "--project", "demo", "--parent", "48"],

@@ -11,6 +11,7 @@ import {
   discoverParent,
   readIssueStart,
   readParentCompletion,
+  readViewer,
 } from "./github-issue-facts.ts";
 import { reserveIssue } from "./github-reservation.ts";
 
@@ -235,6 +236,10 @@ export class GitHubTracker implements Tracker {
       parentTicket,
       signal,
     );
+  }
+
+  readViewer(signal?: AbortSignal) {
+    return readViewer(this.client, signal);
   }
 
   reserveIssue(additions: ReservationAdditions, signal?: AbortSignal) {

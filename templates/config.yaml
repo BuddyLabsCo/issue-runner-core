@@ -22,7 +22,6 @@ workflow:
   maxReviewRounds: 2 # Optional positive cap; final findings still receive a fix.
   docMaintainTriggerLabel: "" # Run documentation after a Batch delivers this label; empty disables.
 tracker:
-  runnerAccount: your-github-account # GitHub account assigned to reserved Issues.
   reservationLabel: sandcastle:reserved # Core creates this label when it first needs to reserve an Issue.
 codeHost:
   adminMerge: false # Request administrator merge. GitHub still enforces bypass permissions.

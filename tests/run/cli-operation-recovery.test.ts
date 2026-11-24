@@ -20,6 +20,7 @@ import { executeCli } from "../../src/cli.ts";
 import { deferred } from "../support/implementation-run.ts";
 import { child, parentRun } from "../support/parent-run.ts";
 import { validConfig } from "../support/cli-project.ts";
+import { testViewer } from "../support/cli-dependencies.ts";
 
 for (const response of ["q", null]) {
   await test(`audit creation rejects skip and success claims before ${response ?? "EOF"} cancels without delivery effects`, async (t) => {
@@ -283,7 +284,6 @@ for (const applied of ["label", "runner", "both"] as const) {
     const fixture = await implementationRun(t, {
       ...validConfig,
       operationRetry: 1,
-      tracker: { ...validConfig.tracker, runnerAccount: "runnerbot" },
     });
     const tracker = fixture.dependencies.tracker;
     const read = tracker.readIssueStart.bind(tracker);
@@ -306,7 +306,11 @@ for (const applied of ["label", "runner", "both"] as const) {
           reservation.name,
         );
       if (applied !== "label")
-        await tracker.addAssignee(issue.repository, issue.number, "RunnerBot");
+        await tracker.addAssignee(
+          issue.repository,
+          issue.number,
+          testViewer.login,
+        );
       throw new Error("response lost after mutation");
     };
     const result = await fixture.run();
@@ -358,7 +362,7 @@ await test("a failed start read cannot authorize adopting markers seen on the ne
   };
   fixture.state.onSleep = async () => {
     fixture.state.ticket.labels!.push(validConfig.tracker.reservationLabel);
-    fixture.state.ticket.assignees!.push(validConfig.tracker.runnerAccount);
+    fixture.state.ticket.assignees!.push(testViewer.login);
   };
   tracker.reserveIssue = async () =>
     assert.fail("unexpected Reservation write");

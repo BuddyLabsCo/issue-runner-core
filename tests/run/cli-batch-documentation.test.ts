@@ -115,6 +115,22 @@ for (const scope of [["--issue", "51"], ["--issue"]]) {
   });
 }
 
+await test("a numbered --issue with documentation enabled uses only its IssueStart viewer", async (t) => {
+  const fixture = await batchDocumentationRun(
+    t,
+    [child(51, { labels: ["ready-for-agent", "Docs"] })],
+    { ...batchDocumentationConfig, issueList: [51] },
+  );
+  fixture.dependencies.tracker.readViewer = async () =>
+    assert.fail("numbered --issue must not request the viewer separately");
+
+  assert.equal(
+    (await fixture.run(["--issue", "51"])).summary.outcome,
+    "succeeded",
+  );
+  assert.equal(fixture.maintenance.length, 1);
+});
+
 await test("unmerged work never triggers documentation", async (t) => {
   const ticket = child(51, { labels: ["ready-for-agent", "Docs"] });
   const fixture = await batchDocumentationRun(t, [ticket]);

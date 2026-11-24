@@ -16,6 +16,7 @@ import {
   child,
   connection,
   repository,
+  viewer,
 } from "../support/github-parent-discovery.ts";
 
 const executableTest = process.platform === "win32" ? test.skip : test;
@@ -208,8 +209,8 @@ await executableTest(
       name: validConfig.tracker.reservationLabel,
     };
     const runner = {
-      id: "runner-id",
-      login: validConfig.tracker.runnerAccount,
+      id: viewer.id,
+      login: viewer.login,
     };
     const ready = { id: "ready-id", name: "ready-for-agent" };
     const target = child(48, {
@@ -219,7 +220,7 @@ await executableTest(
       labels: connection([ready]),
     });
     const start = {
-      data: { repository: { ...repository, label, target }, user: runner },
+      data: { repository: { ...repository, label, target }, viewer },
     };
     const confirmed = {
       data: {
@@ -248,11 +249,11 @@ await executableTest(
           '  assert.deepEqual(args, ["api", "graphql", "--method", "POST", "--input", "-"]);',
           '  const { query, variables } = JSON.parse(fs.readFileSync(0, "utf8"));',
           '  if (query.startsWith("query IssueStart")) {',
-          `    assert.deepEqual(variables, { owner: "owner", name: "repo", number: 48, reservation: ${JSON.stringify(label.name)}, runner: ${JSON.stringify(runner.login)} });`,
+          `    assert.deepEqual(variables, { owner: "owner", name: "repo", number: 48, reservation: ${JSON.stringify(label.name)} });`,
           `    console.log(JSON.stringify(${JSON.stringify(start)}));`,
           "  } else {",
           '    assert.ok(query.startsWith("mutation ReserveIssue"));',
-          `    assert.deepEqual(variables, { issue: "issue-48", label: ${JSON.stringify(label.id)}, runner: ${JSON.stringify(runner.id)} });`,
+          `    assert.deepEqual(variables, { issue: "issue-48", label: ${JSON.stringify(label.id)}, viewer: ${JSON.stringify(viewer.id)} });`,
           `    console.log(JSON.stringify(${JSON.stringify(confirmed)}));`,
           "  }",
           "}",

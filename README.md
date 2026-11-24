@@ -78,7 +78,7 @@ environments already available where it runs.
 - Git commits use the `user.name` and `user.email` visible in each Agent terminal.
 - Fetch and push use the checkout's `origin` and its configured Git transport
   authentication, such as a credential helper or SSH.
-- `gh` uses its existing authenticated context. 
+- `gh` uses its existing authenticated context. Authenticate as a normal GitHub user, not an app or bot.
 
 Git transport and `gh` authenticate separately, so configure both.
 

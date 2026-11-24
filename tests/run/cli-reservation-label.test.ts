@@ -35,7 +35,7 @@ async function reservationRun(
     const facts = await discover(...args);
     return {
       ...facts,
-      runner: runnerResolved ? facts.runner : null,
+      viewer: runnerResolved ? facts.viewer : null,
       reservation: exists ? reservation : null,
     };
   };
@@ -61,7 +61,7 @@ async function reservationRun(
     const facts = await start(...args);
     return {
       ...facts,
-      runner: runnerResolved ? facts.runner : null,
+      viewer: runnerResolved ? facts.viewer : null,
       reservation: exists ? reservation : null,
     };
   };
@@ -104,7 +104,7 @@ for (const [scope, args, expected] of [
 
   for (const [condition, options, dispatched] of [
     ["the label already exists", { existing: true }, [51]],
-    ["the Runner account is unresolved", { runnerResolved: false }, []],
+    ["the viewer is unresolved", { runnerResolved: false }, []],
     ["there is no eligible Issue", { eligible: false }, []],
   ] as const) {
     await test(`${scope} skips label creation when ${condition}`, async (t) => {
@@ -124,7 +124,7 @@ for (const [scope, args, expected] of [
         assert.equal(pauses.length, 1);
         assert.match(
           pauses[0]!,
-          /did not resolve the configured Reservation label or Runner account/u,
+          /did not resolve the configured Reservation label or authenticated viewer|authenticated as a normal GitHub user/u,
         );
       } else assert.deepEqual(pauses, []);
       assert.ok(!fixture.effects.includes("create"));

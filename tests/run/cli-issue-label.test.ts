@@ -62,7 +62,7 @@ await test("a missing issueLabel in the Reservation response prevents Worktree c
   assert.deepEqual(fixture.dispatched, []);
 });
 
-await test("a Reservation response with the wrong Runner ID prevents Worktree creation", async (t) => {
+await test("a Reservation response with the wrong viewer ID prevents Worktree creation", async (t) => {
   const fixture = await parentRun(t, [child(51)]);
   const { tracker, gitWorkspace } = fixture.dependencies;
   const reserve = tracker.reserveIssue.bind(tracker);
@@ -86,7 +86,7 @@ await test("a Reservation response with the wrong Runner ID prevents Worktree cr
   );
 });
 
-await test("a matching Runner ID with a conflicting login in the write response requires a fresh start read", async (t) => {
+await test("a matching viewer ID with a conflicting login in the write response requires a fresh start read", async (t) => {
   const fixture = await parentRun(t, [child(51)]);
   const { tracker, gitWorkspace } = fixture.dependencies;
   const read = tracker.readIssueStart.bind(tracker);
@@ -118,14 +118,26 @@ await test("a matching Runner ID with a conflicting login in the write response 
 });
 
 await test("a differently capitalized Runner login needs only the label and can dispatch", async (t) => {
-  const fixture = await parentRun(
-    t,
-    [child(51, { assignees: ["RunnerBot"] })],
-    {
-      ...validConfig,
-      tracker: { ...validConfig.tracker, runnerAccount: "runnerbot" },
-    },
+  const fixture = await parentRun(t, [child(51, { assignees: ["RunnerBot"] })]);
+  const read = fixture.dependencies.tracker.readIssueStart.bind(
+    fixture.dependencies.tracker,
   );
+  const discover = fixture.dependencies.tracker.discoverParent.bind(
+    fixture.dependencies.tracker,
+  );
+  fixture.dependencies.tracker.readIssueStart = async (...args) => ({
+    ...(await read(...args)),
+    viewer: { id: "runnerbot", login: "RunnerBot" },
+  });
+  fixture.dependencies.tracker.discoverParent = async (...args) => ({
+    ...(await discover(...args)),
+    viewer: { id: "runnerbot", login: "RunnerBot" },
+  });
+  fixture.dependencies.tracker.listLabelsPage = () =>
+    Promise.resolve({
+      labels: [validConfig.tracker.reservationLabel],
+      nextPage: null,
+    });
   assert.equal((await fixture.run()).summary.outcome, "incomplete");
   assert.deepEqual(fixture.writes, ["label:51"]);
   assert.deepEqual(fixture.dispatched, [51]);

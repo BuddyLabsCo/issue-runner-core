@@ -12,6 +12,7 @@ import {
 import { OperationStopped, OperatorCancelled } from "./operations.ts";
 import { ensureRepositoryLabel } from "./repository-label.ts";
 import type { RunSummary } from "./run.ts";
+import type { ViewerLookup } from "./viewer.ts";
 
 interface ParentScope {
   repository: string;
@@ -128,6 +129,7 @@ interface ParentRun extends ParentScope {
   summary: RunSummary;
   recoveredBatch: boolean;
   markers: Parameters<Tracker["discoverParent"]>[2];
+  viewer: ViewerLookup;
   eligibleIssues: (tickets: BatchTicket[]) => Promise<number[]>;
   runBatch: (
     tickets: BatchTicket[],
@@ -139,22 +141,23 @@ interface ParentRun extends ParentScope {
 function discoverBatch(input: ParentRun) {
   const { read, repository, parentTicket, tracker, markers } = input;
   const inspect = async () => {
-    const { parent, children, reservation, runner } =
+    const { parent, children, reservation, viewer } =
       await tracker.discoverParent(
         repository,
         parentTicket,
         markers,
         input.signal,
       );
+    input.viewer.seed(viewer);
     validateScope(repository, { parent, children });
     const tickets = parentBatchTickets(children);
     const eligible =
       parent.state === "open" ? await input.eligibleIssues(tickets) : [];
-    return { parent, tickets, eligible, reservation, runner };
+    return { parent, tickets, eligible, reservation, viewer };
   };
   return read("discover_parent", `parent:${parentTicket}`, async () => {
     let facts = await inspect();
-    if (facts.eligible.length && !facts.reservation && facts.runner) {
+    if (facts.eligible.length && !facts.reservation && facts.viewer) {
       await ensureRepositoryLabel(
         tracker,
         read,
@@ -165,10 +168,10 @@ function discoverBatch(input: ParentRun) {
       );
       facts = await inspect();
     }
-    const { parent, tickets, eligible, reservation, runner } = facts;
-    if (eligible.length && !(reservation && runner))
+    const { parent, tickets, eligible, reservation, viewer } = facts;
+    if (eligible.length && !(reservation && viewer))
       throw new Error(
-        "GitHub did not resolve the configured Reservation label or Runner account",
+        "GitHub did not resolve the configured Reservation label or authenticated viewer",
       );
     return { parent, tickets, eligible };
   });

@@ -7,6 +7,7 @@ import { stringify } from "yaml";
 
 import { executeCli } from "../../src/cli.ts";
 import { loadProject } from "../../src/config.ts";
+import { hashRunInput } from "../../src/recovery.ts";
 import { agent, createProject, validConfig } from "../support/cli-project.ts";
 import { createCliDependencies } from "../support/cli-dependencies.ts";
 
@@ -25,6 +26,7 @@ await test("legacy tokenEnv and unknown Core-owned keys are ignored without chan
     obsolete: { enabled: true },
     tracker: {
       ...validConfig.tracker,
+      runnerAccount: "runner",
       tokenEnv: "MISSING",
       futureTrackerOption: true,
     },
@@ -48,7 +50,9 @@ await test("legacy tokenEnv and unknown Core-owned keys are ignored without chan
 
   assert.equal("tokenEnv" in loaded.config.codeHost, false);
   assert.equal("tokenEnv" in loaded.config.tracker, false);
-  assert.deepEqual(loaded.config.tracker, validConfig.tracker);
+  assert.deepEqual(loaded.config.tracker, {
+    reservationLabel: validConfig.tracker.reservationLabel,
+  });
   assert.deepEqual(loaded.config.codeHost, validConfig.codeHost);
   assert.deepEqual(loaded.config.workflow, {
     review: false,
@@ -61,6 +65,10 @@ await test("legacy tokenEnv and unknown Core-owned keys are ignored without chan
     "review",
   ]);
   assert.deepEqual(Buffer.from(loaded.configBytes), bytes);
+  assert.equal(
+    hashRunInput("generic-terminal", run, loaded.configBytes),
+    hashRunInput("generic-terminal", run, bytes),
+  );
   assert.equal(
     (await executeCli(run, createCliDependencies(root))).summary.outcome,
     "no_work",

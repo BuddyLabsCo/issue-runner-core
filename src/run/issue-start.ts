@@ -5,6 +5,7 @@ import type { ReservationMarkers, Ticket, Tracker } from "./contracts.ts";
 import { validateChildRepositories, type ReadOperation } from "./discovery.ts";
 import { OperatorCancelled, OperationStopped } from "./operations.ts";
 import { ensureRepositoryLabel } from "./repository-label.ts";
+import type { ViewerLookup } from "./viewer.ts";
 
 export function startIssue(input: {
   number: number;
@@ -14,6 +15,7 @@ export function startIssue(input: {
   read: ReadOperation;
   advance?: <T>(action: () => Promise<T>) => Promise<T>;
   recorded?: ReservationIdentity;
+  viewer: ViewerLookup;
   restarting: boolean;
   signal?: AbortSignal;
 }): Promise<{
@@ -21,24 +23,41 @@ export function startIssue(input: {
   reason?: string;
   reservation?: ReservationIdentity;
 }> {
-  const { number, parentTicket, config, tracker, read, recorded, signal } =
-    input;
+  const {
+    number,
+    parentTicket,
+    config,
+    tracker,
+    read,
+    recorded,
+    signal,
+    viewer,
+  } = input;
   const { repository } = config;
   const repositoryName = repository.toLowerCase();
-  const { reservationLabel, runnerAccount } = config.tracker;
+  const { reservationLabel } = config.tracker;
   let attempted:
     { identity: ReservationIdentity; canAddRunner: boolean } | undefined;
   return read(
     "start_issue",
     `ticket:${number}`,
     async function start(prepareLabel = true): ReturnType<typeof startIssue> {
-      const { issue, scope, reservation, runner } =
-        await tracker.readIssueStart(
-          repository,
-          number,
-          config.tracker,
-          parentTicket,
-          signal,
+      const {
+        issue,
+        scope,
+        reservation,
+        viewer: resolvedViewer,
+      } = await tracker.readIssueStart(
+        repository,
+        number,
+        config.tracker,
+        parentTicket,
+        signal,
+      );
+      viewer.seed(resolvedViewer);
+      if (!resolvedViewer)
+        throw new Error(
+          "gh must be authenticated as a normal GitHub user; GitHub did not resolve the authenticated viewer",
         );
       const { labels, assignees, blockers, ...snapshot } = issue;
       const ticket: Ticket = {
@@ -99,26 +118,19 @@ export function startIssue(input: {
         assignees,
       }: ReservationMarkers) => {
         if (
-          runner &&
           assignees.some(
             ({ id, login }) =>
-              id === runner.id &&
-              login.toLowerCase() !== runner.login.toLowerCase(),
+              id === resolvedViewer.id &&
+              login.toLowerCase() !== resolvedViewer.login.toLowerCase(),
           )
         )
-          throw new Error("Conflicting login for the resolved Runner ID");
+          throw new Error("Conflicting login for the authenticated viewer ID");
         if (
           config.issueLabel &&
           !labels.some(({ name }) => name === config.issueLabel)
         )
           return `Issue is missing ${config.issueLabel}`;
-        if (
-          assignees.some(({ id, login }) =>
-            runner
-              ? id !== runner.id
-              : login.toLowerCase() !== runnerAccount.toLowerCase(),
-          )
-        )
+        if (assignees.some(({ id }) => id !== resolvedViewer.id))
           return "Issue is externally owned";
       };
       const reason = markerIneligibility(issue);
@@ -128,13 +140,12 @@ export function startIssue(input: {
 
       const hasLabel = labels.some(({ name }) => name === reservationLabel);
       const hasRunner = assignees.length > 0;
-      const identity = reservation &&
-        runner && {
-          issueId: issue.id,
-          repositoryId: issue.repositoryId,
-          labelId: reservation.id,
-          runnerId: runner.id,
-        };
+      const identity = reservation && {
+        issueId: issue.id,
+        repositoryId: issue.repositoryId,
+        labelId: reservation.id,
+        runnerId: resolvedViewer.id,
+      };
       const reservationLabelsMatch = (labels: ReservationMarkers["labels"]) =>
         labels.every(
           ({ id, name }) =>
@@ -163,7 +174,7 @@ export function startIssue(input: {
           (!hasRunner && !attempted.canAddRunner))
       )
         return { ticket, reason: "Reservation changed during Issue start" };
-      if (prepareLabel && !reservation && runner) {
+      if (prepareLabel && !reservation) {
         await ensureRepositoryLabel(
           tracker,
           read,
@@ -176,7 +187,7 @@ export function startIssue(input: {
       }
       if (!identity || !labelsMatch)
         throw new Error(
-          "GitHub did not resolve the configured Reservation label or Runner account",
+          "GitHub did not resolve the configured Reservation label or authenticated viewer",
         );
       if (reserved) return { ticket, reservation: identity };
 
@@ -187,7 +198,7 @@ export function startIssue(input: {
           {
             issue,
             reservation,
-            runner,
+            viewer: resolvedViewer,
             addLabel: !hasLabel,
             addRunner: !hasRunner,
           },

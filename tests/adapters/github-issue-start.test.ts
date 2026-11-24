@@ -10,6 +10,7 @@ import {
   repository,
   reservation,
   runner,
+  viewer,
 } from "../support/github-parent-discovery.ts";
 
 await test("standalone start reads its own Issue and confirms grouped additive markers across pages", async () => {
@@ -29,10 +30,18 @@ await test("standalone start reads its own Issue and confirms grouped additive m
       case 1:
         assert.match(query, /blockedBy/u);
         assert.doesNotMatch(query, /\b(?:parent|subIssues)\b/u);
+        assert.match(query, /\bviewer\s*\{\s*__typename id login\s*\}/u);
+        assert.doesNotMatch(query, /\buser\b/u);
+        assert.deepEqual(variables, {
+          owner: "OWNER",
+          name: "Repo",
+          number: 51,
+          reservation: reservation.name,
+        });
         return JSON.stringify({
           data: {
             repository: { ...repository, label: reservation, target },
-            user: runner,
+            viewer,
           },
         });
       case 2: {
@@ -40,6 +49,8 @@ await test("standalone start reads its own Issue and confirms grouped additive m
           query,
           /addLabelsToLabelable[\s\S]+addAssigneesToAssignable/u,
         );
+        assert.match(query, /assigneeIds:\s*\[\$viewer\]/u);
+        assert.doesNotMatch(query, /\$runner\b/u);
         const finalSelection = query.slice(query.indexOf("addRunner:"));
         assert.match(finalSelection, /assignable\s*\{/u);
         assert.match(
@@ -53,7 +64,7 @@ await test("standalone start reads its own Issue and confirms grouped additive m
         assert.deepEqual(variables, {
           issue: "issue-51",
           label: reservation.id,
-          runner: runner.id,
+          viewer: runner.id,
         });
         return JSON.stringify({
           data: {
@@ -83,10 +94,11 @@ await test("standalone start reads its own Issue and confirms grouped additive m
   assert.equal(facts.issue.title, "Task");
   assert.equal(facts.issue.repository, repository.nameWithOwner);
   assert.equal(facts.scope, undefined);
+  assert.deepEqual(facts.viewer, runner);
   const confirmed = await tracker.reserveIssue({
     issue: facts.issue,
     reservation,
-    runner,
+    viewer: runner,
     addLabel: true,
     addRunner: true,
   });
@@ -126,7 +138,7 @@ await test("parent-scoped start drains parent membership independently of target
               subIssues: connection([issue(52)], 2, "children", true),
             }),
           },
-          user: runner,
+          viewer,
         },
       });
     }
@@ -194,7 +206,7 @@ for (const [alias, data] of [
       tracker.reserveIssue({
         issue: startIssue,
         reservation,
-        runner,
+        viewer: runner,
         addLabel: true,
         addRunner: true,
       }),
@@ -217,7 +229,7 @@ await test("a valid final payload cannot confirm a grouped write when the first 
     tracker.reserveIssue({
       issue: startIssue,
       reservation,
-      runner,
+      viewer: runner,
       addLabel: true,
       addRunner: true,
     }),
@@ -262,7 +274,7 @@ await test("label-only confirmation returns all paginated assignees to the workf
     await tracker.reserveIssue({
       issue: startIssue,
       reservation,
-      runner,
+      viewer: runner,
       addLabel: true,
       addRunner: false,
     }),

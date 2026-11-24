@@ -32,7 +32,10 @@ export async function runBatch(
     ...input,
     targetBranch: summary.targetBranch,
     ...(options.issueTicket !== undefined
-      ? { issueTicket: options.issueTicket }
+      ? {
+          issueTicket: options.issueTicket,
+          eligible: [options.issueTicket],
+        }
       : {}),
   });
   if (selection.documentation) {
