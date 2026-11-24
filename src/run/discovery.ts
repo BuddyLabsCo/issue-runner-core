@@ -216,7 +216,6 @@ export async function selectIssueBatch(
     readHandoff(batchFile),
   );
   const scope = context.scope;
-  if (!scope) throw new Error("Batch checkpoint requires a Run scope");
   const ownership = {
     input_hash: context.inputHash,
     run_arguments: context.runArguments,

@@ -57,7 +57,6 @@ export interface ProjectConfig {
 
 export interface LoadedProject {
   config: ProjectConfig;
-  configBytes: Uint8Array;
   directory: string;
 }
 
@@ -296,10 +295,8 @@ export async function loadProject(
   const directory = resolveProjectDirectory(launchDirectory, projectKey);
   const configPath = path.join(directory, "config.yaml");
   let value: unknown;
-  let configBytes: Buffer;
   try {
-    configBytes = await readFile(configPath);
-    value = parse(configBytes.toString("utf8"));
+    value = parse((await readFile(configPath)).toString("utf8"));
   } catch (error) {
     throw new Error(
       `failed to load ${configPath}: ${error instanceof Error ? error.message : String(error)}`,
@@ -346,7 +343,7 @@ export async function loadProject(
       throw new Error(reviewConfigurationError);
     }
   }
-  return { config, configBytes, directory };
+  return { config, directory };
 }
 
 // `--project` is a key for one child of the launch directory, never a path.

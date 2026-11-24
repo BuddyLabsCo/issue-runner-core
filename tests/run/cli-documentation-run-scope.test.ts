@@ -4,7 +4,6 @@ import { access, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import {
-  hashRunInput,
   type BatchProgress,
   type ImplementationProgress,
   type MaintenanceProgress,
@@ -14,10 +13,7 @@ import {
   batchDocumentationRun,
   documentationNoChange,
 } from "../support/batch-documentation-run.ts";
-import {
-  documentCommand,
-  documentationRun,
-} from "../support/documentation-run.ts";
+import { documentationRun } from "../support/documentation-run.ts";
 import {
   implementationProgress,
   publish,
@@ -175,11 +171,7 @@ await test("old-format standalone checkpoints are ignored at their pre-upgrade p
   const saved = await fixture.snapshot();
   const maintenance = await checkpoint(fixture.directory, "-document.json");
   const execution = await checkpoint(fixture.directory, "-document-50.json");
-  const oldHash = hashRunInput(
-    fixture.dependencies.commandName,
-    documentCommand,
-    await readFile(path.join(fixture.directory, "config.yaml")),
-  );
+  const oldHash = "0".repeat(64);
   assert.notEqual(oldHash, saved.input_hash);
   await rm(maintenance.file);
   await rm(execution.file);

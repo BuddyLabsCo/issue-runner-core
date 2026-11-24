@@ -44,7 +44,6 @@ export async function runDocumentation(
       ...settings,
     });
   const scope = context.scope;
-  if (!scope) throw new Error("Documentation Run requires a Run scope");
   const file = path.join(
     loaded.directory,
     "recovery",
@@ -206,7 +205,6 @@ export async function runDocumentation(
       documentation: true,
       runId: maintenance.run_id,
       inputHash: context.inputHash,
-      runArguments: context.runArguments,
       now: context.clock.now().getTime(),
       scope,
     });

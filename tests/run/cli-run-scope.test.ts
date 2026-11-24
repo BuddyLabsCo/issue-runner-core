@@ -14,9 +14,7 @@ import path from "node:path";
 import test from "node:test";
 import { parse, stringify } from "yaml";
 import { executeCli } from "../../src/cli.ts";
-import { hashRunInput } from "../../src/recovery.ts";
 import {
-  implementationCommand,
   implementationProgress,
   implementationRun,
   publish,
@@ -424,11 +422,7 @@ await test("old-format checkpoints are ignored rather than adopted", async (t) =
   const saved = await interrupt(fixture);
   const recovery = path.join(fixture.directory, "recovery");
   const currentFile = path.join(recovery, `${saved.input_hash}-50.json`);
-  const oldHash = hashRunInput(
-    fixture.dependencies.commandName,
-    implementationCommand,
-    await readFile(path.join(fixture.directory, "config.yaml")),
-  );
+  const oldHash = "0".repeat(64);
   const oldFile = path.join(recovery, `${oldHash}-50.json`);
   const old = {
     ...saved,

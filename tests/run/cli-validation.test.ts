@@ -7,7 +7,6 @@ import { stringify } from "yaml";
 
 import { executeCli } from "../../src/cli.ts";
 import { loadProject } from "../../src/config.ts";
-import { hashRunInput } from "../../src/recovery.ts";
 import { agent, createProject, validConfig } from "../support/cli-project.ts";
 import { createCliDependencies } from "../support/cli-dependencies.ts";
 
@@ -64,11 +63,7 @@ await test("legacy tokenEnv and unknown Core-owned keys are ignored without chan
     "implement",
     "review",
   ]);
-  assert.deepEqual(Buffer.from(loaded.configBytes), bytes);
-  assert.equal(
-    hashRunInput("generic-terminal", run, loaded.configBytes),
-    hashRunInput("generic-terminal", run, bytes),
-  );
+  assert.deepEqual(await readFile(path.join(directory, "config.yaml")), bytes);
   assert.equal(
     (await executeCli(run, createCliDependencies(root))).summary.outcome,
     "no_work",
@@ -473,7 +468,6 @@ for (const ticketClosure of ["runner", "code_host"] as const) {
     const bytes = await readFile(file);
     const loaded = await loadProject(root, "demo");
     assert.equal("ticketClosure" in loaded.config, false);
-    assert.deepEqual(Buffer.from(loaded.configBytes), bytes);
     assert.deepEqual(await readFile(file), bytes);
   });
 }

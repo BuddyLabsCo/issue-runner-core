@@ -164,6 +164,12 @@ issue-runner-herdr run --project my-project --document --no-auto-merge # Retain 
 
 Auto-merge defaults on. `--no-auto-merge` applies to numbered Issues and standalone documentation; retained, unmerged work reports `incomplete`. Runner owns push, PR, integration, and tracker operations. Agents report local work through handoffs; a handoff alone does not establish delivery.
 
+### Recovery and checkpoints
+
+An interrupted Run resumes when its canonical Run scope is unchanged. Scope covers the Project directory, repository, checkout, effective target branch, the selected Issue or Parent/Batch identity, and Review participation for Issue and Parent Runs. Comments, formatting, timeouts, `autoMerge`, prompt files, and other changes outside that scope do not prevent recovery. An existing native conversation is resumed only when its Agent `agent` value and exact `resume` command still match.
+
+Checkpoints live under the Project's `recovery/` directory. Raw Run arguments remain there and in audit records for diagnostics only. This scope model intentionally breaks checkpoints written by older configuration-byte identities: Runner ignores them instead of migrating or deleting them. Worktrees, Handoffs, native evidence, and Reservations retained by that older work are not cleaned automatically; release or remove them manually after confirming they are no longer needed.
+
 ## Known issues
 
 ### CodeBuddy requires `--port 0`

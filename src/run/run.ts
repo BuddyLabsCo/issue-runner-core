@@ -41,8 +41,8 @@ import { runScope, runScopeId, type RunScope } from "./scope.ts";
 export interface RunContext {
   audit: AuditLog;
   runId: string;
+  scope: RunScope;
   inputHash: string;
-  scope?: RunScope;
   runArguments: readonly string[];
   clock: Clock;
   operator: OperatorIO;
@@ -58,6 +58,8 @@ export interface RunContext {
   reports?: TicketReport[];
   viewer?: ViewerLookup;
 }
+
+export type RunSetup = Omit<RunContext, "scope" | "inputHash">;
 
 export interface RunSummary {
   outcome: "succeeded" | "no_work" | "incomplete" | "cancelled" | "failed";
@@ -82,7 +84,7 @@ export async function runProject(
   loaded: LoadedProject,
   tracker: Tracker,
   codeHost: CodeHost,
-  context: RunContext,
+  context: RunSetup,
 ): Promise<RunSummary> {
   const retained = new Map<string, ImplementationProgress | undefined>();
   let summary: RunSummary = {
@@ -123,7 +125,7 @@ async function executeProject(
   loaded: LoadedProject,
   tracker: Tracker,
   codeHost: CodeHost,
-  context: RunContext,
+  context: RunSetup,
   summary: RunSummary,
 ): Promise<RunSummary> {
   const controller = new AbortController();
@@ -239,7 +241,11 @@ async function executeProject(
   if (!targetBranch.trim()) throw new Error("Target Branch must not be empty");
   summary.targetBranch = targetBranch;
   const scope = runScope(options, loaded, targetBranch);
-  context = { ...context, scope, inputHash: runScopeId(scope) };
+  const scoped: RunContext = {
+    ...context,
+    scope,
+    inputHash: runScopeId(scope),
+  };
   let base: Promise<string> | undefined;
   const fetchBase = () =>
     (base ??= read("fetch_target_branch", targetBranch, () =>
@@ -263,7 +269,7 @@ async function executeProject(
       number: options.issueTicket,
       loaded,
       tracker,
-      context,
+      context: scoped,
       summary,
       read,
       fetchBase,
@@ -278,7 +284,7 @@ async function executeProject(
       loaded,
       tracker,
       codeHost,
-      context: { ...context, runId },
+      context: { ...scoped, runId },
       summary,
       read,
       fetchBase,
@@ -294,7 +300,7 @@ async function executeProject(
       tickets,
       loaded,
       tracker,
-      context,
+      context: scoped,
       read,
       targetBranch,
       ...(eligible ? { eligible } : {}),
@@ -312,7 +318,7 @@ async function executeProject(
       ...(selection ? { selection } : {}),
       loaded,
       tracker,
-      context,
+      context: scoped,
       read,
       summary,
       codeHost,
@@ -359,7 +365,13 @@ async function executeProject(
       summary,
       recoveredBatch: pending.batch.length > 0 || pending.completedCheckpoint,
       eligibleIssues: (tickets) =>
-        eligibleIssueNumbers({ tickets, loaded, tracker, context, read }),
+        eligibleIssueNumbers({
+          tickets,
+          loaded,
+          tracker,
+          context: scoped,
+          read,
+        }),
       runBatch: async (tickets, eligible) => {
         const selection = await selectBatch(tickets, eligible);
         return {
