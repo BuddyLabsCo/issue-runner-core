@@ -7,6 +7,53 @@ import {
   implementationRun,
   publish,
 } from "../support/implementation-run.ts";
+import { publicationRun } from "../support/publication-run.ts";
+
+await test("unordered implementation commits retain Git order and HEAD through publication recovery", async (t) => {
+  const fixture = await publicationRun(t);
+  const commits = [
+    ...committed().commits,
+    { sha: "c".repeat(40), message: "Agent-reported second commit" },
+  ];
+  fixture.state.onTask = async (file) => {
+    fixture.state.evidence.commits = commits.map(({ sha }) => ({
+      sha,
+      message: "Git subject",
+    }));
+    await publish(file, { ...committed(), commits: [...commits].reverse() });
+  };
+  fixture.state.onCorrection = () => {
+    fixture.controller.abort();
+    return Promise.resolve();
+  };
+  const push = fixture.dependencies.gitWorkspace.push.bind(
+    fixture.dependencies.gitWorkspace,
+  );
+  fixture.dependencies.gitWorkspace.push = () => {
+    fixture.controller.abort();
+    return Promise.resolve();
+  };
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  const saved = await fixture.snapshot();
+  assert.deepEqual(saved.result?.commits, commits);
+  assert.deepEqual(saved.publication?.commits, commits);
+  assert.equal(saved.publication?.headSha, commits[1]!.sha);
+
+  fixture.state.evidence.commits.reverse();
+  fixture.dependencies.signal = new AbortController().signal;
+  fixture.dependencies.gitWorkspace.push = push;
+  const recovered = await fixture.run();
+  assert.match(recovered.summary.tickets![0]!.detail, /CI-ready/u);
+  const after = await fixture.snapshot();
+  assert.deepEqual(after.result?.commits, commits);
+  assert.deepEqual(after.publication?.commits, commits);
+  assert.equal(
+    fixture.publicationState.branches.get(saved.branch),
+    commits[1]!.sha,
+  );
+  assert.equal(fixture.state.taskCount, 1);
+  assert.equal(fixture.dependencies.pauses.length, 0);
+});
 
 await test("execution findings receive a specific correction in the original conversation", async (t) => {
   const fixture = await implementationRun(t);
@@ -107,5 +154,38 @@ for (const [mismatch, reason] of [
     const result = await fixture.run();
     assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
     assert.equal((await fixture.snapshot()).phase, "implementation_completed");
+  });
+}
+
+for (const invalid of ["missing", "extra", "duplicate"] as const) {
+  await test(`${invalid} claimed commits are rejected before acceptance`, async (t) => {
+    const fixture = await implementationRun(t);
+    const commits = [
+      ...committed().commits,
+      { sha: "c".repeat(40), message: "Second commit" },
+    ];
+    fixture.state.onTask = async (file) => {
+      fixture.state.evidence.commits = commits;
+      const claims =
+        invalid === "missing"
+          ? [commits[0]!]
+          : invalid === "extra"
+            ? [...commits, { sha: "d".repeat(40), message: "Extra commit" }]
+            : [commits[0]!, commits[0]!];
+      await publish(file, { ...committed(), commits: claims });
+    };
+    fixture.state.onCorrection = async (file) => {
+      assert.match(
+        fixture.state.submissions.at(-1)!.text,
+        invalid === "duplicate"
+          ? /Duplicate claimed commits/u
+          : /Claimed commits do not match actual Git commits/u,
+      );
+      await publish(file, { ...committed(), commits });
+    };
+    assert.equal((await fixture.run()).summary.outcome, "incomplete");
+    const saved = await fixture.snapshot();
+    assert.equal(saved.superseded.length, 1);
+    assert.deepEqual(saved.result?.commits, commits);
   });
 }

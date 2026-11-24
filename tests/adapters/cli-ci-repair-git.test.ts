@@ -58,6 +58,7 @@ for (const kind of ["ci", "conflict"] as const) {
       let merged = false;
       const pushed: { worktree: string; branch: string; head: string }[] = [];
       workspace.push = async (worktree, branch, head) => {
+        assert.equal(head, await git(worktree, "rev-parse", "HEAD"));
         const saved = await fixture.snapshot();
         const pending =
           saved.publication![
@@ -171,39 +172,45 @@ for (const kind of ["ci", "conflict"] as const) {
             }
             const message = repair ? `fix: ${kind} repair` : "feat: implement";
             await git(options.cwd, "commit", "--allow-empty", "-m", message);
+            if (kind === "ci" && repair && !empty)
+              await git(
+                options.cwd,
+                "commit",
+                "--allow-empty",
+                "-m",
+                "fix: CI follow-up",
+              );
+            const rangeBase = repair
+              ? (await fixture.snapshot()).publication![
+                  kind === "ci" ? "ciRepair" : "conflictRepair"
+                ]!.attempts.at(-1)!.base
+              : base;
+            const commits = await Promise.all(
+              (
+                await git(
+                  options.cwd,
+                  "log",
+                  "--topo-order",
+                  "--format=%H",
+                  `${rangeBase}..HEAD`,
+                )
+              )
+                .split("\n")
+                .map(async (sha) => ({
+                  sha,
+                  message: await git(
+                    options.cwd,
+                    "show",
+                    "-s",
+                    "--format=%B",
+                    sha,
+                  ),
+                })),
+            );
             await publish(assignment.path, {
               outcome: "committed",
               summary: "Completed",
-              commits:
-                kind === "conflict" && repair && !empty
-                  ? await Promise.all(
-                      (
-                        await git(
-                          options.cwd,
-                          "log",
-                          "--reverse",
-                          "--format=%H",
-                          `${(await fixture.snapshot()).publication!.conflictRepair!.attempts.at(-1)!.base}..HEAD`,
-                        )
-                      )
-                        .split("\n")
-                        .map(async (sha) => ({
-                          sha,
-                          message: await git(
-                            options.cwd,
-                            "show",
-                            "-s",
-                            "--format=%B",
-                            sha,
-                          ),
-                        })),
-                    )
-                  : [
-                      {
-                        sha: await git(options.cwd, "rev-parse", "HEAD"),
-                        message,
-                      },
-                    ],
+              commits,
               findings_file: null,
               ...(text.startsWith("Implementation assignment\n")
                 ? {
@@ -260,6 +267,16 @@ for (const kind of ["ci", "conflict"] as const) {
       );
       if (kind === "conflict") {
         assert.notEqual(targetBase, base);
+        assert.deepEqual(
+          saved.publication!.conflictRepair!.attempts.at(-1)!.result!.commits,
+          [
+            {
+              sha: targetBase,
+              message: "Advance target\n\nThis commit has a body.",
+            },
+            { sha: pushed[1]!.head, message: "fix: conflict repair" },
+          ],
+        );
         assert.equal(
           await git(checkout, "merge-base", targetBase, pushed[1]!.head),
           targetBase,
@@ -287,9 +304,21 @@ for (const kind of ["ci", "conflict"] as const) {
             code: "ENOENT",
           });
         }
+      } else {
+        assert.deepEqual(
+          saved.publication!.ciRepair!.attempts.at(-1)!.result!.commits,
+          [
+            {
+              sha: await git(checkout, "rev-parse", `${pushed[1]!.head}^`),
+              message: "fix: ci repair",
+            },
+            { sha: pushed[1]!.head, message: "fix: CI follow-up" },
+          ],
+        );
       }
       assert.equal(await git(checkout, "rev-parse", "HEAD"), base);
       assert.equal(fixture.publicationState.creations, 1);
+      assert.equal(fixture.dependencies.pauses.length, 0);
       for (const env of environments) assert.deepEqual(env, {});
     });
   }

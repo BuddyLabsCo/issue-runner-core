@@ -159,14 +159,13 @@ async function reviewNoChange(
           throw new Error(
             "Review findings require a committed implementation; no_change cannot satisfy findings",
           );
-        verifyWorkspace(
+        return verifyWorkspace(
           progress,
           await read("inspect_no_change_fix", `ticket:${progress.ticket}`, () =>
             input.git.inspect(progress),
           ),
           result,
         );
-        return result;
       },
     });
   }

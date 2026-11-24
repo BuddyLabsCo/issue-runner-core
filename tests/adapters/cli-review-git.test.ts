@@ -139,14 +139,23 @@ await test("real Git rejects reviewer edits and recovers a final-round fix with 
       "implemented and fixed\n",
     );
     await git(saved.worktree, "commit", "-m", "fix: address findings");
+    const firstFix = await git(saved.worktree, "rev-parse", "HEAD");
+    await git(
+      saved.worktree,
+      "commit",
+      "--allow-empty",
+      "-m",
+      "fix: final follow-up",
+    );
     await publish(round.fix!.invocation!.path, {
       outcome: "committed",
       summary: "Fixed all findings.",
       commits: [
         {
           sha: await git(saved.worktree, "rev-parse", "HEAD"),
-          message: "fix: address findings",
+          message: "fix: final follow-up",
         },
+        { sha: firstFix, message: "fix: address findings" },
       ],
       findings_file: null,
     });
@@ -174,7 +183,26 @@ await test("real Git rejects reviewer edits and recovers a final-round fix with 
     "--format=%s",
     `${base}..HEAD`,
   );
-  assert.equal(log, "feat: implement\nfix: address findings");
+  assert.equal(
+    log,
+    "feat: implement\nfix: address findings\nfix: final follow-up",
+  );
+  assert.deepEqual(
+    saved.reviews![0]!.fix!.result!.commits.map(({ sha }) => sha),
+    (
+      await git(
+        saved.worktree,
+        "log",
+        "--reverse",
+        "--format=%H",
+        `${implementationHead}..HEAD`,
+      )
+    ).split("\n"),
+  );
+  assert.equal(
+    saved.publication?.headSha,
+    await git(saved.worktree, "rev-parse", "HEAD"),
+  );
   assert.equal(await git(saved.worktree, "status", "--porcelain"), "");
   assert.equal(await git(checkout, "rev-parse", "HEAD"), base);
   assert.equal(await git(checkout, "branch", "--show-current"), "main");

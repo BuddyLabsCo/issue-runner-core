@@ -158,6 +158,7 @@ export class LocalGitWorkspace implements GitWorkspace {
         this.command(worktree, ["merge-base", base, "HEAD"]),
         this.command(worktree, [
           "log",
+          "--topo-order",
           "--reverse",
           "--format=%H%x00%s",
           `${base}..HEAD`,

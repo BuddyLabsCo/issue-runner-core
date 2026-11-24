@@ -350,8 +350,9 @@ export async function repairPullRequest(
         );
         delete repair.verificationError;
         try {
-          verifyWorkspace(repair, evidence, result);
+          const verified = verifyWorkspace(repair, evidence, result);
           verifyRepairAncestry(repair, ancestry);
+          return verified;
         } catch (error) {
           repair.verificationError =
             error instanceof Error ? error.message : String(error);
