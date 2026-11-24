@@ -76,15 +76,11 @@ Configure authentication before starting Runner. Runner uses the Git and `gh`
 environments already available where it runs.
 
 - Git commits use the `user.name` and `user.email` visible in each Agent terminal.
-  Runner does not create a temporary commit identity.
 - Fetch and push use the checkout's `origin` and its configured Git transport
   authentication, such as a credential helper or SSH.
-- `gh` uses its existing authenticated context. Runner does not override
-  `GH_TOKEN` or add authorization headers to Git commands.
+- `gh` uses its existing authenticated context. 
 
-Git transport and `gh` authenticate separately, so configure both. The
-authenticated `gh` identity covers tracker and code-host operations: reading and
-updating Issues, publishing and observing PRs, reading checks, and merging.
+Git transport and `gh` authenticate separately, so configure both.
 
 Grant that identity read access to repository metadata and the permissions below.
 
@@ -94,13 +90,6 @@ Grant that identity read access to repository metadata and the permissions below
 - **Actions** read/write to observe workflow attempts and rerun failed jobs after a no-change CI repair.
 - **Contents** read/write to read refs and merge PRs. Git transport needs its own
   fetch and push access.
-
-GitHub lists Checks API access among the limitations of fine-grained personal
-access tokens. [GitHub token limitations](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#fine-grained-personal-access-tokens-limitations)
-
-GitHub enforces repository rules and merge permissions for the identity behind
-the `gh` credential. With `codeHost.adminMerge: true`, that identity still needs
-permission to bypass the applicable rules.
 
 ### macOS and Linux
 
