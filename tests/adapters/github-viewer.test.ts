@@ -36,6 +36,10 @@ await test("viewer lookup requests only the authenticated viewer identity", asyn
 for (const [name, viewer] of [
   ["a missing viewer", null],
   ["a non-user viewer", { __typename: "Bot", id: "bot-id", login: "bot" }],
+  [
+    "a GitHub App bot viewer",
+    { __typename: "User", id: "bot-id", login: "runner[bot]" },
+  ],
   ["a malformed user viewer", { __typename: "User", id: "app-id", login: "" }],
 ] as const) {
   await test(`viewer lookup rejects ${name} with a clear error`, async () => {

@@ -182,7 +182,8 @@ function parseViewer(value: unknown): ViewerIdentity {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     throw new Error(viewerError);
   const { __typename, id, login } = value as Record<string, unknown>;
-  if (__typename !== "User" || !nonempty(id) || !nonempty(login))
+  const bot = nonempty(login) && login.toLowerCase().endsWith("[bot]");
+  if (__typename !== "User" || !nonempty(id) || !nonempty(login) || bot)
     throw new Error(viewerError);
   return { id, login };
 }
