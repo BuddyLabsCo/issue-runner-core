@@ -8,6 +8,15 @@ import { validConfig } from "../support/cli-project.ts";
 import { child, parentDeliveryRun, parentRun } from "../support/parent-run.ts";
 import type { ParentDiscovery } from "../../src/run/contracts.ts";
 
+await test("parent discovery seeds the viewer cache without a viewer-only query", async (t) => {
+  const fixture = await parentRun(t, [child(51)]);
+  fixture.dependencies.tracker.readViewer = async () =>
+    assert.fail("parent discovery already returns the authenticated viewer");
+
+  assert.equal((await fixture.run()).summary.outcome, "incomplete");
+  assert.deepEqual(fixture.dispatched, [51]);
+});
+
 for (const [selector, numbers] of [
   ["parent", [51, 52]],
   ["parent", [51]],
@@ -93,7 +102,7 @@ await test("parent selects the numerically first eligible Issue from its complet
       },
     ],
     reservation: { id: "reserved-id", name: "sandcastle:reserved" },
-    runner: { id: "runner-id", login: "runner" },
+    viewer: { id: "runner-id", login: "runner" },
   };
   Object.assign(fixture.dependencies.tracker, {
     async discoverParent() {

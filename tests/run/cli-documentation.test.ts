@@ -15,6 +15,8 @@ const noChange = {
 
 await test("standalone documentation delivers a Maintenance Ticket without business selection or ordinary Review", async (t) => {
   const fixture = await documentationRun(t);
+  fixture.dependencies.tracker.readViewer = () =>
+    assert.fail("documentation must not resolve viewer identity");
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
   assert.equal(fixture.maintenance.creates, 1);

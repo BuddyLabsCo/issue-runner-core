@@ -6,7 +6,7 @@ import { issueFields, parseIssueFact } from "./github-issue-identity.ts";
 
 export async function reserveIssue(
   client: GitHubClient,
-  { issue, reservation, runner, addLabel, addRunner }: ReservationAdditions,
+  { issue, reservation, viewer, addLabel, addRunner }: ReservationAdditions,
   signal?: AbortSignal,
 ) {
   if (!addLabel && !addRunner)
@@ -27,14 +27,14 @@ export async function reserveIssue(
     : "";
   signal?.throwIfAborted();
   const { response, commandError } = await client.graphql(
-    `mutation ReserveIssue($issue: ID!${addLabel ? ", $label: ID!" : ""}${addRunner ? ", $runner: ID!" : ""}) {
+    `mutation ReserveIssue($issue: ID!${addLabel ? ", $label: ID!" : ""}${addRunner ? ", $viewer: ID!" : ""}) {
       ${labelField}
       ${runnerField}
     }`,
     {
       issue: issue.id,
       ...(addLabel ? { label: reservation.id } : {}),
-      ...(addRunner ? { runner: runner.id } : {}),
+      ...(addRunner ? { viewer: viewer.id } : {}),
     },
   );
   signal?.throwIfAborted();

@@ -13,6 +13,38 @@ import {
 import { validConfig } from "../support/cli-project.ts";
 import { assertBusinessAssignment } from "../support/prompt-assignment.ts";
 
+await test("a numbered Issue uses the viewer returned by IssueStart without a viewer-only query", async (t) => {
+  const fixture = await implementationRun(t);
+  fixture.dependencies.tracker.readViewer = async () =>
+    assert.fail("numbered --issue must not request the viewer separately");
+
+  assert.equal((await fixture.run()).summary.outcome, "incomplete");
+  assert.equal(fixture.state.taskCount, 1);
+});
+
+await test("a missing authenticated viewer fails with a clear error before dispatch", async (t) => {
+  const fixture = await implementationRun(t);
+  const tracker = fixture.dependencies.tracker;
+  const read = tracker.readIssueStart.bind(tracker);
+  tracker.readIssueStart = async (...args) => ({
+    ...(await read(...args)),
+    viewer: null,
+  });
+  fixture.dependencies.operator.pause = async (message) => {
+    fixture.dependencies.pauses.push(message);
+    return "q";
+  };
+
+  const result = await fixture.run();
+
+  assert.equal(result.summary.outcome, "cancelled");
+  assert.match(
+    fixture.dependencies.pauses.join("\n"),
+    /authenticated as a normal GitHub user/u,
+  );
+  assert.equal(fixture.state.taskCount, 0);
+});
+
 await test("configured commands stay unchanged and prompts use canonical LF while preserving Unicode and quotes", async (t) => {
   const fixture = await implementationRun(t, {
     ...validConfig,
@@ -157,7 +189,7 @@ await test("operator-authorized close retry never repeats the accepted implement
   assert.equal(fixture.state.taskCount, 1);
 });
 
-await test("a fresh Run picks up an Issue assigned only to the configured runner without a Reservation label", async (t) => {
+await test("a fresh Run picks up an Issue assigned only to the authenticated viewer without a Reservation label", async (t) => {
   const fixture = await implementationRun(t);
   fixture.state.ticket.assignees = ["runner"];
 

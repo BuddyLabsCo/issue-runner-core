@@ -6,6 +6,7 @@ import type {
   ParentDiscoveryChild,
   ParentObservation,
   Tracker,
+  ViewerIdentity,
 } from "../run/contracts.ts";
 import type { GitHubClient } from "./github-client.ts";
 
@@ -15,38 +16,26 @@ import {
   scopedIssue,
 } from "./github-issue-identity.ts";
 
-function missingRunnerError(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "type" in error &&
-    error.type === "NOT_FOUND" &&
-    "path" in error &&
-    isDeepStrictEqual(error.path, ["user"])
-  );
-}
+const viewerError =
+  "gh must be authenticated as a normal GitHub user; GitHub did not resolve the authenticated viewer";
 
 async function requestIssueGraphQL(
   client: GitHubClient,
   query: string,
   variables: Record<string, unknown>,
   signal?: AbortSignal,
-  allowMissingRunner = false,
 ): Promise<Record<string, unknown>> {
   signal?.throwIfAborted();
-  const { response, commandError, exitCode } = await client.graphql(
-    query,
-    variables,
-  );
+  const { response, commandError } = await client.graphql(query, variables);
   signal?.throwIfAborted();
   if (response.errors?.length) {
     if (
-      allowMissingRunner &&
-      response.data?.user === null &&
-      response.errors.every(missingRunnerError) &&
-      (!commandError || exitCode === 1)
+      response.data !== null &&
+      response.data !== undefined &&
+      "viewer" in response.data &&
+      response.data.viewer === null
     )
-      return object(response.data);
+      throw new Error(viewerError, { cause: commandError });
     throw new Error(
       `GitHub GraphQL Issue request failed: ${JSON.stringify(response.errors)}`,
       {
@@ -190,6 +179,14 @@ function parseAssignee({ id, login }: Record<string, unknown>) {
   return { id, login };
 }
 
+function parseViewer(value: unknown): ViewerIdentity {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    throw new Error(viewerError);
+  const { id, login } = value as Record<string, unknown>;
+  if (!nonempty(id) || !nonempty(login)) throw new Error(viewerError);
+  return { id, login };
+}
+
 export const markerFields = [
   issueConnectionFields("labels", "id name"),
   issueConnectionFields("assignees", "id login"),
@@ -243,18 +240,14 @@ export function readIssueMarkers(
 
 function markerLookup(
   repo: Record<string, unknown>,
-  user: unknown,
-  { reservationLabel, runnerAccount }: Parameters<Tracker["discoverParent"]>[2],
+  viewer: unknown,
+  { reservationLabel }: Parameters<Tracker["discoverParent"]>[2],
 ) {
   const reservation =
     repo.label === null ? null : parseLabel(object(repo.label));
-  const runner = user === null ? null : parseAssignee(object(user));
-  if (
-    (reservation && reservation.name !== reservationLabel) ||
-    (runner && runner.login.toLowerCase() !== runnerAccount.toLowerCase())
-  )
+  if (reservation && reservation.name !== reservationLabel)
     throw new Error("GitHub returned unexpected Reservation marker identities");
-  return { reservation, runner };
+  return { reservation, viewer: parseViewer(viewer) };
 }
 
 function readScopeChildren<T extends IssueFact>(
@@ -368,14 +361,14 @@ export async function discoverParent(
   client: GitHubClient,
   repository: string,
   parentTicket: number,
-  { reservationLabel, runnerAccount }: Parameters<Tracker["discoverParent"]>[2],
+  { reservationLabel }: Parameters<Tracker["discoverParent"]>[2],
   signal?: AbortSignal,
 ) {
-  const read: ReadIssueGraphQL = (query, variables, allowMissingRunner) =>
-    requestIssueGraphQL(client, query, variables, signal, allowMissingRunner);
+  const read: ReadIssueGraphQL = (query, variables) =>
+    requestIssueGraphQL(client, query, variables, signal);
   const [owner, name] = repository.split("/");
   const data = await read(
-    `query ParentDiscovery($owner: String!, $name: String!, $number: Int!, $reservation: String!, $runner: String!) {
+    `query ParentDiscovery($owner: String!, $name: String!, $number: Int!, $reservation: String!) {
       repository(owner: $owner, name: $name) {
         id nameWithOwner
         label(name: $reservation) { id name }
@@ -384,16 +377,14 @@ export async function discoverParent(
           ${issueConnectionFields("subIssues", childFields)}
         }
       }
-      user(login: $runner) { id login }
+      viewer { id login }
     }`,
     {
       owner,
       name,
       number: parentTicket,
       reservation: reservationLabel,
-      runner: runnerAccount,
     },
-    true,
   );
   const repo = object(data.repository);
   const issue = object(repo.issue);
@@ -404,10 +395,7 @@ export async function discoverParent(
     parentTicket,
     "Parent Ticket",
   );
-  const lookup = markerLookup(repo, data.user, {
-    reservationLabel,
-    runnerAccount,
-  });
+  const lookup = markerLookup(repo, data.viewer, { reservationLabel });
   const observed = await readScopeChildren(
     read,
     parent,
@@ -450,8 +438,8 @@ export async function readIssueStart(
   parentTicket?: number,
   signal?: AbortSignal,
 ): Promise<IssueStartFacts> {
-  const read: ReadIssueGraphQL = (query, variables, allowMissingRunner) =>
-    requestIssueGraphQL(client, query, variables, signal, allowMissingRunner);
+  const read: ReadIssueGraphQL = (query, variables) =>
+    requestIssueGraphQL(client, query, variables, signal);
   const [owner, name] = repository.split("/");
   const parentField =
     parentTicket === undefined
@@ -462,29 +450,27 @@ export async function readIssueStart(
     }
   `;
   const data = await read(
-    `query IssueStart($owner: String!, $name: String!, $number: Int!, $reservation: String!, $runner: String!${parentField ? ", $parent: Int!" : ""}) {
+    `query IssueStart($owner: String!, $name: String!, $number: Int!, $reservation: String!${parentField ? ", $parent: Int!" : ""}) {
       repository(owner: $owner, name: $name) {
         id nameWithOwner
         label(name: $reservation) { id name }
         target: issue(number: $number) { ${childFields} title body url }
         ${parentField}
       }
-      user(login: $runner) { id login }
+      viewer { id login }
     }`,
     {
       owner,
       name,
       number,
       reservation: markers.reservationLabel,
-      runner: markers.runnerAccount,
       ...(parentTicket === undefined ? {} : { parent: parentTicket }),
     },
-    true,
   );
   const repo = object(data.repository);
   const target = object(repo.target);
   const issue = scopedIssue(target, repo, repository, number, "Issue");
-  const lookup = markerLookup(repo, data.user, markers);
+  const lookup = markerLookup(repo, data.viewer, markers);
   const { title, body, url } = target;
   if (!nonempty(title) || typeof body !== "string" || !nonempty(url))
     throw new Error("GitHub issue has an invalid review snapshot");
@@ -519,4 +505,17 @@ export async function readIssueStart(
     ...lookup,
     ...(scope ? { scope } : {}),
   };
+}
+
+export async function readViewer(
+  client: GitHubClient,
+  signal?: AbortSignal,
+): Promise<ViewerIdentity> {
+  const data = await requestIssueGraphQL(
+    client,
+    `query Viewer { viewer { id login } }`,
+    {},
+    signal,
+  );
+  return parseViewer(data.viewer);
 }

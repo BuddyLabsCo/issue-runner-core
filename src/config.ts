@@ -31,7 +31,6 @@ export interface ProjectConfig {
     enhancements: Record<string, unknown>;
   };
   tracker: {
-    runnerAccount: string;
     reservationLabel: string;
   };
   codeHost: { adminMerge: boolean };
@@ -244,7 +243,6 @@ function parseConfig(
       ? {}
       : { targetBranch: text(input.targetBranch, "targetBranch") }),
     tracker: {
-      runnerAccount: text(tracker.runnerAccount, "tracker.runnerAccount"),
       reservationLabel: text(
         tracker.reservationLabel,
         "tracker.reservationLabel",

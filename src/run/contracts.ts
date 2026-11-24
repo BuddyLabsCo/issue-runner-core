@@ -32,14 +32,14 @@ interface IssueLabel {
   name: string;
 }
 
-interface IssueAssignee {
+export interface ViewerIdentity {
   id: string;
   login: string;
 }
 
 export interface ReservationMarkers {
   labels: IssueLabel[];
-  assignees: IssueAssignee[];
+  assignees: ViewerIdentity[];
 }
 
 export interface ParentDiscoveryChild extends IssueFact, ReservationMarkers {
@@ -48,7 +48,7 @@ export interface ParentDiscoveryChild extends IssueFact, ReservationMarkers {
 
 interface MarkerLookup {
   reservation: IssueLabel | null;
-  runner: IssueAssignee | null;
+  viewer: ViewerIdentity | null;
 }
 
 export interface ParentObservation {
@@ -69,7 +69,7 @@ export interface IssueStartFacts extends MarkerLookup {
 export interface ReservationAdditions {
   issue: IssueFact;
   reservation: IssueLabel;
-  runner: IssueAssignee;
+  viewer: ViewerIdentity;
   addLabel: boolean;
   addRunner: boolean;
 }
@@ -101,10 +101,11 @@ export interface Tracker {
   readIssueStart(
     repository: string,
     ticket: number,
-    markers: { reservationLabel: string; runnerAccount: string },
+    markers: { reservationLabel: string },
     parentTicket?: number,
     signal?: AbortSignal,
   ): Promise<IssueStartFacts>;
+  readViewer(signal?: AbortSignal): Promise<ViewerIdentity>;
   reserveIssue(
     additions: ReservationAdditions,
     signal?: AbortSignal,
@@ -122,7 +123,7 @@ export interface Tracker {
   discoverParent(
     repository: string,
     parentTicket: number,
-    markers: { reservationLabel: string; runnerAccount: string },
+    markers: { reservationLabel: string },
     signal?: AbortSignal,
   ): Promise<ParentDiscovery>;
   listChildrenPage(

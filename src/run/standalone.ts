@@ -14,6 +14,7 @@ import type {
   PullRequestIdentity,
   Ticket,
   Tracker,
+  ViewerIdentity,
 } from "./contracts.ts";
 import { publishImplementation } from "./publication.ts";
 import {
@@ -23,6 +24,7 @@ import {
 } from "./execution-recovery.ts";
 import { cleanupExecution, executionTerminal } from "./cleanup.ts";
 import type { RunContext, RunSummary } from "./run.ts";
+import { viewerOf } from "./viewer.ts";
 import { reportTicket, type TicketReport } from "./report.ts";
 import { hasOpenBlocker, readChildren } from "./discovery.ts";
 import { startIssue } from "./issue-start.ts";
@@ -83,9 +85,9 @@ async function executeStandalone(
     operator: context.operator,
   });
   const { config, directory: root } = loaded;
-  const { runnerAccount, reservationLabel } = config.tracker;
-  const isRunner = (account: string) =>
-    account.toLowerCase() === runnerAccount.toLowerCase();
+  const { reservationLabel } = config.tracker;
+  const isViewer = (viewer: ViewerIdentity, account: string) =>
+    account.toLowerCase() === viewer.login.toLowerCase();
   const repository = config.repository;
   const accept = async (progress: ImplementationProgress, text: string) => {
     const result = parsePRExecution(text);
@@ -187,7 +189,13 @@ async function executeStandalone(
         };
     } else if (config.issueLabel && !ticket.labels?.includes(config.issueLabel))
       return { ticket, reason: `Issue is missing ${config.issueLabel}` };
-    if (ticket.assignees?.some((account) => !isRunner(account)))
+    const viewer = input.documentation
+      ? undefined
+      : await viewerOf(context).read();
+    if (
+      viewer &&
+      ticket.assignees?.some((account) => !isViewer(viewer, account))
+    )
       return { ticket, reason: "Issue is externally owned" };
     if (await hasOpenBlocker(repository, number, tracker, read))
       return { ticket, reason: "Issue is blocked" };
@@ -200,6 +208,7 @@ async function executeStandalone(
         config,
         tracker,
         read,
+        viewer: viewerOf(context),
         restarting,
         ...(context.advance ? { advance: context.advance } : {}),
         ...(input.parentTicket === undefined
@@ -216,13 +225,16 @@ async function executeStandalone(
     selected.ticket.stateReason === "completed";
   const beforeDispatch = async () => {
     selected = await inspect();
-    if (
-      !selected.reason &&
-      !input.documentation &&
-      (!selected.ticket.assignees?.some(isRunner) ||
-        !selected.ticket.labels?.includes(reservationLabel))
-    )
-      selected.reason = "Reservation changed before dispatch";
+    if (!selected.reason && !input.documentation) {
+      const viewer = await viewerOf(context).read();
+      if (
+        !selected.ticket.assignees?.some((account) =>
+          isViewer(viewer, account),
+        ) ||
+        !selected.ticket.labels?.includes(reservationLabel)
+      )
+        selected.reason = "Reservation changed before dispatch";
+    }
     return selected.reason === undefined;
   };
   let tabs: ReturnType<typeof executionTerminal> | undefined;

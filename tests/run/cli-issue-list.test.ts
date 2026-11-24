@@ -7,7 +7,10 @@ import { stringify } from "yaml";
 import { executeCli } from "../../src/cli.ts";
 import type { Ticket } from "../../src/run/contracts.ts";
 import { createProject, validConfig } from "../support/cli-project.ts";
-import { createCliDependencies } from "../support/cli-dependencies.ts";
+import {
+  createCliDependencies,
+  testViewer,
+} from "../support/cli-dependencies.ts";
 import { child, parentRun } from "../support/parent-run.ts";
 
 async function issueListRun(
@@ -30,6 +33,24 @@ async function issueListRun(
     run: (scope = ["--issue"]) => fixture.run(scope),
   };
 }
+
+await test("list discovery retries a failed viewer lookup once and caches the successful identity", async (t) => {
+  const fixture = await issueListRun(t, [child(51), child(52)]);
+  let attempts = 0;
+  fixture.dependencies.tracker.readViewer = async () => {
+    if (++attempts === 1) throw new Error("viewer lookup unavailable");
+    return testViewer;
+  };
+
+  const result = await fixture.run();
+
+  assert.equal(result.summary.outcome, "incomplete");
+  assert.equal(attempts, 2);
+  assert.deepEqual(
+    [...fixture.dispatched].sort((a, b) => a - b),
+    [51, 52],
+  );
+});
 
 await test("an explicit Issue List dispatches only selected Issues in ascending order up to the Batch size without parent discovery", async (t) => {
   const fixture = await issueListRun(

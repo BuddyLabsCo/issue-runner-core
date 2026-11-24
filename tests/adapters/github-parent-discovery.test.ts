@@ -12,7 +12,6 @@ import {
   repository,
   reservation,
   runner,
-  runnerNotFound,
 } from "../support/github-parent-discovery.ts";
 
 function assertDiscoveryRequest({
@@ -27,7 +26,6 @@ function assertDiscoveryRequest({
     name: "repo",
     number: 48,
     reservation: "runner:reserved",
-    runner: "runner",
   });
   const fields = new Map<string, Record<string, string>>();
   const parents: string[] = [];
@@ -68,8 +66,8 @@ function assertDiscoveryRequest({
     "repository.nameWithOwner",
     "repository.label.id",
     "repository.label.name",
-    "user.id",
-    "user.login",
+    "viewer.id",
+    "viewer.login",
     `${child}.labels.nodes.id`,
     `${child}.labels.nodes.name`,
     `${child}.assignees.nodes.id`,
@@ -106,7 +104,7 @@ function assertDiscoveryRequest({
   });
   assert.deepEqual(fields.get(parent), { number: "$number" });
   assert.deepEqual(fields.get("repository.label"), { name: "$reservation" });
-  assert.deepEqual(fields.get("user"), { login: "$runner" });
+  assert.deepEqual(fields.get("viewer"), {});
 }
 
 await test("parent discovery returns complete facts and mutation IDs from one single-page query", async () => {
@@ -191,7 +189,7 @@ await test("parent discovery returns complete facts and mutation IDs from one si
       },
     ],
     reservation,
-    runner,
+    viewer: runner,
   });
 });
 
@@ -325,40 +323,26 @@ await test("discovery rejects partial GraphQL output with a required field error
   );
 });
 
-for (const [scenario, errors, exitCode] of [
-  [
-    "a missing user alongside a required field error",
-    [
-      runnerNotFound,
-      {
-        type: "FORBIDDEN",
-        path: ["repository", "issue"],
-        message: "access denied",
-      },
-    ],
-    1,
-  ],
-  [
-    "a missing-user envelope from a timed-out command",
-    [runnerNotFound],
-    undefined,
-  ],
-] as const) {
-  await test(`discovery rejects ${scenario}`, async () => {
-    const command: GitHubCommand = async () => ({
-      stdout: JSON.stringify({
-        data: { ...observation(connection([])).data, user: null },
-        errors,
-      }),
-      error: new Error("gh failed"),
-      ...(exitCode === undefined ? {} : { exitCode }),
-    });
-    await assert.rejects(
-      new GitHubTracker(command).discoverParent("owner/repo", 48, config),
-      /GitHub GraphQL Issue request failed/u,
-    );
+await test("discovery rejects a missing authenticated viewer with a clear error", async () => {
+  const command: GitHubCommand = async () => ({
+    stdout: JSON.stringify({
+      data: { ...observation(connection([])).data, viewer: null },
+      errors: [
+        {
+          type: "FORBIDDEN",
+          path: ["viewer"],
+          message: "viewer unavailable",
+        },
+      ],
+    }),
+    error: new Error("gh failed"),
+    exitCode: 1,
   });
-}
+  await assert.rejects(
+    new GitHubTracker(command).discoverParent("owner/repo", 48, config),
+    /normal GitHub user/u,
+  );
+});
 
 for (const [name, facts, message] of [
   ["null labels", child(51, { labels: null }), /Expected a JSON object/u],

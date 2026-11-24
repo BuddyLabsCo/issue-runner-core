@@ -6,6 +6,7 @@ import { saveProgress, type BatchProgress } from "../recovery.ts";
 import type { ChildPage, Ticket, Tracker } from "./contracts.ts";
 import { OperationStopped, type OperationOptions } from "./operations.ts";
 import type { RunContext } from "./run.ts";
+import { viewerOf } from "./viewer.ts";
 
 export type ReadOperation = <T>(
   operation: string,
@@ -132,11 +133,11 @@ export async function eligibleIssueNumbers(input: {
 }): Promise<number[]> {
   const { tickets, loaded, tracker, context, read } = input;
   const config = loaded.config;
-  const runnerAccount = config.tracker.runnerAccount.toLowerCase();
+  const ordered = [...(tickets ?? [])].sort((a, b) => a.number - b.number);
+  if (ordered.length === 0) return [];
+  const viewerLogin = (await viewerOf(context).read()).login.toLowerCase();
   const eligible: number[] = [];
-  for (const child of [...(tickets ?? [])].sort(
-    (a, b) => a.number - b.number,
-  )) {
+  for (const child of ordered) {
     const isBlocked =
       child.blocked ??
       (await hasOpenBlocker(config.repository, child.number, tracker, read));
@@ -149,12 +150,12 @@ export async function eligibleIssueNumbers(input: {
     }
     const hasRunner =
       child.assignees?.some(
-        (account) => account.toLowerCase() === runnerAccount,
+        (account) => account.toLowerCase() === viewerLogin,
       ) ?? false;
     const hasLabel =
       child.labels?.includes(config.tracker.reservationLabel) ?? false;
     const external = child.assignees?.some(
-      (account) => account.toLowerCase() !== runnerAccount,
+      (account) => account.toLowerCase() !== viewerLogin,
     );
     if (
       external ||

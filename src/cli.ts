@@ -78,9 +78,9 @@ Creates <launch directory>/<project-key>/config.yaml and:
 
 Project keys name one child using letters, digits, dot, underscore, or hyphen.
 Existing destinations are refused. No credentials or plugin are needed.
-Replace repository, checkout, targetBranch, tracker.runnerAccount, and every
+Replace repository, checkout, targetBranch, and every
 Agent start/resume command. Edit the three repository-specific prompts.
-Configure the Git identity and access plus gh authentication for Runner and Agents.
+Configure the Git identity and access plus gh authentication as a normal user for Runner and Agents.
 Then run ${commandName} run --project <project-key> --parent <number>.`;
 
 function result(

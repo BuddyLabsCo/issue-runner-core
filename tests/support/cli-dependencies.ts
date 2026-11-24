@@ -20,7 +20,13 @@ import type {
   RequiredCheck,
   PullRequestState,
   MergeRequestResult,
+  ViewerIdentity,
 } from "../../src/run/contracts.ts";
+
+export const testViewer: ViewerIdentity = {
+  id: "runner",
+  login: "runner",
+};
 
 async function scriptedPages(
   read: (
@@ -77,7 +83,7 @@ async function readIssueStart(
   >,
   repository: string,
   number: number,
-  { reservationLabel, runnerAccount }: Parameters<Tracker["readIssueStart"]>[2],
+  { reservationLabel }: Parameters<Tracker["readIssueStart"]>[2],
   parentTicket?: number,
 ): Promise<IssueStartFacts> {
   const scope =
@@ -105,7 +111,7 @@ async function readIssueStart(
       blockers: blockers.map((blocker) => issueIdentity(repository, blocker)),
     },
     reservation: { id: reservationLabel, name: reservationLabel },
-    runner: { id: runnerAccount.toLowerCase(), login: runnerAccount },
+    viewer: testViewer,
     ...(scope ? { scope } : {}),
   };
 }
@@ -120,12 +126,12 @@ async function reserveIssue(
       account: string,
     ): Promise<void>;
   },
-  { issue, reservation, runner, addLabel, addRunner }: ReservationAdditions,
+  { issue, reservation, viewer, addLabel, addRunner }: ReservationAdditions,
 ) {
   if (addLabel)
     await this.addLabel(issue.repository, issue.number, reservation.name);
   if (addRunner)
-    await this.addAssignee(issue.repository, issue.number, runner.login);
+    await this.addAssignee(issue.repository, issue.number, viewer.login);
   const ticket = await this.getTicket(issue.repository, issue.number);
   if (ticket.state !== issue.state || ticket.stateReason !== issue.stateReason)
     throw new Error("Unexpected Issue state in Reservation response");
@@ -136,7 +142,7 @@ async function discoverParent(
   this: Pick<Tracker, "getParent" | "listChildrenPage" | "listBlockersPage">,
   repository: string,
   parentTicket: number,
-  { reservationLabel, runnerAccount }: Parameters<Tracker["discoverParent"]>[2],
+  { reservationLabel }: Parameters<Tracker["discoverParent"]>[2],
 ): Promise<ParentDiscovery> {
   const parent = issueIdentity(
     repository,
@@ -172,7 +178,7 @@ async function discoverParent(
     parent,
     children,
     reservation: { id: reservationLabel, name: reservationLabel },
-    runner: { id: runnerAccount, login: runnerAccount },
+    viewer: testViewer,
   };
 }
 
@@ -248,6 +254,10 @@ export function createCliDependencies(launchDirectory: string) {
       async addAssignee(...args: [string, number, string]) {
         void args;
         effects.push("assign");
+      },
+      async readViewer() {
+        reads.push("viewer");
+        return structuredClone(testViewer);
       },
       async getParent(repository: string, ticket: number) {
         reads.push(`${repository}#${ticket}`);

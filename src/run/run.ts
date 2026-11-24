@@ -35,6 +35,7 @@ import {
   type BatchTicket,
   type ReadOperation,
 } from "./discovery.ts";
+import { cachedViewer, type ViewerLookup } from "./viewer.ts";
 
 export interface RunContext {
   audit: AuditLog;
@@ -53,6 +54,7 @@ export interface RunContext {
   signal?: AbortSignal;
   retained?: Map<string, ImplementationProgress | undefined>;
   reports?: TicketReport[];
+  viewer?: ViewerLookup;
 }
 
 export interface RunSummary {
@@ -220,6 +222,12 @@ async function executeProject(
         attempt,
       }),
     });
+  const viewer = cachedViewer(() =>
+    read("read_viewer", "authenticated gh viewer", () =>
+      tracker.readViewer(signal),
+    ),
+  );
+  context = { ...context, viewer };
   context.signal?.throwIfAborted();
   const targetBranch =
     loaded.config.targetBranch ??
@@ -342,6 +350,7 @@ async function executeProject(
       tracker,
       read,
       markers: loaded.config.tracker,
+      viewer,
       signal,
       summary,
       recoveredBatch: pending.batch.length > 0 || pending.completedCheckpoint,

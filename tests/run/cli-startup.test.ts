@@ -78,6 +78,8 @@ await test("init creates a Project without credentials and refuses to overwrite 
     path.join(launchDirectory, "demo/config.yaml"),
     "utf8",
   );
+  assert.doesNotMatch(config, /\brunnerAccount\b/u);
+  assert.match(config, /\breservationLabel:/u);
   for (const purpose of ["implement", "review", "documentation"]) {
     assert.ok(
       (

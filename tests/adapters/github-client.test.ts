@@ -10,7 +10,10 @@ import path from "node:path";
 import test, { type TestContext } from "node:test";
 import { executeCli } from "../../src/cli.ts";
 import { GitHubClient } from "../../src/adapters/github-client.ts";
-import { createCliDependencies } from "../support/cli-dependencies.ts";
+import {
+  createCliDependencies,
+  testViewer,
+} from "../support/cli-dependencies.ts";
 import { createProject, validConfig } from "../support/cli-project.ts";
 import {
   child,
@@ -208,8 +211,8 @@ await executableTest(
       name: validConfig.tracker.reservationLabel,
     };
     const runner = {
-      id: "runner-id",
-      login: validConfig.tracker.runnerAccount,
+      id: testViewer.id,
+      login: testViewer.login,
     };
     const ready = { id: "ready-id", name: "ready-for-agent" };
     const target = child(48, {
@@ -219,7 +222,7 @@ await executableTest(
       labels: connection([ready]),
     });
     const start = {
-      data: { repository: { ...repository, label, target }, user: runner },
+      data: { repository: { ...repository, label, target }, viewer: runner },
     };
     const confirmed = {
       data: {
@@ -248,11 +251,11 @@ await executableTest(
           '  assert.deepEqual(args, ["api", "graphql", "--method", "POST", "--input", "-"]);',
           '  const { query, variables } = JSON.parse(fs.readFileSync(0, "utf8"));',
           '  if (query.startsWith("query IssueStart")) {',
-          `    assert.deepEqual(variables, { owner: "owner", name: "repo", number: 48, reservation: ${JSON.stringify(label.name)}, runner: ${JSON.stringify(runner.login)} });`,
+          `    assert.deepEqual(variables, { owner: "owner", name: "repo", number: 48, reservation: ${JSON.stringify(label.name)} });`,
           `    console.log(JSON.stringify(${JSON.stringify(start)}));`,
           "  } else {",
           '    assert.ok(query.startsWith("mutation ReserveIssue"));',
-          `    assert.deepEqual(variables, { issue: "issue-48", label: ${JSON.stringify(label.id)}, runner: ${JSON.stringify(runner.id)} });`,
+          `    assert.deepEqual(variables, { issue: "issue-48", label: ${JSON.stringify(label.id)}, viewer: ${JSON.stringify(runner.id)} });`,
           `    console.log(JSON.stringify(${JSON.stringify(confirmed)}));`,
           "  }",
           "}",

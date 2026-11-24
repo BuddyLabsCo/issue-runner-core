@@ -13,6 +13,7 @@ import {
 } from "../support/ci-repair-run.ts";
 import { conflictRepairRun } from "../support/conflict-repair-run.ts";
 import { validConfig } from "../support/cli-project.ts";
+import { testViewer } from "../support/cli-dependencies.ts";
 import {
   deferred,
   implementationProgress,
@@ -285,9 +286,7 @@ await test(
     assert.ok(
       children[0]!.labels!.includes(validConfig.tracker.reservationLabel),
     );
-    assert.ok(
-      children[0]!.assignees!.includes(validConfig.tracker.runnerAccount),
-    );
+    assert.ok(children[0]!.assignees!.includes(testViewer.login));
   },
 );
 
