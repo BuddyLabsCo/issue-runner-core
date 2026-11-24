@@ -227,7 +227,7 @@ sequenceDiagram
     else Saved conversation
         Core->>Core: Validate saved exact ref and any returned ref, no fresh Probe
     end
-    Note over Core,Terminal: A retained Probe may establish identity before exact resume
+    Note over Core,Terminal: A readable retained Probe still requires a saved fingerprint
     Core->>Terminal: io.submitText(task, correction, or saved continuation)
     Note over Core,Terminal: Missing files cause no reminders, handle native approvals in the tab
     Core->>Core: Independently verify handoff and persist accepted stage

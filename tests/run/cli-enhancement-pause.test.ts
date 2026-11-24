@@ -16,6 +16,7 @@ for (const reentrant of [false, true]) {
         child(53),
       ]);
       const firstDisplayed = deferred<void>();
+      const secondQueued = deferred<void>();
       const secondDisplayed = deferred<void>();
       const thirdDisplayed = deferred<void>();
       const thirdAnswer = deferred<string>();
@@ -70,6 +71,7 @@ for (const reentrant of [false, true]) {
                 void firstDisplayed.promise.then(() => {
                   context.enhancementPause(id, "Human action needed");
                   context.enhancementPause(id, "Duplicate queued message");
+                  secondQueued.resolve();
                 });
             },
             async enhancementResume(id) {
@@ -112,6 +114,7 @@ for (const reentrant of [false, true]) {
           running.then((result) => assert.fail(JSON.stringify(result.summary))),
         ]);
         await siblingCompleted.promise;
+        await secondQueued.promise;
         assert.deepEqual(resumed, []);
         firstAnswer.resolve("");
         await secondDisplayed.promise;

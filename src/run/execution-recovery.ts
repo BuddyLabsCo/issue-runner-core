@@ -244,7 +244,7 @@ export async function restoreExecution(input: {
           "unable to recover: missing native implementation context",
         );
       const restored = saved as unknown as ImplementationProgress;
-      validateNativeSessions(restored, loaded);
+      await validateNativeSessions(restored, loaded);
       if (restored.result !== undefined) {
         restored.result = parsePRExecution(JSON.stringify(restored.result));
         if (
@@ -287,14 +287,6 @@ export async function restoreExecution(input: {
         )
           throw new Error(
             "unable to recover: invalid documentation execution ownership or closure",
-          );
-        if (
-          restored.phase === "probing" &&
-          !nonempty(implement.sessionid) &&
-          (!restored.probe || !(await readHandoff(restored.probe.path)))
-        )
-          throw new Error(
-            "unable to recover: missing native documentation identity; retain the Worktree and complete the assigned Probe before recovery",
           );
       }
       if (
