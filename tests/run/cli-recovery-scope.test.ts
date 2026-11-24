@@ -13,6 +13,31 @@ import {
   documentationRun,
 } from "../support/documentation-run.ts";
 
+for (const field of ["checksStartedAt", "mergeStartedAt"] as const) {
+  await test(`recovery rejects a negative ${field} timeout basis`, async (t) => {
+    const fixture = await implementationRun(t);
+    assert.match(
+      (await fixture.run()).summary.tickets![0]!.detail,
+      /CI-ready/u,
+    );
+    const saved = await fixture.snapshot();
+    const recovery = path.join(fixture.directory, "recovery");
+    const [file] = await readdir(recovery);
+    await publish(path.join(recovery, file!), {
+      ...saved,
+      publication: { ...saved.publication!, [field]: -1 },
+    });
+    fixture.dependencies.signal = new AbortController().signal;
+    fixture.dependencies.operator.pause = async (message) => {
+      assert.match(message, /restart the entire Issue #50/u);
+      return "q";
+    };
+    const result = await fixture.run();
+    assert.equal(result.summary.outcome, "cancelled");
+    assert.ok(fixture.dependencies.messages.includes("unable to recover"));
+  });
+}
+
 await test("an execution checkpoint from another input scope cannot resume or overwrite retained work", async (t) => {
   const fixture = await implementationRun(t);
   assert.equal((await fixture.run()).summary.outcome, "incomplete");

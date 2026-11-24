@@ -31,6 +31,7 @@ export async function integrateImplementation(input: {
   read: ReadOperation;
   persist: () => Promise<void>;
   beforeDispatch?: () => Promise<boolean>;
+  autoMerge: boolean;
   issueClosureReason: Ticket["stateReason"];
   continuePublication: (observedConflict?: boolean) => Promise<string>;
 }): Promise<{ outcome: "succeeded"; reason: string }> {
@@ -169,6 +170,10 @@ export async function integrateImplementation(input: {
     }
     if (input.issueClosureReason !== null)
       throw new OperationStopped("Issue is already terminal");
+    if (!input.autoMerge)
+      throw new OperationStopped(
+        "Auto-merge is disabled; Pull Request retained",
+      );
     if (state.mergeFailure !== null) {
       await pauseForOperator(
         context.operator,

@@ -135,6 +135,7 @@ async function executeStandalone(
     runId: context.runId,
     inputHash: context.inputHash,
     runArguments: context.runArguments,
+    now: context.clock.now().getTime(),
     ...(context.scope ? { scope: context.scope } : {}),
     restarting,
   });
@@ -298,6 +299,7 @@ async function executeStandalone(
           codeHost: input.codeHost,
           tracker,
           read,
+          autoMerge: input.autoMerge,
           issueClosureReason: started.ticket.stateReason,
           continuePublication: (conflict) => publish(progress, conflict),
         });
@@ -337,19 +339,8 @@ async function executeStandalone(
       "merged",
       "delivered",
     ].includes(restored.publication.phase)
-  ) {
-    if (
-      !input.autoMerge &&
-      selected.ticket.state !== "closed" &&
-      ["conflict_repair", "pending_merge", "merge_requested"].includes(
-        restored.publication.phase,
-      )
-    ) {
-      report.detail = "Auto-merge is disabled; Pull Request retained";
-      return summary;
-    }
+  )
     return integrate(restored);
-  }
   if (
     selected.reason &&
     !completed &&
