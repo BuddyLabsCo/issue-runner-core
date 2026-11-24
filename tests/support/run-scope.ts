@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parse, stringify } from "yaml";
@@ -17,6 +18,17 @@ export type ImplementationFixture = Awaited<
 export type SavedProgress = Awaited<
   ReturnType<ImplementationFixture["snapshot"]>
 >;
+
+export function legacyRunInputHash(
+  commandName: string,
+  argv: readonly string[],
+  config: Uint8Array,
+): string {
+  return createHash("sha256")
+    .update(JSON.stringify([commandName, argv]))
+    .update(config)
+    .digest("hex");
+}
 
 export async function interrupt(fixture: ImplementationFixture) {
   fixture.state.onTask = async () => fixture.controller.abort();

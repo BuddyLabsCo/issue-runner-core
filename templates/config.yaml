@@ -1,5 +1,8 @@
 # Edit this file and prompts/{implement,review,documentation}.md before running.
-# Keep arguments and this file unchanged when resuming an interrupted Run.
+# An interrupted Run resumes when its Run scope is unchanged: project directory,
+# repository, checkout, effective target branch, selected work, the Issue list
+# used by Parent or value-less Issue selection, and Review settings. Other edits
+# apply to remaining work. Older configuration-byte checkpoints are ignored.
 
 repository: your-account/your-repository # GitHub owner/repo matching the checkout.
 checkout: /absolute/path/to/your-repository # Absolute path; Windows: C:\work\your-repository.

@@ -15,6 +15,7 @@ import test from "node:test";
 import { parse, stringify } from "yaml";
 import { executeCli } from "../../src/cli.ts";
 import {
+  implementationCommand,
   implementationProgress,
   implementationRun,
   publish,
@@ -27,6 +28,7 @@ import {
   continueWith,
   interrupt,
   interruptNextAssignment,
+  legacyRunInputHash,
   otherCheckpoint,
   updateConfig,
 } from "../support/run-scope.ts";
@@ -422,7 +424,11 @@ await test("old-format checkpoints are ignored rather than adopted", async (t) =
   const saved = await interrupt(fixture);
   const recovery = path.join(fixture.directory, "recovery");
   const currentFile = path.join(recovery, `${saved.input_hash}-50.json`);
-  const oldHash = "0".repeat(64);
+  const oldHash = legacyRunInputHash(
+    fixture.dependencies.commandName,
+    implementationCommand,
+    await readFile(path.join(fixture.directory, "config.yaml")),
+  );
   const oldFile = path.join(recovery, `${oldHash}-50.json`);
   const old = {
     ...saved,
