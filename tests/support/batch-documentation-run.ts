@@ -30,8 +30,13 @@ export const documentationNoChange = {
 export async function batchDocumentationRun(
   t: TestContext,
   children: Ticket[],
-  config: Omit<typeof batchDocumentationConfig, "issueList"> & {
+  config: Omit<typeof batchDocumentationConfig, "issueList" | "workflow"> & {
     issueList: number[];
+    workflow: {
+      review: boolean;
+      docMaintainTriggerLabel: string;
+      maxReviewRounds?: number;
+    };
   } = batchDocumentationConfig,
 ) {
   const fixture = await parentDeliveryRun(t, children, config);
