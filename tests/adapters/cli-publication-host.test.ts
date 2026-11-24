@@ -20,8 +20,7 @@ await test("publication sends the accepted multiline metadata directly and recor
   const operations: string[] = [];
   let created: object | undefined;
   const polls: number[] = [];
-  const adapter = new GitHubCodeHost("host-secret", async (args, options) => {
-    assert.equal(options.token, "host-secret");
+  const adapter = new GitHubCodeHost(async (args, options) => {
     if (args[0] === "api" && args[1] === "--method")
       return JSON.stringify({ default_branch: "default-branch" });
     assert.deepEqual(args, [
@@ -200,7 +199,7 @@ await test("publication completes each candidate connection and counts a shared 
       target: connection([closed], 3),
     },
   ];
-  const adapter = new GitHubCodeHost("host-secret", (_args, { input }) => {
+  const adapter = new GitHubCodeHost((_args, { input }) => {
     const { query, variables } = JSON.parse(input!) as {
       query: string;
       variables: Record<string, unknown>;
@@ -243,7 +242,7 @@ await test("publication completes each candidate connection and counts a shared 
 await test("publication cancellation stops candidate pagination before the next request", async () => {
   const controller = new AbortController();
   let requests = 0;
-  const adapter = new GitHubCodeHost("host-secret", () => {
+  const adapter = new GitHubCodeHost(() => {
     if (++requests > 1) assert.fail("unexpected continuation request");
     controller.abort();
     return Promise.resolve(
@@ -271,7 +270,7 @@ for (const headRepository of [
   { nameWithOwner: "Fork/Repo" },
 ]) {
   await test(`publication rejects incomplete or contradictory head repository identity ${JSON.stringify(headRepository)}`, async () => {
-    const adapter = new GitHubCodeHost("host-secret", () =>
+    const adapter = new GitHubCodeHost(() =>
       Promise.resolve(
         JSON.stringify({
           data: {
@@ -311,7 +310,7 @@ for (const { name, response, error } of [
   },
 ]) {
   await test(`pre-push observation rejects ${name}`, async () => {
-    const adapter = new GitHubCodeHost("host-secret", () =>
+    const adapter = new GitHubCodeHost(() =>
       Promise.resolve(JSON.stringify({ data: response })),
     );
     await assert.rejects(
@@ -356,7 +355,7 @@ for (const { name, reply, error } of [
   },
 ]) {
   await test(`combined publication observation rejects ${name}`, async () => {
-    const adapter = new GitHubCodeHost("host-secret", () =>
+    const adapter = new GitHubCodeHost(() =>
       Promise.resolve(JSON.stringify(reply)),
     );
     await assert.rejects(adapter.observePublication(publication), error);

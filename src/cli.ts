@@ -27,7 +27,6 @@ export interface CliDependencies extends CliOptions {
     Record<string, import("./terminal.ts").EnhancementModule>
   >;
   launchDirectory: string;
-  env: Record<string, string | undefined>;
   operator: OperatorIO;
   clock?: Clock;
   tracker?: Tracker;
@@ -81,7 +80,7 @@ Project keys name one child using letters, digits, dot, underscore, or hyphen.
 Existing destinations are refused. No credentials or plugin are needed.
 Replace repository, checkout, targetBranch, tracker.runnerAccount, and every
 Agent start/resume command. Edit the three repository-specific prompts.
-Set the environment variable named by codeHost.tokenEnv for GitHub and Git.
+Configure the Git identity and access plus gh authentication for Runner and Agents.
 Then run ${commandName} run --project <project-key> --parent <number>.`;
 
 function result(
@@ -201,7 +200,7 @@ export async function executeCli(
         project,
       );
       dependencies.operator.write(
-        `Initialized Project at ${directory}. Edit config.yaml and prompts/, set the credential named by codeHost.tokenEnv, then run ${commandName} run --project ${project} --parent <number>.`,
+        `Initialized Project at ${directory}. Edit config.yaml and prompts/, configure Git and gh authentication, then run ${commandName} run --project ${project} --parent <number>.`,
       );
       return result(0, project);
     } catch (error) {
@@ -231,16 +230,11 @@ export async function executeRun(
     const options = parseArguments(argv, dependencies.commandName);
     project = options.project;
     parentTicket = options.parentTicket ?? options.issueTicket ?? 0;
-    const loaded = await loadProject(
-      dependencies.launchDirectory,
-      project,
-      dependencies.env,
-      {
-        ...(options.selector === "document"
-          ? { requireDocumentationMaintenance: true }
-          : {}),
-      },
-    );
+    const loaded = await loadProject(dependencies.launchDirectory, project, {
+      ...(options.selector === "document"
+        ? { requireDocumentationMaintenance: true }
+        : {}),
+    });
     if (
       options.selector === "issue" &&
       options.issueTicket === undefined &&
@@ -273,7 +267,6 @@ export async function executeRun(
       timestamp,
       parentTicket,
       runId,
-      [loaded.codeHostToken],
     );
     await supervisedAuditWrite(
       () => audit.create(),
@@ -284,8 +277,8 @@ export async function executeRun(
     const runSummary = await runProject(
       options,
       loaded,
-      dependencies.tracker ?? new GitHubTracker(loaded.codeHostToken),
-      dependencies.codeHost ?? new GitHubCodeHost(loaded.codeHostToken),
+      dependencies.tracker ?? new GitHubTracker(),
+      dependencies.codeHost ?? new GitHubCodeHost(),
       {
         audit,
         runId,
@@ -297,9 +290,7 @@ export async function executeRun(
         ),
         clock,
         operator: dependencies.operator,
-        git:
-          dependencies.gitWorkspace ??
-          new LocalGitWorkspace(loaded.codeHostToken),
+        git: dependencies.gitWorkspace ?? new LocalGitWorkspace(),
         terminal: terminalPlugin,
         enhancements,
         ...(dependencies.signal === undefined

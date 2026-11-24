@@ -55,7 +55,7 @@ for (const outcome of ["committed", "no_change"] as const) {
     });
     const submitted = fixture.state.submissions.length;
     const sleeps = fixture.state.sleeps.length;
-    const configs = fixture.state.gitConfigs.length;
+    const environments = fixture.state.agentEnvironments.length;
     const result = outcome === "committed" ? committed() : noChange;
     fixture.state.evidence.changed = outcome === "committed";
     fixture.state.evidence.commits = result.commits;
@@ -99,13 +99,9 @@ for (const outcome of ["committed", "no_change"] as const) {
     assert.equal(fixture.state.probeCount, 1);
     assert.equal(fixture.state.taskCount, 1);
     assert.equal(fixture.maintenance.creates, 1);
-    assert.equal(fixture.state.gitConfigs.length, configs + 1);
-    assert.notEqual(
-      fixture.state.gitConfigs.at(-1),
-      fixture.state.gitConfigs[0],
-    );
-    for (const file of fixture.state.gitConfigs)
-      await assert.rejects(access(file), { code: "ENOENT" });
+    assert.equal(fixture.state.agentEnvironments.length, environments + 1);
+    for (const env of fixture.state.agentEnvironments)
+      assert.deepEqual(env, {});
   });
 }
 

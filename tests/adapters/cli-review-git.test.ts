@@ -111,7 +111,7 @@ await test("real Git rejects reviewer edits and recovers a final-round fix with 
   };
   const dependencies = {
     ...fixture.dependencies,
-    gitWorkspace: new LocalGitWorkspace("unused-test-token"),
+    gitWorkspace: new LocalGitWorkspace(),
   };
   assert.equal(
     (await executeCli(implementationCommand, dependencies)).summary.outcome,

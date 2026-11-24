@@ -71,7 +71,7 @@ for (const aliasKind of ["directory", "short"] as const) {
     await git(checkout, "add", ".");
     await git(checkout, "commit", "-m", "Initial base");
     const base = await git(checkout, "rev-parse", "HEAD");
-    const workspace = new LocalGitWorkspace("unused-local-test-token");
+    const workspace = new LocalGitWorkspace();
     const worktree = path.join(alias, "ticket-50");
     const expected = { worktree, base, branch: "issue-50" };
     await workspace.createWorktree({ checkout, ...expected });

@@ -92,8 +92,7 @@ await test("successful delivery removes only its owned Worktree and assigned fin
     path.basename(unrelated),
   ]);
   await access(history);
-  for (const config of fixture.state.gitConfigs)
-    await assert.rejects(access(config), { code: "ENOENT" });
+  for (const env of fixture.state.agentEnvironments) assert.deepEqual(env, {});
   assert.equal(fixture.state.closedTabs.length, 1);
 });
 
@@ -236,8 +235,8 @@ for (const outcome of [
       saved.invocation!.path,
     ])
       await access(file);
-    for (const file of fixture.state.gitConfigs)
-      await assert.rejects(access(file), { code: "ENOENT" });
+    for (const env of fixture.state.agentEnvironments)
+      assert.deepEqual(env, {});
   });
 }
 

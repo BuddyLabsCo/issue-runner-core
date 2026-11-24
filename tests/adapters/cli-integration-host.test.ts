@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import assert from "node:assert/strict";
 import test from "node:test";
-import { inspect } from "node:util";
 import { GitHubCodeHost } from "../../src/adapters/github-code-host.ts";
 import {
   connection,
@@ -49,7 +48,7 @@ for (const autoMerge of [false, true]) {
     const mutation = autoMerge
       ? "enablePullRequestAutoMerge"
       : "mergePullRequest";
-    const host = new GitHubCodeHost("host-secret", async (args, options) => {
+    const host = new GitHubCodeHost(async (args, options) => {
       assert.deepEqual(args, [
         "api",
         "graphql",
@@ -58,7 +57,6 @@ for (const autoMerge of [false, true]) {
         "--input",
         "-",
       ]);
-      assert.equal(options.token, "host-secret");
       const request = JSON.parse(options.input!) as {
         query: string;
         variables: object;
@@ -100,7 +98,7 @@ for (const [message, outcome] of [
 ] as const) {
   await test(`GitHub classifies ${message} and retains the original cause`, async () => {
     const cause = new Error(message);
-    const host = new GitHubCodeHost("host-secret", async () => {
+    const host = new GitHubCodeHost(async () => {
       throw cause;
     });
     const result = await host.requestSquashMerge({
@@ -115,7 +113,7 @@ for (const [message, outcome] of [
 
 await test("delivery reads the exact merged PR with the complete Issue labels across pages", async () => {
   const cursors: (string | null)[] = [];
-  const host = new GitHubCodeHost("host-secret", async (_args, options) => {
+  const host = new GitHubCodeHost(async (_args, options) => {
     const request = JSON.parse(options.input!) as {
       query: string;
       variables: { after: string | null };
@@ -181,7 +179,7 @@ for (const [observedIssue, message] of [
   [{ ...issue, labels: connection([], 1) }, /incomplete Issue label pages/u],
 ] as const) {
   await test(`delivery rejects ${message.source}`, async () => {
-    const host = new GitHubCodeHost("host-secret", async () =>
+    const host = new GitHubCodeHost(async () =>
       JSON.stringify({ data: delivery(merged, observedIssue) }),
     );
     await assert.rejects(host.observeDelivery(input), message);
@@ -189,16 +187,15 @@ for (const [observedIssue, message] of [
 }
 
 await test("GraphQL field errors prevent delivery even with a merged PR and a completed Issue in the response", async () => {
-  const credential = "test-delivery-credential";
   const path = ["repository", "issue", "labels"];
   const errors = [
     {
       message: "labels denied",
       path,
-      extensions: { metadata: { [credential]: credential } },
+      extensions: { code: "DENIED" },
     },
   ];
-  const host = new GitHubCodeHost(credential, async () =>
+  const host = new GitHubCodeHost(async () =>
     JSON.stringify({
       data: delivery(merged, { ...issue, labels: connection([]) }),
       errors,
@@ -207,11 +204,8 @@ await test("GraphQL field errors prevent delivery even with a merged PR and a co
   await assert.rejects(host.observeDelivery(input), (error: unknown) => {
     assert.ok(error instanceof Error);
     assert.match(error.message, /labels denied/u);
-    assert.ok(
-      !inspect(error, { depth: null, showHidden: true }).includes(credential),
-    );
     assert.partialDeepStrictEqual(error.cause, {
-      response: { errors: [{ path }] },
+      response: { errors },
       commandError: null,
     });
     return true;

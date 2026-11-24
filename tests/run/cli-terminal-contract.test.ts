@@ -84,9 +84,7 @@ await test("Agent profiles require an opaque nonempty agent before external acce
       ),
     }),
   );
-  const loaded = await loadProject(root, "demo", {
-    HOST_TOKEN: "test",
-  });
+  const loaded = await loadProject(root, "demo");
   assert.deepEqual(
     Object.values(loaded.config.agents).map((profile) => profile.agent),
     Array(5).fill(opaque),

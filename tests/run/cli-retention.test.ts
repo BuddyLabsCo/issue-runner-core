@@ -67,8 +67,7 @@ await test("cancellation retains original working changes, partial files and sup
   assert.ok(report.includes(saved.execution_id));
   assert.ok(report.includes(saved.branch));
   assert.ok(report.includes(path.join(fixture.directory, "recovery")));
-  for (const file of fixture.state.gitConfigs)
-    await assert.rejects(access(file));
+  for (const env of fixture.state.agentEnvironments) assert.deepEqual(env, {});
 });
 
 for (const changed of ["arguments", "configuration"] as const) {
@@ -228,8 +227,7 @@ await test("a failed execution retains its resources in structured results witho
     await readFile(`${saved.invocation!.path}.tmp`, "utf8"),
     "unfinished result",
   );
-  for (const file of fixture.state.gitConfigs)
-    await assert.rejects(access(file));
+  for (const env of fixture.state.agentEnvironments) assert.deepEqual(env, {});
 });
 
 await test("no-auto-merge retains and reports failed and replacement repair executions on the original PR", async (t) => {
@@ -280,8 +278,7 @@ await test("no-auto-merge retains and reports failed and replacement repair exec
   }
   assert.equal(fixture.state.ticket.state, "open");
   assert.ok(fixture.state.ticket.labels!.includes("sandcastle:reserved"));
-  for (const file of fixture.state.gitConfigs)
-    await assert.rejects(access(file));
+  for (const env of fixture.state.agentEnvironments) assert.deepEqual(env, {});
 });
 
 await test("cancellation during a Review fix retains necessary findings and both role assignments in structured results", async (t) => {
@@ -349,6 +346,5 @@ await test("cancelled documentation retains its Maintenance Ticket checkpoint an
     assert.ok(report.includes(file));
   }
   assert.equal(saved.purpose, "documentation");
-  for (const file of fixture.state.gitConfigs)
-    await assert.rejects(access(file));
+  for (const env of fixture.state.agentEnvironments) assert.deepEqual(env, {});
 });

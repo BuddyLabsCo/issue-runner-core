@@ -64,7 +64,7 @@ for (const scenario of [
       configPath,
       stringify({ ...config, checkout, targetBranch: "main" }),
     );
-    const workspace = new LocalGitWorkspace("unused-local-test-token");
+    const workspace = new LocalGitWorkspace();
     fixture.dependencies.codeHost.getRemoteBranchHead = async (
       _repository,
       branch,
@@ -206,8 +206,7 @@ for (const scenario of [
     if (scenario === "recovered") {
       assert.equal((await run()).summary.outcome, "cancelled");
       const saved = await fixture.snapshot();
-      const oldConfig = fixture.state.gitConfigs[0]!;
-      await assert.rejects(access(oldConfig), { code: "ENOENT" });
+      assert.deepEqual(fixture.state.agentEnvironments[0], {});
       const submit = fixture.dependencies.terminalPlugin.onInput.bind(
         fixture.dependencies.terminalPlugin,
       );
@@ -226,9 +225,7 @@ for (const scenario of [
           await git(saved.worktree, "status", "--porcelain"),
           /README/u,
         );
-        const config = fixture.state.gitConfigs.at(-1)!;
-        assert.notEqual(config, oldConfig);
-        await access(config);
+        assert.deepEqual(fixture.state.agentEnvironments.at(-1), {});
         await git(saved.worktree, "add", ".");
         const message = "docs: complete interrupted maintenance";
         await git(saved.worktree, "commit", "-m", message);
@@ -250,8 +247,8 @@ for (const scenario of [
     if (scenario === "recovered") {
       assert.equal(fixture.state.taskCount, 1);
       assert.equal(fixture.state.probeCount, 1);
-      for (const config of fixture.state.gitConfigs)
-        await assert.rejects(access(config), { code: "ENOENT" });
+      for (const env of fixture.state.agentEnvironments)
+        assert.deepEqual(env, {});
     }
     assert.equal(
       result.summary.outcome,

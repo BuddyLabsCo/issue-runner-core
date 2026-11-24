@@ -38,8 +38,8 @@ import {
 export class GitHubCodeHost implements CodeHost {
   private readonly client: GitHubClient;
 
-  constructor(token: string, command?: GitHubCommand) {
-    this.client = new GitHubClient(token, command);
+  constructor(command?: GitHubCommand) {
+    this.client = new GitHubClient(command);
   }
 
   async observeActionsRun(

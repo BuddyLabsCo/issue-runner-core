@@ -11,8 +11,7 @@ await test("GitHub documentation scans label pages, reconciles label creation, a
   let labelCreates = 0;
   let ticketCreates = 0;
   const pages: number[] = [];
-  const tracker = new GitHubTracker("tracker-secret", async (args, options) => {
-    assert.equal(options.token, "tracker-secret");
+  const tracker = new GitHubTracker(async (args) => {
     if (args[2] === "GET") {
       assert.equal(args[3], "repos/owner/repo/labels");
       const page = Number(args.at(-1)!.slice("page=".length));

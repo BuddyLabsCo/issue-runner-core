@@ -102,7 +102,18 @@ await test("independent handles can complete while another handle's command tran
   assert.equal(first.state.probeCount, 0);
   release();
   assert.equal((await firstRun).summary.outcome, "incomplete");
-  assert.notEqual(first.state.gitConfigs[0], second.state.gitConfigs[0]);
+  assert.ok(first.state.agentEnvironments.length > 0);
+  assert.ok(second.state.agentEnvironments.length > 0);
+  for (const env of [
+    ...first.state.agentEnvironments,
+    ...second.state.agentEnvironments,
+  ])
+    assert.deepEqual(env, {});
+  const firstWorktree = first.state.tabOptions[0]?.cwd;
+  const secondWorktree = second.state.tabOptions[0]?.cwd;
+  assert.ok(firstWorktree);
+  assert.ok(secondWorktree);
+  assert.notEqual(firstWorktree, secondWorktree);
 });
 
 await test("a transient close failure retries the same owned handle after the operation delay", async (t) => {

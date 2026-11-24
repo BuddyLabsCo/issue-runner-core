@@ -64,41 +64,32 @@ Review can be disabled. An ordinary Issue with no changes receives no delivery c
 Prepare these on the machine and in the shell that runs the terminal command:
 
 - Node.js 22.18.0 or later and npm 11 or later, including subsequent major versions
-- Git with Worktree support, configured author identity, and access to push to the repository
-- GitHub CLI (`gh`) on `PATH`
-- An absolute-path repository checkout with a GitHub HTTPS remote for Git operations
+- Git with Worktree support and a commit identity visible in every Agent terminal
+- An absolute-path repository checkout whose `origin` matches the Project repository, with working fetch and push access
+- GitHub CLI (`gh`) on `PATH`, authenticated for Issues, PRs, checks, and merges
 - An installed, authenticated Agent CLI for every configured role, with its own skills, native permissions, and required tools
 - A supported terminal multiplexer plugin, e.g. [issue-runner-herdr](https://github.com/BuddyLabsCo/issue-runner-herdr) which use herdr as issue-runner-core environment
 
-### GitHub credential
+### Git and GitHub authentication
 
-Set the environment variable named by `codeHost.tokenEnv` in `config.yaml`.
-The template uses `GH_TOKEN`. Keep the credential value in the environment.
-Runner uses it for GitHub API calls and Git operations. In existing configurations, remove
-`tracker.tokenEnv` and keep `tracker.runnerAccount` and `tracker.reservationLabel`.
-Editing `config.yaml` changes the input hash Runner uses to resume a Run.
+Configure authentication before starting Runner. Runner uses the Git and `gh`
+environments already available where it runs.
 
-Use a GitHub App installation access token scoped to the configured repository.
-The token expires one hour after GitHub issues it. [GitHub installation token lifetime](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app#generating-an-installation-access-token)
+- Git commits use the `user.name` and `user.email` visible in each Agent terminal.
+- Fetch and push use the checkout's `origin` and its configured Git transport
+  authentication, such as a credential helper or SSH.
+- `gh` uses its existing authenticated context. 
 
-Runner reads the token at startup and reuses it for retries. If the token expires
-during a Run, set a fresh token in the environment and restart Runner with the
-same command, arguments, and `config.yaml`.
+Git transport and `gh` authenticate separately, so configure both.
 
-Grant the app read access to repository metadata and the permissions below.
+Grant that identity read access to repository metadata and the permissions below.
 
 - **Issues** read/write to read Issues and manage assignments, labels, comments, and closure.
 - **Pull requests** read/write to read and publish PRs.
 - **Checks** and **Commit statuses** read to observe required checks.
 - **Actions** read/write to observe workflow attempts and rerun failed jobs after a no-change CI repair.
-- **Contents** read/write to read refs, fetch and push through Git, and merge PRs.
-
-GitHub lists Checks API access among the limitations of fine-grained personal
-access tokens. [GitHub token limitations](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#fine-grained-personal-access-tokens-limitations)
-
-GitHub enforces repository rules and merge permissions for the identity behind the
-credential. With `codeHost.adminMerge: true`, that identity still needs permission
-to bypass the applicable rules.
+- **Contents** read/write to read refs and merge PRs. Git transport needs its own
+  fetch and push access.
 
 ### macOS and Linux
 
@@ -110,7 +101,9 @@ npm --version           # At least 11
 git --version
 gh --version
 codex --version         # AI agent cli tool you will use
-export GH_TOKEN='your_github_token' # github token
+git config --global user.name 'Your Name'
+git config --global user.email 'you@example.com'
+gh auth status          # Run gh auth login if not authenticated
 npm install --global issue-runner-herdr # Installs Core transitively
 ```
 
@@ -124,7 +117,9 @@ npm --version           # At least 11
 git --version
 gh --version
 codex --version         # Repeat for each Agent CLI you configure
-$env:GH_TOKEN = 'your_github_token' # github token
+git config --global user.name 'Your Name'
+git config --global user.email 'you@example.com'
+gh auth status          # Run gh auth login if not authenticated
 npm install --global issue-runner-herdr # Installs Core transitively
 ```
 

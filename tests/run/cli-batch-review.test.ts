@@ -94,11 +94,7 @@ for (const selector of ["parent", "issue"] as const) {
       clearTimeout(deadline);
       const reviews = [...tabs.values()].filter((tab) => tab.review);
       assert.equal(reviews.length, 2);
-      assert.equal(
-        new Set(reviews.map(({ options }) => options.env.GIT_CONFIG_GLOBAL))
-          .size,
-        2,
-      );
+      for (const { options } of reviews) assert.deepEqual(options.env, {});
       const before = await Promise.all(
         [51, 52].map((number) => progress(fixture.directory, number)),
       );

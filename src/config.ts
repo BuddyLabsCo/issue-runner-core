@@ -34,7 +34,7 @@ export interface ProjectConfig {
     runnerAccount: string;
     reservationLabel: string;
   };
-  codeHost: { tokenEnv: string; adminMerge: boolean };
+  codeHost: { adminMerge: boolean };
   workflow: {
     review: boolean;
     maxReviewRounds?: number;
@@ -60,7 +60,6 @@ export interface LoadedProject {
   config: ProjectConfig;
   configBytes: Uint8Array;
   directory: string;
-  codeHostToken: string;
 }
 
 function record(value: unknown, name: string): Record<string, unknown> {
@@ -74,15 +73,6 @@ function text(value: unknown, name: string): string {
   if (typeof value !== "string" || value.trim().length === 0)
     throw new Error(`${name} must be set`);
   return value;
-}
-
-function knownFields(
-  input: Record<string, unknown>,
-  fields: string[],
-  name: string,
-): void {
-  const unknown = Object.keys(input).find((field) => !fields.includes(field));
-  if (unknown) throw new Error(`${name} contains unknown field ${unknown}`);
 }
 
 function positive(value: unknown, name: string): number {
@@ -139,11 +129,6 @@ function switchValue(
 
 function agent(value: unknown, name: string): AgentConfig {
   const input = record(value, name);
-  knownFields(
-    input,
-    ["agent", "start", "resume", "submitKey", "options"],
-    name,
-  );
   const agent = text(input.agent, `${name}.agent`);
   const start = text(input.start, `${name}.start`);
   const resume = text(input.resume, `${name}.resume`);
@@ -178,48 +163,11 @@ function parseConfig(
   const { terminalPlugins = {}, issueLabel = "" } = input;
   if (Object.getPrototypeOf(terminalPlugins ?? {}) !== Object.prototype)
     throw new Error("terminalPlugins must be an object mapping");
-  knownFields(
-    input,
-    [
-      "repository",
-      "checkout",
-      "issueList",
-      "issueLabel",
-      "maxBatchSize",
-      "targetBranch",
-      "terminalPlugins",
-      "tracker",
-      "codeHost",
-      "workflow",
-      "agents",
-      "timeouts",
-      "operationRetry",
-      // Accepted only so unchanged legacy config can recover matching Runs.
-      "ticketClosure",
-      "agentRetry",
-      "operationRetryDelay",
-      "agentRetryDelay",
-      "maintenanceTicket",
-    ],
-    "config",
-  );
   const tracker = record(input.tracker, "tracker");
   const codeHost = record(input.codeHost, "codeHost");
   const agents = record(input.agents, "agents");
-  knownFields(tracker, ["runnerAccount", "reservationLabel"], "tracker");
-  knownFields(codeHost, ["tokenEnv", "adminMerge"], "codeHost");
-  knownFields(
-    agents,
-    ["implement", "review", "ciRepair", "conflictRepair", "documentation"],
-    "agents",
-  );
   const workflow =
     input.workflow === undefined ? {} : record(input.workflow, "workflow");
-  knownFields(
-    workflow,
-    ["review", "maxReviewRounds", "docMaintainTriggerLabel"],
-    "workflow",
-  );
   const maxReviewRounds = workflow.maxReviewRounds;
   if (
     maxReviewRounds !== undefined &&
@@ -230,11 +178,6 @@ function parseConfig(
     throw new Error("workflow.maxReviewRounds must be a positive integer");
   }
   const timeouts = record(input.timeouts, "timeouts");
-  knownFields(
-    timeouts,
-    ["requiredChecksMinutes", "mergeQueueMinutes"],
-    "timeouts",
-  );
   const retryPolicy: RetryPolicy = {
     operationRetry: nonNegativeInteger(input.operationRetry, "operationRetry"),
     operationRetryDelay: retryDelays(
@@ -287,11 +230,6 @@ function parseConfig(
     input.maintenanceTicket === undefined
       ? {}
       : record(input.maintenanceTicket, "maintenanceTicket");
-  knownFields(
-    maintenanceTicket,
-    ["title", "body", "label"],
-    "maintenanceTicket",
-  );
 
   return {
     repository,
@@ -313,7 +251,6 @@ function parseConfig(
       ),
     },
     codeHost: {
-      tokenEnv: text(codeHost.tokenEnv, "codeHost.tokenEnv"),
       adminMerge: codeHost.adminMerge,
     },
     workflow: {
@@ -356,7 +293,6 @@ function parseConfig(
 export async function loadProject(
   launchDirectory: string,
   projectKey: string,
-  env: Record<string, string | undefined>,
   options: { requireDocumentationMaintenance?: boolean } = {},
 ): Promise<LoadedProject> {
   const directory = resolveProjectDirectory(launchDirectory, projectKey);
@@ -412,10 +348,7 @@ export async function loadProject(
       throw new Error(reviewConfigurationError);
     }
   }
-  const codeHostToken = env[config.codeHost.tokenEnv];
-  if (!codeHostToken?.trim())
-    throw new Error(`missing credential ${config.codeHost.tokenEnv}`);
-  return { config, configBytes, directory, codeHostToken };
+  return { config, configBytes, directory };
 }
 
 // `--project` is a key for one child of the launch directory, never a path.

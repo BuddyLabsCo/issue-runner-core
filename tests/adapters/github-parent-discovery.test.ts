@@ -153,7 +153,7 @@ await test("parent discovery returns complete facts and mutation IDs from one si
       ),
     );
   };
-  const facts = await new GitHubTracker("fake-token", command).discoverParent(
+  const facts = await new GitHubTracker(command).discoverParent(
     repository.nameWithOwner,
     48,
     config,
@@ -249,10 +249,11 @@ await test("discovery drains child and eligibility pages independently by node I
     });
   };
 
-  const { children } = await new GitHubTracker(
-    "fake-token",
-    command,
-  ).discoverParent(repository.nameWithOwner, 48, config);
+  const { children } = await new GitHubTracker(command).discoverParent(
+    repository.nameWithOwner,
+    48,
+    config,
+  );
   assert.deepEqual(
     children.map(({ number, labels, assignees, blockers }) => ({
       number,
@@ -292,7 +293,7 @@ await test("discovery rejects a cyclic cursor even after observing an open block
   };
 
   await assert.rejects(
-    new GitHubTracker("fake-token", command).discoverParent(
+    new GitHubTracker(command).discoverParent(
       repository.nameWithOwner,
       48,
       config,
@@ -315,7 +316,7 @@ await test("discovery rejects partial GraphQL output with a required field error
     error: new Error("gh exited unsuccessfully"),
   });
   await assert.rejects(
-    new GitHubTracker("fake-token", command).discoverParent(
+    new GitHubTracker(command).discoverParent(
       repository.nameWithOwner,
       48,
       config,
@@ -353,11 +354,7 @@ for (const [scenario, errors, exitCode] of [
       ...(exitCode === undefined ? {} : { exitCode }),
     });
     await assert.rejects(
-      new GitHubTracker("fake-token", command).discoverParent(
-        "owner/repo",
-        48,
-        config,
-      ),
+      new GitHubTracker(command).discoverParent("owner/repo", 48, config),
       /GitHub GraphQL Issue request failed/u,
     );
   });
@@ -390,7 +387,7 @@ for (const [name, facts, message] of [
     const command: GitHubCommand = async () =>
       JSON.stringify(observation(connection([facts])));
     await assert.rejects(
-      new GitHubTracker("fake-token", command).discoverParent(
+      new GitHubTracker(command).discoverParent(
         repository.nameWithOwner,
         48,
         config,
@@ -430,11 +427,7 @@ for (const [name, duplicate, error] of [
             },
       );
     await assert.rejects(
-      new GitHubTracker("fake-token", command).discoverParent(
-        "owner/repo",
-        48,
-        config,
-      ),
+      new GitHubTracker(command).discoverParent("owner/repo", 48, config),
       error,
     );
     assert.equal(requests, 2);
@@ -457,11 +450,7 @@ await test("discovery rejects a nonempty final continuation with a null end curs
           },
     );
   await assert.rejects(
-    new GitHubTracker("fake-token", command).discoverParent(
-      "owner/repo",
-      48,
-      config,
-    ),
+    new GitHubTracker(command).discoverParent("owner/repo", 48, config),
     /invalid subIssues cursor/u,
   );
   assert.equal(requests, 2);

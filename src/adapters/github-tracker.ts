@@ -99,8 +99,8 @@ function parseTicket(value: unknown, includeRepository: boolean): Ticket {
 export class GitHubTracker implements Tracker {
   private readonly client: GitHubClient;
 
-  constructor(token: string, command?: GitHubCommand) {
-    this.client = new GitHubClient(token, command);
+  constructor(command?: GitHubCommand) {
+    this.client = new GitHubClient(command);
   }
 
   async listLabelsPage(repository: string, page: number) {

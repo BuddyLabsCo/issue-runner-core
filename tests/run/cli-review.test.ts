@@ -294,9 +294,8 @@ await test("cap=1 still fixes final findings in the exact implementation convers
   ]);
   assert.equal(saved.publication.body, "Implement the Issue.\n\nCloses #50");
   await assert.rejects(access(saved.reviews[0].findings));
-  assert.equal(new Set(fixture.state.gitConfigs).size, 3);
-  for (const file of fixture.state.gitConfigs)
-    await assert.rejects(access(file));
+  assert.equal(fixture.state.agentEnvironments.length, 3);
+  for (const env of fixture.state.agentEnvironments) assert.deepEqual(env, {});
   const submissions = fixture.state.submissions.length;
   assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/u);
   assert.equal(fixture.state.submissions.length, submissions);
