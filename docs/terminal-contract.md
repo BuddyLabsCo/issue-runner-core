@@ -200,9 +200,6 @@ Enhancements must export contract version 3 and implement `enhancementResume`. C
 ## Lifecycle and failure flows
 
 ### Base startup and exact resume
-
-`execute()` may resolve with the native conversation reference created by startup. Core validates it with the same identity rules as enhancement readiness and checkpoints it as `sessionid` before dispatch, so a returned reference skips the Session Probe. Returning `undefined` keeps the existing Probe flow for a new conversation and the exact resume flow for a saved one.
-
 ```mermaid
 %%{init: {"sequence": {"width": 220, "wrap": true}}}%%
 sequenceDiagram
