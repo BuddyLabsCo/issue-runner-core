@@ -147,6 +147,35 @@ await posixTest(
   },
 );
 
+// Regression: each proposal must keep one blank line between earlier sections
+// and write each commit subject as exactly one changelog bullet.
+await posixTest("a proposal normalizes changelog spacing and bullets", (t) => {
+  const fixture = createReleaseFixture(t, {
+    manifest: { name: "issue-runner-core", version: "0.1.0", type: "module" },
+    files: {
+      "dist/cli.js": "export {};\n",
+      "CHANGELOG.md":
+        "# Changelog\n\n## 0.1.0\n\n- feat: earlier\n\n\n## 0.0.9\n\n- feat: oldest\n\n\n\n",
+    },
+  });
+  fixture.git("tag", "v0.1.0");
+  fixture.git("push", "origin", "v0.1.0");
+  const before = fixture.commit(
+    "dist/cli.js",
+    "export const value = 1;\n",
+    "fix: [issue-2] repair startup",
+  );
+
+  const result = fixture.run("auto-release-pr", { PUSH_BEFORE: before });
+
+  assert.equal(result.status, 0, result.stderr);
+  fixture.git("fetch", "origin", "auto-release");
+  assert.equal(
+    fixture.git("show", "origin/auto-release:CHANGELOG.md"),
+    "# Changelog\n\n## 0.1.1\n\n- fix: [issue-2] repair startup\n\n## 0.1.0\n\n- feat: earlier\n\n## 0.0.9\n\n- feat: oldest",
+  );
+});
+
 // Regression: the reference flow excluded Markdown, which would drop shipped
 // prompts, while workflow-only edits must not propose a release.
 await posixTest(
