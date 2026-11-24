@@ -397,11 +397,19 @@ await test("a concurrent Batch uses a fresh fetched base and isolated real Git W
   const tabs = new Map<object, CreateTabOptions>();
   const closed = new Set<object>();
   const environments: Readonly<Record<string, string>>[] = [];
+  const pauses: string[] = [];
   let release!: () => void;
   const bothTasks = new Promise<void>((resolve) => {
     release = resolve;
   });
   let tasks = 0;
+  const pause = fixture.dependencies.operator.pause.bind(
+    fixture.dependencies.operator,
+  );
+  fixture.dependencies.operator.pause = async (message) => {
+    pauses.push(message);
+    return pause(message);
+  };
   const result = await executeCli(
     ["run", "--project", "demo", "--parent", "48"],
     {
@@ -461,7 +469,11 @@ await test("a concurrent Batch uses a fresh fetched base and isolated real Git W
       }),
     },
   );
-  assert.equal(result.summary.outcome, "incomplete");
+  assert.equal(
+    result.summary.outcome,
+    "incomplete",
+    JSON.stringify({ failure: result.summary.failure, pauses }),
+  );
   assert.equal(tasks, 2);
   assert.equal(closed.size, 2);
   assert.equal(environments.length, 2);
