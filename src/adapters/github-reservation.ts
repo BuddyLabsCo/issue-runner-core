@@ -20,7 +20,7 @@ export async function reserveIssue(
     : "";
   const runnerField = addRunner
     ? `
-    addRunner: addAssigneesToAssignable(input: { assignableId: $issue, assigneeIds: [$runner] }) {
+    addRunner: addAssigneesToAssignable(input: { assignableId: $issue, assigneeIds: [$viewer] }) {
       assignable { ... on Issue { ${issueFields} ${markerFields} } }
     }
   `

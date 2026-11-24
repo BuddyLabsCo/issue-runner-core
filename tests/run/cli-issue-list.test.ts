@@ -34,7 +34,7 @@ async function issueListRun(
   };
 }
 
-await test("list discovery retries a failed viewer lookup once and caches the successful identity", async (t) => {
+await test("list discovery applies the operation retry policy to viewer lookup", async (t) => {
   const fixture = await issueListRun(t, [child(51), child(52)]);
   let attempts = 0;
   fixture.dependencies.tracker.readViewer = async () => {

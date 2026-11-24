@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { GitHubTracker } from "../../src/adapters/github-tracker.ts";
 import type { GitHubCommand } from "../../src/adapters/github-client.ts";
-import { runner } from "../support/github-parent-discovery.ts";
+import {
+  runner,
+  viewer as authenticated,
+} from "../support/github-parent-discovery.ts";
 
 await test("viewer lookup requests only the authenticated viewer identity", async () => {
   const command: GitHubCommand = async (args, { input }) => {
@@ -19,9 +22,12 @@ await test("viewer lookup requests only the authenticated viewer identity", asyn
       query: string;
       variables: unknown;
     };
-    assert.match(query, /^query Viewer \{ viewer \{ id login \} \}$/u);
+    assert.match(
+      query,
+      /^query Viewer \{ viewer \{ __typename id login \} \}$/u,
+    );
     assert.deepEqual(variables, {});
-    return JSON.stringify({ data: { viewer: runner } });
+    return JSON.stringify({ data: { viewer: authenticated } });
   };
 
   assert.deepEqual(await new GitHubTracker(command).readViewer(), runner);
@@ -29,7 +35,8 @@ await test("viewer lookup requests only the authenticated viewer identity", asyn
 
 for (const [name, viewer] of [
   ["a missing viewer", null],
-  ["an invalid non-user viewer", { id: "app-id", login: "" }],
+  ["a non-user viewer", { __typename: "Bot", id: "bot-id", login: "bot" }],
+  ["a malformed user viewer", { __typename: "User", id: "app-id", login: "" }],
 ] as const) {
   await test(`viewer lookup rejects ${name} with a clear error`, async () => {
     const tracker = new GitHubTracker(async () =>

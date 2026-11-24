@@ -98,7 +98,6 @@ function parseIssuePage<T>(
 type ReadIssueGraphQL = (
   query: string,
   variables: Record<string, unknown>,
-  allowMissingRunner?: boolean,
 ) => Promise<Record<string, unknown>>;
 
 async function readIssueConnection<T extends { id: string }>(
@@ -182,8 +181,9 @@ function parseAssignee({ id, login }: Record<string, unknown>) {
 function parseViewer(value: unknown): ViewerIdentity {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     throw new Error(viewerError);
-  const { id, login } = value as Record<string, unknown>;
-  if (!nonempty(id) || !nonempty(login)) throw new Error(viewerError);
+  const { __typename, id, login } = value as Record<string, unknown>;
+  if (__typename !== "User" || !nonempty(id) || !nonempty(login))
+    throw new Error(viewerError);
   return { id, login };
 }
 
@@ -377,7 +377,7 @@ export async function discoverParent(
           ${issueConnectionFields("subIssues", childFields)}
         }
       }
-      viewer { id login }
+      viewer { __typename id login }
     }`,
     {
       owner,
@@ -457,7 +457,7 @@ export async function readIssueStart(
         target: issue(number: $number) { ${childFields} title body url }
         ${parentField}
       }
-      viewer { id login }
+      viewer { __typename id login }
     }`,
     {
       owner,
@@ -513,7 +513,7 @@ export async function readViewer(
 ): Promise<ViewerIdentity> {
   const data = await requestIssueGraphQL(
     client,
-    `query Viewer { viewer { id login } }`,
+    `query Viewer { viewer { __typename id login } }`,
     {},
     signal,
   );

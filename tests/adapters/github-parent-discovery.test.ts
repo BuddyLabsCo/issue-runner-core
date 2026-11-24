@@ -68,6 +68,7 @@ function assertDiscoveryRequest({
     "repository.label.name",
     "viewer.id",
     "viewer.login",
+    "viewer.__typename",
     `${child}.labels.nodes.id`,
     `${child}.labels.nodes.name`,
     `${child}.assignees.nodes.id`,

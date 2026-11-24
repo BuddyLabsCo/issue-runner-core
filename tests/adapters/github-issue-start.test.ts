@@ -10,6 +10,7 @@ import {
   repository,
   reservation,
   runner,
+  viewer,
 } from "../support/github-parent-discovery.ts";
 
 await test("standalone start reads its own Issue and confirms grouped additive markers across pages", async () => {
@@ -29,7 +30,7 @@ await test("standalone start reads its own Issue and confirms grouped additive m
       case 1:
         assert.match(query, /blockedBy/u);
         assert.doesNotMatch(query, /\b(?:parent|subIssues)\b/u);
-        assert.match(query, /\bviewer\s*\{\s*id login\s*\}/u);
+        assert.match(query, /\bviewer\s*\{\s*__typename id login\s*\}/u);
         assert.doesNotMatch(query, /\buser\b/u);
         assert.deepEqual(variables, {
           owner: "OWNER",
@@ -40,7 +41,7 @@ await test("standalone start reads its own Issue and confirms grouped additive m
         return JSON.stringify({
           data: {
             repository: { ...repository, label: reservation, target },
-            viewer: runner,
+            viewer,
           },
         });
       case 2: {
@@ -48,6 +49,8 @@ await test("standalone start reads its own Issue and confirms grouped additive m
           query,
           /addLabelsToLabelable[\s\S]+addAssigneesToAssignable/u,
         );
+        assert.match(query, /assigneeIds:\s*\[\$viewer\]/u);
+        assert.doesNotMatch(query, /\$runner\b/u);
         const finalSelection = query.slice(query.indexOf("addRunner:"));
         assert.match(finalSelection, /assignable\s*\{/u);
         assert.match(
@@ -135,7 +138,7 @@ await test("parent-scoped start drains parent membership independently of target
               subIssues: connection([issue(52)], 2, "children", true),
             }),
           },
-          viewer: runner,
+          viewer,
         },
       });
     }

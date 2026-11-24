@@ -1,6 +1,7 @@
 export const repository = { id: "repo-id", nameWithOwner: "owner/repo" };
 export const reservation = { id: "reserved-id", name: "runner:reserved" };
 export const runner = { id: "runner-id", login: "runner" };
+export const viewer = { __typename: "User", ...runner };
 export const config = {
   reservationLabel: reservation.name,
 };
@@ -42,7 +43,7 @@ export function observation(subIssues: object) {
         label: reservation,
         issue: issue(48, { subIssues }),
       },
-      viewer: runner,
+      viewer,
     },
   };
 }

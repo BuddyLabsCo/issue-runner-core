@@ -10,15 +10,13 @@ import path from "node:path";
 import test, { type TestContext } from "node:test";
 import { executeCli } from "../../src/cli.ts";
 import { GitHubClient } from "../../src/adapters/github-client.ts";
-import {
-  createCliDependencies,
-  testViewer,
-} from "../support/cli-dependencies.ts";
+import { createCliDependencies } from "../support/cli-dependencies.ts";
 import { createProject, validConfig } from "../support/cli-project.ts";
 import {
   child,
   connection,
   repository,
+  viewer,
 } from "../support/github-parent-discovery.ts";
 
 const executableTest = process.platform === "win32" ? test.skip : test;
@@ -211,8 +209,8 @@ await executableTest(
       name: validConfig.tracker.reservationLabel,
     };
     const runner = {
-      id: testViewer.id,
-      login: testViewer.login,
+      id: viewer.id,
+      login: viewer.login,
     };
     const ready = { id: "ready-id", name: "ready-for-agent" };
     const target = child(48, {
@@ -222,7 +220,7 @@ await executableTest(
       labels: connection([ready]),
     });
     const start = {
-      data: { repository: { ...repository, label, target }, viewer: runner },
+      data: { repository: { ...repository, label, target }, viewer },
     };
     const confirmed = {
       data: {
@@ -255,7 +253,7 @@ await executableTest(
           `    console.log(JSON.stringify(${JSON.stringify(start)}));`,
           "  } else {",
           '    assert.ok(query.startsWith("mutation ReserveIssue"));',
-          `    assert.deepEqual(variables, { issue: "issue-48", label: ${JSON.stringify(label.id)}, viewer: ${JSON.stringify(runner.id)} });`,
+          `    assert.deepEqual(variables, { issue: "issue-48", label: ${JSON.stringify(label.id)}, viewer: ${JSON.stringify(viewer.id)} });`,
           `    console.log(JSON.stringify(${JSON.stringify(confirmed)}));`,
           "  }",
           "}",
