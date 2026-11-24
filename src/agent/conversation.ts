@@ -23,8 +23,8 @@ interface TabState {
   closed: boolean;
   monitored: boolean;
   commanded: boolean;
-  startup?: string;
-  readiness?: { identity: string | undefined };
+  startup?: unknown;
+  readiness?: { identity: unknown };
   assignment?: { id: string; expectedFile: string; recoveryText: string };
   confirmation?: { assignmentId: string; controller: AbortController };
 }
@@ -142,7 +142,7 @@ export class NativeConversations {
     profile: AgentConfig,
     sessionid: string | undefined,
     baseWait: () => Promise<void>,
-  ): Promise<string | undefined> {
+  ): Promise<unknown> {
     const state = this.state(tab);
     const signal = state.signal;
     signal.throwIfAborted();
@@ -166,7 +166,7 @@ export class NativeConversations {
           signal,
         )
       : (await baseWait(), state.startup);
-    state.readiness = { identity: identity ?? undefined };
+    state.readiness = { identity };
     return state.readiness.identity;
   }
 

@@ -148,13 +148,16 @@ await test("resume rejects a mismatched execute reference before submitting work
   );
 });
 
-await test("base startup rejects an invalid execute reference before probing or dispatch", async (t) => {
-  const fixture = await implementationRun(t);
-  fixture.dependencies.terminalPlugin.execute = async () => "latest";
-  const result = await fixture.run();
-  assert.equal(result.summary.outcome, "failed");
-  assert.match(result.summary.failure!, /Invalid native session identity/u);
-  assert.equal(fixture.state.probeCount, 0);
-  assert.equal(fixture.state.taskCount, 0);
-  assert.equal((await fixture.snapshot()).roles.implement, undefined);
-});
+for (const reference of ["latest", null, 42]) {
+  await test(`base startup rejects invalid execute reference ${String(reference)} before probing or dispatch`, async (t) => {
+    const fixture = await implementationRun(t);
+    fixture.dependencies.terminalPlugin.execute = async () =>
+      reference as unknown as string;
+    const result = await fixture.run();
+    assert.equal(result.summary.outcome, "failed");
+    assert.match(result.summary.failure!, /Invalid native session identity/u);
+    assert.equal(fixture.state.probeCount, 0);
+    assert.equal(fixture.state.taskCount, 0);
+    assert.equal((await fixture.snapshot()).roles.implement, undefined);
+  });
+}

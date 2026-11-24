@@ -195,7 +195,7 @@ Other Issues and handoff observation continue. Enhancement Pause and Operator Pa
 
 ### Folder or hook trust blocks startup
 
-Without an enhancement e.g. issue-runner-agent-codex, Runner waits the base startup delay. If the terminal's `execute()` does not return a session reference, Runner then sends an identity-only Session Probe. Folder trust, hook trust, or native permissions will block the Agent session.
+Without an enhancement e.g. issue-runner-agent-codex, Runner waits the base startup delay. For a new conversation, if the terminal's `execute()` does not return a session reference, Runner then sends an identity-only Session Probe. A saved conversation resumes without a Probe. Folder trust, hook trust, or native permissions will block the Agent session.
 Make sure there is no startup blockers when running your agent cli from the checkout folder configured in config.yaml.
 
 ### Continue a stopped conversation

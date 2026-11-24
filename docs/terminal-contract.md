@@ -119,7 +119,7 @@ flowchart TD
     Verify -- No --> Error["Fail startup with cause"]
     Verify -- Yes --> Layout["Unix: prefix/lib/node_modules + bin symlink<br/>Windows: prefix/node_modules + command.cmd"]
     Layout --> Agent{"Configured Agent can form issue-runner-agent-AGENT?"}
-    Agent -- No --> Base["Base startup: delay and Session Probe"]
+    Agent -- No --> Base["Base startup: delay, then reference, conditional Probe, or exact resume"]
     Agent -- Yes --> Package{"Direct same-prefix package present?"}
     Package -- Absent --> Base
     Package -- Present --> Entry["Resolve Node import exports from that prefix"]
