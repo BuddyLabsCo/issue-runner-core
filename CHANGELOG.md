@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.9
+
+- fix: [issue-451] prevent changelog blank-line accumulation (#452)
+- feat: [issue-437] use terminal startup session references (#449)
+
 ## 1.0.8
 
 - - feat: [issue-440] use authenticated gh viewer identity (#441)
@@ -10,19 +15,13 @@
 - - fix: [issue-431] rerun failed Actions jobs after no-change CI repair (#434)
 - - fix: [issue-432] create missing Reservation labels when needed (#433)
 
-
 ## 1.0.6
 
 - - fix: [issue-428] verify handoff commits by SHA (#429)
 
-
-
 ## 1.0.5
 
 - - fix: [issue-425] allow tracker issue comments (#426)
-
-
-
 
 ## 1.0.4
 
@@ -36,18 +35,9 @@
 - - fix: [issue-369] share GitHub credentials and preserve GraphQL evidence (#417)
 - - chore: [issue-361] cap template Review rounds at 2 (#362)
 
-
-
-
-
 ## 1.0.3
 
 - - fix: [issue-358] complete no-change Issues with resumable delivery (#359)
-
-
-
-
-
 
 ## 1.0.2
 
@@ -56,78 +46,27 @@
 - - feat: [issue-350] support Assignment-scoped Enhancement Pause (#354)
 - - refactor: [issue-349] separate terminal confirmations from intervention (#352)
 
-
-
-
-
-
-
 ## 1.0.1
 
 - - docs: [issue-336] show complete Herdr and Codex configuration (#337)
 - - fix: [issue-333] allow pickup of runner-assigned issues (#334)
-
-
-
-
-
-
-
 
 ## 1.0.0
 
 - - fix: [issue-328] remove reasons output and aggregation (#329)
 - - docs: [issue-330] add demo GIF to README (#331)
 
-
-
-
-
-
-
-
-
 ## 0.1.3
 
 - - fix: [issue-325] unblock conflict repairs and document agent startup (#326)
-
-
-
-
-
-
-
-
-
 
 ## 0.1.2
 
 - - chore: [issue-322] remove unused Agent timeout settings (#323)
 
-
-
-
-
-
-
-
-
-
-
 ## 0.1.1
 
 - - docs: [issue-313] consolidate Core documentation (#320)
-
-
-
-
-
-
-
-
-
-
-
 
 ## 0.1.0
 
