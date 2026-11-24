@@ -36,11 +36,13 @@ import {
   type ReadOperation,
 } from "./discovery.ts";
 import { cachedViewer, type ViewerLookup } from "./viewer.ts";
+import { runScope, runScopeId, type RunScope } from "./scope.ts";
 
 export interface RunContext {
   audit: AuditLog;
   runId: string;
   inputHash: string;
+  scope?: RunScope;
   runArguments: readonly string[];
   clock: Clock;
   operator: OperatorIO;
@@ -236,6 +238,10 @@ async function executeProject(
     ));
   if (!targetBranch.trim()) throw new Error("Target Branch must not be empty");
   summary.targetBranch = targetBranch;
+  if (options.selector === "issue") {
+    const scope = runScope(options, loaded, targetBranch);
+    context = { ...context, scope, inputHash: runScopeId(scope) };
+  }
   let base: Promise<string> | undefined;
   const fetchBase = () =>
     (base ??= read("fetch_target_branch", targetBranch, () =>

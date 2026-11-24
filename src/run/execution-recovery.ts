@@ -3,13 +3,14 @@ import { randomUUID } from "node:crypto";
 import { copyFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import type { LoadedProject } from "../config.ts";
-import type { ImplementationProgress } from "../recovery.ts";
+import { checkpointVersion, type ImplementationProgress } from "../recovery.ts";
 import {
   nonempty,
   object,
   parsePRExecution,
   readHandoff,
 } from "../agent/handoff.ts";
+import { validateNativeSessions } from "../agent/native-identity.ts";
 import { validateReviewContext } from "./review.ts";
 import { validateNoChangeContext } from "./no-change-validation.ts";
 import { validateRepairContext } from "./repair.ts";
@@ -18,6 +19,7 @@ import type { ReadOperation } from "./discovery.ts";
 import type { runStandalone } from "./standalone.ts";
 import type { RunSummary } from "./run.ts";
 import { OperatorCancelled } from "./operations.ts";
+import type { RunScope } from "./scope.ts";
 
 export function recoverIssue(
   attempt: Parameters<typeof runStandalone>[0],
@@ -143,6 +145,7 @@ export async function restoreExecution(input: {
   runId: string;
   inputHash: string;
   runArguments: readonly string[];
+  scope?: RunScope;
   restarting?: boolean;
 }): Promise<ImplementationProgress | undefined> {
   if (input.restarting) return;
@@ -164,8 +167,12 @@ export async function restoreExecution(input: {
       const reservation = object(saved.reservation ?? {});
       if (
         saved.input_hash !== input.inputHash ||
-        JSON.stringify(saved.run_arguments) !==
-          JSON.stringify(input.runArguments) ||
+        (!input.scope &&
+          JSON.stringify(saved.run_arguments) !==
+            JSON.stringify(input.runArguments)) ||
+        (input.scope !== undefined &&
+          (saved.checkpoint_version !== checkpointVersion ||
+            JSON.stringify(saved.run_scope) !== JSON.stringify(input.scope))) ||
         saved.project !== project ||
         saved.ticket !== number ||
         saved.repository !== repository ||
@@ -233,6 +240,7 @@ export async function restoreExecution(input: {
           "unable to recover: missing native implementation context",
         );
       const restored = saved as unknown as ImplementationProgress;
+      validateNativeSessions(restored, loaded);
       if (restored.result !== undefined) {
         restored.result = parsePRExecution(JSON.stringify(restored.result));
         if (

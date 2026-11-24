@@ -1,50 +1,17 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
-import {
-  access,
-  appendFile,
-  mkdir,
-  readFile,
-  readdir,
-  writeFile,
-} from "node:fs/promises";
+import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import { executeCli } from "../../src/cli.ts";
 import {
   implementationCommand,
   implementationRun,
   publish,
 } from "../support/implementation-run.ts";
-import { validConfig } from "../support/cli-project.ts";
 import {
   documentCommand,
   documentationRun,
 } from "../support/documentation-run.ts";
-
-await test("the recovery hash uses the configuration bytes validated at startup", async (t) => {
-  const fixture = await implementationRun(t);
-  const file = path.join(fixture.directory, "config.yaml");
-  await appendFile(file, "\nterminalPlugins: { fake: { enabled: true } }\n");
-  const config = await readFile(file);
-  const createPlugin = fixture.dependencies.terminal.createTerminalPlugin.bind(
-    fixture.dependencies.terminal,
-  );
-  fixture.dependencies.terminal.createTerminalPlugin = async (options) => {
-    await appendFile(file, "\n# Edited after validation\n");
-    return createPlugin(options);
-  };
-  assert.equal((await fixture.run()).summary.outcome, "incomplete");
-  assert.notDeepEqual(await readFile(file), config);
-  const expectedHash = createHash("sha256")
-    .update(
-      JSON.stringify([fixture.dependencies.commandName, implementationCommand]),
-    )
-    .update(config)
-    .digest("hex");
-  assert.equal((await fixture.snapshot()).input_hash, expectedHash);
-});
 
 await test("an execution checkpoint from another input scope cannot resume or overwrite retained work", async (t) => {
   const fixture = await implementationRun(t);
@@ -55,7 +22,8 @@ await test("an execution checkpoint from another input scope cannot resume or ov
   const submissions = fixture.state.submissions.length;
   for (const patch of [
     { input_hash: "another-input" },
-    { run_arguments: ["run", "--project", "demo", "--document"] },
+    { checkpoint_version: 2 },
+    { run_scope: { ...saved.run_scope, targetBranch: "other-branch" } },
     { project: "another-project" },
     { purpose: "documentation" },
     { reservation: null },
@@ -102,102 +70,6 @@ await test("an open Issue with replacement Reservation IDs cannot continue a sav
   assert.equal(fixture.state.taskCount, 1);
   assert.deepEqual(fixture.dependencies.pauses, []);
 });
-
-for (const change of [
-  "arguments",
-  "configuration",
-  "terminalPlugins",
-  "command name",
-  "command rename",
-  "argument order",
-] as const) {
-  await test(`a change in ${change} ignores old progress and preserves ambiguous retained work`, async (t) => {
-    const fixture = await implementationRun(t);
-    const configFile = path.join(fixture.directory, "config.yaml");
-    if (change === "terminalPlugins")
-      await appendFile(configFile, "\nterminalPlugins: { enabled: true }\n");
-    fixture.state.onTask = (file) => publish(file, {});
-    fixture.state.onCorrection = async () => {
-      /* Wait for the assigned correction. */
-    };
-    fixture.state.onSleep = async (ms) => {
-      if (ms === 250) fixture.controller.abort();
-    };
-    assert.equal((await fixture.run()).summary.outcome, "cancelled");
-    const saved = await fixture.snapshot();
-    const recovery = path.join(fixture.directory, "recovery");
-    const oldFile = path.join(recovery, (await readdir(recovery))[0]!);
-    const oldText = await readFile(oldFile, "utf8");
-    const command = [...implementationCommand];
-    if (change === "arguments")
-      command[command.indexOf("--no-auto-merge")] = "--auto-merge";
-    else if (change === "argument order")
-      command.splice(1, 4, "--issue", "50", "--project", "demo");
-    else if (change === "command name" || change === "command rename")
-      fixture.dependencies.commandName =
-        change === "command name"
-          ? "another-terminal"
-          : "generic-terminal-next";
-    else if (change === "terminalPlugins")
-      await writeFile(
-        configFile,
-        (await readFile(configFile, "utf8")).replace(
-          "terminalPlugins: { enabled: true }",
-          "terminalPlugins: { enabled: false }",
-        ),
-      );
-    else
-      await appendFile(
-        path.join(fixture.directory, "config.yaml"),
-        "\n# Changed configuration bytes\n",
-      );
-    const controller = new AbortController();
-    fixture.dependencies.signal = controller.signal;
-    fixture.state.onSleep = async (ms) => {
-      if (ms === 250) controller.abort();
-    };
-    const before = fixture.state.submissions.length;
-    const reserved = await executeCli(command, fixture.dependencies);
-    assert.equal(reserved.summary.outcome, "incomplete");
-    assert.match(reserved.summary.tickets![0]!.detail, /existing Reservation/u);
-    assert.equal(fixture.state.submissions.length, before);
-    assert.deepEqual(fixture.dependencies.pauses, []);
-
-    // Simulate the operator releasing the prior Reservation before new work.
-    fixture.state.ticket.labels = ["ready-for-agent"];
-    fixture.state.ticket.assignees = [];
-    fixture.state.onSleep = async (ms) => {
-      assert.ok(ms > 0);
-    };
-    const submitted: string[] = [];
-    fixture.dependencies.terminalPlugin.onInput = async (_tab, text) => {
-      submitted.push(text);
-      if (text.startsWith("Session Probe\n")) controller.abort();
-    };
-    assert.equal(
-      (await executeCli(command, fixture.dependencies)).summary.outcome,
-      "cancelled",
-    );
-    const newFile = (await readdir(recovery)).find(
-      (name) => path.join(recovery, name) !== oldFile,
-    )!;
-    const current = JSON.parse(
-      await readFile(path.join(recovery, newFile), "utf8"),
-    ) as typeof saved;
-    assert.notEqual(current.run_id, saved.run_id);
-    assert.notEqual(current.execution_id, saved.execution_id);
-    assert.notEqual(current.worktree, saved.worktree);
-    assert.notEqual(current.input_hash, saved.input_hash);
-    assert.deepEqual(current.run_arguments, command);
-    assert.deepEqual(current.roles, {});
-    assert.equal(submitted[0], validConfig.agents.implement.start);
-    assert.equal(await readFile(oldFile, "utf8"), oldText);
-    await access(saved.worktree);
-    await access(saved.probe!.path);
-    await access(saved.superseded[0]!);
-    assert.deepEqual(fixture.state.cleanup, []);
-  });
-}
 
 await test("a failed atomic checkpoint write preserves the last valid invocation without serializing tab handles", async (t) => {
   const fixture = await implementationRun(t);

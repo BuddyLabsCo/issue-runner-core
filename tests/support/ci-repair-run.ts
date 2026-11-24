@@ -157,6 +157,11 @@ export async function exhaustedLegacyCiRepair(t: TestContext) {
     worktree: path.join(fixture.directory, "worktrees", saved.run_id, suffix),
     branch: `sandcastle/run-${saved.run_id}/${suffix}`,
     sessionid: "ci-session-2",
+    agent: validConfig.agents.ciRepair.agent,
+    resume: validConfig.agents.ciRepair.resume.replaceAll(
+      "{sessionref}",
+      () => "ci-session-2",
+    ),
     probe: { path: path.join(handoffs, "second-probe.json") },
     invocation: {
       invocation_id: secondId,

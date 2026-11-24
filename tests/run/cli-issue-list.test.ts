@@ -349,23 +349,6 @@ await test("list recovery preserves recorded ownership and verified completion w
     ),
     original,
   );
-
-  await writeFile(
-    path.join(fixture.directory, "config.yaml"),
-    stringify({
-      ...validConfig,
-      workflow: { review: false },
-      issueList: [51, 55, 56],
-      maxBatchSize: 1,
-    }),
-  );
-  const changed = await fixture.run();
-  assert.equal(changed.summary.outcome, "incomplete");
-
-  assert.deepEqual(
-    [...fixture.dispatched].sort((a, b) => a - b),
-    [55, 56],
-  );
 });
 
 await test("cancellation during a list assignment retains its Batch and handoff evidence without dispatching replacements", async (t) => {
