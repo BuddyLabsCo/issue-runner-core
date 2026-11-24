@@ -75,7 +75,8 @@ export async function runDocumentation(
         saved.input_hash !== context.inputHash ||
         JSON.stringify(saved.run_arguments) !==
           JSON.stringify(context.runArguments) ||
-        saved.repository !== maintenance.repository ||
+        String(saved.repository).toLowerCase() !==
+          maintenance.repository.toLowerCase() ||
         saved.target_branch !== maintenance.target_branch ||
         saved.batch !== input.batch ||
         (input.batch !== undefined && saved.run_id !== context.runId) ||

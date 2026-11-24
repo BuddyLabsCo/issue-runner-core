@@ -17,18 +17,19 @@ export function nativeSession(
   };
 }
 
-function sameNativeSession(
+function assertNativeSession(
   saved: Record<string, unknown>,
   profile: AgentConfig,
   label: string,
 ): void {
   const sessionid = saved.sessionid;
+  const expected = nonempty(sessionid)
+    ? nativeSession(profile, sessionid)
+    : undefined;
   if (
-    !nonempty(sessionid) ||
-    !nonempty(saved.agent) ||
-    !nonempty(saved.resume) ||
-    saved.agent !== profile.agent ||
-    saved.resume !== profile.resume.replaceAll("{sessionref}", () => sessionid)
+    expected === undefined ||
+    saved.agent !== expected.agent ||
+    saved.resume !== expected.resume
   )
     throw new Error(
       `unable to recover: native ${label} conversation identity changed; restart to use the current Agent configuration`,
@@ -47,7 +48,7 @@ export function validateNativeSessions(
       throw new Error(
         `unable to recover: native ${role} conversation identity changed; restart to use the current Agent configuration`,
       );
-    sameNativeSession(object(saved), profile, role);
+    assertNativeSession(object(saved), profile, role);
   }
   for (const [kind, attempts] of [
     ["CI repair", progress.publication?.ciRepair?.attempts],
@@ -60,7 +61,7 @@ export function validateNativeSessions(
     for (const attempt of attempts ?? []) {
       const saved = object(attempt) as Partial<RepairProgress>;
       if (saved.sessionid === undefined) continue;
-      sameNativeSession(object(saved), profile, kind);
+      assertNativeSession(object(saved), profile, kind);
     }
   }
 }

@@ -6,6 +6,7 @@ import {
   readFile,
   readdir,
   rm,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -16,6 +17,7 @@ import { executeCli } from "../../src/cli.ts";
 import { hashRunInput } from "../../src/recovery.ts";
 import {
   implementationCommand,
+  implementationProgress,
   implementationRun,
   publish,
 } from "../support/implementation-run.ts";
@@ -157,6 +159,67 @@ await test("a satisfied eligibility label change and equivalent checkout spellin
     checkout: `${String(config.checkout)}/.`,
   }));
   await assertRecovered(fixture, saved);
+});
+
+await test("a case-only repository spelling change recovers", async (t) => {
+  const fixture = await implementationRun(t);
+  fixture.state.ticket.repository = "owner/repo";
+  const saved = await interrupt(fixture);
+  await updateConfig(fixture, (config) => ({
+    ...config,
+    repository: "Owner/Repo",
+  }));
+  await assertRecovered(fixture, saved);
+});
+
+await test("a symlink alias of the checkout shares one scope", async (t) => {
+  const fixture = await implementationRun(t);
+  const saved = await interrupt(fixture);
+  const config = parse(
+    await readFile(path.join(fixture.directory, "config.yaml"), "utf8"),
+  ) as { checkout: string };
+  const link = path.join(fixture.directory, "checkout-link");
+  await symlink(config.checkout, link);
+  await updateConfig(fixture, (current) => ({
+    ...current,
+    checkout: link,
+  }));
+  await assertRecovered(fixture, saved);
+});
+
+await test("a case-only repository spelling change recovers a value-less Batch", async (t) => {
+  const tickets = [child(50)];
+  const fixture = await parentRun(t, tickets, {
+    ...validConfig,
+    issueList: [50],
+    maxBatchSize: 1,
+  });
+  const submit = fixture.dependencies.terminalPlugin.onInput.bind(
+    fixture.dependencies.terminalPlugin,
+  );
+  let interrupt = true;
+  fixture.dependencies.terminalPlugin.onInput = async (tab, text, chord) => {
+    if (interrupt && text.startsWith("Implementation assignment\n")) {
+      interrupt = false;
+      fixture.controller.abort();
+      return;
+    }
+    await submit(tab, text, chord);
+  };
+  assert.equal((await fixture.run(["--issue"])).summary.outcome, "cancelled");
+  const saved = await implementationProgress(fixture.directory, 50);
+  await updateConfig(fixture, (config) => ({
+    ...config,
+    repository: "Owner/Repo",
+  }));
+  tickets[0]!.labels = ["ready-for-agent"];
+  tickets[0]!.assignees = [];
+  fixture.dependencies.signal = new AbortController().signal;
+  assert.notEqual((await fixture.run(["--issue"])).summary.outcome, "failed");
+  assert.equal(
+    (await implementationProgress(fixture.directory, 50)).execution_id,
+    saved.execution_id,
+  );
 });
 
 for (const change of ["repository", "checkout", "target branch"] as const) {

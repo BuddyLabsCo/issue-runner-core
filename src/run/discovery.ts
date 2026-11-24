@@ -101,8 +101,10 @@ function parseBatch(
 ): BatchProgress {
   const saved = object(JSON.parse(text) as unknown);
   if (
-    Object.entries(expected).some(
-      ([key, value]) => JSON.stringify(saved[key]) !== JSON.stringify(value),
+    Object.entries(expected).some(([key, value]) =>
+      key === "repository"
+        ? String(saved[key]).toLowerCase() !== String(value).toLowerCase()
+        : JSON.stringify(saved[key]) !== JSON.stringify(value),
     ) ||
     !nonempty(saved.run_id) ||
     (saved.completed !== undefined && typeof saved.completed !== "boolean") ||

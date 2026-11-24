@@ -175,7 +175,7 @@ export async function restoreExecution(input: {
             JSON.stringify(saved.run_scope) !== JSON.stringify(input.scope))) ||
         saved.project !== project ||
         saved.ticket !== number ||
-        saved.repository !== repository ||
+        String(saved.repository).toLowerCase() !== repository.toLowerCase() ||
         saved.target_branch !== targetBranch ||
         saved.purpose !== (documentation ? "documentation" : undefined) ||
         (documentation
