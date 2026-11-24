@@ -2,7 +2,11 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { LoadedProject } from "../config.ts";
 import { nonempty, object, readHandoff } from "../agent/handoff.ts";
-import { saveProgress, type BatchProgress } from "../recovery.ts";
+import {
+  sameRepositoryName,
+  saveProgress,
+  type BatchProgress,
+} from "../recovery.ts";
 import type { ChildPage, Ticket, Tracker } from "./contracts.ts";
 import { OperationStopped, type OperationOptions } from "./operations.ts";
 import type { RunContext } from "./run.ts";
@@ -103,7 +107,7 @@ function parseBatch(
   if (
     Object.entries(expected).some(([key, value]) =>
       key === "repository"
-        ? String(saved[key]).toLowerCase() !== String(value).toLowerCase()
+        ? !sameRepositoryName(saved[key], String(value))
         : JSON.stringify(saved[key]) !== JSON.stringify(value),
     ) ||
     !nonempty(saved.run_id) ||

@@ -351,6 +351,26 @@ await test("list recovery preserves recorded ownership and verified completion w
   );
 });
 
+await test("a malformed Batch repository is rejected", async (t) => {
+  const fixture = await issueListRun(t, [child(51)]);
+  await fixture.run();
+  const recovery = path.join(fixture.directory, "recovery");
+  const file = (await readdir(recovery)).find((name) =>
+    name.endsWith("-batch.json"),
+  )!;
+  const batch = JSON.parse(
+    await readFile(path.join(recovery, file), "utf8"),
+  ) as Record<string, unknown>;
+  await writeFile(
+    path.join(recovery, file),
+    JSON.stringify({ ...batch, repository: ["owner/repo"] }),
+  );
+  fixture.dependencies.signal = new AbortController().signal;
+  const result = await fixture.run();
+  assert.equal(result.summary.outcome, "failed");
+  assert.match(result.summary.failure!, /invalid Batch checkpoint/u);
+});
+
 await test("cancellation during a list assignment retains its Batch and handoff evidence without dispatching replacements", async (t) => {
   const fixture = await issueListRun(t, [child(51), child(52)], undefined, 1);
   const submitText = fixture.dependencies.terminalPlugin.onInput.bind(

@@ -9,9 +9,19 @@ import { conflictRepairRun } from "../support/conflict-repair-run.ts";
 import { implementationRun } from "../support/implementation-run.ts";
 import { updateConfig } from "../support/run-scope.ts";
 
+async function assertRetained(...files: (string | undefined)[]) {
+  for (const file of files) {
+    assert.ok(file);
+    await access(file);
+  }
+}
+
 await test("a changed recorded Review identity requires an explicit restart", async (t) => {
   const fixture = await reviewRun(t);
-  fixture.reviewState.onReview = async () => fixture.controller.abort();
+  fixture.reviewState.onReview = async (round) => {
+    await writeFile(round.invocation!.path, "{}");
+    fixture.controller.abort();
+  };
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   const saved = await fixture.snapshot();
   assert.deepEqual(saved.roles.review, {
@@ -34,16 +44,24 @@ await test("a changed recorded Review identity requires an explicit restart", as
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "cancelled");
   assert.ok(fixture.dependencies.messages.includes("unable to recover"));
-  await access(saved.worktree);
+  const round = saved.reviews![0]!;
+  await assertRetained(
+    saved.worktree,
+    saved.probe?.path,
+    saved.invocation?.path,
+    round.probe?.path,
+    round.invocation?.path,
+  );
   assert.deepEqual(fixture.state.cleanup, []);
 });
 
-await test("a changed recorded Documentation identity requires an explicit restart", async (t) => {
+await test("a corrupt recorded Documentation identity requires an explicit restart", async (t) => {
   const fixture = await documentationRun(t);
   fixture.state.onTask = async () => fixture.controller.abort();
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   const saved = await fixture.snapshot();
   assert.equal(saved.roles.documentation?.agent, "document-agent");
+  await writeFile(saved.invocation!.path, "{}");
   const file = path.join(
     fixture.directory,
     "recovery",
@@ -66,7 +84,11 @@ await test("a changed recorded Documentation identity requires an explicit resta
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "cancelled");
   assert.ok(fixture.dependencies.messages.includes("unable to recover"));
-  await access(saved.worktree);
+  await assertRetained(
+    saved.worktree,
+    saved.probe?.path,
+    saved.invocation?.path,
+  );
   assert.deepEqual(fixture.maintenance.cleanup, []);
 });
 
@@ -75,6 +97,7 @@ await test("a recorded role missing from current configuration requires an expli
   fixture.state.onTask = async () => fixture.controller.abort();
   assert.equal((await fixture.run()).summary.outcome, "cancelled");
   const saved = await fixture.snapshot();
+  await writeFile(saved.invocation!.path, "{}");
   await writeFile(
     path.join(fixture.directory, "recovery", `${saved.input_hash}-50.json`),
     JSON.stringify({
@@ -94,7 +117,11 @@ await test("a recorded role missing from current configuration requires an expli
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "cancelled");
   assert.ok(fixture.dependencies.messages.includes("unable to recover"));
-  await access(saved.worktree);
+  await assertRetained(
+    saved.worktree,
+    saved.probe?.path,
+    saved.invocation?.path,
+  );
 });
 
 await test("a changed recorded conflict repair identity requires an explicit restart", async (t) => {
@@ -105,6 +132,7 @@ await test("a changed recorded conflict repair identity requires an explicit res
   const attempt = saved.publication!.conflictRepair!.attempts.at(-1)!;
   assert.ok(attempt.agent);
   assert.ok(attempt.resume);
+  await writeFile(attempt.invocation!.path, "{}");
   await updateConfig(fixture, (config) => ({
     ...config,
     agents: {
@@ -121,5 +149,10 @@ await test("a changed recorded conflict repair identity requires an explicit res
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "cancelled");
   assert.ok(fixture.dependencies.messages.includes("unable to recover"));
-  await access(attempt.worktree);
+  await assertRetained(
+    saved.worktree,
+    attempt.worktree,
+    attempt.probe?.path,
+    attempt.invocation?.path,
+  );
 });

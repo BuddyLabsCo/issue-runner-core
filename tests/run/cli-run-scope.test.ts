@@ -179,7 +179,11 @@ await test("a symlink alias of the checkout shares one scope", async (t) => {
     await readFile(path.join(fixture.directory, "config.yaml"), "utf8"),
   ) as { checkout: string };
   const link = path.join(fixture.directory, "checkout-link");
-  await symlink(config.checkout, link);
+  await symlink(
+    config.checkout,
+    link,
+    process.platform === "win32" ? "junction" : "dir",
+  );
   await updateConfig(fixture, (current) => ({
     ...current,
     checkout: link,
@@ -197,10 +201,10 @@ await test("a case-only repository spelling change recovers a value-less Batch",
   const submit = fixture.dependencies.terminalPlugin.onInput.bind(
     fixture.dependencies.terminalPlugin,
   );
-  let interrupt = true;
+  let shouldInterrupt = true;
   fixture.dependencies.terminalPlugin.onInput = async (tab, text, chord) => {
-    if (interrupt && text.startsWith("Implementation assignment\n")) {
-      interrupt = false;
+    if (shouldInterrupt && text.startsWith("Implementation assignment\n")) {
+      shouldInterrupt = false;
       fixture.controller.abort();
       return;
     }

@@ -24,6 +24,7 @@ await test("an execution checkpoint from another input scope cannot resume or ov
     { input_hash: "another-input" },
     { checkpoint_version: 2 },
     { run_scope: { ...saved.run_scope, targetBranch: "other-branch" } },
+    { repository: ["owner/repo"] },
     { project: "another-project" },
     { purpose: "documentation" },
     { reservation: null },

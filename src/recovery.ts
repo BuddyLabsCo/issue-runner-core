@@ -12,6 +12,14 @@ import type { RunScope } from "./run/scope.ts";
 
 export const checkpointVersion = 1;
 
+export function sameRepositoryName(value: unknown, expected: string): boolean {
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0 &&
+    value.toLowerCase() === expected.toLowerCase()
+  );
+}
+
 export interface NativeSession {
   sessionid: string;
   agent: string;

@@ -3,7 +3,11 @@ import { randomUUID } from "node:crypto";
 import { copyFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import type { LoadedProject } from "../config.ts";
-import { checkpointVersion, type ImplementationProgress } from "../recovery.ts";
+import {
+  checkpointVersion,
+  sameRepositoryName,
+  type ImplementationProgress,
+} from "../recovery.ts";
 import {
   nonempty,
   object,
@@ -175,7 +179,7 @@ export async function restoreExecution(input: {
             JSON.stringify(saved.run_scope) !== JSON.stringify(input.scope))) ||
         saved.project !== project ||
         saved.ticket !== number ||
-        String(saved.repository).toLowerCase() !== repository.toLowerCase() ||
+        !sameRepositoryName(saved.repository, repository) ||
         saved.target_branch !== targetBranch ||
         saved.purpose !== (documentation ? "documentation" : undefined) ||
         (documentation

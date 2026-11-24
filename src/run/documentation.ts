@@ -2,7 +2,11 @@ import path from "node:path";
 import { rename } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { nonempty, object, readHandoff } from "../agent/handoff.ts";
-import { saveProgress, type MaintenanceProgress } from "../recovery.ts";
+import {
+  sameRepositoryName,
+  saveProgress,
+  type MaintenanceProgress,
+} from "../recovery.ts";
 import { runStandalone } from "./standalone.ts";
 import {
   OperationStopped,
@@ -75,8 +79,7 @@ export async function runDocumentation(
         saved.input_hash !== context.inputHash ||
         JSON.stringify(saved.run_arguments) !==
           JSON.stringify(context.runArguments) ||
-        String(saved.repository).toLowerCase() !==
-          maintenance.repository.toLowerCase() ||
+        !sameRepositoryName(saved.repository, maintenance.repository) ||
         saved.target_branch !== maintenance.target_branch ||
         saved.batch !== input.batch ||
         (input.batch !== undefined && saved.run_id !== context.runId) ||
