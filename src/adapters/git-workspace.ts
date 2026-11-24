@@ -151,11 +151,12 @@ export class LocalGitWorkspace implements GitWorkspace {
   }
 
   async inspect({ worktree, base }: { worktree: string; base: string }) {
-    const [actualPath, branch, actualBase, log, status, diff] =
+    const [actualPath, branch, actualBase, head, log, status, diff] =
       await Promise.all([
         this.command(worktree, ["rev-parse", "--show-toplevel"]),
         this.command(worktree, ["branch", "--show-current"]),
         this.command(worktree, ["merge-base", base, "HEAD"]),
+        this.command(worktree, ["rev-parse", "HEAD"]),
         this.command(worktree, [
           "log",
           "--topo-order",
@@ -184,6 +185,8 @@ export class LocalGitWorkspace implements GitWorkspace {
                 message: line.slice(separator + 1),
               };
             });
+    if ((commits.at(-1)?.sha ?? actualBase.trim()) !== head.trim())
+      throw new Error("Git commit evidence does not end at HEAD");
     const actualWorktree = await resolveWorktreePath(actualPath.trim());
     const expectedWorktree = await resolveWorktreePath(worktree);
     return {

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import test from "node:test";
 import { validConfig } from "../support/cli-project.ts";
 import { assertBusinessAssignment } from "../support/prompt-assignment.ts";
@@ -9,51 +10,83 @@ import {
 } from "../support/implementation-run.ts";
 import { publicationRun } from "../support/publication-run.ts";
 
-await test("unordered implementation commits retain Git order and HEAD through publication recovery", async (t) => {
-  const fixture = await publicationRun(t);
-  const commits = [
-    ...committed().commits,
-    { sha: "c".repeat(40), message: "Agent-reported second commit" },
-  ];
-  fixture.state.onTask = async (file) => {
-    fixture.state.evidence.commits = commits.map(({ sha }) => ({
-      sha,
-      message: "Git subject",
-    }));
-    await publish(file, { ...committed(), commits: [...commits].reverse() });
-  };
-  fixture.state.onCorrection = () => {
-    fixture.controller.abort();
-    return Promise.resolve();
-  };
-  const push = fixture.dependencies.gitWorkspace.push.bind(
-    fixture.dependencies.gitWorkspace,
-  );
-  fixture.dependencies.gitWorkspace.push = () => {
-    fixture.controller.abort();
-    return Promise.resolve();
-  };
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  const saved = await fixture.snapshot();
-  assert.deepEqual(saved.result?.commits, commits);
-  assert.deepEqual(saved.publication?.commits, commits);
-  assert.equal(saved.publication?.headSha, commits[1]!.sha);
+for (const wrongHead of [false, true]) {
+  await test(
+    wrongHead
+      ? "publication recovery rejects a recorded final SHA that is not Git HEAD"
+      : "unordered implementation commits retain Git order and HEAD through publication recovery",
+    async (t) => {
+      const fixture = await publicationRun(t);
+      const commits = [
+        ...committed().commits,
+        { sha: "c".repeat(40), message: "Agent-reported second commit" },
+        { sha: "d".repeat(40), message: "Agent-reported HEAD" },
+      ];
+      fixture.state.onTask = async (file) => {
+        fixture.state.evidence.commits = commits.map(({ sha }) => ({
+          sha,
+          message: "Git subject",
+        }));
+        await publish(file, {
+          ...committed(),
+          commits: [...commits].reverse(),
+        });
+      };
+      fixture.state.onCorrection = () => {
+        fixture.controller.abort();
+        return Promise.resolve();
+      };
+      const push = fixture.dependencies.gitWorkspace.push.bind(
+        fixture.dependencies.gitWorkspace,
+      );
+      fixture.dependencies.gitWorkspace.push = () => {
+        fixture.controller.abort();
+        return Promise.resolve();
+      };
+      assert.equal((await fixture.run()).summary.outcome, "cancelled");
+      const saved = await fixture.snapshot();
+      assert.deepEqual(saved.result?.commits, commits);
+      assert.deepEqual(saved.publication?.commits, commits);
+      assert.equal(saved.publication?.headSha, commits[2]!.sha);
 
-  fixture.state.evidence.commits.reverse();
-  fixture.dependencies.signal = new AbortController().signal;
-  fixture.dependencies.gitWorkspace.push = push;
-  const recovered = await fixture.run();
-  assert.match(recovered.summary.tickets![0]!.detail, /CI-ready/u);
-  const after = await fixture.snapshot();
-  assert.deepEqual(after.result?.commits, commits);
-  assert.deepEqual(after.publication?.commits, commits);
-  assert.equal(
-    fixture.publicationState.branches.get(saved.branch),
-    commits[1]!.sha,
+      // Equal membership, different order for commits other than HEAD.
+      const [first, second, head] = fixture.state.evidence.commits;
+      fixture.state.evidence.commits = [second!, first!, head!];
+      if (wrongHead) {
+        saved.result.commits.reverse();
+        saved.publication.commits.reverse();
+        saved.publication.headSha = commits[0]!.sha;
+        await publish(
+          path.join(
+            fixture.directory,
+            "recovery",
+            `${saved.input_hash}-50.json`,
+          ),
+          saved,
+        );
+      }
+      fixture.dependencies.signal = new AbortController().signal;
+      fixture.dependencies.gitWorkspace.push = push;
+      const recovered = await fixture.run();
+      if (wrongHead) {
+        assert.match(recovered.summary.tickets![0]!.detail, /HEAD mismatch/u);
+        assert.equal(fixture.publicationState.pushes, 0);
+        assert.equal(fixture.publicationState.creations, 0);
+        return;
+      }
+      assert.match(recovered.summary.tickets![0]!.detail, /CI-ready/u);
+      const after = await fixture.snapshot();
+      assert.deepEqual(after.result?.commits, commits);
+      assert.deepEqual(after.publication?.commits, commits);
+      assert.equal(
+        fixture.publicationState.branches.get(saved.branch),
+        commits[2]!.sha,
+      );
+      assert.equal(fixture.state.taskCount, 1);
+      assert.equal(fixture.dependencies.pauses.length, 0);
+    },
   );
-  assert.equal(fixture.state.taskCount, 1);
-  assert.equal(fixture.dependencies.pauses.length, 0);
-});
+}
 
 await test("execution findings receive a specific correction in the original conversation", async (t) => {
   const fixture = await implementationRun(t);

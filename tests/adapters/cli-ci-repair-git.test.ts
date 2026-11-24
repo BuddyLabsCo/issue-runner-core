@@ -37,6 +37,74 @@ async function git(cwd: string, ...args: string[]) {
   return stdout.trim();
 }
 
+await test("real Git inspection orders merge parents before children despite skewed commit times", async (t) => {
+  const worktree = await mkdtemp(path.join(tmpdir(), "core-topology "));
+  t.after(() => rm(worktree, { recursive: true, force: true }));
+  await git(worktree, "init", "--initial-branch=main");
+  const tree = await git(worktree, "write-tree");
+  const commit = async (message: string, day: number, ...parents: string[]) => {
+    const date = `2026-01-0${day}T00:00:00Z`;
+    const { stdout } = await execute(
+      "git",
+      [
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "-c",
+        "commit.gpgsign=false",
+        "commit-tree",
+        tree,
+        "-m",
+        message,
+        ...parents.flatMap((parent) => ["-p", parent]),
+      ],
+      {
+        cwd: worktree,
+        encoding: "utf8",
+        timeout: 60_000,
+        env: {
+          ...process.env,
+          GIT_AUTHOR_DATE: date,
+          GIT_COMMITTER_DATE: date,
+        },
+      },
+    );
+    return stdout.trim();
+  };
+  const base = await commit("Base", 1);
+  const ancestor = await commit("Shared ancestor", 7, base);
+  const left = await commit("Left branch", 6, ancestor);
+  const right = await commit("Right branch first", 3, ancestor);
+  const rightTip = await commit("Right branch second", 4, right);
+  const merge = await commit("Merge branches", 5, left, rightTip);
+  await git(worktree, "update-ref", "refs/heads/main", merge);
+
+  const reverseLog = (
+    await git(worktree, "log", "--reverse", "--format=%H", `${base}..HEAD`)
+  ).split("\n");
+  assert.ok(
+    reverseLog.indexOf(right) < reverseLog.indexOf(ancestor),
+    "ordinary reverse log must misorder this history",
+  );
+  const evidence = await new LocalGitWorkspace().inspect({ worktree, base });
+  const shas = evidence.commits.map(({ sha }) => sha);
+  assert.equal(shas.length, 5);
+  assert.deepEqual(
+    new Set(shas),
+    new Set([ancestor, left, right, rightTip, merge]),
+  );
+  for (const [parent, child] of [
+    [ancestor, left],
+    [ancestor, right],
+    [right, rightTip],
+    [left, merge],
+    [rightTip, merge],
+  ] as const)
+    assert.ok(shas.indexOf(parent) < shas.indexOf(child));
+  assert.equal(shas.at(-1), await git(worktree, "rev-parse", "HEAD"));
+});
+
 for (const kind of ["ci", "conflict"] as const) {
   for (const emptyFirst of [false, true]) {
     await test(`real Git ${kind} repairs preserve the original PR branch${emptyFirst ? " after rejecting invalid Git evidence" : ""}`, async (t) => {

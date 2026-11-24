@@ -24,7 +24,7 @@ import type {
   WorkspaceEvidence,
 } from "./contracts.ts";
 import type { ReadOperation } from "./discovery.ts";
-import { verifyWorkspace } from "./verification.ts";
+import { verifyHandoffWorkspace, verifyWorkspace } from "./verification.ts";
 import { OperationStopped, pauseForOperator } from "./operations.ts";
 import { validCiRerunCheckpoint } from "./ci-rerun.ts";
 
@@ -350,7 +350,7 @@ export async function repairPullRequest(
         );
         delete repair.verificationError;
         try {
-          const verified = verifyWorkspace(repair, evidence, result);
+          const verified = verifyHandoffWorkspace(repair, evidence, result);
           verifyRepairAncestry(repair, ancestry);
           return verified;
         } catch (error) {

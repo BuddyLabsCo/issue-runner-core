@@ -2,7 +2,7 @@ import path from "node:path";
 import type { ExecutionResult } from "../recovery.ts";
 import type { WorkspaceEvidence } from "./contracts.ts";
 
-export function verifyWorkspace<T extends ExecutionResult>(
+export function verifyHandoffWorkspace<T extends ExecutionResult>(
   expected: {
     worktree: string;
     branch: string;
@@ -49,4 +49,18 @@ export function verifyWorkspace<T extends ExecutionResult>(
   )
     throw new Error("Committed implementation has no actual changes");
   return { ...result, commits };
+}
+
+export function verifyWorkspace(
+  expected: Parameters<typeof verifyHandoffWorkspace>[0],
+  actual: WorkspaceEvidence,
+  result: ExecutionResult,
+): void {
+  const verified = verifyHandoffWorkspace(expected, actual, result);
+  const recordedHead = result.commits.at(-1)?.sha ?? expected.base;
+  const observedHead = verified.commits.at(-1)?.sha ?? actual.base;
+  if (recordedHead !== observedHead)
+    throw new Error(
+      `Recorded HEAD mismatch: expected ${recordedHead}, observed ${observedHead}`,
+    );
 }
