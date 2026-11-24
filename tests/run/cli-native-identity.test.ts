@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/require-await -- Scripted external boundaries. */
 import assert from "node:assert/strict";
-import { access, writeFile } from "node:fs/promises";
+import { access, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { documentationRun } from "../support/documentation-run.ts";
@@ -326,7 +326,7 @@ await test("a pending no-change Review requires the saved Review identity", asyn
   assert.equal(fixture.state.submissions.length, before);
 });
 
-await test("a retained Review Probe without a saved identity requires an explicit restart", async (t) => {
+await test("a Probe path without a handoff starts a new session with the current Review configuration", async (t) => {
   const fixture = await noChangeReviewRun(t);
   fixture.noChangeState.onReview = async () => {
     /* Interrupt before the Review handoff is accepted. */
@@ -340,35 +340,7 @@ await test("a retained Review Probe without a saved identity requires an explici
   delete saved.roles.review;
   delete saved.noChange.review.invocation;
   delete saved.noChange.review.pendingPrompt;
-  await writeFile(
-    path.join(fixture.directory, "recovery", `${saved.input_hash}-50.json`),
-    JSON.stringify(saved),
-  );
-  await updateAgent(fixture, "review", { agent: "changed-review-agent" });
-  fixture.dependencies.signal = new AbortController().signal;
-  fixture.dependencies.operator.pause = async () => "q";
-  const before = fixture.state.submissions.length;
-  const result = await fixture.run();
-  assert.equal(result.summary.outcome, "cancelled");
-  assert.ok(fixture.dependencies.messages.includes("unable to recover"));
-  assert.equal(fixture.state.submissions.length, before);
-  await assertRetained(saved.worktree, saved.noChange.review.probe.path);
-});
-
-await test("a new Review session after recovery uses the current Review configuration", async (t) => {
-  const fixture = await noChangeReviewRun(t);
-  fixture.noChangeState.onReview = async () => {
-    /* Interrupt before the Review handoff is accepted. */
-  };
-  fixture.state.onSleep = async (ms) => {
-    if (ms === 250) fixture.controller.abort();
-  };
-  assert.equal((await fixture.run()).summary.outcome, "cancelled");
-  const saved = await fixture.snapshot();
-  delete saved.roles.review;
-  delete saved.noChange!.review!.invocation;
-  delete saved.noChange!.review!.probe;
-  delete saved.noChange!.review!.pendingPrompt;
+  await rm(saved.noChange.review.probe.path);
   await writeFile(
     path.join(fixture.directory, "recovery", `${saved.input_hash}-50.json`),
     JSON.stringify(saved),

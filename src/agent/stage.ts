@@ -204,7 +204,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
         signal?.throwIfAborted();
         return tab;
       };
-      // A retained fallback Probe can establish identity before any exact resume.
+      // A readable Probe handoff is observed before opening a tab.
       if (
         !sessionid() &&
         !(stage.probe && (await readHandoff(stage.probe.path)))

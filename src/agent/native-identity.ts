@@ -4,7 +4,7 @@ import type {
   NativeSession,
   RepairProgress,
 } from "../recovery.ts";
-import { nonempty, object } from "./handoff.ts";
+import { nonempty, object, readHandoff } from "./handoff.ts";
 
 type NativeRole = "implement" | "review" | "documentation";
 
@@ -76,27 +76,33 @@ function futureReview(
   return max === undefined || last.round < max;
 }
 
-function hasStageEvidence(
-  stage: { probe?: unknown; invocation?: unknown } | undefined,
-): boolean {
-  return stage?.probe !== undefined || stage?.invocation !== undefined;
+async function hasStageEvidence(
+  stage: { probe?: { path: string }; invocation?: unknown } | undefined,
+): Promise<boolean> {
+  if (stage === undefined) return false;
+  if (stage.invocation !== undefined) return true;
+  if (stage.probe === undefined) return false;
+  return (await readHandoff(stage.probe.path)) !== undefined;
 }
 
-function hasNativeEvidence(
+async function hasNativeEvidence(
   progress: ImplementationProgress,
   role: NativeRole,
-): boolean {
+): Promise<boolean> {
   if (role === "documentation") return hasStageEvidence(progress);
-  if (role === "review")
-    return (
-      hasStageEvidence(progress.noChange?.review) ||
-      (progress.reviews ?? []).some(hasStageEvidence)
-    );
-  return [
+  if (role === "review") {
+    if (await hasStageEvidence(progress.noChange?.review)) return true;
+    for (const round of progress.reviews ?? [])
+      if (await hasStageEvidence(round)) return true;
+    return false;
+  }
+  for (const stage of [
     progress,
     progress.noChange?.fix,
     ...(progress.reviews ?? []).map((round) => round.fix),
-  ].some(hasStageEvidence);
+  ])
+    if (await hasStageEvidence(stage)) return true;
+  return false;
 }
 
 function resumableRoles(
@@ -117,10 +123,10 @@ function resumableRoles(
   return roles;
 }
 
-export function validateNativeSessions(
+export async function validateNativeSessions(
   progress: ImplementationProgress,
   loaded: LoadedProject,
-): void {
+): Promise<void> {
   for (const role of resumableRoles(progress, loaded)) {
     const saved = progress.roles[role];
     const profile = loaded.config.agents[role];
@@ -129,7 +135,7 @@ export function validateNativeSessions(
         `unable to recover: native ${role} conversation identity changed; restart to use the current Agent configuration`,
       );
     if (saved !== undefined) assertNativeSession(object(saved), profile, role);
-    else if (hasNativeEvidence(progress, role))
+    else if (await hasNativeEvidence(progress, role))
       throw new Error(
         `unable to recover: native ${role} conversation identity is missing; restart to use the current Agent configuration`,
       );
@@ -146,7 +152,7 @@ export function validateNativeSessions(
       const saved = object(attempt) as Partial<RepairProgress>;
       if (saved.result !== undefined) continue;
       if (saved.sessionid === undefined) {
-        if (saved.probe !== undefined || saved.invocation !== undefined)
+        if (await hasStageEvidence(saved))
           throw new Error(
             `unable to recover: native ${kind} conversation identity is missing; restart to use the current Agent configuration`,
           );

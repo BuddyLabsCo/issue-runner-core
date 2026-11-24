@@ -92,6 +92,27 @@ await test("a documentation Probe written while stopped requires a saved identit
   assert.equal(fixture.maintenance.creates, 1);
 });
 
+await test("a documentation Probe path without a handoff starts a new session", async (t) => {
+  const fixture = await documentationRun(t);
+  const probe = fixture.state.onProbe;
+  fixture.state.onProbe = () => {
+    fixture.controller.abort();
+    return Promise.resolve();
+  };
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  const before = await fixture.snapshot();
+  assert.ok(before.probe);
+  assert.equal(before.roles.documentation, undefined);
+  fixture.dependencies.signal = new AbortController().signal;
+  fixture.state.onProbe = probe;
+  const probes = fixture.state.probeCount;
+  const result = await fixture.run();
+  assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
+  assert.equal((await fixture.snapshot()).execution_id, before.execution_id);
+  assert.equal(fixture.state.probeCount, probes + 1);
+  assert.equal(fixture.state.taskCount, 1);
+});
+
 await test("no_change with actual changes is corrected before closure and cleanup", async (t) => {
   const fixture = await documentationRun(t);
   fixture.state.onTask = (file) => publish(file, noChange);
