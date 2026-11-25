@@ -21,15 +21,12 @@ import type {
   ViewerIdentity,
 } from "./contracts.ts";
 import { publishImplementation } from "./publication.ts";
-import {
-  recoverIssue,
-  recoveringRead,
-  restoreExecution,
-} from "./execution-recovery.ts";
+import { recoveringRead, restoreExecution } from "./execution-recovery.ts";
 import { cleanupExecution, executionTerminal } from "./cleanup.ts";
 import type { RunContext, RunSummary } from "./run.ts";
 import { viewerOf } from "./viewer.ts";
-import { reportTicket, type TicketReport } from "./report.ts";
+import type { TicketReport } from "./report.ts";
+import { runWithManualHandoff, type ManualHandoff } from "./manual-handoff.ts";
 import { hasOpenBlocker, readChildren } from "./discovery.ts";
 import { startIssue } from "./issue-start.ts";
 import { completeNoChange } from "./no-change.ts";
@@ -58,17 +55,14 @@ export async function runStandalone(input: {
     complete: () => Promise<RunSummary>,
   ) => void;
 }): Promise<RunSummary> {
-  return reportTicket(input, (issue, report) =>
-    recoverIssue(issue, (attempt, restarting) =>
-      executeStandalone(attempt, report, restarting),
-    ),
-  );
+  return runWithManualHandoff(input, executeStandalone);
 }
 
 async function executeStandalone(
   input: Parameters<typeof runStandalone>[0],
   report: TicketReport,
-  restarting = false,
+  restarting: boolean,
+  handoff: ManualHandoff,
 ): Promise<RunSummary> {
   const { number, loaded, tracker, summary } = input;
   const purpose = input.documentation ? "documentation" : "implement";
@@ -139,6 +133,7 @@ async function executeStandalone(
     restarting,
   });
   execution = restored;
+  if (restored) handoff.progress = restored;
   if (restored) context.retained?.set(progressFile, restored);
   const inspect = async (): Promise<{ ticket: Ticket; reason?: string }> => {
     if (input.parentTicket !== undefined) {
@@ -255,6 +250,9 @@ async function executeStandalone(
         `ticket:${number}`,
         close,
       ),
+    onPrimaryTab: (open) => {
+      handoff.primaryTabOpen = open;
+    },
     withEnvironment: (action) => context.git.withAgentEnvironment(root, action),
     terminal: (tabs ??= executionTerminal({
       terminal: context.terminal,
@@ -308,6 +306,7 @@ async function executeStandalone(
             await cleanupExecution({
               progress,
               loaded,
+              retainWorktree: !input.autoMerge,
               git: context.git,
               read,
               persist: () => persist(progress),
@@ -402,6 +401,7 @@ async function executeStandalone(
         summary,
         report,
         closeResidual: () => tabs!.closeResidual(),
+        retainWorktree: !input.autoMerge,
         ...(input.onDelivery ? { onDelivery: input.onDelivery } : {}),
       });
       if (result) return result;
@@ -454,6 +454,7 @@ async function executeStandalone(
     roles: {},
     superseded: [],
   });
+  handoff.progress = progress;
   context.retained?.set(progressFile, progress);
   await persist(progress);
   if (!restored || !existsSync(progress.worktree))

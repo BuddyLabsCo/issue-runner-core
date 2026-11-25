@@ -77,6 +77,7 @@ export function executionTerminal(input: {
 
 export async function cleanupExecution(input: {
   progress: ImplementationProgress;
+  retainWorktree?: boolean;
   loaded: LoadedProject;
   git: GitWorkspace;
   read: ReadOperation;
@@ -179,7 +180,11 @@ export async function cleanupExecution(input: {
     throw new Error("Invalid cleanup checkpoint");
   await persist();
   for (const resource of resources) {
-    if (cleanup.worktrees.includes(resource.worktree)) continue;
+    if (
+      cleanup.worktrees.includes(resource.worktree) ||
+      (input.retainWorktree && resource.worktree === progress.worktree)
+    )
+      continue;
     await read("cleanup_worktree", resource.worktree, async () => {
       await git.cleanupWorktree({
         checkout: loaded.config.checkout,

@@ -341,8 +341,12 @@ for (const closure of ["runner", "code_host", "no_auto_merge"] as const) {
     assert.equal(after.pr_title, before.pr_title);
     assert.equal(after.pr_body, before.pr_body);
     assert.equal(after.publication!.phase, "delivered");
-    assert.equal(fixture.state.cleanup.length, 1);
-    assert.equal(fixture.state.cleanup[0]!.worktree, before.worktree);
+    assert.equal(
+      fixture.state.cleanup.length,
+      closure === "no_auto_merge" ? 0 : 1,
+    );
+    if (closure !== "no_auto_merge")
+      assert.equal(fixture.state.cleanup[0]!.worktree, before.worktree);
     await assert.rejects(access(before.probe!.path));
     await assert.rejects(access(before.invocation!.path));
   });

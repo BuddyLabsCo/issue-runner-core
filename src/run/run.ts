@@ -13,7 +13,7 @@ import type {
   GitWorkspace,
   Ticket,
 } from "./contracts.ts";
-import type { TerminalPlugin } from "../terminal.ts";
+import type { CreateTabOptions, TerminalPlugin } from "../terminal.ts";
 import type { AuditLog } from "../audit.ts";
 import type { ImplementationProgress } from "../recovery.ts";
 import {
@@ -50,6 +50,10 @@ export interface RunContext {
   confirmations?: TerminalConfirmations;
   git: GitWorkspace;
   terminal: TerminalPlugin;
+  resumeManually: (
+    options: Omit<CreateTabOptions, "env" | "signal">,
+    command: string,
+  ) => Promise<string | void>;
   enhancements?: Readonly<
     Record<string, import("../terminal.ts").EnhancementModule>
   >;
@@ -59,7 +63,10 @@ export interface RunContext {
   viewer?: ViewerLookup;
 }
 
-export type RunSetup = Omit<RunContext, "scope" | "inputHash">;
+export type RunSetup = Omit<
+  RunContext,
+  "scope" | "inputHash" | "resumeManually"
+>;
 
 export interface RunSummary {
   outcome: "succeeded" | "no_work" | "incomplete" | "cancelled" | "failed";
@@ -245,6 +252,18 @@ async function executeProject(
     ...context,
     scope,
     inputHash: runScopeId(scope),
+    resumeManually: (options, command) =>
+      git.withAgentEnvironment(loaded.directory, async (env) => {
+        // Manual takeover is independent of the cancelled Run signal.
+        const tab = await boundedOperation(
+          () => terminal.createTab({ ...options, env }),
+          "Open manual takeover tab",
+        );
+        return boundedOperation(
+          () => terminal.execute(tab.handle, command),
+          "Resume native conversation",
+        );
+      }),
   };
   let base: Promise<string> | undefined;
   const fetchBase = () =>

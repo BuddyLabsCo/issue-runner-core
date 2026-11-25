@@ -36,6 +36,7 @@ export interface IssueStageContext {
   persist: () => Promise<void>;
   beforeDispatch?: () => Promise<boolean>;
   closeTab: (close: () => Promise<void>) => Promise<void>;
+  onPrimaryTab?: (open: boolean) => void;
   withEnvironment: <T>(
     action: (env: Readonly<Record<string, string>>) => Promise<T>,
   ) => Promise<T>;
@@ -162,6 +163,7 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
         } else progress.roles[role] = identity;
       };
       const open = async () => {
+        if (!repairRole && role !== "review") input.onPrimaryTab?.(true);
         tab ??= await conversations.create(
           {
             cwd: input.worktree ?? progress.worktree,
@@ -375,7 +377,10 @@ export async function runIssueStage<R extends ExecutionResult | ReviewResult>(
           signal?.throwIfAborted();
           if (tab) {
             const owned = tab;
-            await input.closeTab(() => conversations.close(owned));
+            await input.closeTab(async () => {
+              await conversations.close(owned);
+              if (!repairRole && role !== "review") input.onPrimaryTab?.(false);
+            });
           }
           return;
         }

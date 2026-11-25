@@ -102,7 +102,10 @@ await test("resume accepts a matching execute reference without a fresh Probe", 
   const before = fixture.state.submissions.length;
   const result = await fixture.run();
   assert.match(result.summary.tickets![0]!.detail, /CI-ready/u);
-  assert.deepEqual(commands, [`any-cli --resume "${reference}"`]);
+  assert.deepEqual(commands, [
+    `any-cli --resume "${reference}"`,
+    `any-cli --resume "${reference}"`,
+  ]);
   assert.deepEqual(
     fixture.state.submissions.slice(before).map(({ text }) => text),
     ["continue"],

@@ -245,7 +245,7 @@ for (const effect of [
       );
       fixture.dependencies.terminalPlugin.createTab = async (options) => {
         const tab = await create(options);
-        await blockAudit();
+        if (!options.label.endsWith(" (manual)")) await blockAudit();
         return tab;
       };
     } else if (effect === "prompt") {
@@ -444,7 +444,8 @@ await test("failed tab creation pauses before an explicitly authorized new resou
   };
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "incomplete", JSON.stringify(result));
-  assert.equal(attempts, 2);
+  assert.equal(attempts, 3);
+  assert.equal(fixture.state.manualTabs.length, 1);
   assert.equal(fixture.dependencies.pauses.length, 1);
   assert.equal(fixture.state.taskCount, 1);
 });

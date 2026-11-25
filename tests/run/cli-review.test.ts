@@ -18,6 +18,13 @@ import { access, readFile } from "node:fs/promises";
 import { implementationCommit } from "../support/implementation-run.ts";
 import { loadPrompt, renderPrompt } from "../../src/prompts/load.ts";
 
+await test("cancellation before Review acceptance leaves the local Issue processing incomplete", async (t) => {
+  const fixture = await reviewRun(t);
+  fixture.reviewState.onReview = async () => fixture.controller.abort();
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  assert.equal(fixture.state.manualTabs.length, 0);
+});
+
 await test("verified implementation starts an independent Standards/Spec Review and becomes eligible for publication on passed", async (t) => {
   const fixture = await implementationRun(t, {
     ...validConfig,
@@ -180,6 +187,10 @@ await test("with no default cap, every findings round receives a fix and later R
     "issue-50 review r3",
     "issue-50 fix review r3",
     "issue-50 review r4",
+    "issue-50 implement (manual)",
+  ]);
+  assert.deepEqual(fixture.state.manualTabs[0]!.commands, [
+    (await fixture.snapshot()).roles.implement!.resume,
   ]);
   assert.deepEqual(
     fixture.dependencies.messages

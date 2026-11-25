@@ -31,6 +31,7 @@ export async function completeNoChange(
     summary: RunSummary;
     report: TicketReport;
     closeResidual: () => Promise<void>;
+    retainWorktree?: boolean;
     verify: () => Promise<void>;
     onDelivery?: (labels: string[]) => void;
   },

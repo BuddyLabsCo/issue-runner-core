@@ -13,7 +13,7 @@ import {
 import { passed } from "../support/review-run.ts";
 import { assessment, noChangeReviewRun } from "../support/no-change-run.ts";
 
-await test("Review-disabled no_change publishes evidence, closes and cleans without a PR", async (t) => {
+await test("Review-disabled no_change publishes evidence, closes, and retains the takeover Worktree without a PR", async (t) => {
   const fixture = await implementationRun(t);
   const comments: string[] = [];
   fixture.state.onTask = async (file) => {
@@ -53,7 +53,8 @@ await test("Review-disabled no_change publishes evidence, closes and cleans with
   assert.match(comments[0]!, /Review disabled/u);
   assert.match(comments[0]!, /a{40}/u);
   assert.equal(fixture.state.probeCount, 1);
-  assert.equal(fixture.state.cleanup.length, 1);
+  assert.equal(fixture.state.cleanup.length, 0);
+  assert.equal(fixture.state.manualTabs.length, 1);
   assert.deepEqual(await fixture.dependencies.codeHost.listPullRequests(), []);
 });
 
