@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.13
+
+- chore: [issue-469] refine default Project templates (#470)
+
 ## 1.0.12
 
 - docs: [issue-465] revert manual takeover paragraph (#468)
