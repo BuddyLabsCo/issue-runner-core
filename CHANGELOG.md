@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.12
+
+- docs: [issue-465] revert manual takeover paragraph (#468)
+- fix: [issue-465] reopen completed agent for manual takeover (#466)
+
 ## 1.0.11
 
 - fix: [issue-462] accept unordered handoff commits in Git order (#463)
