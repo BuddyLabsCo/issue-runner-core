@@ -61,6 +61,7 @@ await test("a new Run restores native continuation without restoring Enhancement
       "{sessionref}",
       "enhanced-native",
     ),
+    restored.roles.implement!.resume,
   ]);
   assert.notEqual(fixture.control.assignments[1]!.id, oldId);
   lateAnswer.resolve("");

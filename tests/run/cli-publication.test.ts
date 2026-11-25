@@ -108,8 +108,72 @@ await test("no-auto-merge publishes fixed Probe metadata, waits for checks, and 
   await access(saved.invocation!.path);
   await access(saved.probe!.path);
   assert.equal(fixture.state.closedTabs.length, 1);
+  assert.equal(fixture.state.manualTabs.length, 1);
+  const manual = fixture.state.manualTabs[0]!;
+  assert.equal(manual.options.cwd, saved.worktree);
+  assert.deepEqual(manual.commands, [saved.roles.implement!.resume]);
+  assert.equal(
+    fixture.state.submissions.some(({ tab }) => tab === manual.handle),
+    false,
+  );
   assert.equal(saved.publication?.phase, "checks_ready");
   assert.equal(saved.publication.pullRequest?.number, 81);
+});
+
+await test("cancellation during push reopens the completed implementation for manual takeover", async (t) => {
+  const fixture = await publicationRun(t);
+  fixture.publicationState.onPush = async () => fixture.controller.abort();
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  const saved = await fixture.snapshot();
+  assert.equal(fixture.state.closedTabs.length, 1);
+  assert.equal(fixture.state.manualTabs.length, 1);
+  assert.deepEqual(fixture.state.manualTabs[0]!.commands, [
+    saved.roles.implement!.resume,
+  ]);
+  assert.equal(fixture.state.manualTabs[0]!.options.cwd, saved.worktree);
+  assert.equal(
+    fixture.state.manualTabs[0]!.options.signal?.aborted ?? false,
+    false,
+  );
+});
+
+await test("publication failure reopens the completed implementation without replacing the failure", async (t) => {
+  const fixture = await publicationRun(t);
+  fixture.state.onSleep = async (ms) => {
+    if (ms === 30_000) throw new Error("discovery failed");
+  };
+  const result = await fixture.run();
+  assert.equal(result.summary.outcome, "failed");
+  assert.match(result.summary.failure!, /discovery failed/u);
+  assert.deepEqual(fixture.state.manualTabs[0]!.commands, [
+    (await fixture.snapshot()).roles.implement!.resume,
+  ]);
+});
+
+await test("cancellation before implementation acceptance does not open a manual tab", async (t) => {
+  const fixture = await publicationRun(t);
+  fixture.state.onTask = async () => fixture.controller.abort();
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  assert.equal(fixture.state.manualTabs.length, 0);
+});
+
+await test("failure to reopen the manual tab does not change the publication outcome", async (t) => {
+  const fixture = await publicationRun(t);
+  const create = fixture.dependencies.terminalPlugin.createTab.bind(
+    fixture.dependencies.terminalPlugin,
+  );
+  fixture.dependencies.terminalPlugin.createTab = async (options) => {
+    if (options.label.endsWith(" (manual)"))
+      throw new Error("terminal unavailable");
+    return create(options);
+  };
+  const result = await fixture.run();
+  assert.equal(result.summary.outcome, "incomplete");
+  assert.ok(
+    fixture.dependencies.messages.some((message) =>
+      message.includes("Unable to reopen implement tab: terminal unavailable"),
+    ),
+  );
 });
 
 for (const lost of ["push", "create"] as const) {

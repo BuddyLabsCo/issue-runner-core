@@ -140,6 +140,9 @@ for (const change of ["arguments", "command name", "command rename"]) {
     assert.equal(current.invocation!.path, old.invocation!.path);
     assert.equal(fixture.maintenance.creates, 1);
     assert.deepEqual(fixture.dependencies.pauses, []);
-    assert.deepEqual(fixture.maintenance.cleanup, [current.worktree]);
+    assert.deepEqual(
+      fixture.maintenance.cleanup,
+      change === "arguments" ? [] : [current.worktree],
+    );
   });
 }

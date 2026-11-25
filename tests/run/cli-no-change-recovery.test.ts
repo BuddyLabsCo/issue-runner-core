@@ -11,6 +11,7 @@ import {
   publish,
   committed,
   implementationCommand,
+  deliveryCommand,
 } from "../support/implementation-run.ts";
 import { passed } from "../support/review-run.ts";
 import { validConfig } from "../support/cli-project.ts";
@@ -255,7 +256,7 @@ for (const window of [
       return now();
     };
     assert.equal(
-      (await fixture.run()).summary.outcome,
+      (await executeCli(deliveryCommand, fixture.dependencies)).summary.outcome,
       "cancelled",
       JSON.stringify(fixture.dependencies.messages),
     );
@@ -280,7 +281,7 @@ for (const window of [
       await rm(input.worktree, { recursive: true, force: true });
     };
     const before = fixture.state.submissions.length;
-    const result = await executeCli(implementationCommand, {
+    const result = await executeCli(deliveryCommand, {
       ...fixture.dependencies,
       signal: new AbortController().signal,
     });

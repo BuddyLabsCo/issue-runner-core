@@ -209,6 +209,7 @@ await test("cancellation after accepted implementation retains completion for a 
   assert.equal(saved.phase, "implementation_completed");
   assert.equal(fixture.state.closedTabs.length, 2);
   assert.equal(new Set(fixture.state.closedTabs).size, 1);
+  assert.equal(fixture.state.manualTabs.length, 0);
   assert.equal(fixture.dependencies.pauses.length, 1);
   assert.equal(saved.cleanup, undefined);
   assert.deepEqual(fixture.state.cleanup, []);
@@ -218,6 +219,7 @@ await test("cancellation after accepted implementation retains completion for a 
   fixture.dependencies.signal = new AbortController().signal;
   fixture.dependencies.operator.pause = () => Promise.resolve("s");
   assert.equal((await fixture.run()).summary.outcome, "incomplete");
+  assert.equal(fixture.state.manualTabs.length, 1);
   assert.equal(fixture.state.submissions.length, before);
   assert.equal((await fixture.snapshot()).execution_id, saved.execution_id);
   assert.deepEqual((await fixture.snapshot()).result, saved.result);

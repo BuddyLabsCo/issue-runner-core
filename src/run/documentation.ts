@@ -23,6 +23,7 @@ import {
 } from "./execution-recovery.ts";
 import { cleanupExecution } from "./cleanup.ts";
 import { reportTicket } from "./report.ts";
+import { reopenPrimaryTab } from "./manual-handoff.ts";
 import { ensureRepositoryLabel } from "./repository-label.ts";
 
 export async function runDocumentation(
@@ -219,6 +220,11 @@ export async function runDocumentation(
           return Promise.resolve(result);
         },
       );
+    if (recoveredDelivery && !input.autoMerge)
+      await reopenPrimaryTab(
+        { ...input, context, number: maintenance.ticket!, documentation: true },
+        { progress },
+      );
     const persistExecution = () =>
       context.signal?.aborted
         ? saveProgress(executionFile, progress)
@@ -229,6 +235,7 @@ export async function runDocumentation(
           );
     await cleanupExecution({
       progress,
+      retainWorktree: !input.autoMerge,
       loaded,
       git: context.git,
       read: recoveringRead({

@@ -80,7 +80,7 @@ await test("continuing after uncertain command delivery reuses the tab without l
     return "";
   };
   assert.match((await fixture.run()).summary.tickets![0]!.detail, /CI-ready/);
-  assert.equal(launches, 1);
+  assert.equal(launches, 2);
   assert.equal(fixture.state.tabOptions.length, 1);
   assert.equal(fixture.dependencies.pauses.length, 1);
   assert.equal(fixture.state.probeCount, 1);
@@ -210,7 +210,7 @@ await test("an interrupted execution resumes its exact opaque native ref before 
     signal: new AbortController().signal,
   });
   assert.match(result.summary.tickets![0]!.detail, /CI-ready/);
-  assert.equal(resumes, 1);
+  assert.equal(resumes, 2);
   assert.equal(fixture.state.probeCount, 1);
   assert.equal(fixture.state.taskCount, 1);
   assert.equal(
@@ -412,6 +412,7 @@ await test("enhanced startup completes preflight and monitoring before command, 
     "task",
     "stop",
     "close",
+    "command",
   ]);
   assert.equal(fixture.state.probeCount, 0);
 });
@@ -482,7 +483,7 @@ for (const choice of ["", "s", "q", null]) {
     assert.deepEqual(counts, {
       factories: 1,
       monitors: 1,
-      commands: 1,
+      commands: choice === "" ? 2 : 1,
       waits: choice === "" ? 2 : 1,
       stops: 1,
     });

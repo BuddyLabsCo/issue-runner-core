@@ -135,6 +135,10 @@ await test("failed required checks receive a verified fresh repair on the same P
   );
   assert.equal(fixture.publicationState.pullRequests[0]!.number, 81);
   assert.equal(fixture.state.closedTabs.length, 2);
+  assert.equal(fixture.state.manualTabs.length, 1);
+  assert.deepEqual(fixture.state.manualTabs[0]!.commands, [
+    saved.roles.implement!.resume,
+  ]);
   assert.equal(
     fixture.state.submissions.filter(({ text }) => text === "ci-cli").length,
     1,

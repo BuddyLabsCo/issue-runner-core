@@ -164,6 +164,8 @@ issue-runner-herdr run --project my-project --document --no-auto-merge # Retain 
 
 Auto-merge defaults on. `--no-auto-merge` applies to numbered Issues and standalone documentation; retained, unmerged work reports `incomplete`. Runner owns push, PR, integration, and tracker operations. Agents report local work through handoffs; a handoff alone does not establish delivery.
 
+After local implementation and required Review finish, `--no-auto-merge` reopens the original implementation or documentation conversation for manual takeover, even if publication fails or the Run is cancelled. Runner retains its Worktree and sends no new Assignment.
+
 ### Recovery and checkpoints
 
 Runner saves progress to the Project's `recovery/` directory. After an interruption, rerun the same command to continue from the last checkpoint.

@@ -36,6 +36,7 @@ await test("CI-ready delivery dispatches the recorded head before any separate m
   assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
   assert.equal(fixture.integrationState.observations, 1);
   assert.equal(fixture.integrationState.closures, 0);
+  assert.equal(fixture.state.manualTabs.length, 0);
 });
 
 await test("a started Issue reaches squash delivery with only final Issue state and labels", async (t) => {

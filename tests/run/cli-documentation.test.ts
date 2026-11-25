@@ -52,11 +52,16 @@ await test("verified documentation no_change closes without a PR even with no-au
   assert.equal(fixture.integrationState.closures, 1);
   assert.equal(fixture.state.closedTabs.length, 1);
   assert.equal((await fixture.snapshot()).noChangeClosure, "completed");
-  assert.equal(fixture.maintenance.cleanup.length, 1);
+  assert.equal(fixture.maintenance.cleanup.length, 0);
+  assert.deepEqual(fixture.state.manualTabs[0]!.commands, [
+    (await fixture.snapshot()).roles.documentation!.resume,
+  ]);
   assert.equal(result.exitCode, 0);
   assert.equal(result.summary.tickets?.[0]?.kind, "maintenance");
   assert.equal(result.summary.tickets?.[0]?.status, "no_change");
-  assert.deepEqual(result.summary.tickets?.[0]?.retainedWorktrees, []);
+  assert.deepEqual(result.summary.tickets?.[0]?.retainedWorktrees, [
+    (await fixture.snapshot()).worktree,
+  ]);
   const previous = await fixture.snapshot();
   assert.equal(
     (await fixture.run(["--no-auto-merge"])).summary.outcome,

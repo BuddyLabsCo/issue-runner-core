@@ -92,6 +92,11 @@ export async function implementationRun(
     expectedPath: "",
     agentEnvironments: [] as Readonly<Record<string, string>>[],
     tabOptions: [] as CreateTabOptions[],
+    manualTabs: [] as {
+      handle: object;
+      options: CreateTabOptions;
+      commands: string[];
+    }[],
     closedTabs: [] as object[],
     sleeps: [] as number[],
     taskCount: 0,
@@ -120,10 +125,23 @@ export async function implementationRun(
   const terminal: TestTerminal = {
     ...deps.terminalPlugin,
     async createTab(options) {
+      if (options.label.endsWith(" (manual)")) {
+        const handle = {};
+        state.manualTabs.push({ handle, options, commands: [] });
+        return this.bindTab(handle, options);
+      }
       state.events.push("open");
       state.tabOptions.push(options);
       state.agentEnvironments.push(options.env);
       return this.bindTab({}, options);
+    },
+    async execute(handle, command) {
+      const manual = state.manualTabs.find((tab) => tab.handle === handle);
+      if (manual) {
+        manual.commands.push(command);
+        return;
+      }
+      return deps.terminalPlugin.execute.call(this, handle, command);
     },
     async onInput(tab, text, chord) {
       state.submissions.push({

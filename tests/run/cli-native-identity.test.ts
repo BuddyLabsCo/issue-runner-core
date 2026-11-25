@@ -363,7 +363,10 @@ await test("a Probe path without a handoff starts a new session with the current
   };
   const result = await fixture.run();
   assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
-  assert.deepEqual(commands, ["changed-review-cli start"]);
+  assert.deepEqual(commands, [
+    "changed-review-cli start",
+    (await fixture.snapshot()).roles.implement!.resume,
+  ]);
   assert.equal(
     (await fixture.snapshot()).roles.review?.sessionid,
     "current-review-native",

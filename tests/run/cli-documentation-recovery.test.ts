@@ -162,6 +162,30 @@ await test("delivered documentation cleanup recovery restores its PR report with
   assert.equal(fixture.integrationState.closures, 1);
 });
 
+await test("delivered documentation recovery with no-auto-merge reopens the original conversation and retains the Worktree", async (t) => {
+  const fixture = await documentationRun(t);
+  fixture.state.onTask = async (file) => {
+    fixture.state.evidence.changed = false;
+    await publish(file, noChange);
+  };
+  fixture.dependencies.gitWorkspace.cleanupWorktree = async () => {
+    throw new Error("documentation cleanup unavailable");
+  };
+  fixture.dependencies.operator.pause = async () => "q";
+  assert.equal((await fixture.run()).summary.outcome, "cancelled");
+  const saved = await fixture.snapshot();
+  fixture.dependencies.signal = new AbortController().signal;
+  const result = await fixture.run(["--no-auto-merge"]);
+  assert.equal(result.summary.outcome, "succeeded", JSON.stringify(result));
+  assert.equal(fixture.state.manualTabs.length, 1);
+  assert.equal(fixture.state.manualTabs[0]!.options.cwd, saved.worktree);
+  assert.deepEqual(fixture.state.manualTabs[0]!.commands, [
+    saved.roles.documentation!.resume,
+  ]);
+  assert.equal(fixture.state.taskCount, 1);
+  await access(saved.worktree);
+});
+
 await test("documentation closure with a lost response is reconciled without duplicate writes", async (t) => {
   const fixture = await documentationRun(t);
   fixture.state.onTask = async (file) => {
