@@ -75,8 +75,6 @@ export type WorkScope =
   | { kind: "issue"; issue: IssueContext };
 ```
 
-Public snapshots and notifications contain JSON-compatible values. Never serialize Session Handles, credentials, AbortSignals, secret-bearing commands, or raw Errors.
-
 ## CLI integration
 
 ```typescript
