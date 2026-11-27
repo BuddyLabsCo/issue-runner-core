@@ -199,9 +199,7 @@ export interface PlatformAdapter {
 
 ### Failure contract
 
-- Adapter operations return their declared result on success and throw a standard `Error` on failure.
-- Adapter manages readiness and resources acquired before returning a Session Handle, reporting retained resources in the error.
-- Core records errors and applies its recovery policy. Failed launch or submission with an uncertain outcome requires a Pause.
+Adapter manages resources before returning a Session Handle and throws `Error` on failure with any retained resource details. Core records errors and applies recovery policy, pausing on uncertain launch or submission outcomes.
 
 ## Optional capabilities
 
