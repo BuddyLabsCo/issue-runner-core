@@ -1,352 +1,328 @@
 # Public integration contract
 
-Terminal packages own the executable and terminal I/O. Core owns the workflow and conversations. Agent enhancements provide native readiness and monitoring.
+Design baseline for the unified Platform Adapter and Core Control API. This contract replaces the terminal and enhancement contracts upon implementation. It does not describe the current runtime.
 
 ## Responsibilities and public entries
 
-```typescript
-// Runtime consumers must declare Core in dependencies.
-import { runCli, type CliOptions } from "issue-runner-core/cli";
-import {
-  terminalContractVersion, // 2; independent of npm version
-  enhancementContractVersion, // 3; independent of terminal contract version
-} from "issue-runner-core/terminal";
-// Type-only consumers can declare Core in devDependencies.
-import type {
-  TerminalPluginModule, TerminalPlugin, TerminalIO,
-  CreateTabOptions, TabHandle, EnhancementModule, Enhancement,
-  EnhancementContext, RequestRecovery,
-} from "issue-runner-core/terminal";
+```mermaid
+flowchart TD
+    AI["Supervisor AI"] -->|Launch| CLI
+    Human["Human"] -->|Launch| CLI
+    CLI --> Core["Core Execution Engine"]
+    AI -->|Inspect and control| MCP
+    CLI -->|Manual intervention| Control["Core Control API"]
+    MCP --> Control
+    Control --> Core
+    Core -->|Execution commands and Core notifications| Adapter["Platform Adapter"]
+    Adapter -->|Agent state events| Core
+    Adapter -->|Wake when appropriate| AI
+    Adapter <-->|Session operations| Agent["Worker Agent"]
 ```
 
-Only `/cli` and `/terminal` are public entries. Core registers no executable. See the [README](../README.md#developing-core) for build and consumer checks.
+| Public entry | Responsibility |
+| --- | --- |
+| `issue-runner-core/cli` | Run launch, operator interaction, and MCP command routing |
+| `issue-runner-core/adapter` | Platform Adapter contract and types |
+| `issue-runner-core/mcp` | Shared Model Context Protocol (MCP) access to existing Runs |
 
-## Terminal CLI integration
+Core owns workflow, Handoff verification, recovery policy, checkpoints, and structured Run control. The CLI and MCP share the internal Core Control API; it is not a separate public SDK. Platform Adapters implement session operations, report Agent state events, and receive Core notifications. They do not implement a control API.
+
+## CLI integration
 
 ```typescript
+import type { PlatformAdapterModule } from "issue-runner-core/adapter";
+
 export interface CliOptions {
-  commandName: string; // Executing command; used in help, errors, and terminal module selection.
-  commandVersion: string; // Terminal package version; excluded from recovery identity.
-  terminal: TerminalPluginModule; // Lazy factory; imports must not create tabs.
-  terminalPackageRoot: string; // Absolute real path to the installed terminal package.
-  terminalCliEntry: string; // Absolute real path to its executing CLI entry.
+  commandName: string;
+  commandVersion: string;
+  adapter: PlatformAdapterModule;
 }
 
-// Reads process argv/cwd/env; validates inputs before terminal creation or workflow effects.
-// Help/version/init need no credentials or terminal factory; init refuses overwrite.
-// Owns operator input and SIGINT/SIGTERM cancellation; removes listeners on return.
-// Sets exitCode to 0 or 1 without exiting. Importing this entry has no side effects.
 export function runCli(options: CliOptions): Promise<void>;
 ```
 
 ```typescript
-// Terminal-owned executable at the package root; adjust the root for a bin/ entry.
-import { realpathSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+// Platform-owned executable.
 import { runCli } from "issue-runner-core/cli";
-import * as terminal from "./terminal.js";
+import * as adapter from "./adapter.js";
 
 await runCli({
-  commandName: "generic-terminal",
+  commandName: "issue-runner-platform",
   commandVersion: "1.0.0",
-  terminal,
-  terminalPackageRoot: realpathSync(fileURLToPath(new URL(".", import.meta.url))),
-  terminalCliEntry: realpathSync(fileURLToPath(import.meta.url)),
+  adapter,
 });
 ```
 
-## Terminal interfaces and bound I/O
+- The CLI is the Run launch entry. Core executes in the launching CLI process and retains its platform context.
+- Preserve existing `init`, `run`, `--help`, `--version`, Run arguments, manual intervention, and exit codes. Manual intervention invokes the Core Control API.
+- Add the shared `mcp` subcommand. Help, version, init, and mcp do not instantiate an Adapter.
+- Platform packages depend on Core and own their executables. Core is not installed separately and registers no executable.
+- Core creates one Adapter per Run after validating the Run inputs. No automatic plugin or enhancement discovery, package installation path lookup, or legacy contract compatibility layer.
+- No mandatory standalone service. Core owns the shared connection to an existing Run; MCP does not launch or reconstruct a Run.
+
+## Platform Adapter interfaces
 
 ```typescript
-export const terminalContractVersion = 2 as const;
+export const adapterContractVersion = 1 as const;
 
-// Owned by one plugin instance; Core never inspects or persists it.
-export type TabHandle = object;
-
-export interface TerminalPluginModule {
-  readonly contractVersion: typeof terminalContractVersion;
-  // Called once with the full terminalPlugins mapping, including generic defaults.
-  // Core validates version and returned methods before workflow effects; failures abort startup.
-  // Cancellation waits for this factory to settle. Default parameters are supported.
-  createTerminalPlugin(config: unknown): Promise<TerminalPlugin>;
+export interface PlatformAdapterModule {
+  readonly contractVersion: typeof adapterContractVersion;
+  createPlatformAdapter(config: unknown): Promise<PlatformAdapter>;
 }
 
-export interface CreateTabOptions {
-  cwd: string; // Absolute working directory; reject invalid context, never redirect.
-  env: Readonly<Record<string, string>>; // Overlay inherited env; reject if unsupported.
-  label: string; // Display name for the tab.
-  submitKey: string; // Task-input chord; Core defaults to Enter.
-  // Check before queued input starts; revoked work sends nothing. Started sequences may finish.
-  signal?: AbortSignal; // Run cancellation plus local revocation; bind to tab I/O.
+// Opaque, instance-owned reference; never persisted.
+export type SessionHandle = object;
+export type NativeSessionReference = string;
+
+export interface SessionOptions {
+  agent: string;
+  command: string;
+  cwd: string;
+  label: string;
+  signal: AbortSignal;
 }
 
-export interface TerminalPlugin {
-  // Create an owned tab with bound I/O; do not start an Agent yet.
-  createTab(options: CreateTabOptions):
-    Promise<{ handle: TabHandle; io: TerminalIO }>;
-  // Submit the opaque command, then Right and Enter; resolve after input, not process exit.
-  // Core passes start unchanged and replaces every {sessionref} literally for resume.
-  // Resolve with the native session reference when startup establishes it; otherwise resolve with void.
-  execute(handle: TabHandle, command: string): Promise<string | void>;
-  // Close only this owned tab; reject foreign handles/backend errors. Absent is allowed.
-  // Never choose a replacement target. Closure does not prove descendant processes stopped.
-  closeTab(tab: TabHandle): Promise<void>;
+export interface OpenedSession {
+  handle: SessionHandle;
+  nativeSessionReference?: NativeSessionReference;
 }
 ```
 
 ```typescript
-// Bound to one tab; grants no execute or close capability to enhancements.
-// Core serializes its calls per tab; independent tabs can run concurrently.
-// Use finite backend bounds. Core's 60-second bound does not cancel underlying work.
-// Revocation neither rolls back effects nor suppresses backend errors.
-export interface TerminalIO {
-  read(): Promise<string>; // Current visible plain-text screen.
-  // Submit the whole body, then Right and the bound submitKey; no per-call overrides.
-  // Core normalizes line endings to LF and preserves all other text.
-  submitText(text: string): Promise<void>;
-  sendKeys(keys: readonly string[]): Promise<void>; // Ordered chords; reject unsupported keys.
+export interface PlatformAdapter {
+  startSession(options: SessionOptions): Promise<OpenedSession>;
+  resumeSession(
+    options: SessionOptions & {
+      nativeSessionReference: NativeSessionReference;
+    },
+  ): Promise<OpenedSession>;
+  sendMessage(handle: SessionHandle, text: string): Promise<void>;
+  closeSession(handle: SessionHandle): Promise<void>;
+  dispose(): Promise<void>;
+
+  subscribeSessionEvents?(
+    handle: SessionHandle,
+    onEvent: (event: AgentEvent) => void,
+  ): Promise<() => Promise<void>>;
+  onCoreNotification?(notification: CoreNotification): void | Promise<void>;
 }
 ```
 
-## Enhancement discovery and compatibility
+`AgentEvent` and `CoreNotification` denote structured payload types. Their fields and delivery semantics are refined in the lifecycle and notification decisions.
 
-Discovery uses the executing terminal command's verified global npm prefix, including when Core is nested. It loads modules; it creates no instances.
+| Method | Contract |
+| --- | --- |
+| `createPlatformAdapter` | Validate platform settings and context. Transfer one valid instance to Core. |
+| `startSession` | Launch an owned Agent Session in the requested working directory; resolve when ready for input. |
+| `resumeSession` | Restore the exact requested native conversation in the requested working directory; resolve when ready for input. |
+| `sendMessage` | Submit text to the owned Session; resolve on submission, not Agent completion. |
+| `closeSession` | Close only the designated owned Session when Core requests closure. |
+| `dispose` | Release Run-level Adapter resources; never close retained native conversations. |
+
+Core validates the contract version and callable required methods before workflow effects. Missing optional methods are valid; invalid supplied methods are errors. The factory owns resources until the instance transfers to Core.
+
+- Start and resume receive the configured command as opaque text. The Adapter interprets its platform's command format without requiring per-Provider parameter translation.
+- `cwd` is an absolute working directory; reject unsupported context rather than redirecting the Session.
+- Core owns the Session cancellation signal, combining Run cancellation with Session revocation. Check it before new automatic operations; cancellation does not undo completed effects or imply native Session closure.
+- Core serializes message submissions per Session. Independent Sessions can run concurrently. A timeout must not release the submission queue before the underlying operation settles.
+- Reject foreign handles and automatic input after revocation. Explicit cleanup may still target the same owned handle.
+- Uncertain launch or message delivery requires intervention; do not automatically replay uncertain operations.
+- No terminal screen, key-chord, or arbitrary native state read interface.
+
+## Optional capabilities
+
+| Capability | When absent |
+| --- | --- |
+| `subscribeSessionEvents` | Core continues Handoff observation and manual intervention; no Agent-state-driven recovery or polling fallback. |
+| `onCoreNotification` | CLI output and MCP control remain available; no Adapter-driven Supervisor wake-up. |
+
+The capabilities are independent. An Adapter may implement either, both, or neither.
+
+### Agent state events
+
+- Adapter reports facts about the designated Agent Session. Core decides recovery and workflow actions.
+- Core subscribes before dispatching messages that need observation.
+- The returned cancellation function releases that Session's subscription resources. Core invalidates callbacks before invoking it on Stage exit, including failure, skip, or cancellation.
+- A subscription that settles after revocation is cancelled immediately. A cleanup error is reported; late events cannot trigger workflow actions.
+- No continuous Agent-state polling as an alternative to subscriptions. Handoff file observation and deterministic GitHub checks are unchanged.
+
+### Core notifications
+
+- Core emits structured notifications to the Adapter.
+- Adapter decides whether and how to notify or wake the Supervisor AI. Core neither requires nor identifies a Supervisor AI.
+- Notification delivery does not resolve a Pause or authorize a workflow mutation. The Supervisor uses the shared MCP control entry.
+- CLI output is independent of Adapter notifications. No terminal-output parsing is required by the public contract.
+
+## Configuration
+
+```yaml
+agents:
+  implement:
+    agent: codex
+    start: 'codex --model gpt-5.4 -c model_reasoning_effort=high'
+    resume: 'codex resume "{sessionref}"'
+
+platformAdapter: {}
+```
+
+- Preserve existing role selection and the three required fields: `agent`, `start`, `resume`.
+- Core validates their shape and the required `{sessionref}` placeholder. It passes `start` unchanged and replaces every `{sessionref}` in `resume` literally.
+- Users supply Provider-specific model, effort, and launch arguments in the commands. Core does not parse them; Adapters do not translate parameters for individual Providers.
+- `platformAdapter` is an opaque configuration mapping passed to the factory. The Adapter owns its validation.
+- Remove `terminalPlugins`, the independent `enhancements` mapping, Core `agentStartDelay`, `submitKey`, and unused per-Agent `options`. No Core-provided environment overlay.
+
+## Core Control API and MCP
+
+Each CLI invocation owns one live Run and its control interface.
+
+```typescript
+interface RunControl {
+  readonly runId: string;
+  getStatus(): Promise<RunStatus>;
+  listPauses(): Promise<PauseSummary[]>;
+  getPauseDetails(pauseId: string): Promise<PauseDetails>;
+  respondToPause(pauseId: string, action: PauseAction): Promise<void>;
+  cancel(): Promise<void>;
+}
+```
+
+| MCP tool | Arguments |
+| --- | --- |
+| `listRuns` | None |
+| `getRunStatus` | `runId` |
+| `listPauses` | `runId` |
+| `getPauseDetails` | `runId`, `pauseId` |
+| `respondToPause` | `runId`, `pauseId`, `action` |
+| `cancelRun` | `runId` |
+
+- Queries return Core-owned workflow state, including Issue, Stage, Assignment, Pause, error, relevant PR, Native Session Reference, result, and log path as available.
+- Core validates the allowed action and current target state. No proactive pause command, arbitrary state mutation, direct Worker Agent input, or native conversation history access.
+- CLI and MCP use the same RunControl operations. Detailed response types and pause concurrency are defined in the control and pause decision.
+
+### MCP startup
+
+```typescript
+// issue-runner-core/mcp
+export function runMcp(): Promise<void>;
+```
+
+```json
+{
+  "mcpServers": {
+    "issue-runner": {
+      "command": "issue-runner-platform",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+- The AI client launches the selected platform CLI with `mcp` and communicates over stdio. Core's `runCli` routes to the shared MCP entry.
+- The platform CLI forwards `mcp` without platform preflight, Project configuration, Agent initialization, or Adapter-specific MCP logic.
+- The same MCP tool contract applies to every platform. MCP discovers existing Runs regardless of which platform CLI launched them.
+- MCP exit does not cancel a Run. A Run does not require a connected MCP client.
+- Reserve MCP stdout for protocol traffic; diagnostics go to stderr.
+
+### Local Run discovery
 
 ```mermaid
 flowchart TD
-    Run["Run: supplied real terminal package root and CLI entry"] --> Verify
-    Verify{"Manifest name/location, command bin, real entry, launcher agree?"}
-    Verify -- No --> Error["Fail startup with cause"]
-    Verify -- Yes --> Layout["Unix: prefix/lib/node_modules + bin symlink<br/>Windows: prefix/node_modules + command.cmd"]
-    Layout --> Agent{"Configured Agent can form issue-runner-agent-AGENT?"}
-    Agent -- No --> Base["Base startup: delay, then reference, conditional Probe, or exact resume"]
-    Agent -- Yes --> Package{"Direct same-prefix package present?"}
-    Package -- Absent --> Base
-    Package -- Present --> Entry["Resolve Node import exports from that prefix"]
-    Entry --> Valid{"Contained real package/file; import succeeds;<br/>positive safe-integer contractVersion;<br/>callable createEnhancement?"}
-    Valid -- No --> Error
-    Valid -- Yes --> Match{"contractVersion equals enhancementContractVersion?"}
-    Match -- No --> Skip["Diagnostic; skip factory"] --> Base
-    Match -- Yes --> Module["Pass selected module to shared Agent workflow"]
-    Module --> Instance["Create one instance per Runner Tab"]
-    Instance -- "Initialization failure" --> Cleanup["Report operational failure; attempt available cleanup"]
+    A["Live Run A"] --> Registry["Local Run Registry"]
+    B["Live Run B"] --> Registry
+    MCP -->|Discover| Registry
+    MCP <-->|Local HTTP| A
+    MCP <-->|Local HTTP| B
 ```
 
-Scoped terminal packages and command names differing from package names are supported. Help, version, and init skip discovery. Project-local packages, task cwd, other prefixes, and Core's installation are not discovery anchors. Symlink escapes, dangling installs, malformed exports, and import failures are errors. Compatibility checks use contract versions, not npm versions. Module import executes top-level code; validation is not a sandbox.
+- Each Run exposes its own authenticated loopback control endpoint on an available port and registers it under `~/.issue-runner/active-runs/` (one JSON record per live Run).
+- MCP discovers registered Runs on demand and verifies their live identity; every external control request identifies the target `runId`.
+- A Run unregisters on orderly exit. Stale records cannot authorize access to another Run. Connection credentials remain private.
+- The same discovery and connection model applies on Windows, Linux, and macOS. No central daemon, cross-machine discovery, or periodic polling.
 
-## Enhancement interfaces
-
-```typescript
-export const enhancementContractVersion = 3 as const;
-
-// Submit Core's recovery text for the current live Assignment; reject real input errors.
-// Unknown, superseded, accepted or revoked IDs resolve without input or retries.
-export type RequestRecovery = (assignmentId: string) => Promise<void>;
-
-export interface EnhancementContext {
-  readonly cwd: string; // Tab's working directory.
-  readonly env: Readonly<Record<string, string>>; // Tab's environment overlay.
-  enhancementPause(assignmentId: string, message: string): void;
-}
-
-export interface EnhancementModule {
-  readonly contractVersion: typeof enhancementContractVersion;
-  // One instance per tab; finish preflight before returning.
-  // Own resources until transfer; Core stops late or invalid instances when stop is callable.
-  createEnhancement(
-    io: TerminalIO, // Adapter's unchanged bound I/O.
-    requestRecovery: RequestRecovery, // Separate capability; Core owns recovery wording.
-    context: EnhancementContext,
-    config: unknown, // Entire terminalPlugins.enhancements object, default {}; not per-Agent.
-  ): Promise<Enhancement>;
-}
-```
-
-```typescript
-// Core validates all five methods before use; stage exit stops monitoring even if retaining the tab.
-export interface Enhancement {
-  // Start before command submission; sessionref is the saved native identity on resume.
-  startMonitoring(sessionref?: string): Promise<void>;
-  // Repeatable, with no Core readiness timeout; return the actual native reference.
-  // Core rejects empty/latest/last/Run/execution IDs; resume must match exactly.
-  waitUntilReady(): Promise<string>;
-  // Synchronous, immediately before input; fresh ID even when expectedFile repeats.
-  // Applies to tasks, continuations, corrections and Probes, not readiness/recovery input.
-  onAssignment(assignment: { id: string; expectedFile: string }): void;
-  // One-shot notification after Enter; Core never waits for or retries its result.
-  enhancementResume(assignmentId: string): Promise<void>;
-  // Release enhancement resources; preserve interactive Agents, other tabs and shared infrastructure.
-  // Prior readiness/input failures must not prevent cleanup.
-  stop(): Promise<void>;
-}
-```
-
-### Enhancement Pause
-
-An enhancement that has paused its own automation can call `context.enhancementPause(currentId, message)`. Core displays the supplied message with the originating task and stage. The capability belongs to that Runner Tab and enhancement instance. Requests before an Assignment, for stale IDs, or after revocation do nothing.
-
-Enhancement Pause shares the Run's FIFO confirmation queue with Operator Pause, without preemption. It never enters the workflow intervention gate: other Issues and handoff observation continue. Operator Pause retains its existing retry, skip, quit, cancellation, and intervention policy even while queued.
-
-Only an empty submitted line acknowledges Enhancement Pause. Nonempty input, including `s` and `q`, leaves the same confirmation waiting. EOF ends its input wait without a callback, retry loop, or new Run cancellation. Process cancellation signals still apply.
-
-Core consumes the confirmation before notifying exactly the originating instance with `enhancementResume(assignmentId)`. It ignores synchronous throws, rejected Promises, and never-settling Promises; none delays another confirmation or cleanup. A synchronous new request from the callback joins the FIFO tail and needs another Enter. Duplicate active or queued requests for the same instance and Assignment retain the original message and position.
-
-Assignment completion or replacement, enhancement stop, owned Tab closure, and Run cancellation invalidate pending confirmations. Queued invalidations need no Enter. An active invalidation closes its input wait and appends `[Enhancement Pause ended]` with task identity and reason, preserving printed history. Late input never resumes stale work. Core uses known lifecycle events; it does not detect manually closed native Tabs.
-
-Core stores confirmation state only. It does not inspect Agent replies or decide whether recovery is eligible. `requestRecovery` retains its existing delivery and cancellation rules. Confirmation state and acknowledgments are never persisted; a new Run restores task progress through the existing native resume, readiness, and continuation flow.
-
-Enhancements must export contract version 3 and implement `enhancementResume`. Core skips version 2 enhancements with a compatibility diagnostic and uses base startup. The independent terminal contract remains version 2 with unchanged I/O.
+Core owns control semantics and state. Adapters receive notifications but do not implement MCP tools or control transport. The control and pause decision refines the response types, allowed actions, and concurrency semantics. Detailed registry and endpoint protocols remain separate design work.
 
 ## Lifecycle and failure flows
 
-### Base startup and exact resume
-```mermaid
-%%{init: {"sequence": {"width": 220, "wrap": true}}}%%
-sequenceDiagram
-    participant Core
-    participant Terminal
-    Core->>Terminal: createTab(cwd, env, label, submitKey, signal)
-    Terminal-->>Core: opaque handle and bound I/O
-    Core->>Terminal: execute(handle, configured start or exact-ref resume)
-    alt Command transport fails with uncertain delivery
-        Core->>Core: Generic Operator Pause, retain tab
-        Note over Core,Terminal: Inspect before continuing, never replay uncertain command
-    end
-    Core->>Core: Wait configured base delay (default 10 seconds)
-    alt New conversation
-        alt execute returned a native reference
-            Core->>Core: Validate and checkpoint reference, no Probe
-        else No reference
-            Core->>Terminal: io.submitText(identity-only Session Probe)
-            Core->>Core: Observe assigned file, validate actual native ref
-            opt Invalid Probe result
-                Core->>Terminal: Correction with fresh Probe path
-                Core->>Core: Observe and validate corrected file
-            end
-        end
-    else Saved conversation
-        Core->>Core: Validate saved exact ref and any returned ref, no fresh Probe
-    end
-    Note over Core,Terminal: A readable retained Probe still requires a saved fingerprint
-    Core->>Terminal: io.submitText(task, correction, or saved continuation)
-    Note over Core,Terminal: Missing files cause no reminders, handle native approvals in the tab
-    Core->>Core: Independently verify handoff and persist accepted stage
-    Core->>Core: Revoke automatic capabilities before closure
-    Core->>Terminal: closeTab(owned handle)
-    Note over Core,Terminal: Skip/cancellation retain interactive work, close failure retries same handle
-```
-
-### Enhanced startup, resume, and readiness retry
+### Startup and exact resume
 
 ```mermaid
-%%{init: {"sequence": {"width": 220, "wrap": true}}}%%
-sequenceDiagram
-    participant Core
-    participant Terminal
-    participant Enhancement as Agent Enhancement
-    Core->>Terminal: createTab(cwd, env, label, submitKey, combined signal)
-    Terminal-->>Core: opaque handle and unchanged bound I/O
-    Core->>Enhancement: createEnhancement(io, requestRecovery, context, config)
-    Enhancement-->>Core: Preflight complete, valid instance
-    Core->>Enhancement: startMonitoring(saved ref if resuming)
-    Core->>Terminal: execute(handle, start or exact-ref resume command)
-    Note over Core,Terminal: Uncertain command delivery pauses, continuation never replays command
-    Core->>Enhancement: waitUntilReady()
-    alt Readiness rejects
-        Core->>Core: Generic Operator Pause, keep capabilities active
-        Core->>Enhancement: Enter retries waitUntilReady() on same instance/tab
-        Note over Core,Enhancement: Keep completed preflight, monitoring, command submission
-        Enhancement-->>Core: Actual native ref
-    else Ready
-        Enhancement-->>Core: Actual native ref
-    end
-    Core->>Core: Validate identity,<br/>require exact saved ref on resume
-    Core->>Core: Persist new native identity before task dispatch
-    Note over Core,Enhancement: Shared by implementation, Review, fixes, both repairs, documentation
+flowchart TD
+    Begin["Core selects Agent profile and working directory"] --> Mode{"Saved native reference?"}
+    Mode -->|No| Start["Adapter startSession"]
+    Mode -->|Yes| Resume["Adapter resumeSession with exact saved reference"]
+    Start --> Ready["Owned handle; Agent ready for input"]
+    Resume --> Ready
+    Ready --> Ref{"Reliable native reference returned?"}
+    Ref -->|Yes| Validate["Core validates reference"]
+    Ref -->|No| Probe["Core runs identity-only Session Probe"]
+    Probe --> Validate
+    Validate --> Match{"Valid identity, matches saved reference if resuming?"}
+    Match -->|No| Pause["Pause; no formal Assignment"]
+    Match -->|Yes| Persist["Persist identity before formal Assignment"]
+    Persist --> Dispatch["Core sendMessage"]
 ```
 
-### Assignment serialization, recovery, and stale requests
+- The Adapter establishes readiness. Core does not wait a fixed startup delay.
+- A direct reference is optional, but must identify the actual persistent native conversation. A requested resume reference alone is not proof of actual identity.
+- Core retains the common identity-only Session Probe and its validation/correction flow when reliable direct identity is unavailable. Probe is not Agent-state polling.
+- Probe evidence is Agent-reported and has the limits of the existing fallback; do not substitute platform routing IDs or guess a reference.
+- Keep the existing checkpoint identity fields: `sessionid`, `agent`, and expanded `resume`. Do not persist a Session Handle, package installation path, or contract version.
+- Reject empty references, latest/last selectors, and Run or execution IDs. Validate saved Agent and expanded resume command against the current profile. Adapter validates the native platform context; Core compares the actual reference with the saved reference.
+- If identity cannot be established, pause instead of dispatching a formal Assignment. Never substitute a new conversation on a failed exact resume.
+
+### Assignment and Handoff
 
 ```mermaid
-%%{init: {"sequence": {"width": 220, "wrap": true}}}%%
 sequenceDiagram
     participant Core
-    participant Terminal
-    participant Enhancement as Agent Enhancement
-    Core->>Core: Queue task, allocate fresh Assignment id
-    Core->>Enhancement: onAssignment(id, expectedFile)
-    Core->>Terminal: io.submitText(task)
-    Enhancement->>Core: requestRecovery(current id)
-    Core->>Core: Queue behind actual task adapter submission
-    Terminal-->>Core: Task input settles
-    Core->>Terminal: io.submitText(retained recovery wording)
-    Terminal-->>Core: Recovery input settles (or real error rejects)
-    Core-->>Enhancement: Resolve after submission (or reject real error)
-    Core->>Core: Queue next Assignment or invalidate accepted Assignment
-    opt Unknown, superseded, accepted, or revoked id
-        Enhancement->>Core: requestRecovery(stale id)
-        Core-->>Enhancement: Resolve without input or retries
+    participant Adapter
+    Core->>Core: Allocate Assignment and expected Handoff path
+    Core->>Adapter: sendMessage(handle, prompt)
+    Adapter-->>Core: Submission settles
+    opt Event capability available
+        Adapter-->>Core: Agent state event
+        Core->>Core: Evaluate recovery policy
     end
-    Note over Core,Terminal: Timeout cannot release queue while adapter input remains pending
+    Core->>Core: Observe and independently verify Handoff
+    Core->>Core: Invalidate accepted Assignment and persist progress
 ```
 
-### Cancellation, revocation, and late initialization
+Core owns Assignment identity, prompt content, state transitions, recovery decisions, and Handoff acceptance. Agent state cannot establish stage completion without accepted Handoff and existing verification. Remove the separate Enhancement recovery and pause callbacks; later decisions specify their Core-owned replacement.
+
+### Stage exit and Run disposal
 
 ```mermaid
-%%{init: {"sequence": {"width": 220, "wrap": true}}}%%
 sequenceDiagram
     participant Core
-    participant Terminal
-    participant Enhancement as Agent Enhancement
-    Core->>Terminal: createTab with combined cancellation/revocation signal
-    Core->>Enhancement: createEnhancement(...)
-    alt Cancellation while factory is pending
-        Core->>Core: Stop waiting, revoke automatic I/O and recovery
-        Note over Core,Terminal: Retain interactive tab, queued input checks signal before starting
-        alt Late instance transfers
-            Enhancement-->>Core: Instance (callable stop captured even if invalid)
-            Core->>Enhancement: stop() only, no monitoring or command
-        else Late factory rejects
-            Enhancement-->>Core: Initialization error
-            Core->>Core: Report late operational failure
-        end
-    else Instance already active
-        Enhancement-->>Core: Instance
-        Core->>Core: Cancellation, terminal failure, or close preparation revokes capabilities
-        Core->>Enhancement: stop()
-        Note over Core,Terminal: Already-started complete input may settle, later input cannot start
+    participant Adapter
+    Note over Core,Adapter: Stage exit
+    Core->>Core: Revoke Session automation and event callbacks
+    opt Subscription exists
+        Core->>Adapter: unsubscribe()
+        Adapter-->>Core: Subscription released
     end
-    Note over Core,Enhancement: Factory owns untransferred resources, cleanup failure reported separately
+    opt Core decides native Session closure
+        Core->>Adapter: closeSession(handle)
+    end
+    Note over Core,Adapter: Run ends
+    Core->>Adapter: dispose()
 ```
 
-### Cleanup failure, retry, and closure
+- Revoke Session automation on every Stage exit. Unsubscribe even when preserving the interactive Session.
+- Preserve accepted stage progress, unfinished resources, and exact-target cleanup. Report cleanup failure separately; do not replay accepted work.
+- The required `dispose()` runs on every orderly Run exit (success, failure, cancellation), including late-transferred instances after cancellation. Release Adapter-owned resources without closing retained Sessions or the Supervisor conversation.
+- Closing a Session does not delete native conversation history or prove descendant process settlement.
 
-```mermaid
-%%{init: {"sequence": {"width": 220, "wrap": true}}}%%
-sequenceDiagram
-    participant Core
-    participant Terminal
-    participant Enhancement as Agent Enhancement
-    Core->>Core: Accept handoff,<br/>invalidate Assignment before persistence
-    Core->>Core: Persist accepted stage,<br/>prepare close and revoke capabilities
-    Core->>Enhancement: stop()
-    alt Cleanup fails
-        Enhancement-->>Core: Cleanup error
-        Core->>Core: Report separately, retain interactive tab
-        Core->>Enhancement: Retry stop() on later cleanup attempt
-        Enhancement-->>Core: Cleanup succeeds
-    else Cleanup succeeds
-        Enhancement-->>Core: Stopped
-    end
-    Note over Core,Enhancement: Concurrent stops share attempt, later successful stops do nothing
-    Core->>Terminal: closeTab(owned handle)
-    alt Terminal close fails or remains unresolved
-        Terminal-->>Core: Close error
-        Core->>Core: Bounded retries then Operator Pause, retain accepted stage
-        Core->>Terminal: Retry same handle only
-    else Closed
-        Terminal-->>Core: Closed
-    end
-    Note over Core,Terminal: No replay of accepted work or claim of process settlement
-    Note over Core,Enhancement: Stage exit stops monitoring even when retaining tab for manual takeover
-```
+## Further decisions
+
+The following Wayfinder tickets refine this baseline without changing its established boundaries unless an explicit decision records the amendment.
+
+| Decision | Remaining detail |
+| --- | --- |
+| [Agent Lifecycle and Event Model](https://github.com/BuddyLabsCo/issue-runner-core/issues/474) | Event types, correlation, readiness failure, observation loss, and lifecycle ordering |
+| [Core-Owned Agent Recovery Policy](https://github.com/BuddyLabsCo/issue-runner-core/issues/475) | Missing Handoff and automatic recovery policy |
+| [Structured Run Control and Pause Management](https://github.com/BuddyLabsCo/issue-runner-core/issues/476) | Operations, pause handling, and concurrent control |
+| [Notification Contract and Terminal Output](https://github.com/BuddyLabsCo/issue-runner-core/issues/477) | Notification payloads, delivery semantics, and CLI presentation |
+| [Breaking Migration and Core Acceptance Criteria](https://github.com/BuddyLabsCo/issue-runner-core/issues/478) | Migration scope and contract acceptance |
+
+Research context: [Herdr Agent session capabilities](research/herdr-agent-session-capabilities.md).
