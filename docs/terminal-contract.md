@@ -199,24 +199,9 @@ export interface PlatformAdapter {
 
 ### Failure contract
 
-```typescript
-export interface AdapterOperationError extends Error {
-  effect: "none" // Confirmed absence of an operation effect.
-    | "applied" // The operation's effect is known.
-    | "unknown"; // Uncertain operation effect.
-  code: string; // Adapter-specific machine-readable diagnostic.
-  handle?: SessionHandle; // Owned target if known.
-}
-
-export interface SessionReadinessError extends AdapterOperationError {
-  effect: "applied"; // Launch succeeded but readiness failed.
-  handle: SessionHandle;
-  // Recheck readiness of the existing Session.
-  retryReadiness(): Promise<OpenedSession>;
-}
-```
-
-Core reports malformed and uncertain outcomes, pauses for intervention, and retains identifiable resources. Treat unstructured errors and timeouts as uncertain effects. Report cleanup failures separately.
+- Adapter operations return their declared result on success and throw a standard `Error` on failure.
+- Adapter manages readiness and resources acquired before returning a Session Handle, reporting retained resources in the error.
+- Core records errors and applies its recovery policy. Failed launch or submission with an uncertain outcome requires a Pause.
 
 ## Optional capabilities
 
@@ -572,7 +557,6 @@ flowchart TD
 - Core prioritizes reliable native identity evidence, falling back to the existing identity-only Probe and correction flow.
 - Require a nonempty identifier of the actual native conversation, obtained from native evidence or the identity Probe.
 - Keep checkpoint identity fields `sessionid`, `agent`, and expanded `resume`. Validate the current profile and exact actual reference; persist identity before formal work.
-- Recheck a known Session through its readiness continuation. Pause uncertain launch outcomes for intervention.
 - Verify the exact expected conversation before dispatch; otherwise pause and preserve evidence.
 
 ### Assignment and Handoff
