@@ -23,7 +23,7 @@ flowchart TD
 | `issue-runner-core/adapter` | Platform Adapter | Version, interfaces, and shared data types |
 | `issue-runner-core/mcp` | CLI | Provider-independent MCP server |
 
-Platform packages depend on Core and own their executables. Core registers no executable. The internal Core Control API is shared by CLI and MCP, not a separate public SDK.
+Platform packages depend on Core and own their executables. CLI and MCP share the internal Core Control API.
 
 ## Shared identities and data
 
@@ -36,13 +36,13 @@ export type AssignmentId = string; // Core request with an expected Handoff.
 export type MessageId = string; // Unique Core message submission.
 export type PauseId = string; // Unique unresolved intervention.
 export type NativeSessionReference = string; // Persistable native conversation ID.
-export type SessionHandle = object; // Live, Adapter-owned; never persisted.
+export type SessionHandle = object; // Adapter-owned live target held in memory.
 
 export type Stage =
   | "implement" | "review" | "fix_review"
   | "ci_repair" | "conflict_repair" | "documentation";
 
-// CLI selection, not the set of Issues discovered during execution.
+// Requested CLI work selection.
 export type RunSelection =
   | { kind: "parent"; issueNumber: number }
   | { kind: "issue"; issueNumber?: number } // Omit to use configured issueList.
@@ -51,7 +51,7 @@ export type RunSelection =
 
 ```typescript
 export interface RunIdentity {
-  runId: RunId; // Historical checkpoint IDs are not live control targets.
+  runId: RunId;
   project: string;
   repository: string;
   selection: RunSelection;
@@ -60,9 +60,9 @@ export interface RunIdentity {
   startedAt: string; // ISO 8601 UTC.
 }
 
-// Omit facts that are unknown or not applicable.
+// Include available, applicable facts.
 export interface IssueContext {
-  issueNumber: number; // Positive safe integer; not an execution identity.
+  issueNumber: number;
   executionId?: ExecutionId;
   stage?: Stage;
   assignmentId?: AssignmentId;
@@ -80,13 +80,13 @@ export type WorkScope =
 ```typescript
 export interface CliOptions {
   commandName: string; // Installed platform executable name for help and errors.
-  commandVersion: string; // Platform package version; not recovery identity.
-  adapter: PlatformAdapterModule; // Explicit versioned module, no discovery.
+  commandVersion: string; // Platform package version.
+  adapter: PlatformAdapterModule; // Platform-provided versioned module.
 }
 
 // Reads process argv and cwd. Owns operator input and cancellation signals.
-// Validates inputs before workflow effects. Sets exitCode without exiting.
-// Removes process listeners on return; imports must not create resources.
+// Validates inputs before workflow effects. Sets process.exitCode and returns.
+// Creates resources on invocation and removes process listeners on return.
 export declare function runCli(options: CliOptions): Promise<void>;
 ```
 
@@ -113,8 +113,8 @@ mcp
 ```
 
 - Preserve existing argument restrictions, configuration location, merge flags, manual confirmation behavior, and exit codes.
-- Help, version, init, and mcp do not instantiate an Adapter. The platform CLI forwards mcp without environment checks, Project loading, or platform authorization preflight.
-- Each Run executes in the launching CLI process. No central workflow daemon.
+- Instantiate the Adapter for Run execution. Route mcp directly to the shared MCP server.
+- Each Run executes in the launching CLI process.
 
 ## Platform Adapter interfaces
 
@@ -130,7 +130,7 @@ export interface PlatformAdapterModule {
   // One instance per Run. Core validates version before invoking this factory.
   // Validate platform settings and native context; clean up untransferred
   // resources on failure. Core validates methods before workflow effects.
-  // Missing optional methods are valid; malformed methods are not.
+  // Validate each provided optional method.
   createPlatformAdapter(
     config: PlatformAdapterConfig, // platformAdapter mapping; defaults to {}.
   ): Promise<PlatformAdapter>;
@@ -141,10 +141,10 @@ export interface PlatformAdapterModule {
 
 ```typescript
 export interface SessionOptions {
-  agent: string; // Configured Agent ID; opaque except validation and recovery.
+  agent: string; // Opaque configured Agent ID used for validation and recovery.
   command: string; // Full start command or expanded resume command.
-  cwd: string; // Absolute, existing stage work directory. Reject invalid context.
-  label: string; // Display name only, never a routing identity.
+  cwd: string; // Absolute, existing stage work directory.
+  label: string; // Display name.
   signal: AbortSignal; // Run cancellation plus Session revocation.
 }
 
@@ -166,45 +166,44 @@ export interface AgentMessage {
 
 ```typescript
 export interface PlatformAdapter {
-  // Open a new owned Session; resolve only when ready to receive input.
+  // Open a new owned Session; resolve when ready to receive input.
   startSession(options: SessionOptions): Promise<OpenedSession>;
   // Restore the exact conversation; resolve when ready for input.
   resumeSession(options: ResumeSessionOptions): Promise<OpenedSession>;
-  // Resolve on acknowledged submission, not Agent completion.
-  // Preserve text except Core's existing LF normalization.
+  // Resolve on acknowledged submission.
+  // Preserve the LF-normalized text supplied by Core.
   sendMessage(handle: SessionHandle, message: AgentMessage): Promise<void>;
-  // Close only this owned representation; already absent is allowed.
+  // Close the owned representation; an already closed target is a success.
   closeSession(handle: SessionHandle): Promise<void>;
   // Core calls once per transferred instance, even after late initialization.
   // Release Run-level resources; preserve retained Sessions and history.
-  // Never close the Supervisor. A resource-free Adapter may do nothing.
+  // Preserve the Supervisor.
   dispose(): Promise<void>;
 
   // Optional. Return async, idempotent subscription cleanup.
-  // Without it, Handoff and manual control continue; no state-driven recovery.
+  // Enables state-driven recovery during Assignment execution.
   subscribeSessionEvents?(
     handle: SessionHandle,
     onEvent: (event: AgentEvent) => void,
   ): Promise<() => Promise<void>>;
 
-  // Optional. Handle or ignore notifications; never authorize workflow changes.
-  // Without it, manual CLI and MCP control remain; no Supervisor wake-up.
+  // Optional. Receive Core notifications for platform-specific handling.
   onCoreNotification?(notification: CoreNotification): void | Promise<void>;
 }
 ```
 
-- Reject foreign handles and unsupported working directories; never redirect targets.
+- Validate handle ownership and working directory support before operations. Target the Session identified by its handle.
 - Core serializes input per Session, while independent Sessions run concurrently.
-- Check the bound signal before new automatic operations. Revocation prevents new input, not rollback. Keep the input queue until the submission settles. Explicit cleanup may still target the same owned handle.
+- Check the bound signal before new automatic operations. Revocation stops further input. Keep the input queue until the submission settles. Explicit cleanup may still target the same owned handle.
 - The two optional methods are independent.
 
 ### Failure contract
 
 ```typescript
 export interface AdapterOperationError extends Error {
-  effect: "none" // Adapter knows the requested operation had no effect.
+  effect: "none" // Confirmed absence of an operation effect.
     | "applied" // The operation's effect is known.
-    | "unknown"; // The effect cannot be established.
+    | "unknown"; // Uncertain operation effect.
   code: string; // Adapter-specific machine-readable diagnostic.
   handle?: SessionHandle; // Owned target if known.
 }
@@ -212,12 +211,12 @@ export interface AdapterOperationError extends Error {
 export interface SessionReadinessError extends AdapterOperationError {
   effect: "applied"; // Launch succeeded but readiness failed.
   handle: SessionHandle;
-  // Retry readiness of this exact Session; do not launch another.
+  // Recheck readiness of the existing Session.
   retryReadiness(): Promise<OpenedSession>;
 }
 ```
 
-Core reports malformed and uncertain outcomes, pauses instead of blindly replaying launch or submission, and retains identifiable resources. Unstructured errors and timeouts do not prove no effect. Report cleanup failures separately.
+Core reports malformed and uncertain outcomes, pauses for intervention, and retains identifiable resources. Treat unstructured errors and timeouts as uncertain effects. Report cleanup failures separately.
 
 ## Optional capabilities
 
@@ -231,11 +230,11 @@ export interface AgentEventBase {
   sequence: number; // Positive increasing sequence within this subscription.
   timestamp: string; // Observed time, ISO 8601 UTC.
   messageId?: MessageId; // Exact Core message correlation, if established.
-  nativeTurnId?: string; // Native turn ID, not an Assignment ID.
+  nativeTurnId?: string; // Native turn identifier.
 }
 
 export type AgentEvent = AgentEventBase & (
-  // Initial or changed state; not a Handoff result.
+  // Initial or changed Agent state.
   | { type: "state"; state: AgentState; detail?: string }
   // Observed actual end of a specific turn, when known.
   | {
@@ -244,15 +243,15 @@ export type AgentEvent = AgentEventBase & (
       error?: ErrorDetail;
     }
   | { type: "session_closed"; error?: ErrorDetail } // Native Session ended.
-  | { type: "observation_lost"; error: ErrorDetail } // Cannot observe reliably.
+  | { type: "observation_lost"; error: ErrorDetail } // Observation interrupted.
   | { type: "observation_restored"; state: AgentState } // Reconciled current state.
 );
 ```
 
-- Subscribe before dispatch. Deliver initial state and subsequent facts without a gap; reconcile after observation loss.
-- The callback is bound to its Session Handle. Do not infer message or turn identity from arrival order. Uncorrelated events cannot establish Assignment completion or authorize replay.
-- Adapter normalizes duplicates and ordering where possible; Core rejects stale callbacks and non-increasing sequence values.
-- No Agent-state polling fallback. Handoff and deterministic GitHub observation remain unchanged.
+- Subscribe before dispatch. Deliver the initial state and subsequent events continuously; reconcile after observation loss.
+- Bind each callback to its Session Handle. Correlate messages and turns using established identities. Use correlated events for recovery decisions and Handoff verification for Assignment completion.
+- Adapter normalizes duplicates and ordering where possible; Core accepts current callbacks with strictly increasing sequence values.
+- Core receives Agent state through subscriptions. Handoff and deterministic GitHub observation remain unchanged.
 
 ### Core notifications
 
@@ -271,7 +270,7 @@ export type PauseAction =
 
 export interface PauseSummary {
   pauseId: PauseId;
-  scope: WorkScope; // Affected Run or Issue, independent of queue position.
+  scope: WorkScope; // Affected Run or Issue.
   state: "active" | "queued"; // CLI confirmation state.
   message: string; // Human-readable intervention prompt.
   allowedActions: readonly PauseAction[]; // Actions legal at snapshot time.
@@ -303,7 +302,7 @@ export interface NotificationBase {
   repository: string;
   timestamp: string; // ISO 8601 UTC.
   sequence: number; // Notification order in this Run.
-  message: string; // Display description, not a control instruction.
+  message: string; // Display description.
 }
 ```
 
@@ -329,8 +328,8 @@ export type CoreNotification = NotificationBase & (
 );
 ```
 
-- Adapter chooses whether to display, ignore, or wake the Supervisor. Notification delivery neither resolves a Pause nor authorizes a workflow mutation.
-- Dispatch in sequence order without waiting on prior asynchronous deliveries. Report rejection without replaying the workflow. Dispatch final outcome before disposal when available; hard termination may prevent delivery.
+- Adapter decides how to handle notifications and when to wake the Supervisor. Workflow control uses the Core Control API.
+- Initiate asynchronous deliveries in sequence order. Report delivery failures separately. Dispatch the final outcome before orderly disposal.
 - CLI displays actionable errors, Pause prompts, and control results independently of log recording. Proposed output policy: ordinary progress and final reporting use notifications.
 
 ## Configuration
@@ -362,8 +361,7 @@ platformAdapter: {} # Adapter-owned settings; opaque to Core.
 ```
 
 - Preserve role selection and the rest of Project configuration.
-- Users specify Provider-specific model, effort, and launch arguments in commands. Adapter understands its platform format, not per-Provider parameter translation.
-- Remove terminalPlugins, enhancements, agentStartDelay, submitKey, unused per-Agent options, and Core environment overlays.
+- Users specify Provider-specific model, effort, and launch arguments in commands. Adapter executes the command using its platform format.
 
 ## Core Control API and MCP
 
@@ -414,7 +412,7 @@ export interface RunSummary {
 ```
 
 ```typescript
-// Expose existing workflow phases without changing checkpoint serialization.
+// Expose existing workflow phases. Preserve checkpoint serialization.
 export type IssuePhase =
   | "reserved" | "worktree_created" | "probing"
   | "implementing" | "implementation_completed"
@@ -443,7 +441,7 @@ export interface IssueStatus {
   result?: IssueResult;
 }
 
-// Core-owned snapshot, not native conversation history.
+// Core-owned workflow snapshot.
 export interface RunStatus {
   run: RunIdentity;
   state: "running"
@@ -477,25 +475,25 @@ interface RunControl {
   listPauses(): Promise<readonly PauseSummary[]>; // Active and queued.
   getPauseDetails(pauseId: PauseId): Promise<ControlResult<PauseDetails>>;
   // Check current identity, active state, and legal action atomically.
-  // First valid response consumes the Pause; reject stale or duplicate input.
+  // The first valid response consumes the active Pause.
   respondToPause(
     pauseId: PauseId, action: PauseAction,
   ): Promise<ControlResult<null>>;
-  // Acknowledge orderly Run cancellation; not completion.
+  // Acknowledge the orderly Run cancellation request.
   cancel(): Promise<ControlResult<null>>;
 }
 ```
 
-- Proposed FIFO policy: queued Pauses are inspectable but not answerable until active. The confirmation queue does not determine workflow Pause scope.
-- Preserve existing CLI key mappings. No proactive pause, arbitrary internal mutation, direct Worker Agent input, or conversation history reader.
+- Proposed FIFO policy: inspect queued Pauses and respond to the active Pause. Each Pause carries its own scope.
+- Preserve existing CLI key mappings.
 
 ### MCP startup and tools
 
 ```typescript
 // issue-runner-core/mcp
 // Started by the AI client through the platform CLI's mcp subcommand.
-// Stdio only; stdout carries protocol traffic, stderr carries diagnostics.
-// No Adapter initialization or Run launch. Disconnect does not cancel Runs.
+// Stdio transport: stdout carries protocol traffic, stderr carries diagnostics.
+// Connects to independently running CLI instances.
 export declare function runMcp(): Promise<void>;
 ```
 
@@ -516,10 +514,10 @@ export interface LiveRun {
   state: RunStatus["state"];
 }
 
-// MCP input and structured result schemas, not a public TypeScript client.
+// MCP input and structured result schemas.
 // Same tool names across platform CLIs. External operations target a live Run.
 export interface McpTools {
-  listRuns(): Promise<ControlResult<readonly LiveRun[]>>; // Live discovery only.
+  listRuns(): Promise<ControlResult<readonly LiveRun[]>>; // Discover live Runs.
   getRunStatus(input: { runId: RunId }): Promise<ControlResult<RunStatus>>;
   listPauses(input: { runId: RunId }): Promise<ControlResult<readonly PauseSummary[]>>;
   getPauseDetails(input: {
@@ -543,10 +541,10 @@ flowchart TD
     MCP <-->|Authenticated loopback HTTP| B
 ```
 
-- Publish one record per Run under `~/.issue-runner/active-runs/` once its endpoint is ready. It identifies the Run and connection, not workflow state.
-- Use an authorized loopback-only endpoint on an available port. Protect connection credentials with OS-user access controls; never return them from MCP.
-- Validate live Run identity on demand and before control. Reject stale, incompatible, or unauthorized records. Port or process reuse cannot select another Run.
-- Unregister on orderly exit. No daemon, periodic polling, cross-machine discovery, or separate Core installation.
+- Publish one record per Run under `~/.issue-runner/active-runs/` once its endpoint is ready. Record the Run identity and connection details.
+- Bind an authorized endpoint to a loopback address on an available port. Keep connection credentials private to the local transport with OS-user access controls.
+- Validate live Run identity, compatibility, and authorization on demand and before control. Route control to the exact Run ID.
+- Discover live Runs on demand on the local machine. Unregister on orderly exit.
 - Private registry and HTTP wire schemas remain separate design work.
 
 ## Lifecycle and failure flows
@@ -565,17 +563,17 @@ flowchart TD
     Ref -->|No| Probe["Run identity-only Session Probe"]
     Probe --> Validate
     Validate --> Match{"Valid identity and exact match on resume?"}
-    Match -->|No| Pause["Pause; no formal Assignment"]
+    Match -->|No| Pause["Pause for identity verification"]
     Match -->|Yes| Persist["Persist native identity"]
     Persist --> Dispatch["Dispatch formal Assignment"]
 ```
 
-- Adapter establishes readiness; no fixed Core startup delay.
-- Core uses the existing identity-only Probe and correction flow only when a trustworthy reference is unavailable. Probe evidence is Agent-reported and does not replace stronger native evidence where available.
-- Reject empty references, latest/last selectors, Run or execution IDs, and platform routing IDs masquerading as native conversation identities. A requested resume ID is not proof of the actual restored identity.
+- Adapter establishes readiness before returning the Session.
+- Core prioritizes reliable native identity evidence, falling back to the existing identity-only Probe and correction flow.
+- Require a nonempty identifier of the actual native conversation, obtained from native evidence or the identity Probe.
 - Keep checkpoint identity fields `sessionid`, `agent`, and expanded `resume`. Validate the current profile and exact actual reference; persist identity before formal work.
-- A known Session that fails readiness may be rechecked through its provided readiness continuation; never relaunch after an uncertain result.
-- If the expected conversation cannot be verified, pause and preserve the evidence. Never silently substitute another conversation.
+- Recheck a known Session through its readiness continuation. Pause uncertain launch outcomes for intervention.
+- Verify the exact expected conversation before dispatch; otherwise pause and preserve evidence.
 
 ### Assignment and Handoff
 
@@ -599,9 +597,9 @@ sequenceDiagram
     Core->>Core: Invalidate accepted Assignment and persist progress
 ```
 
-- Core owns prompt content, Assignments, Handoff verification, and recovery policy. Native Agent state does not establish task completion.
-- Recovery and correction messages use fresh message IDs, the applicable Assignment ID, and the same owned Session. Stale events cannot authorize recovery for a replaced or accepted Assignment.
-- Remove the old Enhancement recovery and pause callbacks. Adapter reports facts; Core determines whether to retry or require intervention.
+- Core owns prompt content, Assignments, Handoff verification, and recovery policy. Handoff verification establishes task completion.
+- Recovery and correction messages use fresh message IDs, the applicable Assignment ID, and the same owned Session. Evaluate recovery for the current active Assignment using current events.
+- Adapter reports facts; Core determines whether to retry or require intervention.
 
 ### Pause and notification
 
@@ -624,7 +622,7 @@ sequenceDiagram
     Core->>Adapter: onCoreNotification(pause_closed)
 ```
 
-The CLI can respond through the same control operation at any time the Pause is active. Neither notification delivery nor a stale notification determines the current Pause state.
+The CLI and MCP respond through the same control operation using the current active Pause state.
 
 ### Stage exit and Run disposal
 
@@ -647,9 +645,9 @@ sequenceDiagram
     Core->>Adapter: dispose()
 ```
 
-- Revoke automatic capabilities on every Stage exit and cancel late-transferred subscriptions immediately. A cleanup failure cannot reactivate a callback.
-- Preserve accepted Handoff and checkpoint progress before cleanup. Retry cleanup only on the same owned target; retain and report incomplete resources.
-- Dispose once on every orderly Run exit after final notification dispatch and Session cleanup attempts. Do not close retained Sessions or delete native history.
+- Revoke automatic capabilities permanently on every Stage exit and cancel late-transferred subscriptions immediately.
+- Preserve accepted Handoff and checkpoint progress before cleanup. Retry cleanup on the original owned target; retain and report incomplete resources.
+- Dispose once on every orderly Run exit after final notification dispatch and Session cleanup attempts. Preserve retained Sessions and native history.
 
 ## Remaining decisions
 
