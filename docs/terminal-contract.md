@@ -206,35 +206,14 @@ Adapter manages resources before returning a Session Handle and throws `Error` o
 ### Agent state events
 
 ```typescript
-export type AgentState =
-  | "idle" | "running" | "waiting_for_input" | "unknown";
-
-export interface AgentEventBase {
-  sequence: number; // Positive increasing sequence within this subscription.
-  timestamp: string; // Observed time, ISO 8601 UTC.
-  messageId?: MessageId; // Exact Core message correlation, if established.
-  nativeTurnId?: string; // Native turn identifier.
-}
-
-export type AgentEvent = AgentEventBase & (
-  // Initial or changed Agent state.
-  | { type: "state"; state: AgentState; detail?: string }
-  // Observed actual end of a specific turn, when known.
-  | {
-      type: "turn_ended";
-      outcome: "completed" | "failed" | "cancelled";
-      error?: ErrorDetail;
-    }
-  | { type: "session_closed"; error?: ErrorDetail } // Native Session ended.
-  | { type: "observation_lost"; error: ErrorDetail } // Observation interrupted.
-  | { type: "observation_restored"; state: AgentState } // Reconciled current state.
-);
+export type AgentEvent =
+  | { type: "session_closed" } // Unexpected Session closure.
+  | { type: "input_ready" }; // Execution ended; Agent can accept another ordinary prompt.
 ```
 
-- Subscribe before dispatch. Deliver the initial state and subsequent events continuously; reconcile after observation loss.
-- Bind each callback to its Session Handle. Correlate messages and turns using established identities. Use correlated events for recovery decisions and Handoff verification for Assignment completion.
-- Adapter normalizes duplicates and ordering where possible; Core accepts current callbacks with strictly increasing sequence values.
-- Core receives Agent state through subscriptions. Handoff and deterministic GitHub observation remain unchanged.
+- Subscribe before dispatch. Adapter observes the Session throughout the subscription, reconciles interruptions, and pushes current events in order.
+- On `input_ready`, Core checks the current Assignment's Handoff and applies its recovery policy.
+- Adapter handles Agent requests for intervention through the platform and Supervisor AI. Core continues observing Handoff.
 
 ### Core notifications
 
@@ -566,14 +545,13 @@ sequenceDiagram
     opt Event capability available
         Core->>Adapter: subscribeSessionEvents(handle, callback)
         Adapter-->>Core: unsubscribe function
-        Adapter-->>Core: Initial state
     end
     Core->>Core: Allocate Assignment and expected Handoff path
     Core->>Adapter: sendMessage(handle, message)
     Adapter-->>Core: Submission acknowledged
-    opt Observed Agent event
-        Adapter-->>Core: Agent event
-        Core->>Core: Evaluate recovery policy
+    opt Agent ready for next prompt
+        Adapter-->>Core: input_ready
+        Core->>Core: Check Handoff and evaluate recovery
     end
     Core->>Core: Observe and verify Handoff
     Core->>Core: Invalidate accepted Assignment and persist progress
@@ -635,7 +613,7 @@ sequenceDiagram
 
 | Subsequent decision | Refines after contract approval |
 | --- | --- |
-| [Agent Lifecycle and Event Model](https://github.com/BuddyLabsCo/issue-runner-core/issues/474) | Event classification, correlation and ordering, observation loss |
+| [Agent Lifecycle and Event Model](https://github.com/BuddyLabsCo/issue-runner-core/issues/474) | Event semantics and subscription lifecycle |
 | [Core-Owned Agent Recovery Policy](https://github.com/BuddyLabsCo/issue-runner-core/issues/475) | Recovery triggers, limits and Handoff handling |
 | [Structured Run Control and Pause Management](https://github.com/BuddyLabsCo/issue-runner-core/issues/476) | Pause policies, valid actions and races |
 | [Notification Contract and Terminal Output](https://github.com/BuddyLabsCo/issue-runner-core/issues/477) | Event inventory, payload semantics, output and delivery behavior |

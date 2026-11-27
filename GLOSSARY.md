@@ -18,14 +18,6 @@ A persistent identifier of the actual native Agent conversation, used to recover
 that same conversation.
 _Avoid_: Agent Session ID, tab handle.
 
-**Enhancement Pause**:
-A Core-owned confirmation for an Assignment whose enhancement has paused its own
-automation. Acknowledgment notifies that enhancement without pausing other Issues
-or handoff observation.
-_Avoid_: Operator Pause, recovery pause.
-
-**Operator Pause**:
-A workflow intervention requiring an operator decision before Runner continues
-affected operations. It retains its intervention policy while waiting behind
-another confirmation.
-_Avoid_: Enhancement Pause.
+**Pause**:
+A Core workflow intervention requiring an operator decision before affected
+operations continue. It retains its scope while queued for confirmation.
