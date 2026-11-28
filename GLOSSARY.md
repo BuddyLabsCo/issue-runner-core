@@ -1,23 +1,23 @@
 # Issue Runner
 
-Language for the workflow shared by Runner and its terminal plugins.
+Language for the workflow shared by Runner and its platform adapters.
 
 ## Language
 
-**Runner Tab**:
-The logical interactive terminal assigned to an Agent stage. Its identity is
-distinct from the native Agent conversation it hosts and from its representation
-in a terminal environment.
-_Avoid_: Native tab, Agent session.
+**Run**:
+One invocation of the Runner workflow, from CLI launch to termination. A Run may
+process multiple Issues concurrently.
 
-**Enhancement Pause**:
-A Core-owned confirmation for an Assignment whose enhancement has paused its own
-automation. Acknowledgment notifies that enhancement without pausing other Issues
-or handoff observation.
-_Avoid_: Operator Pause, recovery pause.
+**Agent Session**:
+A Core-managed Agent execution unit assigned to a stage. Its identity is distinct
+from the native conversation and its representation on the platform.
+_Avoid_: Runner Tab, native tab, thread, pane.
 
-**Operator Pause**:
-A workflow intervention requiring an operator decision before Runner continues
-affected operations. It retains its intervention policy while waiting behind
-another confirmation.
-_Avoid_: Enhancement Pause.
+**Native Session Reference**:
+A persistent identifier of the actual native Agent conversation, used to recover
+that same conversation.
+_Avoid_: Agent Session ID, tab handle.
+
+**Pause**:
+A Core workflow intervention requiring an operator decision before affected
+operations continue. It retains its scope while queued for confirmation.
