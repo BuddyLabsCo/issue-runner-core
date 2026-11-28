@@ -413,18 +413,14 @@ MCP returns tool errors for failed operations.
 
 ```mermaid
 flowchart TD
-    A["Run A: CLI + Core + Adapter"] --> Registry["Local Run Registry"]
-    B["Run B: CLI + Core + Adapter"] --> Registry
+    A["Run A: CLI + Core + Adapter"] -->|Register when ready| Registry["Local Run Registry<br/>~/.issue-runner/active-runs/<br/>Run ID and connection details per Run"]
+    B["Run B: CLI + Core + Adapter"] -->|Register when ready| Registry
     MCP -->|Discover on demand| Registry
     MCP <-->|Authenticated loopback HTTP| A
     MCP <-->|Authenticated loopback HTTP| B
 ```
 
-- Publish one record per Run under `~/.issue-runner/active-runs/` once its endpoint is ready. Record the Run identity and connection details.
-- Bind an authorized endpoint to a loopback address on an available port. Keep connection credentials private to the local transport with OS-user access controls.
-- Validate live Run identity, compatibility, and authorization on demand and before control. Route control to the exact Run ID.
-- Discover live Runs on demand on the local machine. Unregister on orderly exit.
-- Private registry and HTTP wire schemas remain separate design work.
+Bind each Run to an available loopback port. Protect registry credentials with OS-user access controls and validate authorization, compatibility, and Run ID on every connection. Registry and HTTP schemas are separate design work.
 
 ## Lifecycle and failure flows
 
@@ -434,24 +430,19 @@ flowchart TD
 flowchart TD
     Begin["Select Agent profile and working directory"] --> Mode{"Saved native reference?"}
     Mode -->|No| Start["startSession"]
-    Mode -->|Yes| Resume["resumeSession with exact reference"]
+    Mode -->|Yes| Saved{"Saved resume matches configuration?"}
+    Saved -->|Yes| Resume["resumeSession with exact reference"]
+    Saved -->|No| Pause["Pause and preserve evidence"]
     Start --> Ready["Owned Session ready for input"]
     Resume --> Ready
     Ready --> Ref{"Reliable actual reference returned?"}
-    Ref -->|Yes| Validate["Validate reference"]
-    Ref -->|No| Probe["Run identity-only Session Probe"]
-    Probe --> Validate
-    Validate --> Match{"Valid identity and exact match on resume?"}
-    Match -->|No| Pause["Pause for identity verification"]
-    Match -->|Yes| Persist["Persist native identity"]
+    Ref -->|Yes| Match{"Valid nonempty ID; exact match on resume?"}
+    Ref -->|No| Probe["Session Probe and correction"]
+    Probe --> Match
+    Match -->|No| Pause
+    Match -->|Yes| Persist["Persist sessionid and expanded resume"]
     Persist --> Dispatch["Dispatch formal Assignment"]
 ```
-
-- Adapter establishes readiness before returning the Session.
-- Core prioritizes reliable native identity evidence, falling back to the existing identity-only Probe and correction flow.
-- Require a nonempty identifier of the actual native conversation, obtained from native evidence or the identity Probe.
-- Persist `sessionid` and expanded `resume` in checkpoints before formal work. Validate the configured resume command and exact actual reference.
-- Verify the exact expected conversation before dispatch; otherwise pause and preserve evidence.
 
 ### Assignment and Handoff
 
@@ -463,20 +454,24 @@ sequenceDiagram
         Core->>Adapter: subscribeSessionEvents(handle, callback)
         Adapter-->>Core: unsubscribe function
     end
-    Core->>Core: Allocate Assignment and expected Handoff path
+    Core->>Core: Allocate Assignment, prompt and Handoff path
     Core->>Adapter: sendMessage(handle, message)
     Adapter-->>Core: Submission acknowledged
-    opt Agent ready for next prompt
-        Adapter-->>Core: input_ready
-        Core->>Core: Check Handoff and evaluate recovery
+    par Handoff observation
+        Core->>Core: Observe and verify Handoff
+    and Session events (if subscribed)
+        opt Agent ready for next prompt
+            Adapter-->>Core: input_ready
+            Core->>Core: Check Handoff and evaluate recovery policy
+        end
+        opt Unexpected Session closure
+            Adapter-->>Core: session_closed
+            Core->>Core: Evaluate recovery policy
+        end
     end
-    Core->>Core: Observe and verify Handoff
-    Core->>Core: Invalidate accepted Assignment and persist progress
+    Note over Core,Adapter: Corrections and recovery use the same Assignment and Session, with fresh message IDs.
+    Core->>Core: Accept verified Handoff, invalidate Assignment and persist progress
 ```
-
-- Core owns prompt content, Assignments, Handoff verification, and recovery policy. Handoff verification establishes task completion.
-- Recovery and correction messages use fresh message IDs, the applicable Assignment ID, and the same owned Session. Evaluate recovery for the current active Assignment using current events.
-- Adapter reports facts; Core determines whether to retry or require intervention.
 
 ### Pause and notification
 
@@ -486,19 +481,26 @@ sequenceDiagram
     participant Adapter
     participant Supervisor
     participant MCP
+    participant CLI
     Core->>Core: Activate Pause and allowed actions
-    Core->>Adapter: onCoreNotification(pause)
-    opt Adapter chooses to wake
-        Adapter-->>Supervisor: Notify
-        Supervisor->>MCP: getRunStatus(runId)
-        MCP->>Core: Read current snapshot
-        Core-->>MCP: RunStatus
-        Supervisor->>MCP: respondToPause(runId, pauseId, action)
-        MCP->>Core: Validate and consume
+    opt Notification capability available
+        Core->>Adapter: onCoreNotification(pause)
+        opt Adapter chooses to wake
+            Adapter-->>Supervisor: Notify
+            Supervisor->>MCP: getRunStatus(runId)
+            MCP->>Core: Read current snapshot
+            Core-->>MCP: RunStatus
+            MCP-->>Supervisor: RunStatus
+        end
     end
+    alt Supervisor responds
+        Supervisor->>MCP: respondToPause(runId, pauseId, action)
+        MCP->>Core: respondToPause(pauseId, action)
+    else Human responds
+        CLI->>Core: respondToPause(pauseId, action)
+    end
+    Core->>Core: Validate and consume active Pause
 ```
-
-The CLI and MCP respond through the same control operation using the current active Pause state.
 
 ### Stage exit and Run disposal
 
@@ -507,7 +509,8 @@ sequenceDiagram
     participant Core
     participant Adapter
     Note over Core,Adapter: Stage exits
-    Core->>Core: Revoke input and event callbacks
+    Core->>Core: Revoke input and event callbacks permanently
+    Core->>Core: Persist accepted Handoff and checkpoint progress
     opt Subscription exists
         Core->>Adapter: unsubscribe()
     end
@@ -515,20 +518,20 @@ sequenceDiagram
         Core->>Adapter: closeSession(handle)
     end
     Note over Core,Adapter: Run work ends
-    Core->>Core: Publish final Run snapshot
+    Core->>Core: Finish Session cleanup and publish final snapshot
     opt Notification capability available
         Core->>Adapter: onCoreNotification(process: run_completed)
     end
     opt Interactive completion
+        Core->>Core: Display Press any key to exit
+        Note over Core: MCP remains available
         Core->>Core: Await key press or endRun
     end
     Core->>Adapter: dispose()
+    Core->>Core: Unregister Run and exit
 ```
 
-- Revoke automatic capabilities permanently on every Stage exit and cancel late-transferred subscriptions immediately.
-- Preserve accepted Handoff and checkpoint progress before cleanup. Retry cleanup on the original owned target; retain and report incomplete resources.
-- Dispose once on every orderly Run exit after final notification dispatch and Session cleanup attempts. Preserve retained Sessions and native history.
-- After completion, display `Press any key to exit` and keep the control endpoint available. Exit on a key press or `endRun` and unregister the Run.
+Unsubscribe late-transferred subscriptions immediately. Retry cleanup on the original target; retain and report incomplete resources.
 
 ## Remaining decisions
 
