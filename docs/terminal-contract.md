@@ -229,15 +229,12 @@ export type PauseAction =
   | "skip" // Skip only when Core permits it.
   | "cancel"; // Request Run cancellation.
 
-export interface PauseSummary {
+export interface PauseDetails {
   pauseId: PauseId;
   scope: WorkScope; // Affected Run or Issue.
   state: "active" | "queued"; // CLI confirmation state.
   message: string; // Human-readable intervention prompt.
   allowedActions: readonly PauseAction[]; // Actions legal at snapshot time.
-}
-
-export interface PauseDetails extends PauseSummary {
   openedAt: string; // ISO 8601 UTC.
   operation: string; // Core operation requiring intervention.
   reason: ErrorDetail;
@@ -322,112 +319,60 @@ export type IssueOutcome =
   | "completed" | "pr_ready" | "no_change" | "no_work"
   | "incomplete" | "cancelled" | "failed";
 
-export interface IssueResult {
-  issue: IssueContext;
-  kind: "delivery" | "maintenance";
-  outcome: IssueOutcome;
-  pullRequest?: PullRequestRef;
-  detail: string; // Outcome explanation.
-  retainedWorktrees: readonly string[];
-}
-```
-
-```typescript
-export interface RetainedEvidence {
-  issueNumber?: number;
-  executionId?: ExecutionId;
-  recordedBranches: readonly string[];
-  worktrees: readonly string[];
-  paths: readonly string[];
-}
-
-export interface RunSummary {
-  run: RunIdentity;
-  outcome: RunOutcome;
-  finishedAt: string; // ISO 8601 UTC.
-  issues: readonly IssueResult[];
-  failure?: ErrorDetail;
-  retainedEvidence: readonly RetainedEvidence[];
-  logPath?: string;
-}
-```
-
-```typescript
-// Expose existing workflow phases. Preserve checkpoint serialization.
+// User-facing workflow phases.
 export type IssuePhase =
-  | "reserved" | "worktree_created" | "probing"
-  | "implementing" | "implementation_completed"
-  | "documenting" | "documentation_completed"
-  | "reviewing" | "review_completed"
-  | "fixing_review" | "fix_review_completed"
-  | "repairing_ci" | "ci_repair_completed"
-  | "repairing_conflict" | "conflict_repair_completed"
-  | "publication_eligible";
+  | "pending" | "preparing" | "agent" | "publishing"
+  | "waiting_for_ci" | "waiting_for_merge" | "cleanup" | "completed";
 
-export type PublicationPhase =
-  | "pending_push" | "pushed" | "pending_pr" | "pr_created"
-  | "checks_ready" | "checks_failed" | "conflict_repair"
-  | "pending_merge" | "merge_requested" | "merged" | "delivered";
-```
-
-```typescript
 export interface IssueStatus {
-  issue: IssueContext;
+  issue: IssueContext; // Current Stage and Session context when applicable.
   kind: "delivery" | "maintenance";
-  phase?: IssuePhase;
-  publicationPhase?: PublicationPhase;
+  phase: IssuePhase;
   pullRequest?: PullRequestRef;
-  handoffPath?: string; // Current expected Handoff path, if assigned.
-  lastError?: ErrorDetail;
-  result?: IssueResult;
+  outcome?: IssueOutcome; // Final Issue result.
+  detail?: string; // Current status or outcome explanation.
+  retainedWorktrees?: readonly string[];
 }
 
-// Core-owned workflow snapshot.
-export interface RunStatus {
+export interface LiveRun {
   run: RunIdentity;
   state: "running"
     | "paused" // Run-wide intervention; local Issue Pauses remain in pauses.
     | "cancelling"
     | "completed";
+}
+
+// Current progress and final results in one snapshot.
+export interface RunStatus extends LiveRun {
   issues: readonly IssueStatus[]; // All planned Issues, including pending, active, and completed.
-  pauses: readonly PauseSummary[]; // Active and queued unresolved Pauses.
+  pauses: readonly PauseDetails[]; // Active and queued unresolved Pauses.
   logPath?: string;
-  summary?: RunSummary; // Only when a final outcome exists.
+  outcome?: RunOutcome; // Final Run result.
+  finishedAt?: string; // ISO 8601 UTC.
+  failure?: ErrorDetail;
 }
 ```
 
 ### Per-Run control
 
 ```typescript
-export type ControlErrorCode =
-  | "run_not_found" | "run_unavailable"
-  | "pause_not_found" | "pause_not_active"
-  | "action_not_allowed" | "run_ending"
-  | "invalid_request" | "unauthorized" | "incompatible_version";
-
-export type ControlResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; error: ErrorDetail & { code: ControlErrorCode } };
-
 // One live Run; CLI and MCP invoke the same operations.
 interface RunControl {
   readonly runId: RunId;
   getStatus(): Promise<RunStatus>; // Read-only current snapshot.
-  listPauses(): Promise<readonly PauseSummary[]>; // Active and queued.
-  getPauseDetails(pauseId: PauseId): Promise<ControlResult<PauseDetails>>;
   // Check current identity, active state, and legal action atomically.
   // The first valid response consumes the active Pause.
   respondToPause(
     pauseId: PauseId, action: PauseAction,
-  ): Promise<ControlResult<null>>;
+  ): Promise<void>;
   // Acknowledge the orderly Run cancellation request.
-  cancel(): Promise<ControlResult<null>>;
+  cancel(): Promise<void>;
 }
 ```
 
 - Proposed FIFO policy: inspect queued Pauses and respond to the active Pause. Each Pause carries its own scope.
 - Preserve existing CLI key mappings.
-- Completed Runs expose their final snapshot until the CLI exits. Mutating operations return `run_ending` for a completed Run.
+- Completed Runs expose their final snapshot until the CLI exits. Core accepts mutations for active Runs and throws `Error` on invalid operations.
 
 ### MCP startup and tools
 
@@ -451,26 +396,19 @@ export declare function runMcp(): Promise<void>;
 ```
 
 ```typescript
-export interface LiveRun {
-  run: RunIdentity;
-  state: RunStatus["state"];
-}
-
 // MCP input and structured result schemas.
 // Same tool names across platform CLIs. External operations target a live Run.
 export interface McpTools {
-  listRuns(): Promise<ControlResult<readonly LiveRun[]>>; // Discover live Runs.
-  getRunStatus(input: { runId: RunId }): Promise<ControlResult<RunStatus>>;
-  listPauses(input: { runId: RunId }): Promise<ControlResult<readonly PauseSummary[]>>;
-  getPauseDetails(input: {
-    runId: RunId; pauseId: PauseId;
-  }): Promise<ControlResult<PauseDetails>>;
+  listRuns(): Promise<readonly LiveRun[]>; // Discover live Runs.
+  getRunStatus(input: { runId: RunId }): Promise<RunStatus>; // Progress, Pauses, and results.
   respondToPause(input: {
     runId: RunId; pauseId: PauseId; action: PauseAction;
-  }): Promise<ControlResult<null>>;
-  cancelRun(input: { runId: RunId }): Promise<ControlResult<null>>;
+  }): Promise<void>;
+  cancelRun(input: { runId: RunId }): Promise<void>;
 }
 ```
+
+MCP returns tool errors for failed operations.
 
 ### Local Run discovery
 
@@ -553,9 +491,9 @@ sequenceDiagram
     Core->>Adapter: onCoreNotification(pause)
     opt Adapter chooses to wake
         Adapter-->>Supervisor: Notify
-        Supervisor->>MCP: getPauseDetails(runId, pauseId)
-        MCP->>Core: Read current Pause
-        Core-->>MCP: Details
+        Supervisor->>MCP: getRunStatus(runId)
+        MCP->>Core: Read current snapshot
+        Core-->>MCP: RunStatus
         Supervisor->>MCP: respondToPause(runId, pauseId, action)
         MCP->>Core: Validate and consume
     end
