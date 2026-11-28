@@ -66,7 +66,7 @@ export interface IssueContext {
   executionId?: ExecutionId;
   stage?: Stage;
   assignmentId?: AssignmentId;
-  worktree?: string;
+  worktree?: string; // Worktree for the current Issue phase.
   nativeSessionReference?: NativeSessionReference;
 }
 
@@ -331,7 +331,6 @@ export interface IssueStatus {
   pullRequest?: PullRequestRef;
   outcome?: IssueOutcome; // Final Issue result.
   detail?: string; // Current status or outcome explanation.
-  retainedWorktrees?: readonly string[];
 }
 
 export interface LiveRun {
