@@ -532,13 +532,3 @@ sequenceDiagram
 ```
 
 Unsubscribe late-transferred subscriptions immediately. Retry cleanup on the original target; retain and report incomplete resources.
-
-## Remaining decisions
-
-| Subsequent decision | Refines after contract approval |
-| --- | --- |
-| [Agent Lifecycle and Event Model](https://github.com/BuddyLabsCo/issue-runner-core/issues/474) | Event semantics and subscription lifecycle |
-| [Core-Owned Agent Recovery Policy](https://github.com/BuddyLabsCo/issue-runner-core/issues/475) | Recovery triggers, limits and Handoff handling |
-| [Structured Run Control and Pause Management](https://github.com/BuddyLabsCo/issue-runner-core/issues/476) | Pause policies, valid actions and races |
-| [Notification Contract and Terminal Output](https://github.com/BuddyLabsCo/issue-runner-core/issues/477) | Event inventory, payload semantics, output and delivery behavior |
-| [Breaking Migration and Core Acceptance Criteria](https://github.com/BuddyLabsCo/issue-runner-core/issues/478) | Migration and acceptance |
