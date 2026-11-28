@@ -141,7 +141,6 @@ export interface PlatformAdapterModule {
 
 ```typescript
 export interface SessionOptions {
-  agent: string; // Opaque configured Agent ID used for validation and recovery.
   command: string; // Full start command or expanded resume command.
   cwd: string; // Absolute, existing stage work directory.
   label: string; // Display name.
@@ -280,7 +279,6 @@ export type CoreNotification =
 
 ```typescript
 export interface AgentConfig {
-  agent: string; // Nonempty Agent identifier.
   start: string; // Opaque, nonempty command; passed unchanged.
   resume: string; // Required {sessionref}; Core replaces each occurrence literally.
 }
@@ -297,7 +295,6 @@ export type AgentProfiles = {
 ```yaml
 agents:
   implement:
-    agent: codex
     start: 'codex --model gpt-5.4 -c model_reasoning_effort=high'
     resume: 'codex resume "{sessionref}"'
 
@@ -305,7 +302,7 @@ platformAdapter: {} # Adapter-owned settings; opaque to Core.
 ```
 
 - Preserve role selection and the rest of Project configuration.
-- Users specify Provider-specific model, effort, and launch arguments in commands. Adapter executes the command using its platform format.
+- Users specify Provider, model, effort, and launch arguments in commands. Adapter executes the command using its platform format.
 
 ## Core Control API and MCP
 
@@ -516,7 +513,7 @@ flowchart TD
 - Adapter establishes readiness before returning the Session.
 - Core prioritizes reliable native identity evidence, falling back to the existing identity-only Probe and correction flow.
 - Require a nonempty identifier of the actual native conversation, obtained from native evidence or the identity Probe.
-- Keep checkpoint identity fields `sessionid`, `agent`, and expanded `resume`. Validate the current profile and exact actual reference; persist identity before formal work.
+- Persist `sessionid` and expanded `resume` in checkpoints before formal work. Validate the configured resume command and exact actual reference.
 - Verify the exact expected conversation before dispatch; otherwise pause and preserve evidence.
 
 ### Assignment and Handoff
