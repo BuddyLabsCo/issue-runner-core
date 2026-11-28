@@ -249,50 +249,32 @@ export interface PauseDetails extends PauseSummary {
 ```
 
 ```typescript
-// Emit after meaningful Core workflow transitions.
-export type ProgressEvent =
-  | "run_started" | "batch_started" | "batch_completed"
-  | "issue_started" | "issue_completed"
-  | "stage_started" | "stage_completed"
-  | "pr_published" | "ci_wait_started" | "ci_wait_completed"
-  | "merge_requested" | "merge_completed"
-  | "cleanup_completed";
-
-export interface NotificationBase {
-  runId: RunId;
-  project: string;
-  repository: string;
-  timestamp: string; // ISO 8601 UTC.
-  sequence: number; // Notification order in this Run.
-  message: string; // Display description.
-}
+export type CoreNotification =
+  // Emit when a Pause becomes active.
+  | {
+      type: "pause";
+      runId: RunId;
+      pause: PauseDetails;
+    }
+  // Each delivery Batch and Documentation Maintenance occurrence.
+  | {
+      type: "process";
+      runId: RunId;
+      event: "batch_completed";
+      message: string; // E.g. "Batch 1 completed" or "Documentation Maintenance completed".
+      completedIssues: readonly number[]; // Completed Issue numbers in this Batch.
+    }
+  | {
+      type: "process";
+      runId: RunId;
+      event: "run_completed";
+      message: string; // "Run completed".
+    };
 ```
 
-```typescript
-export type CoreNotification = NotificationBase & (
-  // Emitted after a meaningful transition is committed.
-  | {
-      type: "progress";
-      event: ProgressEvent;
-      scope: WorkScope;
-      pullRequest?: PullRequestRef;
-    }
-  | { type: "pause_opened"; pause: PauseDetails } // New Pause, including queue state.
-  | { type: "pause_activated"; pause: PauseDetails } // Queued Pause becomes active.
-  | {
-      type: "pause_closed";
-      pauseId: PauseId;
-      scope: WorkScope;
-      resolution: "responded" | "invalidated" | "cancelled";
-      action?: PauseAction; // Present only when responded.
-    }
-  | { type: "run_completed"; summary: RunSummary } // Final reportable outcome.
-);
-```
-
-- Adapter decides how to handle notifications and when to wake the Supervisor. Workflow control uses the Core Control API.
-- Initiate asynchronous deliveries in sequence order. Report delivery failures separately. Dispatch the final outcome before orderly disposal.
-- CLI displays actionable errors, Pause prompts, and control results independently of log recording. Proposed output policy: ordinary progress and final reporting use notifications.
+- Adapter decides when to wake the Supervisor. The Supervisor queries full progress and final results through MCP.
+- Initiate asynchronous deliveries in emission order. Report delivery failures separately.
+- CLI displays actionable errors, Pause prompts, and control results. Terminal progress and result output are refined in #477.
 
 ## Configuration
 
@@ -410,7 +392,7 @@ export interface RunStatus {
     | "paused" // Run-wide intervention; local Issue Pauses remain in pauses.
     | "cancelling"
     | "completed";
-  issues: readonly IssueStatus[];
+  issues: readonly IssueStatus[]; // All planned Issues, including pending, active, and completed.
   pauses: readonly PauseSummary[]; // Active and queued unresolved Pauses.
   logPath?: string;
   summary?: RunSummary; // Only when a final outcome exists.
@@ -448,6 +430,7 @@ interface RunControl {
 
 - Proposed FIFO policy: inspect queued Pauses and respond to the active Pause. Each Pause carries its own scope.
 - Preserve existing CLI key mappings.
+- Completed Runs expose their final snapshot until the CLI exits. Mutating operations return `run_ending` for a completed Run.
 
 ### MCP startup and tools
 
@@ -569,8 +552,8 @@ sequenceDiagram
     participant Adapter
     participant Supervisor
     participant MCP
-    Core->>Core: Register Pause and allowed actions
-    Core->>Adapter: onCoreNotification(pause_opened)
+    Core->>Core: Activate Pause and allowed actions
+    Core->>Adapter: onCoreNotification(pause)
     opt Adapter chooses to wake
         Adapter-->>Supervisor: Notify
         Supervisor->>MCP: getPauseDetails(runId, pauseId)
@@ -579,7 +562,6 @@ sequenceDiagram
         Supervisor->>MCP: respondToPause(runId, pauseId, action)
         MCP->>Core: Validate and consume
     end
-    Core->>Adapter: onCoreNotification(pause_closed)
 ```
 
 The CLI and MCP respond through the same control operation using the current active Pause state.
@@ -598,16 +580,19 @@ sequenceDiagram
     opt Core requests native closure
         Core->>Adapter: closeSession(handle)
     end
-    Note over Core,Adapter: Run ends
+    Note over Core,Adapter: Run work ends
+    Core->>Core: Publish final Run snapshot
     opt Notification capability available
-        Core->>Adapter: onCoreNotification(run_completed)
+        Core->>Adapter: onCoreNotification(process: run_completed)
     end
+    Core->>Core: Press any key to exit
     Core->>Adapter: dispose()
 ```
 
 - Revoke automatic capabilities permanently on every Stage exit and cancel late-transferred subscriptions immediately.
 - Preserve accepted Handoff and checkpoint progress before cleanup. Retry cleanup on the original owned target; retain and report incomplete resources.
 - Dispose once on every orderly Run exit after final notification dispatch and Session cleanup attempts. Preserve retained Sessions and native history.
+- After completion, keep the MCP control endpoint available while the CLI waits for a key press. Unregister on exit.
 
 ## Remaining decisions
 
