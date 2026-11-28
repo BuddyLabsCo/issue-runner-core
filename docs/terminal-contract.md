@@ -227,7 +227,7 @@ export type PauseAction =
   | "retry" // Repeat an eligible operation.
   | "restart" // Restart the affected workflow explicitly.
   | "skip" // Skip only when Core permits it.
-  | "cancel"; // Request Run cancellation.
+  | "cancel"; // Cancel the Run and exit.
 
 export interface PauseDetails {
   pauseId: PauseId;
@@ -365,14 +365,14 @@ interface RunControl {
   respondToPause(
     pauseId: PauseId, action: PauseAction,
   ): Promise<void>;
-  // Acknowledge the orderly Run cancellation request.
-  cancel(): Promise<void>;
+  // Cancel an active Run and exit after cleanup, or exit a completed Run.
+  end(): Promise<void>;
 }
 ```
 
 - Proposed FIFO policy: inspect queued Pauses and respond to the active Pause. Each Pause carries its own scope.
 - Preserve existing CLI key mappings.
-- Completed Runs expose their final snapshot until the CLI exits. Core accepts mutations for active Runs and throws `Error` on invalid operations.
+- Completed Runs expose their final snapshot until a key press or `endRun`. Core validates control operations and throws `Error` on invalid requests.
 
 ### MCP startup and tools
 
@@ -404,7 +404,7 @@ export interface McpTools {
   respondToPause(input: {
     runId: RunId; pauseId: PauseId; action: PauseAction;
   }): Promise<void>;
-  cancelRun(input: { runId: RunId }): Promise<void>;
+  endRun(input: { runId: RunId }): Promise<void>; // Acknowledge before shutting down the Run.
 }
 ```
 
@@ -520,14 +520,16 @@ sequenceDiagram
     opt Notification capability available
         Core->>Adapter: onCoreNotification(process: run_completed)
     end
-    Core->>Core: Press any key to exit
+    opt Interactive completion
+        Core->>Core: Await key press or endRun
+    end
     Core->>Adapter: dispose()
 ```
 
 - Revoke automatic capabilities permanently on every Stage exit and cancel late-transferred subscriptions immediately.
 - Preserve accepted Handoff and checkpoint progress before cleanup. Retry cleanup on the original owned target; retain and report incomplete resources.
 - Dispose once on every orderly Run exit after final notification dispatch and Session cleanup attempts. Preserve retained Sessions and native history.
-- After completion, keep the MCP control endpoint available while the CLI waits for a key press. Unregister on exit.
+- After completion, display `Press any key to exit` and keep the control endpoint available. Exit on a key press or `endRun` and unregister the Run.
 
 ## Remaining decisions
 
